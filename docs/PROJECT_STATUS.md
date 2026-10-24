@@ -4,8 +4,8 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0 baseline complete; P9 repository initialization in progress
-**Latest associated commit:** `chore: initialize Whale Voice repository` (initial baseline)
+**Current stage:** P0 baseline complete; P9 private repository and CI baseline complete
+**Latest associated commit:** `8ef8e815940b58ad7e96fba174ee69de5dd4d96a` — `chore: initialize Whale Voice repository`
 
 ---
 
@@ -34,12 +34,15 @@ frontend work in this repository.
 - [x] Repository documentation baseline: README, Roadmap P0–P9, Architecture, Agent rules,
       Changelog, License and .gitignore.
 - [x] Local screenshot evidence reviewed and intentionally excluded from Git.
+- [x] First private-repository commit and `main` push completed.
+- [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
+      sync.
 
 ## In progress
 
-- [ ] First commit/push to the private GitHub repository.
-- [ ] Confirm the remote `main` branch and default-branch behavior.
-- [ ] Decide whether additional CI checks are useful beyond the current build/syntax checks.
+- [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
+- [ ] Establish PR-first feature workflow for all non-trivial changes.
+- [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
 
 ## Pending
 
@@ -51,7 +54,7 @@ frontend work in this repository.
 - [ ] P6: explicit cloud TTS provider and GPU-free mode.
 - [ ] P7: installation wizard and one-click install.
 - [ ] P8: verified group identity, emergency stop and WeChat auto-location integration.
-- [ ] P9: meaningful CI, release validation and any visibility decision.
+- [ ] P9: meaningful expanded CI, release validation and any visibility decision.
 
 ## Current technical blockers
 
@@ -73,6 +76,7 @@ frontend work in this repository.
 | DSH slot registration | verified earlier in the live runtime |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
 | Automated test suite | none in this repository yet |
+| GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task

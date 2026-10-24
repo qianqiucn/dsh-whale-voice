@@ -116,6 +116,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Roadmap](docs/ROADMAP.md) — P0–P9 plan and current status.
 - [Project status](docs/PROJECT_STATUS.md) — living, evidence-based status.
 - [Architecture](docs/ARCHITECTURE.md) — current and target architecture.
+- [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.
 - [License](LICENSE) — MIT, matching `package.json`.
