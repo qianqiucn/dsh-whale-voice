@@ -84,6 +84,31 @@ function runtime(overrides = {}) {
     ...overrides,
   }
 }
+function workerConfig(overrides = {}) {
+  return {
+    voice_enabled: false,
+    voice_auto_mode: 'explicit',
+    voice_allow_group_auto: false,
+    voice_auto_find_window: true,
+    voice_auto_open_chat: false,
+    voice_auto_restore_minimized: true,
+    voice_pause_when_fullscreen: true,
+    ...overrides,
+  }
+}
+function serviceConfig(overrides = {}) {
+  return {
+    port: 43371,
+    host: '127.0.0.1',
+    tts: { provider: 'qwen-local', voiceId: 'whale-v1', baseUrl: 'http://127.0.0.1:8765', model: 'saved-model' },
+    automation: { mode: 'explicit', autoFindWindow: true, autoOpenChat: false, autoRestoreMinimized: true, pauseWhenFullscreen: true },
+    allowedChats: ['wechat:private:fixture-a'],
+    ...overrides,
+  }
+}
+function revisionOf(config) {
+  return readConfigSnapshot({ config, runtime: runtime() }).configRevision
+}
 
 after(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true })
@@ -277,4 +302,104 @@ test('old config result cannot replace a newer view through the scan gate', asyn
   const fresh = gate.begin()
   assert.equal(gate.isCurrent(old), false)
   assert.equal(gate.isCurrent(fresh), true)
+})
+
+test('config revision changes for every authoritative worker field', async () => {
+  const base = await makeFixture()
+  const r0 = revisionOf(base.config)
+  for (const change of [
+    { voice_auto_mode: 'manual' },
+    { voice_allow_group_auto: true },
+    { voice_enabled: true },
+  ]) {
+    await writeJson(path.join(base.config.senderRoot, 'config.json'), workerConfig(change))
+    assert.notEqual(revisionOf(base.config), r0, JSON.stringify(change))
+  }
+})
+
+test('config revision changes when TTS base URL changes', async () => {
+  const a = await makeFixture({ service: serviceConfig() })
+  const b = await makeFixture({ service: serviceConfig({ tts: { provider: 'qwen-local', voiceId: 'whale-v1', baseUrl: 'http://127.0.0.1:9999', model: 'saved-model' } }) })
+  assert.notEqual(revisionOf(a.config), revisionOf(b.config))
+})
+
+test('config revision changes when an allowlist ID changes without count change', async () => {
+  const a = await makeFixture()
+  await writeJson(path.join(a.config.wechatAgentRoot, 'data/workspace/state/voice-settings.json'), {
+    enabled: false, mode: 'explicit', for_group: false, auto_probability: 0, default_voice: 'whale-v1',
+    allowed_targets: { 'private:fixture-a': 'Fixture A' },
+  })
+  const r1 = revisionOf(a.config)
+  await writeJson(path.join(a.config.wechatAgentRoot, 'data/workspace/state/voice-settings.json'), {
+    enabled: false, mode: 'explicit', for_group: false, auto_probability: 0, default_voice: 'whale-v1',
+    allowed_targets: { 'private:fixture-z': 'Fixture A' },
+  })
+  assert.notEqual(revisionOf(a.config), r1)
+})
+
+test('config revision changes when permission identity changes without count change', async () => {
+  const a = await makeFixture()
+  const r1 = revisionOf(a.config)
+  await writeJson(path.join(a.config.wechatAgentRoot, 'data/workspace/config/wechatagent.json'), {
+    wechat: { wake_mode: 'mention', whitelist: { private: ['wechat:private:fixture-z', 'wechat:private:fixture-b'], groups: ['wechat:group:fixture-group'] } },
+  })
+  assert.notEqual(revisionOf(a.config), r1)
+})
+
+test('config revision changes when a config source appears or disappears', async () => {
+  const hidden = await makeFixture({ write: { voiceSettings: false } })
+  const hiddenRevision = revisionOf(hidden.config)
+  const visible = await makeFixture()
+  assert.notEqual(revisionOf(visible.config), hiddenRevision)
+})
+
+test('config revision changes when a config source becomes unreadable', async () => {
+  const f = await makeFixture()
+  const before = revisionOf(f.config)
+  await writeFile(path.join(f.config.wechatAgentRoot, 'data/workspace/state/voice-settings.json'), '{broken', 'utf8')
+  const after = readConfigSnapshot({ config: f.config, runtime: runtime() })
+  assert.notEqual(after.configRevision, before)
+  assert.ok(after.sources.some((source) => source.id === 'voice-settings' && source.error === 'invalid_json'))
+})
+
+test('config revision changes when permission counts change', async () => {
+  const f = await makeFixture()
+  const before = revisionOf(f.config)
+  await writeJson(path.join(f.config.wechatAgentRoot, 'data/workspace/config/wechatagent.json'), {
+    wechat: { wake_mode: 'mention', whitelist: { private: ['wechat:private:fixture-a', 'wechat:private:fixture-b'], groups: ['wechat:group:fixture-group', 'wechat:group:fixture-second'] } },
+  })
+  assert.notEqual(revisionOf(f.config), before)
+})
+
+test('config revision is stable for no change and for object key order', async () => {
+  const a = await makeFixture()
+  const r1 = revisionOf(a.config)
+  const r2 = revisionOf(a.config)
+  assert.equal(r1, r2)
+  await writeJson(path.join(a.config.senderRoot, 'config.json'), {
+    voice_pause_when_fullscreen: true,
+    voice_auto_restore_minimized: true,
+    voice_auto_open_chat: false,
+    voice_auto_find_window: true,
+    voice_allow_group_auto: false,
+    voice_auto_mode: 'explicit',
+    voice_enabled: false,
+  })
+  assert.equal(revisionOf(a.config), r1)
+})
+
+test('config revision is opaque and does not expose private values', async () => {
+  const f = await makeFixture({
+    wa: { wechat: { whitelist: { private: ['private-secret-id'], groups: ['group-secret-id'] } } },
+    voiceSettings: { enabled: false, allowed_targets: { 'private-secret-id': 'Secret Name' } },
+    service: serviceConfig({ tts: { provider: 'qwen-local', voiceId: 'whale-v1', baseUrl: 'http://127.0.0.1:9999' }, allowedChats: ['secret-chat'] }),
+  })
+  const snapshot = readConfigSnapshot({ config: f.config, runtime: runtime() })
+  assert.match(snapshot.configRevision, /^[a-f0-9]{32}$/)
+  const serialized = JSON.stringify(snapshot)
+  for (const secret of ['private-secret-id', 'group-secret-id', 'Secret Name', 'secret-chat', 'http://127.0.0.1:9999']) {
+    assert.equal(serialized.includes(secret), false, 'leaked ' + secret)
+  }
+  assert.equal(snapshot.application.activeRevision, null)
+  assert.equal(snapshot.application.activeConfirmed, false)
 })
