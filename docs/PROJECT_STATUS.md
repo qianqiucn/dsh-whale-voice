@@ -4,8 +4,8 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `OFFLINE`** (code/tests complete, live Host reload pending), not `INTEGRATED`/`VERIFIED`
-**Latest associated commit:** `52820a94a27ff985f542835917190320f65735f8` — `fix(ci): normalize generated client output`
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; Phase 4B not started
+**Latest associated commit:** `f8e6d0307e2314f832099b4dee28bc62a487b25f` — `fix(config): separate bridge and worker voice layers`
 **Latest PR:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
 **PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -81,8 +81,11 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       completion false. Status `INTEGRATED`, not `VERIFIED`.
 - [x] Phase 4A read-only config snapshot: voice, TTS, permissions counts, sender config, saved/active
       separation, source inventory and sanitized revision; config and sources endpoints added.
-- [x] Phase 4A real frontend readout in overview/settings/permissions/studio/advanced; Mock remains
-      labelled; no write controls enabled. `OFFLINE` pending Host reload.
+- [x] Phase 4A real frontend readout in overview/settings/permissions/studio/advanced and component
+      manager; Bridge/Worker layers separated; Mock remains labelled; no write controls enabled.
+- [x] Phase 4A live GUI acceptance after normal DSH restart: current Host, 401-protected config
+      routes, real `window.__WHALE_SETUP__` readout, component manager, and refresh all verified.
+      Status `INTEGRATED`; live No-Core/timeout/invalid-schema/stale remain `OFFLINE` tests.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -90,7 +93,6 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
-- [ ] Phase 4A live verification: Host reload/DSH restart, then confirm real config readout and no secrets.
 - [ ] Phase 4B config write/schema/migration (not started; requires a separate authorization).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
@@ -126,10 +128,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
    WeChatAgent `auth_required`, Sender offline, Qwen health valid. Sender is not running; it was not
    started. Live No-Core/timeout/invalid-schema/stale GUI tests were not performed and remain
    `OFFLINE` behavior tests; this is why Phase 3B is `INTEGRATED`, not `VERIFIED`.
-9. Phase 4A is `OFFLINE`: config snapshot/readout and tests are complete, and the current Host has
-   the `/config` routes (401 without token), but the loaded snapshot still predates the Bridge/Worker
-   layer correction. Live semantic readout requires another normal Host reload/DSH restart. No write
-   API exists.
+9. Phase 4A is `INTEGRATED`: current Host (port 57393) serves the config routes, the trusted bridge
+   reads real config, six GUI surfaces were inspected, Bridge/Worker layers are separate, and no
+   write API exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE`.
 
 ## Verification evidence
 
@@ -149,25 +150,26 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
-| Core setup API | status/detect and config routes are live (401 without token); loaded config snapshot predates Bridge/Worker layer correction; write/installer API absent |
-| Live DSH host bridge | current port 53832; Host routes 401; trusted bridge injects; real GUI shows actual component data |
+| Core setup API | status/detect and config routes are live (401 without token); trusted bridge reads real config; write/installer API absent |
+| Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
+| Phase 4A config read | `INTEGRATED`; 52 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
+| Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
-| Phase 4A config read | `OFFLINE`; 52 tests/build pass; `/config*` routes live; loaded semantic snapshot requires another Host reload/DSH restart |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
 | PR #3 setup wizard | open; CI passed; not merged |
 | PR #4 read-only Core | open; CI passed; depends on PR #3 |
-| PR #5 Phase 4A config | open; CI SUCCESS `40060260529`; stacked on PR #4; not merged |
+| PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
 
-**Next: Phase 4A live verification** — after an authorized Host reload/DSH restart, confirm
-`getConfig`/`getConfigSources`/`getConfigStatus`, the real GUI readout, saved-vs-active separation and
-absence of secrets. Then **Phase 4B** (schema/version, atomic write, migration) requires a separate
-task and production-write authorization. Do not start with an installer or a full event/identity
-Adapter. Voice Sender's final independent safety verification remains mandatory before real sending.
+**Next: Phase 4B — controlled configuration write/schema/migration** (not started). It requires a
+separate task and production-write authorization; it must include schema versioning, conflict
+handling, atomic save, saved-vs-effective distinction and rollback. Do not start with an installer
+or a full event/identity Adapter. Voice Sender's final independent safety verification remains
+mandatory before real sending.
 
 ## Update rule
 

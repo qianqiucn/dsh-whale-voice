@@ -84,9 +84,11 @@ connection required; no secret values.
 **Acceptance:** Config round-trips, invalid config fails closed, task state transitions are tested,
 and no secret or private mapping is logged.
 
-**Current status:** Phase 4A read-only config snapshot and UI readout implemented and tested
-(`OFFLINE`). Saved-vs-active is separated; live DSH integration requires a Host reload/DSH restart.
-Write APIs, migration and permission-detail management remain `PLANNED`; no production write exists.
+**Current status:** Phase 4A read-only config snapshot and UI readout are `INTEGRATED` in the live DSH
+Host (port 57393): 401-protected config routes, trusted bridge, six GUI surfaces and refresh verified.
+Saved-vs-active is separated; Bridge and Worker safety layers are distinct. Write APIs, migration and
+permission-detail management remain `PLANNED`; no production write exists. Live No-Core/timeout/
+invalid-schema/stale injections remain `OFFLINE` tests.
 
 ---
 

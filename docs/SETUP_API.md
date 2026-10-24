@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Core detector implemented (`OFFLINE`); **write operations are not implemented**.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; **write operations are not implemented**. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
 **Scope:** first-run setup, read-only component status, and future controlled installation.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
