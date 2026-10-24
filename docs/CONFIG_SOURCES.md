@@ -91,6 +91,49 @@ No browser request can provide or override these paths.
 
 ## Revision
 
-`configRevision` is SHA-256 over a sanitized subset (no names, tokens, raw paths, logs or chat data).
-It is a **saved snapshot identifier**, not an active-config proof. `activeRevision` remains `null`
-until a supported runtime configuration-version API exists.
+`configRevision` is an **opaque, process-local keyed fingerprint** (HMAC-SHA-256, 32 hex characters)
+over a canonicalized representation of the authoritative saved configuration. It is a **saved
+snapshot identifier**, not an active-config proof. `activeRevision` remains `null` until a supported
+runtime configuration-version API exists.
+
+### Coverage
+
+The revision material includes:
+
+- Bridge voice: `enabled`, `mode`, `triggerMode`, `forGroup`, `auto_probability`, `default_voice`,
+  and the sorted allowed-target **IDs**;
+- Worker safety/automation: `voice_enabled`, `voice_auto_mode`, group policy, window/chat/restore/
+  fullscreen fields;
+- TTS saved provider/model/voice and base-URL value;
+- private/group whitelist IDs, Voice Sender allowed-chat IDs and Bridge allowed-target IDs;
+- Sender service version and automation fields;
+- per-source `available` / `readable` / `error` state, so a source appearing, disappearing or becoming
+  invalid changes the revision by a defined rule.
+
+The revision material excludes runtime health, PIDs, observed timestamps, durations, previews and
+other transient observations. Those must never be mixed into a saved-config revision.
+
+### Privacy
+
+The raw names/IDs/base URL and other low-entropy values are never returned or logged. They only enter
+the HMAC input inside the Host process. The HMAC key is generated per Host process and is not exposed
+to the frontend. A Host restart invalidates old revisions; the frontend must re-read before a future
+write rather than reusing a stale revision.
+
+This keyed 32-hex revision is intentionally stronger than an unprotected SHA-256 of a small private
+allowlist. It remains an opaque identifier; it is not a secret and must not be treated as one.
+
+### Phase 4B write contract (planned, not implemented)
+
+- The future write API must require `expectedRevision`.
+- A stale revision must be rejected with a conflict; there is no silent overwrite.
+- Checking only a target count is forbidden.
+- The version check and write must live in the same Host-side serialized critical section; a
+  read-check-write race across separate browser requests is not sufficient.
+- The config spans multiple authoritative files; one file `rename` does **not** make the whole set
+  transitively atomic. The future design must define a transaction/journal or explicitly limited
+  atomicity and recovery.
+- Saved success remains separate from runtime effective state.
+
+Missing/unreadable source behavior remains: affected fields `null`; source error is preserved; the
+revision changes because source state is part of the declared coverage.

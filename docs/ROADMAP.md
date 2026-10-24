@@ -19,11 +19,13 @@ prototype exists outside this repository.
 platform layer, not an optional TTS feature. TTS providers may be swapped freely; WeChatAgent may
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
-**Next development gate (after read-only verification):** Core unified configuration management —
-read, schema validation, version-conflict detection, atomic save, saved-versus-effective separation,
-and controlled writes only in an isolated configuration. This precedes any installer or full
-event/identity Adapter work. Production config writes require separate authorization; Voice Sender
-final independent safety verification remains required before real sending.
+**Next development gate (after read-only verification):** first integrate the completed read-only PR
+stack (#3–#8) with merge commits and a post-merge documentation sync; then start Core unified
+configuration management — read, schema validation, version-conflict detection, atomic save,
+saved-versus-effective separation, and controlled writes only in an isolated configuration. This
+precedes any installer or full event/identity Adapter work. Production config writes require separate
+authorization; Voice Sender final independent safety verification remains required before real
+sending.
 
 ---
 
@@ -38,6 +40,8 @@ final independent safety verification remains required before real sending.
 - Establish Git history and a reviewable initial commit.
 - Maintain an isolated Playwright UI harness for DOM/layout/Console checks; never debug the
   production DSH Electron window without separate authorization.
+- Maintain [AI_CONTEXT.md](AI_CONTEXT.md) as a recovery summary and [DECISIONS.md](DECISIONS.md) as
+  the architecture decision log; neither replaces code, Git state, tests or named authority docs.
 
 **Dependencies:** DSH client plugin runtime; existing local installation; user approval for the
 private GitHub repository.
@@ -48,7 +52,9 @@ contains no secrets, private chat data, audio, runtime state or screenshots.
 **Current status:** `DONE` for the local baseline and repository initialization. The live backend is
 still external and was not changed by this repository work. The isolated Playwright UI harness is
 available for development (`npm run test:ui`); real DSH Electron debugging remains unsupported and
-unauthorized.
+unauthorized. `AI_CONTEXT.md` and `DECISIONS.md` are maintained as cross-session memory and decision
+records, explicitly subordinate to repository evidence. A lightweight Markdown encoding test guards
+the documentation against the previously observed mojibake regression.
 
 ---
 
@@ -114,7 +120,9 @@ tests.
 distinguishable.
 
 **Current status:** `OFFLINE` prototype exists outside this repository; integration into this
-repository is `PLANNED`.
+repository is `PLANNED`. The current voice path is the UI Automation Sender. A WeChatAgent-native
+voice backend is **UNSUPPORTED** in upstream 0.3.9; see
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md). No native prototype is authorized.
 
 ---
 
@@ -144,7 +152,8 @@ closed; no fake online state; no message replay; no private fork/unsynchronized 
 **Current status:** `OFFLINE` — read-only installation/version/process/health evidence exists in
 `core/detect.mjs` and `packages/adapter-wechatagent`; isolated tests pass. Event subscription,
 account/group identity, send-result feedback and the full version-pinned Adapter remain `PLANNED`.
-Live host integration is not verified.
+Live host integration is not verified. Native outbound voice is absent: the 0.3.9 adapter supports
+text/sticker only; see [VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
 
 ---
 
@@ -165,7 +174,9 @@ authorized integration tests.
 **Acceptance:** UI accurately distinguishes Mock, offline, connected, degraded and blocked states;
 no optimistic claim of sent status; no direct UI automation from frontend.
 
-**Current status:** `MOCK` frontend is done; real connection is `PLANNED`.
+**Current status:** `MOCK` frontend is done; real connection is `PLANNED`. The new `发送与安全` page
+is front-end structure/disabled capability UI (`MOCK`); its Core contract is designed but not
+implemented. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
 
 ---
 
@@ -213,9 +224,10 @@ no-Core state; it is not install acceptance.
 and covered by isolated tests. Phase 3B is **INTEGRATED**: current DSH Host routes return 401, the
 trusted bridge injects, Core reads the authorized `core.json`, and the real GUI shows WeChatAgent
 `auth_required`, Sender offline, Qwen health valid, and unknown recovery/voice fields. Sender was not
-started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is not
-`VERIFIED`. Real installation, upgrade, rollback, TTS credentials and clean-machine acceptance remain
-`PLANNED`; no one-click installer exists today.
+started. PR #3–#8 remain open pending integration; PR #8 documentation repair is complete. Live
+No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is not `VERIFIED`. Real
+installation, upgrade, rollback, TTS credentials and clean-machine acceptance remain `PLANNED`; no
+one-click installer exists today.
 
 ---
 
@@ -227,6 +239,8 @@ started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, s
 - Stable real group identity mapping; no name-only matching.
 - Automatic WeChat window discovery/restore/activation with explicit failure states.
 - Global emergency stop and exact cancel states.
+- Unified `发送与安全` page with emergency-stop, window/focus and game sections; unsupported
+  capabilities remain disabled and cannot be represented as effective.
 - Fullscreen/game protection and secure-desktop refusal.
 - Authorized UI operation test plan before any real send.
 
@@ -236,7 +250,48 @@ started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, s
 after UNKNOWN; no group is enabled without verified identity.
 
 **Current status:** Backend prototype work exists outside this repository; frontend and repository
-integration are `PLANNED`. Group voice is deliberately not enabled.
+integration are `PLANNED`. Group voice is deliberately not enabled. The unified `发送与安全` page now
+has the planned sections with unsupported controls disabled; real DSH GUI visual acceptance passed
+for this `MOCK` page, but no global hotkey, window automation, game detection or cancellation backend
+exists. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md) and
+[GUI_ACCEPTANCE_SEND_SAFETY.md](GUI_ACCEPTANCE_SEND_SAFETY.md).
+
+---
+
+## Native Voice Delivery Research (parallel, non-blocking)
+
+**Status:** `RESEARCH_CANDIDATE` — not implemented, not integrated, not verified.
+
+**Goal:** preserve the long-term possibility of native WeChat voice sending without weakening the
+existing UI Automation path or creating duplicate delivery.
+
+**Current evidence:**
+
+- `ui-automation` — **SUPPORTED** existing Voice Sender path; historical native-bubble observation.
+- `wechatagent-native` — **UNSUPPORTED** in installed 0.3.9 and public 0.4.0; text/sticker outbound only.
+- `third-party-native` — **RESEARCH_CANDIDATE**:
+  - WeChatPYAPI publicly documents `send_voice` (SILK, boolean), professional WeChat 4.1.12.26;
+  - PadChat-SDK publicly documents `sendVoice` (SILK, `msgId`), old separate iPad-protocol service;
+  - no current Windows 4.1.10.27, license, coexistence, receipt or bubble evidence.
+- `auto` — **PLANNED**; no automatic cross-backend retry.
+
+**Research rules:**
+
+- Do not install third-party components, DLLs or services during document research.
+- Do not upgrade/downgrade WeChat.
+- Do not disable antivirus, Smart App Control or other security features.
+- Do not bundle unlicensed DLLs or services.
+- Do not treat API documentation as a working implementation.
+- Do not start a native prototype until all admission gates in
+  [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md) pass and the owner authorizes it.
+
+**Priority:** the mainline remains Phase 4B → Phase 5 → Phase 6 → Phase 7. Native research may run in
+parallel with source/license/API review, but its implementation is below Core configuration and
+frontend usability. The existing Voice Sender is the stable default.
+
+**Later extensions (not this round):** lightweight offline TTS installer guidance; sherpa-onnx /
+Kokoro / Piper candidates; CPU/no-GPU operation; community voice packages; optional RVC; AI cover
+features. These remain planned and are not coupled to native delivery.
 
 ---
 
@@ -257,5 +312,6 @@ integration are `PLANNED`. Group voice is deliberately not enabled.
 **Acceptance:** CI is meaningful; release artifact is reproducible; private data is excluded; owner
 approves any visibility change or release.
 
-**Current status:** `IN PROGRESS`: private repository initialization, documentation and initial
-checks. No release, no public visibility, no meaningful UI/backend CI yet.
+**Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
+UI CI and Markdown encoding checks. PR #3–#8 remain open pending integration. No release, no public
+visibility and no release artifact yet.

@@ -7,18 +7,23 @@ do not silently weaken a safety boundary.
 ## 1. Startup workflow (every session)
 
 1. Read this `AGENTS.md`.
-2. Read [docs/ROADMAP.md](docs/ROADMAP.md).
+2. Read [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) as a recovery summary, not an authority.
 3. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
-4. Check Git branch, staged/untracked changes and recent commits:
+4. Read [docs/ROADMAP.md](docs/ROADMAP.md); read [docs/DECISIONS.md](docs/DECISIONS.md) for accepted
+   architecture decisions.
+5. Check Git branch, staged/untracked changes and recent commits:
    ```powershell
    git status --short --branch
    git log --oneline -5
    ```
-5. Check the current task's dependencies and whether the required backend/runtime is actually
+6. Check the current task's PRs, CI, reviews and whether required backend/runtime is actually
    available. Do not infer project progress from chat history alone.
-6. Select the highest-priority task that is safe to execute.
-7. If the task requires real WeChat UI/window operations, real sending, driver changes, service
-   restarts or production configuration changes, stop and obtain explicit authorization first.
+7. Verify that `docs/AI_CONTEXT.md` is not stale relative to Git/HEAD/PRs/tests. Re-read the named
+   authoritative docs when it disagrees.
+8. State the current task boundary and whether explicit authorization is required.
+9. Select the highest-priority task that is safe to execute.
+10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
+    restarts or production configuration changes, stop and obtain explicit authorization first.
 
 ## 1.1 WeChatAgent dependency rule (permanent)
 
@@ -125,11 +130,16 @@ A screenshot or Mock screen does not justify `INTEGRATED` or `PRODUCTION READY`.
 
 After every verifiable development task:
 
-1. Update [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) with evidence and the next task.
-2. Update the relevant status in [docs/ROADMAP.md](docs/ROADMAP.md).
-3. Update technical documentation if contracts/architecture changed.
-4. Update [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
-5. Commit the code and docs together with a clear message.
+1. Run build/tests, inspect the Diff and scan for secrets/private data.
+2. Update [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) with evidence and the next task.
+3. Update the relevant status in [docs/ROADMAP.md](docs/ROADMAP.md).
+4. Update technical documentation if contracts/architecture changed.
+5. Update [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+6. Update [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) with current HEAD/PR/status/testing facts, marking it
+   as a summary rather than an authority.
+7. Update [docs/DECISIONS.md](docs/DECISIONS.md) for a material architecture decision, with reason,
+   status, date and references.
+8. Commit the code and docs together with a clear message; update the PR and handoff summary.
 
 Do not mark a stage complete merely because code exists. State the exact verification performed.
 
@@ -234,7 +244,7 @@ a roadmap automatically executes. The next cycle is triggered by the user's inst
 Stop and ask before proceeding if:
 
 - the work requires a real WeChat UI action or real send;
-- the remote repository is no longer empty or history diverged;
+- the remote history diverged unexpectedly, or a force-push/rewrite would be required;
 - a secret or private datum is found in the staged content;
 - the only way to pass is to remove a safety check;
 - the task would modify a running production service;
