@@ -8,7 +8,7 @@ detector**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeCha
 VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
 is **not included here**.
 
-> **Current status: frontend + Mock + read-only detection (`OFFLINE`).**
+> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
 > not send WeChat messages, and does not generate audio in this phase. The live DSH Host bridge is
 > not activated in the current process.
@@ -75,16 +75,18 @@ The wizard reads the trusted `window.__WHALE_SETUP__` bridge injected by the hos
 bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuses to claim completion.
 “查看演示流程” is an explicitly labelled demo and does not install, download or send anything.
 
-This is **Phase 2 UI plus Phase 3 read-only detection**, with **Phase 3B integrated** after a normal
-DSH restart: `/whale-voice/setup/*` returns 401 without a token, the trusted bridge injects, Core
-reads the authorized `core.json`, and the real GUI shows WeChatAgent `auth_required`, Sender offline,
-Qwen health valid, and unknown recovery/voice fields. Sender was not started. Live No-Core/timeout/
-invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is `INTEGRATED`, not `VERIFIED`. Real
-installation, TTS configuration and cleanup remain disabled and require the write API in
-[docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
-[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host
-activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md) and
-[docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md).
+This is **Phase 2 UI plus Phase 3 read-only detection and Phase 4A read-only config** (Phase 3B
+`INTEGRATED`, Phase 4A `INTEGRATED` as of the port-57393 DSH runtime). The config snapshot reads saved
+voice/TTS/permission/sender values, exposes only counts for private permission lists, keeps active
+revision unknown, and never writes. Bridge user settings and Worker safety permits are shown as
+separate layers. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B
+and 4A are `INTEGRATED`, not `VERIFIED`. Real installation, configuration writes and cleanup remain
+disabled and require the write API in [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
+[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results, configuration
+authority and the host activation check are in
+[docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md),
+[docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md) and
+[docs/CONFIG_SOURCES.md](docs/CONFIG_SOURCES.md).
 
 The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
 dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
@@ -217,6 +219,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Phase 3 read-only report](docs/PHASE3_READONLY.md) — detected versions, evidence and unknowns.
 - [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
   authorization gates.
+- [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.

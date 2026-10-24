@@ -393,6 +393,7 @@ function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvance
       h(Button, { variant: 'primary', onClick: onSetup }, '打开安装向导')),
   },
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, 'Whale Voice Core 未连接'), h('p', null, '无法读取真实组件状态。当前不会把 Mock 显示成在线。'))) : null,
+    data ? h(ConfigReadout, { setup: status }) : null,
     h('div', { className: 'wv-component-list' }, rows.map((r) => h('div', { className: 'wv-component-row', key: r.name },
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),
       h('span', { className: 'wv-component-detail' }, r.detail),

@@ -39,6 +39,51 @@ function ActivityMini({ activity, onOpen, last }) {
     h('span', { className: 'wv-activity-chev' }, h(Icon, { name: 'chevron', size: 14 })))
 }
 
+function ConfigReadout({ setup }) {
+  const config = setup && setup.available && setup.data ? setup.data.config : null
+  const view = deriveConfigView(config)
+  const sourceCount = view.sources.filter((source) => source.readable).length
+  return h('section', { className: 'wv-card pad wv-config-readout', style: { marginBottom: 14 } },
+    h('div', { className: 'wv-card-title' },
+      h('div', null, h('h2', null, '真实配置 · 只读'),
+        h('p', null, '来自 Core 的已保存值；不写入配置，也不把保存值冒充实际生效值。')),
+      h('div', { className: 'wv-row' },
+        h(Badge, { tone: view.available ? 'accent' : 'wait' }, view.available ? 'Core 已读取' : 'Core 未读取'),
+        h(Badge, { tone: 'demo' }, '不写入'))),
+    view.available ? h(React.Fragment, null,
+      h('div', { className: 'wv-config-grid' },
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '语音开关'), h('strong', null, view.voice.enabledText),
+          h('small', null, view.voice.activeText + (view.voice.worker ? ' · ' + view.voice.worker.enabledText : ''))),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '模式 / 群聊'), h('strong', null, (view.voice.mode || '未知') + ' · ' + view.voice.forGroupText),
+          h('small', null, '触发：' + (view.voice.triggerMode || '未知') + ' · 自动概率：' + view.voice.autoProbabilityText)),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '默认音色'), h('strong', null, view.voice.defaultVoice || '未知'),
+          h('small', null, '来源：' + (view.voice.source || '未知'))),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, 'TTS Provider'), h('strong', null, (view.tts.provider || '未知') + ' · ' + view.tts.configuredText),
+          h('small', null, '已保存音色：' + (view.tts.voice || '未知') + ' · ' + view.tts.runtimeText)),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '服务返回'), h('strong', null, view.tts.runtimeModel || '未返回模型'),
+          h('small', null, view.tts.mismatchText || '未发现配置与模型不一致')),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '权限数量'), h('strong', null, '私聊 ' + view.permissions.privateText + ' / 群聊 ' + view.permissions.groupText),
+          h('small', null, '名单详情：' + (view.permissions.detailAvailable ? '可读取' : '未读取'))),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, 'Voice Sender'), h('strong', null, view.sender.runningText + ' · ' + view.sender.healthText),
+          h('small', null, '配置一致性：' + view.sender.consistency + ' · 恢复：' + view.sender.recoveryText)),
+        h('div', { className: 'wv-config-item' },
+          h('span', null, '保存 / 生效'), h('strong', null, view.application.text),
+          h('small', null, 'Revision ' + (view.revision || '—') + ' · 生效未确认'))),
+      h('div', { className: 'wv-config-foot' },
+        h('span', null, '读取于 ' + (view.observedAt || '未知') + ' · 可读来源 ' + sourceCount + ' 个'),
+        view.application.state === 'MISMATCH' ? h('span', { className: 'wv-config-warn' }, '配置来源不一致，不能合并为一个开关值。') : null))
+      : h('div', { className: 'wv-notice warn' },
+        h(Icon, { name: 'alert', size: 15 }),
+        h('span', null, 'Core 配置尚未读取。这里不会用 Mock 配置填充真实值；请检查 Host 连接或 Core 配置。')))
+}
+
 function OverviewPage({ settings, setSetting, setPage, notify, openService, openActivity, setup, onSetup, onComponents }) {
   const stats = [
     { label: '服务', value: '2 / 3', sub: '演示在线 · 1 忙碌' },
@@ -62,6 +107,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
           h(Button, { onClick: () => setPage('studio') }, h(Icon, { name: 'wave', size: 14 }), '打开音色中心'))),
       h('div', { className: 'wv-hero-art' }, h(WhaleArt))),
     h(SetupBanner, { status: setup, onSetup, onComponents }),
+    h(ConfigReadout, { setup }),
     h('div', { className: 'wv-grid four', style: { marginTop: 12 } },
       stats.map((s) => h('div', { key: s.label, className: 'wv-card wv-stat' },
         h('span', { className: 'wv-stat-label' }, s.label),
@@ -120,7 +166,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       MOCK_ACTIVITIES.slice(0, 4).map((a, i) => h(ActivityMini, { key: a.id, activity: a, onOpen: openActivity, last: i === 3 })))))
 }
 
-function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify }) {
+function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup }) {
   const num = (v) => Number(v)
   return h(React.Fragment, null,
     h(PageHead, {
@@ -135,6 +181,7 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。')),
+    h(ConfigReadout, { setup }),
     h('div', { className: 'wv-grid two' },
       h(Card, { title: '基础控制', desc: '总开关与回复方式' },
         h('div', { className: 'wv-settings-group' },
@@ -223,7 +270,7 @@ function MoreMenu({ contact, onCopy, onInfo }) {
       h('button', { type: 'button', onClick: () => { setOpen(false); onInfo() } }, '查看演示详情')) : null)
 }
 
-function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup, notify }) {
+function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup, notify, setup }) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState({ id: '', name: '', mention: true, explicit: true, groupCooldown: 30, memberCooldown: 60 })
   const [errors, setErrors] = React.useState({})
@@ -278,6 +325,7 @@ function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup,
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'shield', size: 15 }),
       h('span', null, '群聊语音只有在授权群中、真实 @ 小鲸鱼且明确请求语音时才会触发。默认不提供“允许所有群聊”快捷入口。')),
+    h(ConfigReadout, { setup }),
     h('div', { className: 'wv-grid two' },
       h(Card, { title: '私聊白名单', desc: '只允许明确列出的私聊目标',
         actions: h(Badge, { tone: 'demo' }, '演示名单') },
@@ -358,7 +406,7 @@ function GroupDialog({ form, errors, patchForm, onClose, onSave }) {
         errors.memberCooldown ? h('span', { className: 'wv-error' }, errors.memberCooldown) : h('span', { className: 'wv-hint' }, '0–86400 秒'))))
 }
 
-function StudioPage({ preview, setPreview, notify }) {
+function StudioPage({ preview, setPreview, notify, setup }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
   return h(React.Fragment, null,
     h(PageHead, {
@@ -372,6 +420,7 @@ function StudioPage({ preview, setPreview, notify }) {
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '本轮不合成真实音频。生成与播放按钮保持禁用；下方波形为示意，不代表真实音频。')),
+    h(ConfigReadout, { setup }),
     h('div', { className: 'wv-studio' },
       h('section', { className: 'wv-card wv-studio-profile' },
         h('div', { className: 'wv-studio-hero' },
@@ -544,12 +593,13 @@ function AdvancedPage({ notify, setup, onSetup, onComponents }) {
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'lock', size: 15 }),
       h('span', null, '本页不会写入配置、不会启动 Qwen、不会结束进程。数值为演示占位，真实值需等待后端接入。')),
+    h(ConfigReadout, { setup }),
     h('div', { className: 'wv-adv-grid' },
-      h(Card, { title: '语音引擎', desc: 'Qwen3-TTS Provider', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: '语音引擎', desc: 'Qwen3-TTS Provider', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.engine.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
-      h(Card, { title: 'Voice Sender', desc: '桌面音频执行器', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: 'Voice Sender', desc: '桌面音频执行器', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.sender.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
-      h(Card, { title: 'WeChatAgent', desc: 'Bridge 与配置映射', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: 'WeChatAgent', desc: 'Bridge 与配置映射', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.wechat.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
       h(Card, { title: '安装与组件', desc: '首次安装向导与组件生命周期入口', actions: h(Badge, { tone: setup && setup.available ? 'accent' : 'wait' }, setup && setup.available ? 'Core 已连接' : 'Core 未连接') },
         h('div', { className: 'wv-settings-group' },

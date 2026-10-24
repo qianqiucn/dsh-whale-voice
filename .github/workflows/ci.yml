@@ -32,6 +32,7 @@ jobs:
           node --check build.mjs
           node --check index.js
           node --check core/detect.mjs
+          node --check core/config.mjs
           node --check core/http.mjs
           node --check core/request-guards.mjs
           node --check core/view.mjs

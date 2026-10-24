@@ -39,6 +39,9 @@ export function bridgeScript(token) {
   window.__WHALE_SETUP__ = Object.freeze({
     version: '1',
     getStatus: () => call('/status'),
+    getConfig: () => call('/config'),
+    getConfigSources: () => call('/config/sources'),
+    getConfigStatus: () => call('/config/status'),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -96,6 +99,9 @@ export function installHostBridge(scope, options = {}) {
 
   route(PREFIX + '/health', (req, res) => send(res, 200, { ok: true, service: 'whale-voice-core', mode: 'read-only', schemaVersion: 1 }))
   route(PREFIX + '/status', async (req, res) => send(res, 200, await detector.detectAll()))
+  route(PREFIX + '/config', async (req, res) => send(res, 200, await detector.getConfigSnapshot()))
+  route(PREFIX + '/config/sources', async (req, res) => send(res, 200, await detector.getConfigSources()))
+  route(PREFIX + '/config/status', async (req, res) => send(res, 200, await detector.getConfigStatus()))
   route(PREFIX + '/detect', async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const component = url.searchParams.get('component') || ''
