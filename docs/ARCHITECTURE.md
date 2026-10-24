@@ -32,6 +32,9 @@ Properties:
 - No npm runtime dependencies.
 - The Host route reads only explicitly configured roots, small manifests, process liveness and fixed
   loopback health endpoints. It does not read Hook/audit tokens, chat databases or arbitrary paths.
+- Phase 4B-1 adds an isolated single-file config store and test-only HTTP API. It is not registered on
+  the production Host and does not write production configuration; see
+  [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md).
 - No component start/stop, installation, update, driver change, WeChat send or audio generation.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.
@@ -49,6 +52,8 @@ setup.js ────────────┤
 client.template.js ──┘
 
 index.js ─→ core/detect.mjs ─→ core/server.mjs (isolated tests only)
+core/config-schema.mjs + core/config-store.mjs (isolated single-file store; no production Host route)
+core/isolated-write-server.mjs (test-only write API; not imported by index.js)
 ```
 
 `client.js` is committed because it is the runtime artifact referenced by the DSH bundle, and the

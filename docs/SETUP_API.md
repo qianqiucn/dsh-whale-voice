@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; **write operations are not implemented**. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
 **Scope:** first-run setup, read-only component status, and future controlled installation.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
@@ -195,6 +195,17 @@ Every write requires:
 - timeout, cancel, rollback and cleanup reporting;
 - redacted logs that never contain credentials, chat content or private paths beyond safe labels.
 
+### Phase 4B-1 isolated write infrastructure
+
+`core/config-store.mjs` and `core/config-schema.mjs` implement a single-file isolated configuration
+store with strict schema validation, v0→v1 migration, a process-local HMAC revision,
+`expectedRevision` conflict detection, atomic save and verification. `core/isolated-write-server.mjs`
+provides a test-only loopback API and is **not registered** by `index.js` or `core/server.mjs`.
+
+This does not activate any production write method in the list above. It does not write
+`%DSH_HOME%/whale-voice/core.json`, WeChatAgent, Bridge, Voice Sender or Qwen configuration. See
+[CONFIG_WRITE_API.md](CONFIG_WRITE_API.md) for the schema, states, limits and security rules.
+
 ## 4. Error codes
 
 `core_not_connected`, `core_invalid_response`, `unsupported_platform`, `unsupported_version`,
@@ -229,9 +240,11 @@ Errors must not include secrets or raw private chat data.
 WeChatAgent/Sender/Qwen detection, timeout, stale-generation marking and open-when-NotFound health
 semantics. `core/server.mjs` is an isolated test server with the same contract.
 
-Write methods, installation, component control, TTS credentials and preview remain absent. Phase 3
-therefore reports `OFFLINE`/read-only evidence, not `INTEGRATED` installation or `PRODUCTION READY`.
+Production write methods, installation, component control, TTS credentials and preview remain absent.
+Phase 3/4A therefore report `OFFLINE`/read-only evidence, not `INTEGRATED` installation or
+`PRODUCTION READY`. Phase 4B-1's isolated store is also `OFFLINE`; no production configuration is
+modified.
 
-The host route is implemented in source but the running DSH process must reload the Host plugin or
-restart to activate the new row. The current process predates `index.js` and returns 404; a
-client/page refresh is not sufficient. No host reload or DSH restart was performed.
+The Host route was activated in the earlier Phase 3B/4A integration after a normal DSH restart. This
+Phase 4B-1 documentation/implementation task did not reload DSH, add a production write route or
+restart any service.
