@@ -4,9 +4,10 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; Phase 4B not started
-**Latest associated commit:** `113eafde1c118c3e3049124a1dd037def067d94d` — `ci: use locked UI test dependencies`
-**Latest PR:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; new `发送与安全` frontend is `MOCK`/disabled; native WeChatAgent voice is `UNSUPPORTED`; Phase 4B not started
+**Latest associated commit:** `4da6d57b62f1a6bf8e094ae6557441589cbbd4b0` — `feat(ui): add unified send and safety page`
+**Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
+**PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
 **PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
 **PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -179,6 +180,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | PR #4 read-only Core | open; CI passed; depends on PR #3 |
 | PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
 | PR #6 UI inspector | open; CI SUCCESS `40128127566` (build + ui jobs); stacked on PR #5; 10/10 isolated UI checks; not merged |
+| PR #8 Send & Safety / delivery research | open; stacked on PR #6; 52 unit + 12 UI checks; docs only for native backend; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
