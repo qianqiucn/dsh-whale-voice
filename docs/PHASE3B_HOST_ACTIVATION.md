@@ -1,5 +1,9 @@
 # Phase 3B — Host Activation and GUI Integration
 
+> **Historical phase record (2026-10-24):** this document captures the activation work at that time,
+> including then-open PRs. Phase 3B was later merged via PR #4 and is `INTEGRATED`; current status is
+> in [PROJECT_STATUS.md](PROJECT_STATUS.md) and [README.md](README.md).
+
 **Status:** Phase 3B is **INTEGRATED** (real DSH Host + trusted bridge + real GUI component data).
 It is **not VERIFIED**: Sender is offline, WeChatAgent health is `auth_required`, TTS is not configured,
 and live No-Core/timeout/stale GUI tests were not performed.

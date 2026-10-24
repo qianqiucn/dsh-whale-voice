@@ -30,6 +30,9 @@ logs/
 *.bak
 *.bak-*
 *.tmp
+*.db
+*.sqlite
+*.sqlite3
 tmp/
 temp/
 
@@ -40,8 +43,13 @@ temp/
 *.opus
 *.flac
 *.pcm
+*.silk
+*.amr
+*.m4a
+*.aac
 *.onnx
 *.safetensors
+*.gguf
 *.pt
 *.ckpt
 *.bin

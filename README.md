@@ -3,15 +3,17 @@
 Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) client plugin for managing a
 Qwen3-TTS / `whale-v1` / WeChat native-voice workflow in one place.
 
-This repository currently contains the **Whale Voice frontend plugin and a minimal read-only Core
-detector**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeChat UI automation,
-VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
-is **not included here**.
+This repository contains the **Whale Voice frontend plugin, a read-only Core detector/config reader,
+and the Phase 4B-1 isolated single-file config write foundation**. The working Windows voice pipeline
+(Voice Sender, WeChatAgent, WeChat UI automation, VB-CABLE, the Qwen runtime and the private
+`whale-v1` reference audio) is a separate local system and is **not included here**.
 
-> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; remaining UI statistics/demo content is Mock.**
+> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 is merged and `OFFLINE`
+> (isolated store + test-only API; no production write route). Remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
-> not send WeChat messages, and does not generate audio in this phase. The live DSH Host bridge is
-> not activated in the current process.
+> not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
+> was activated and visually accepted in the earlier DSH runtime; no production config write/apply
+> is implemented.
 
 ## WeChat platform dependency
 
@@ -21,7 +23,8 @@ is **not included here**.
 - **WeChatAgent is required** for WeChat message access, contact/group context, account/session
   identity, DSH message bridging, existing chat authorization and the platform's send capability.
 - **Whale Voice does not reimplement a WeChat reader, account manager or bot.** It integrates
-  through a dedicated `packages/adapter-wechatagent` Adapter (planned; not in this repository yet).
+  through `packages/adapter-wechatagent` (read-only manifest/runtime/health evidence; a full
+  event/identity adapter is not implemented).
 - **Voice Sender is a separately installed Windows component.** It owns window/chat location,
   final identity checks, UI Automation, VB-CABLE routing, native recording/sending, emergency stop
   and microphone recovery.
@@ -46,11 +49,14 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
 ## What is implemented
 
 - Native DSH client bundle (`dsh-whale-voice`) registered in the plugin sidebar and main slot.
-- Seven views: Overview, Voice Settings, Access, Voice Studio, Emotions, Activity, Advanced.
+- Eight views: Overview, Voice Settings, Access, Send & Safety, Voice Studio, Emotions, Activity,
+  Advanced.
 - First-run setup wizard UI (four steps) and a component-management entry point.
 - Explicit no-Core / demo state: the wizard never fabricates installation or online success.
-- Minimal read-only Core (`core/`) and DSH host bridge (`index.js`) with token-protected loopback
-  routes.
+- Read-only Core detector/config reader and DSH host bridge (`index.js`) with token-protected
+  loopback routes.
+- Phase 4B-1 isolated single-file config store (`OFFLINE`): trusted sandbox capability, strict schema,
+  HMAC revision, atomic save/rollback and a test-only API; no production write route.
 - Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
   installation/runtime/health evidence, and local Qwen health/model/voice.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
@@ -79,11 +85,13 @@ This is **Phase 2 UI plus Phase 3 read-only detection and Phase 4A read-only con
 `INTEGRATED`, Phase 4A `INTEGRATED` as of the port-57393 DSH runtime). The config snapshot reads saved
 voice/TTS/permission/sender values, exposes only counts for private permission lists, keeps active
 revision unknown, and never writes. Bridge user settings and Worker safety permits are shown as
-separate layers. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B
-and 4A are `INTEGRATED`, not `VERIFIED`. Real installation, configuration writes and cleanup remain
-disabled and require the write API in [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
-[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results, configuration
-authority and the host activation check are in
+separate layers. Phase 4B-1 adds a merged **isolated** single-file write store with a trusted sandbox
+capability, strict schema, HMAC revision, atomic save/rollback and a test-only API; it is `OFFLINE`
+and has no production write route. Live No-Core/timeout/invalid-schema/stale GUI tests remain
+`OFFLINE`, so Phase 3B and 4A are `INTEGRATED`, not `VERIFIED`. Real installation, production
+configuration writes and cleanup remain disabled and require a separate write/apply phase. Phase 1
+findings are in [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results,
+configuration authority and the host activation check are in
 [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md),
 [docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md) and
 [docs/CONFIG_SOURCES.md](docs/CONFIG_SOURCES.md).
@@ -94,10 +102,10 @@ from this repository because they contain the developer's private desktop and ch
 
 ## What is not implemented
 
-- Real write/install Core API and Voice Sender control API.
+- Production write/apply Core API; Phase 4B-1 provides only an isolated test store/API.
 - Real task queue, cancellation, device restore or permission writes.
 - Real Qwen3-TTS invocation or audio preview.
-- `packages/adapter-wechatagent` and a supported-event/identity adapter (read-only evidence only).
+- A full WeChatAgent supported-event/identity adapter (read-only evidence adapter exists).
 - Real setup write operations: install/update/repair, component control and task recovery.
 - WeChat window discovery, chat navigation or emergency-stop controls in the frontend.
 - Group voice UI backed by real group-identity verification.
@@ -113,9 +121,11 @@ Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and the living sta
 Current repository
   DSH host
     ├─ dsh-whale-voice client bundle
-    │    └─ seven Mock views + setup wizard + scoped CSS
-    └─ read-only Host bridge
-         └─ core/detect.mjs (WeChatAgent / Sender / Qwen evidence)
+    │    └─ eight views + setup wizard + scoped CSS
+    ├─ read-only Host bridge
+    │    └─ core/detect.mjs (WeChatAgent / Sender / Qwen evidence)
+    └─ Phase 4B-1 isolated config store (OFFLINE; test-only API)
+         └─ core/config-sandbox.mjs, config-schema.mjs, config-store.mjs
 
 Target architecture (not implemented here)
   DSH plugin UI
@@ -161,9 +171,9 @@ node --test
 
 Read-only detection is configured explicitly; there is no disk-wide search. Copy
 [`core/config.example.json`](core/config.example.json) to `%DSH_HOME%\whale-voice\core.json`, or set
-`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The Host route must be
-loaded by a host-plugin reload or DSH process restart before the UI can read real results; a page
-refresh alone is insufficient and no restart was performed.
+`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The Phase 3B/4A Host
+bridge required a host-plugin reload or DSH process restart before the UI could read real results; that
+was performed and visually accepted. A page refresh alone is insufficient.
 
 `client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js`, `setup.js`
 and `client.css`. The generated file is committed because it is the runtime artifact referenced by
@@ -202,13 +212,17 @@ workflow, testing expectations, progress-file updates and safety boundaries for 
 ```powershell
 node build.mjs
 node --check client.js
+node --test
+npm.cmd run test:ui
 ```
 
-There is currently no automated browser/DOM test suite. CI only runs checks that exist in this
-repository; it does not pretend to verify the real WeChat pipeline.
+The isolated Playwright harness covers DOM/layout/console checks with fictional fixtures; it does not
+connect to the real DSH window, Core, Sender, Qwen, WeChat or production tokens, and does not verify
+the real WeChat pipeline.
 
 ## Documentation
 
+- [Documentation index](docs/README.md) — current authority, historical records and reading order.
 - [Roadmap](docs/ROADMAP.md) — P0–P9 plan and current status.
 - [Project status](docs/PROJECT_STATUS.md) — living, evidence-based status.
 - [Architecture](docs/ARCHITECTURE.md) — current and target architecture.

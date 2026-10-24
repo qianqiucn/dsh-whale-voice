@@ -1,5 +1,9 @@
 # Phase 3 — Read-only Core and Detection
 
+> **Historical phase record:** the status below describes the Phase 3 offline snapshot. The read-only
+> Core was later integrated into the Host via PR #4; current status is in
+> [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
 **Status:** read-only implementation and isolated tests pass; **OFFLINE**, not integrated into the
 running DSH Host. Installation/write operations intentionally absent.
 **Branch:** `feature/phase3-core-detect` (depends on the first-run setup PR).

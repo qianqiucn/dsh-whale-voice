@@ -1,5 +1,9 @@
 # Repository Inventory and Commit Scope
 
+> **Historical snapshot (2026-10-24):** this file records the original 33-file working directory and
+> initial commit scope. It is not a current inventory. The tree now includes Phase 3/4/4B-1 modules,
+> tests and documents; use `git ls-files` or [docs/README.md](README.md) for the current map.
+
 Audit date: 2026-10-24. This file describes the original 33-file working directory and what was
 selected for the initial commit. Files added by later tasks (`setup.js`, `docs/SETUP_*` and
 `docs/WECHATAGENT_COMPATIBILITY.md`) are included below but were not part of that initial directory.

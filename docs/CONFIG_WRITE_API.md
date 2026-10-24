@@ -1,8 +1,8 @@
 # Isolated Configuration Write (Phase 4B-1)
 
-**Status:** `OFFLINE` — isolated single-file store and test-only HTTP API. There is **no production
-write route** on the DSH Host and no write to WeChatAgent, Bridge, Voice Sender, Qwen or
-`%DSH_HOME%/whale-voice/core.json` in this phase.
+**Status:** `OFFLINE` — merged via PR #9; isolated single-file store and test-only HTTP API. There is
+**no production write route** on the DSH Host and no write to WeChatAgent, Bridge, Voice Sender, Qwen
+or `%DSH_HOME%/whale-voice/core.json` in this phase.
 
 **Scope:** implement and test the foundation for safe configuration writes: schema validation,
 migration, an opaque process-local revision, optimistic concurrency, single-file atomic save, recovery
@@ -230,7 +230,7 @@ This limitation is explicit; Phase 4B-1 does not claim full multi-process concur
 This phase implements **one file** only. The real system spans Core, WeChatAgent, Bridge
 `voice-settings.json`, Voice Sender service and Worker files. Several independent atomic renames do
 not make a transaction; per-file partial success, ordering, journalling, cross-file rollback and
-recovery are future work (Phase 4B-2 or later).
+recovery are future work (Phase 4B-2A or later).
 
 ---
 
@@ -321,7 +321,7 @@ The existing read-only detector, No-Core, stale-response, UI and demo tests rema
 
 ## 10. Next stage
 
-Phase 4B-2, only after separate authorization, should address:
+Phase 4B-2A, only after separate authorization, should address:
 
 - a controlled production write API behind the trusted Host;
 - multi-file transaction/journal and partial-success recovery;
