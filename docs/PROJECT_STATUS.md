@@ -5,7 +5,7 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3 read-only **OFFLINE**; live host integration pending
-**Latest associated commit:** `af90164760f86dd7c7a3d89ef8aafb4bd3662cb1` — `fix: align setup contracts and harden core detection`
+**Latest associated commit:** `4dd7be422b562ef847235b11aab65b6f584bc15d` — `fix: close setup status and unknown-state gaps`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
 
