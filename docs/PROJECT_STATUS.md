@@ -5,7 +5,7 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI + Phase 3 read-only detection complete
-**Latest associated commit:** `f920f9fa0327d31515fe8352c017ee8324e884d1` — `feat: add read-only core detection bridge`
+**Latest associated commit:** `ba4bef55721145bc6b9b2a19975a17efb0da8d38` — `refactor: isolate wechatagent read-only adapter`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
 
