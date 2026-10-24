@@ -5,7 +5,8 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0 baseline complete; P9 private repository and CI baseline complete
-**Latest associated commit:** `8ef8e815940b58ad7e96fba174ee69de5dd4d96a` — `chore: initialize Whale Voice repository`
+**Latest associated commit:** `a054613e10dfef4638976cefd5ea67ba412f4154` — `docs: document WeChatAgent dependency and compatibility`
+**Latest PR:** [#1 — docs: establish WeChatAgent required dependency](https://github.com/qianqiucn/dsh-whale-voice/pull/1)
 
 ---
 
@@ -66,6 +67,7 @@ not implemented yet.
 
 ## In progress
 
+- [ ] Review/merge PR #1 (WeChatAgent dependency documentation).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
