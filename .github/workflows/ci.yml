@@ -75,4 +75,3 @@ jobs:
           name: whale-voice-ui-artifacts
           path: tests/ui/.artifacts/
           if-no-files-found: warn
-
