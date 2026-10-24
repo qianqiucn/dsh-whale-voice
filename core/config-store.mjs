@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHmac, randomBytes } from 'node:crypto'
+import { isInside, isTrustedSandbox, normalizePath } from './config-sandbox.mjs'
 import {
   CONFIG_SCHEMA_VERSION,
   CONFIG_STATES,
@@ -43,21 +44,18 @@ function errorResult(code, state, message, extra = {}) {
   }
 }
 
-function normalizePath(value) {
-  const resolved = path.resolve(String(value || ''))
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
-}
-
-function isInside(parent, child) {
-  const relative = path.relative(normalizePath(parent), normalizePath(child))
-  return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
-}
-
-function productionConfigDir(env) {
-  const dshHome = env && env.DSH_HOME
-    ? String(env.DSH_HOME)
-    : path.join(os.homedir(), '.dsh')
-  return path.resolve(dshHome, 'whale-voice')
+function collectForbiddenRoots(envs) {
+  const roots = new Set()
+  for (const env of envs) {
+    if (!env) continue
+    const dshHome = env.DSH_HOME
+      ? path.resolve(String(env.DSH_HOME))
+      : path.resolve(os.homedir(), '.dsh')
+    roots.add(path.resolve(dshHome, 'whale-voice'))
+    if (env.WHALE_WECHATAGENT_HOME) roots.add(path.resolve(String(env.WHALE_WECHATAGENT_HOME)))
+    if (env.WHALE_VOICE_SENDER_HOME) roots.add(path.resolve(String(env.WHALE_VOICE_SENDER_HOME)))
+  }
+  return [...roots]
 }
 
 function escapeRegExp(value) {
@@ -84,9 +82,6 @@ export function createConfigStore(options = {}) {
 
 export class ConfigStore {
   constructor(options = {}) {
-    if (!options.root || typeof options.root !== 'string') {
-      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'an explicit isolated root is required')
-    }
     if (options.fileName !== undefined && (typeof options.fileName !== 'string' || !FILE_NAME_PATTERN.test(options.fileName))) {
       throw new ConfigStoreError('CONFIG_FILENAME_INVALID', 'invalid fixed configuration file name')
     }
@@ -101,32 +96,122 @@ export class ConfigStore {
     this.fileName = options.fileName || DEFAULT_FILE_NAME
     this.revisionKey = options.revisionKey || REVISION_KEY
     this._queue = Promise.resolve()
+    this.forbiddenRoots = collectForbiddenRoots([process.env, options.env])
+    this.sandbox = options.sandbox
 
-    const resolved = path.resolve(options.root)
-    let stat
-    try {
-      stat = this.fs.lstatSync(resolved)
-      this.realRoot = this.fs.realpathSync(resolved)
-    } catch {
-      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'isolated root must exist and be a directory')
+    if (!this.sandbox) {
+      if (options.root && typeof options.root === 'string') {
+        this._rejectUntrustedRoot(options.root)
+      }
+      throw new ConfigStoreError('CONFIG_SANDBOX_REQUIRED', 'an approved isolated sandbox capability is required')
     }
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'isolated root must not be a symlink or junction')
+    if (!isTrustedSandbox(this.sandbox)) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_REQUIRED', 'sandbox capability is not trusted')
     }
-    const productionDir = productionConfigDir(this.env)
-    if (isInside(this.realRoot, productionDir) || isInside(productionDir, this.realRoot)) {
-      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'production configuration directory is not an isolated write target')
+    if (options.root !== undefined) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_CONFLICT', 'do not supply root together with a trusted sandbox')
     }
 
-    this.root = this.realRoot
+    this.root = this.sandbox.root
     this.target = path.join(this.root, this.fileName)
     if (path.dirname(this.target) !== this.root) {
       throw new ConfigStoreError('CONFIG_FILENAME_INVALID', 'configuration file must be directly inside the isolated root')
     }
+    this._assertSandbox()
     this._assertTargetSafe()
   }
 
+  _rejectUntrustedRoot(root) {
+    let stat
+    try {
+      stat = this.fs.lstatSync(path.resolve(root))
+    } catch {
+      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'untrusted root must not be used')
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'untrusted root must not be a symlink or junction')
+    }
+    let realRoot
+    try {
+      realRoot = this.fs.realpathSync(path.resolve(root))
+    } catch {
+      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'untrusted root could not be resolved')
+    }
+    if (this._overlapsForbidden(realRoot)) {
+      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'production or dependency directory is not an isolated write target')
+    }
+  }
+
+  _overlapsForbidden(candidate) {
+    for (const root of this.forbiddenRoots) {
+      if (isInside(candidate, root) || isInside(root, candidate)) return true
+    }
+    return false
+  }
+
+  _assertSandbox() {
+    if (!isTrustedSandbox(this.sandbox)) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_REQUIRED', 'sandbox capability is not trusted')
+    }
+    const sandbox = this.sandbox
+    let stat
+    try {
+      stat = this.fs.lstatSync(sandbox.root)
+    } catch {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root is not available')
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root must not be a symlink or junction')
+    }
+    let realRoot
+    try {
+      realRoot = this.fs.realpathSync(sandbox.root)
+    } catch {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root could not be resolved')
+    }
+    if (normalizePath(realRoot) !== normalizePath(sandbox.root)) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root was redirected')
+    }
+    if (!isInside(sandbox.tempRoot, sandbox.root)) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root is outside the temporary root')
+    }
+    if (sandbox.ino && stat.ino && stat.ino !== sandbox.ino) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox root identity changed')
+    }
+    let markerStat
+    try {
+      markerStat = this.fs.lstatSync(sandbox.marker)
+    } catch {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker is missing')
+    }
+    if (markerStat.isSymbolicLink() || !markerStat.isFile()) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker must be a regular file')
+    }
+    let realMarker
+    try {
+      realMarker = this.fs.realpathSync(sandbox.marker)
+    } catch {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker could not be resolved')
+    }
+    if (!isInside(sandbox.root, realMarker)) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker escapes the root')
+    }
+    let marker
+    try {
+      marker = JSON.parse(this.fs.readFileSync(sandbox.marker, 'utf8'))
+    } catch {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker is not valid JSON')
+    }
+    if (!marker || marker.kind !== 'whale-voice-isolated-sandbox' || marker.id !== sandbox.id) {
+      throw new ConfigStoreError('CONFIG_SANDBOX_INVALID', 'sandbox marker does not match the capability')
+    }
+    if (this._overlapsForbidden(sandbox.root)) {
+      throw new ConfigStoreError('CONFIG_UNSAFE_ROOT', 'sandbox overlaps a production or dependency directory')
+    }
+  }
+
   _assertTargetSafe() {
+    this._assertSandbox()
     let stat
     try {
       stat = this.fs.lstatSync(this.target)
@@ -146,7 +231,7 @@ export class ConfigStore {
     } catch {
       throw new ConfigStoreError('CONFIG_PATH_ESCAPE', 'cannot resolve configuration target')
     }
-    if (!isInside(this.realRoot, realTarget)) {
+    if (!isInside(this.root, realTarget)) {
       throw new ConfigStoreError('CONFIG_PATH_ESCAPE', 'configuration target escapes the isolated root')
     }
   }

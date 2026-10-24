@@ -319,6 +319,11 @@ export function migrateConfig(input) {
 export function toPublicConfig(config, meta = {}) {
   const revision = meta.revision || null
   const state = meta.state || CONFIG_STATES.UNCHANGED
+  const applicationState = meta.applicationState
+    || (state === CONFIG_STATES.SAVED ? CONFIG_STATES.PENDING_APPLY : CONFIG_STATES.UNCHANGED)
+  const note = applicationState === CONFIG_STATES.PENDING_APPLY
+    ? '文件保存成功不等于运行时已生效；当前没有受支持的运行时配置版本接口。'
+    : '这是已保存配置的读取快照；本次没有新的保存，运行是否生效仍为未知。'
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     readMode: 'isolated-config-store',
@@ -348,13 +353,13 @@ export function toPublicConfig(config, meta = {}) {
       note: '只返回数量；不返回联系人、群聊或目标 ID。',
     },
     application: {
-      state: CONFIG_STATES.PENDING_APPLY,
+      state: applicationState,
       activeState: CONFIG_STATES.UNKNOWN,
       savedRevision: revision,
       activeRevision: null,
       activeConfirmed: false,
       saved: true,
-      note: '文件保存成功不等于运行时已生效；当前没有受支持的运行时配置版本接口。',
+      note,
     },
   }
 }

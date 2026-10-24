@@ -137,11 +137,12 @@ allowlist. It remains an opaque identifier; it is not a secret and must not be t
 
 ### Phase 4B-1 isolated implementation (OFFLINE)
 
-`core/config-store.mjs` + `core/config-schema.mjs` now implement a **single-file, isolated**
-configuration store with strict v1 schema validation, pure v0→v1 migration, a process-local HMAC
-revision, `expectedRevision` conflict detection, temp+fsync+rename atomic save and post-save
-verification/rollback. `core/isolated-write-server.mjs` is a test-only loopback API and is not
-registered by the production DSH Host.
+`core/config-sandbox.mjs` + `core/config-store.mjs` + `core/config-schema.mjs` now implement a
+**single-file, sandboxed** configuration store with a trusted test-sandbox capability, strict v1
+schema validation, pure v0→v1 migration, a process-local HMAC revision, `expectedRevision` conflict
+detection, temp+fsync+rename atomic save, post-save verification/rollback and read/write state
+separation. `core/isolated-write-server.mjs` is a test-only loopback API and is not registered by the
+production DSH Host.
 
 The isolated file is not one of the authoritative production files above. No production path,
 WeChatAgent, Bridge, Sender, Qwen or `core.json` write is performed. Multi-file transaction, a

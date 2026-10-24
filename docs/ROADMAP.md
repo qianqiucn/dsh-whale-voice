@@ -96,10 +96,11 @@ and no secret or private mapping is logged.
 **Current status:** Phase 4A read-only config snapshot and UI readout are `INTEGRATED` in the live DSH
 Host (port 57393): 401-protected config routes, trusted bridge, six GUI surfaces and refresh verified.
 Saved-vs-active is separated; Bridge and Worker safety layers are distinct. Phase 4B-1 adds an
-**isolated single-file** config store (`OFFLINE`): strict schema, v0→v1 migration, HMAC revision,
-`expectedRevision` conflict detection, atomic save/rollback and a test-only API. Production write,
-multi-file transaction, cross-process CAS and runtime apply remain `PLANNED`; no production write
-exists. Live No-Core/timeout/invalid-schema/stale injections remain `OFFLINE` tests.
+**isolated single-file** config store (`OFFLINE`): trusted sandbox capability, strict schema, v0→v1
+migration, HMAC revision, `expectedRevision` conflict detection, atomic save/rollback, read/write
+state separation and a test-only API. Production write, multi-file transaction, cross-process CAS and
+runtime apply remain `PLANNED`; no production write exists. Live No-Core/timeout/invalid-schema/stale
+injections remain `OFFLINE` tests.
 
 ---
 
@@ -314,6 +315,6 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 95 Node tests. PR #3–#8 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 98 Node tests. PR #3–#8 are integrated into `main`; Phase 4B-1
 isolated config write is `OFFLINE` on its review branch. The clean development baseline is
 post-integration `main`. No release, no public visibility and no release artifact yet.

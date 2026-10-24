@@ -14,8 +14,9 @@ and saved-vs-effective separation.
 
 | Module | Responsibility |
 |---|---|
+| [`core/config-sandbox.mjs`](../core/config-sandbox.mjs) | trusted test-sandbox capability, marker and root/realpath checks |
 | [`core/config-schema.mjs`](../core/config-schema.mjs) | pure schema validation, v0→v1 migration and sanitized public projection |
-| [`core/config-store.mjs`](../core/config-store.mjs) | isolated-root guard, revision, optimistic write, atomic replace and rollback |
+| [`core/config-store.mjs`](../core/config-store.mjs) | sandboxed target guard, revision, optimistic write, atomic replace and rollback |
 | [`core/isolated-write-server.mjs`](../core/isolated-write-server.mjs) | test-only loopback HTTP API; **not imported by the production Host** |
 | [`test/config-store.test.mjs`](../test/config-store.test.mjs) | behavior tests for validation, revision, atomicity, recovery, isolation and API |
 
@@ -23,29 +24,47 @@ The production Host (`index.js`) and the read-only Core server (`core/server.mjs
 
 ---
 
-## 2. Isolated root and fixed target
+## 2. Trusted sandbox capability and fixed target
 
-The store requires an explicit existing isolated directory:
+An arbitrary directory string is **not** a write capability. Tests/development code must first create a
+trusted sandbox under the OS temporary root:
 
 ```js
-const store = createConfigStore({
-  root: 'C:\\tmp\\whale-voice-isolated',
-  env: { DSH_HOME: 'C:\\tmp\\dsh-home' },
-})
+import { createConfigSandbox } from './core/config-sandbox.mjs'
+import { createConfigStore } from './core/config-store.mjs'
+
+const sandbox = createConfigSandbox()
+const store = createConfigStore({ sandbox })
 ```
 
-- the target file name is fixed by the server (`config.json` by default);
+`createConfigSandbox()`:
+
+- creates a fresh directory under the real OS temporary root;
+- writes a random-id marker (`.whale-voice-sandbox.json`, mode `0600`);
+- registers an opaque, frozen capability in a module-private `WeakSet`;
+- returns the capability, not a caller-supplied path string.
+
+`createConfigStore()` accepts only that registered capability:
+
+- an ordinary directory string is rejected with `CONFIG_SANDBOX_REQUIRED`, even if it is named
+  `test` or `isolated`;
+- a forged sandbox object is rejected;
+- root, realpath, marker path, marker identity and temporary-root containment are re-checked;
+- a marker that is deleted, replaced or redirected fails closed with `CONFIG_SANDBOX_INVALID`;
+- a symlink or junction for the root/marker is rejected;
+- the target file name is fixed (`config.json` by default), directly inside the sandbox;
 - the browser/API can never provide a path, URL or command;
-- the root must be an existing real directory, not a symlink or junction;
-- the resolved root and target must remain inside the isolated root;
-- a target that is a symlink/junction or escapes the root is rejected with
+- a target symlink/junction or target that escapes the root is rejected with
   `CONFIG_PATH_ESCAPE`;
-- `%DSH_HOME%/whale-voice` and any directory overlapping it are rejected with
-  `CONFIG_UNSAFE_ROOT`;
+- `%DSH_HOME%/whale-voice`, `WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and overlapping
+  directories are rejected with `CONFIG_UNSAFE_ROOT`;
+- `options.env` is only an additional deny-list source; it cannot turn a path into a trusted
+  sandbox, and the real process environment is also considered;
 - there is no disk-wide scan and no automatic creation of arbitrary directories.
 
-These checks protect against path traversal and static link escape. A hostile process with write
-access to the isolated directory can still race the path checks; see §6.
+The sandbox capability is intended to be bound to a controlled test lifecycle. This is **not** an
+absolute OS sandbox against a hostile process with filesystem access or write permission to the
+temporary root; it prevents accidental namespace/path trust, not a compromised OS account. See §6.
 
 ---
 
@@ -232,8 +251,14 @@ Public state uses:
 | `FAILED` | validation/write/verification failure |
 | `UNKNOWN` | state is not known |
 
-Only `SAVED`/`PENDING_APPLY` are produced by this store after a successful write. The public
-projection always keeps:
+A pure read/GET returns top-level `state: "UNCHANGED"` and
+`application.state: "UNCHANGED"`; it does **not** claim that a new pending change exists. A successful
+write returns top-level `state: "SAVED"` and `application.state: "PENDING_APPLY"`. A no-op write
+returns `UNCHANGED`/`UNCHANGED`. `CONFLICT`/`FAILED` are error states and do not produce a successful
+public view.
+
+`APPLIED` is reserved for a future trusted runtime-effect interface and is not produced by Phase
+4B-1. The public projection always keeps:
 
 ```text
 activeRevision = null
@@ -277,14 +302,17 @@ Status mapping includes `401`, `403`, `404`, `405`, `408`, `409`, `413`, `415`, 
 The behavior tests cover:
 
 - read, save, no-op, schema type/enum/range/required/unknown/duplicate fields;
+- pure-read vs write vs no-op vs conflict/failure state semantics, including `activeState:UNKNOWN`;
 - v0 migration and idempotence;
 - revision success, conflict, restart invalidation, external modification, direct concurrency;
 - temp failures, partial write, fsync failure, replace failure, post-save verification failure and
   rollback;
 - permission/read/corrupt/missing files;
-- production-root rejection, filename traversal and symlink/junction root escape;
+- trusted sandbox capability, forged capability, tampered marker, unapproved ordinary directories,
+  production/WeChatAgent/Sender roots, fake `DSH_HOME`, filename traversal and symlink/junction escape;
 - API auth, Origin, body limit, malformed JSON, timeout, schema/conflict handling, concurrency and
   sensitive-field output;
+- rejected paths leave no target file modification;
 - the production Host remains read-only and does not import the isolated write server.
 
 The existing read-only detector, No-Core, stale-response, UI and demo tests remain unchanged.

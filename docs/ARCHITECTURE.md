@@ -32,7 +32,7 @@ Properties:
 - No npm runtime dependencies.
 - The Host route reads only explicitly configured roots, small manifests, process liveness and fixed
   loopback health endpoints. It does not read Hook/audit tokens, chat databases or arbitrary paths.
-- Phase 4B-1 adds an isolated single-file config store and test-only HTTP API. It is not registered on
+- Phase 4B-1 adds a sandboxed single-file config store and test-only HTTP API. It is not registered on
   the production Host and does not write production configuration; see
   [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md).
 - No component start/stop, installation, update, driver change, WeChat send or audio generation.

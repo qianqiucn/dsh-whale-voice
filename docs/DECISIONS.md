@@ -224,19 +224,22 @@ rewritten branches; deleting branches to trigger automatic retargeting.
 
 **Status:** `ACCEPTED`
 **Date:** 2026-10-25
-**Decision:** The first write infrastructure is an isolated single-file store. It uses strict v1
-schema validation, a pure v0→v1 migration, a process-local HMAC revision, required
-`expectedRevision`, temp+fsync+rename atomic save and post-save verification/rollback. The HTTP write
-API is test-only and is not registered on the production DSH Host. It does not claim multi-file
-transaction or cross-process compare-and-swap safety.
+**Decision:** The first write infrastructure is an isolated single-file store. It requires an opaque
+trusted test-sandbox capability (not a caller-supplied path), uses strict v1 schema validation, a pure
+v0→v1 migration, a process-local HMAC revision, required `expectedRevision`, temp+fsync+rename atomic
+save, post-save verification/rollback and read/write state separation. A pure read reports
+`UNCHANGED`; a successful write reports `SAVED`/`PENDING_APPLY`, with runtime apply still unknown. The
+HTTP write API is test-only and is not registered on the production DSH Host. It does not claim
+multi-file transaction or cross-process compare-and-swap safety.
 
 **Reason:** Write behavior must be tested and audited before any production configuration is touched.
 A single-file store with optimistic concurrency and explicit failure states provides a safe
 foundation; a production multi-file transaction and apply interface need a separate design.
 
-**Rejected alternatives:** Direct writes to production `core.json`/WeChatAgent/Sender files; silent
-last-writer-wins; unkeyed SHA-256 over private IDs; treating multiple file renames as one transaction;
-persisting the HMAC key to make revisions permanent; registering a write route on the current Host.
+**Rejected alternatives:** Direct writes to production `core.json`/WeChatAgent/Sender files; trusting
+any string named `test` or `isolated`; silent last-writer-wins; unkeyed SHA-256 over private IDs;
+treating multiple file renames as one transaction; persisting the HMAC key to make revisions
+permanent; registering a write route on the current Host.
 
 **Related:** [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md),
 [CONFIG_SOURCES.md](CONFIG_SOURCES.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

@@ -197,10 +197,11 @@ Every write requires:
 
 ### Phase 4B-1 isolated write infrastructure
 
-`core/config-store.mjs` and `core/config-schema.mjs` implement a single-file isolated configuration
-store with strict schema validation, v0→v1 migration, a process-local HMAC revision,
-`expectedRevision` conflict detection, atomic save and verification. `core/isolated-write-server.mjs`
-provides a test-only loopback API and is **not registered** by `index.js` or `core/server.mjs`.
+`core/config-sandbox.mjs`, `core/config-store.mjs` and `core/config-schema.mjs` implement a
+single-file sandboxed configuration store with a trusted test-sandbox capability, strict schema
+validation, v0→v1 migration, a process-local HMAC revision, `expectedRevision` conflict detection,
+atomic save/verification and read/write state separation. `core/isolated-write-server.mjs` provides a
+test-only loopback API and is **not registered** by `index.js` or `core/server.mjs`.
 
 This does not activate any production write method in the list above. It does not write
 `%DSH_HOME%/whale-voice/core.json`, WeChatAgent, Bridge, Voice Sender or Qwen configuration. See

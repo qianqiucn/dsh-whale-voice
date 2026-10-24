@@ -95,12 +95,14 @@ exists.
 
 This task implemented Phase 4B-1 isolated configuration writes:
 
+- opaque trusted sandbox capability under the OS temporary root; ordinary/forged/production paths rejected;
 - strict v1 schema and pure v0→v1 migration;
 - process-local HMAC revision and `expectedRevision` conflict detection;
 - single-file temp+fsync+rename save with post-save verification/rollback;
+- pure read returns `UNCHANGED`; successful write returns `SAVED`/`PENDING_APPLY`;
 - sanitized public projection with `activeRevision:null` / `activeConfirmed:false` / `activeState:UNKNOWN`;
 - test-only loopback write API, not registered on the production Host;
-- 30 new behavior tests; 95 Node tests total.
+- 33 new behavior tests; 98 Node tests total.
 
 No production configuration, service restart, DSH reload or real send was involved.
 
@@ -134,11 +136,12 @@ No production configuration, service restart, DSH reload or real send was involv
 - Bounded streamed health/config reads; no unbounded fallback body read.
 - Explicit-only `accountVerified`; account object alone stays unknown.
 - Opaque process-keyed config revision covering voice/worker/TTS/permission/source fields.
-- Phase 4B-1 isolated store: strict v1 schema, pure v0→v1 migration, HMAC revision,
-  `expectedRevision` conflict detection, single-file atomic save/verify/rollback, sanitized public
-  projection and a test-only loopback API. No production write route.
+- Phase 4B-1 isolated store: trusted sandbox capability, strict v1 schema, pure v0→v1 migration,
+  HMAC revision, `expectedRevision` conflict detection, single-file atomic save/verify/rollback,
+  sanitized public projection, read/write state separation and a test-only loopback API. No production
+  write route.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 95 Node tests (65 prior + 30 Phase 4B-1) and 12 UI checks pass on the Phase 4B-1 branch.
+- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on the Phase 4B-1 branch.
 
 ---
 
@@ -163,9 +166,10 @@ Do not present these as working:
 ## 9. Critical safety boundaries
 
 - No production configuration writes without a separate explicit authorization.
-- Phase 4B-1 store/API must remain isolated: never point it at production directories or register its
-  write route on the Host without separate authorization. No silent overwrite; use `expectedRevision`.
-  Do not claim a multi-file transaction from separate single-file renames.
+- Phase 4B-1 store/API must remain isolated: only a trusted sandbox capability may be used; never
+  point it at production directories or register its write route on the Host without separate
+  authorization. No silent overwrite; use `expectedRevision`. Do not claim a multi-file transaction
+  from separate single-file renames.
 - Never modify `voice.enabled`, Worker safety permit, whitelist, target maps or audio devices as part
   of development/tests.
 - No real WeChat text/voice send without explicit authorization and the existing safety gates.
@@ -196,7 +200,7 @@ Phase 4B-1 result:
 
 ```text
 build: PASS, client.js 186092 bytes
-node --test: 95/95 PASS (65 prior tests + 30 Phase 4B-1 store/API tests)
+node --test: 98/98 PASS (65 prior tests + 33 Phase 4B-1 store/API tests)
 UI: 12/12 PASS
 ```
 
@@ -237,5 +241,5 @@ Do not trust this summary alone. Verify:
 ## 13. Last update
 
 **2026-10-25**, after Phase 4B-1 isolated config write: strict schema/migration, HMAC revision,
-atomic single-file save/rollback, test-only API, 95 Node tests and 12 UI checks. No production
+atomic single-file save/rollback, test-only API, 98 Node tests and 12 UI checks. No production
 configuration or runtime behavior change.

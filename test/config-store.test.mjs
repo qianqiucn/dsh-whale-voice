@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { test, after } from 'node:test'
 
 import { createConfigStore, ConfigStoreError } from '../core/config-store.mjs'
+import { createConfigSandbox } from '../core/config-sandbox.mjs'
 import { createIsolatedWriteServer } from '../core/isolated-write-server.mjs'
 import { migrateConfig, validateConfig, canonicalize } from '../core/config-schema.mjs'
 
@@ -48,14 +49,15 @@ function legacyConfig() {
 async function fixture(options = {}) {
   const base = await mkdtemp(path.join(tmpdir(), 'whale-config-store-'))
   roots.push(base)
-  const root = path.join(base, 'isolated')
-  await mkdir(root)
-  const env = { DSH_HOME: path.join(base, '.dsh') }
+  const sandbox = createConfigSandbox()
+  roots.push(sandbox.root)
+  const root = sandbox.root
+  const env = options.env || { DSH_HOME: path.join(base, '.dsh') }
   const target = path.join(root, 'config.json')
   if (options.raw !== undefined) await writeFile(target, options.raw, 'utf8')
   else if (options.config !== null) await writeFile(target, JSON.stringify(options.config || validConfig()), 'utf8')
-  const store = createConfigStore({ root, env, revisionKey: options.revisionKey, fsImpl: options.fsImpl, fileName: options.fileName })
-  return { base, root, env, target, store }
+  const store = createConfigStore({ sandbox, env, revisionKey: options.revisionKey, fsImpl: options.fsImpl, fileName: options.fileName })
+  return { base, sandbox, root, env, target, store }
 }
 
 function fsProxy(overrides) {
@@ -94,7 +96,8 @@ test('isolated v1 config reads with an opaque revision and a sanitized public vi
   assert.equal(publicView.public.application.activeRevision, null)
   assert.equal(publicView.public.application.activeConfirmed, false)
   assert.equal(publicView.public.application.activeState, 'UNKNOWN')
-  assert.equal(publicView.public.application.state, 'PENDING_APPLY')
+  assert.equal(publicView.public.application.state, 'UNCHANGED')
+  assert.equal(publicView.public.state, 'UNCHANGED')
   assert.equal(JSON.stringify(publicView.public).includes('wechat:private:fixture-a'), false)
   assert.equal(JSON.stringify(publicView.public).includes('127.0.0.1:8765'), false)
 })
@@ -126,7 +129,22 @@ test('writing identical content returns UNCHANGED without replacing the file', a
   assert.equal(result.ok, true)
   assert.equal(result.state, 'UNCHANGED')
   assert.equal(result.changed, false)
+  assert.equal(result.public.application.state, 'UNCHANGED')
   assert.equal((await stat(target)).mtimeMs, mtime)
+})
+
+test('a pure read after a write does not claim a new pending apply', async () => {
+  const { store } = await fixture()
+  const before = store.read()
+  const written = await store.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
+  assert.equal(written.state, 'SAVED')
+  const read = store.readPublic()
+  assert.equal(read.ok, true)
+  assert.equal(read.public.state, 'UNCHANGED')
+  assert.equal(read.public.application.state, 'UNCHANGED')
+  assert.equal(read.public.application.activeState, 'UNKNOWN')
+  assert.equal(read.public.application.activeRevision, null)
+  assert.equal(read.public.application.activeConfirmed, false)
 })
 
 test('schema type errors fail before touching the file', async () => {
@@ -254,13 +272,14 @@ test('two concurrent writes with the same revision produce one SAVED and one CON
 test('a process restart invalidates the old revision', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'whale-config-restart-'))
   roots.push(base)
-  const root = path.join(base, 'isolated')
-  await mkdir(root)
+  const sandbox = createConfigSandbox()
+  roots.push(sandbox.root)
+  const root = sandbox.root
   const env = { DSH_HOME: path.join(base, '.dsh') }
   await writeFile(path.join(root, 'config.json'), JSON.stringify(validConfig()), 'utf8')
-  const first = createConfigStore({ root, env, revisionKey: randomBytes(32) })
+  const first = createConfigStore({ sandbox, env, revisionKey: randomBytes(32) })
   const old = first.read()
-  const second = createConfigStore({ root, env, revisionKey: randomBytes(32) })
+  const second = createConfigStore({ sandbox, env, revisionKey: randomBytes(32) })
   const fresh = second.read()
   assert.notEqual(fresh.revision, old.revision)
   const result = await second.write({ expectedRevision: old.revision, config: validConfig({ voice: { enabled: true } }) })
@@ -294,22 +313,89 @@ test('missing and corrupt files fail closed', async () => {
   assert.equal(result.error.code, 'CONFIG_CORRUPT')
 })
 
-test('production configuration directory is not a valid isolated root', async () => {
+test('unapproved, production and dependency directories are rejected without writes', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'whale-config-prod-'))
   roots.push(base)
   const dshHome = path.join(base, '.dsh')
-  const root = path.join(dshHome, 'whale-voice')
-  await mkdir(root, { recursive: true })
+  const production = path.join(dshHome, 'whale-voice')
+  const ordinary = path.join(base, 'isolated')
+  const testNamed = path.join(base, 'test')
+  const wechat = path.join(base, 'wechat-agent')
+  const sender = path.join(base, 'voice-sender')
+  for (const dir of [production, ordinary, testNamed, wechat, sender]) await mkdir(dir, { recursive: true })
+  await writeFile(path.join(production, 'config.json'), '{"keep":true}', 'utf8')
+  await writeFile(path.join(wechat, 'config.json'), '{"keep":true}', 'utf8')
+  await writeFile(path.join(sender, 'config.json'), '{"keep":true}', 'utf8')
+
+  const env = { DSH_HOME: dshHome, WHALE_WECHATAGENT_HOME: wechat, WHALE_VOICE_SENDER_HOME: sender }
   assert.throws(
-    () => createConfigStore({ root, env: { DSH_HOME: dshHome } }),
+    () => createConfigStore({ root: production, env }),
     (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_UNSAFE_ROOT'
   )
+  assert.throws(
+    () => createConfigStore({ root: wechat, env }),
+    (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_UNSAFE_ROOT'
+  )
+  assert.throws(
+    () => createConfigStore({ root: sender, env }),
+    (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_UNSAFE_ROOT'
+  )
+  for (const dir of [ordinary, testNamed]) {
+    assert.throws(
+      () => createConfigStore({ root: dir, env }),
+      (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_SANDBOX_REQUIRED'
+    )
+    assert.equal(fs.existsSync(path.join(dir, 'config.json')), false)
+  }
+  assert.equal(await readFile(path.join(production, 'config.json'), 'utf8'), '{"keep":true}')
+  assert.equal(await readFile(path.join(wechat, 'config.json'), 'utf8'), '{"keep":true}')
+  assert.equal(await readFile(path.join(sender, 'config.json'), 'utf8'), '{"keep":true}')
+})
+
+test('forged sandbox capabilities and fake DSH_HOME cannot grant write access', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'whale-config-forge-'))
+  roots.push(base)
+  const ordinary = path.join(base, 'ordinary')
+  await mkdir(ordinary)
+  const fakeSandbox = { root: ordinary, marker: path.join(ordinary, '.whale-voice-sandbox.json'), id: 'x'.repeat(64) }
+  assert.throws(
+    () => createConfigStore({ sandbox: fakeSandbox, env: { DSH_HOME: path.join(base, '.dsh') } }),
+    (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_SANDBOX_REQUIRED'
+  )
+  assert.throws(
+    () => createConfigStore({ root: ordinary, env: { DSH_HOME: path.join(base, 'fake-dsh') } }),
+    (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_SANDBOX_REQUIRED'
+  )
+  assert.equal(fs.existsSync(path.join(ordinary, 'config.json')), false)
+
+  const sandbox = createConfigSandbox()
+  roots.push(sandbox.root)
+  assert.throws(
+    () => createConfigStore({ sandbox, root: sandbox.root }),
+    (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_SANDBOX_CONFLICT'
+  )
+  const trusted = createConfigStore({ sandbox, env: { DSH_HOME: path.join(base, 'fake-dsh') } })
+  assert.equal(trusted.root, sandbox.root)
+  assert.equal(trusted.target, path.join(sandbox.root, 'config.json'))
+})
+
+test('tampered sandbox markers fail closed', async () => {
+  const { store, target } = await fixture()
+  const before = await readFile(target, 'utf8')
+  await rm(store.sandbox.marker)
+  const read = store.read()
+  assert.equal(read.ok, false)
+  assert.equal(read.error.code, 'CONFIG_SANDBOX_INVALID')
+  const result = await store.write({ expectedRevision: 'a'.repeat(32), config: validConfig({ voice: { enabled: true } }) })
+  assert.equal(result.ok, false)
+  assert.equal(result.error.code, 'CONFIG_SANDBOX_INVALID')
+  assert.equal(await readFile(target, 'utf8'), before)
 })
 
 test('filename traversal and symlink/junction roots are rejected', async () => {
-  const { root, env } = await fixture()
+  const { sandbox, env } = await fixture()
   assert.throws(
-    () => createConfigStore({ root, env, fileName: '../escape.json' }),
+    () => createConfigStore({ sandbox, env, fileName: '../escape.json' }),
     (error) => error instanceof ConfigStoreError && error.code === 'CONFIG_FILENAME_INVALID'
   )
 
@@ -335,7 +421,7 @@ test('temporary write failures leave the old valid file and clean the temp file'
       return fs.openSync(file, ...args)
     },
   })
-  const failing = createConfigStore({ root: store.root, env: store.env, fsImpl })
+  const failing = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl })
   const result = await failing.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'CONFIG_PERMISSION_DENIED')
@@ -357,7 +443,7 @@ test('partial temporary writes and fsync failures do not replace the valid file'
       throw error
     },
   })
-  const partial = createConfigStore({ root: store.root, env: store.env, fsImpl: partialFs })
+  const partial = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl: partialFs })
   const partialResult = await partial.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
   assert.equal(partialResult.ok, false)
   assert.equal(await readFile(target, 'utf8'), rawBefore)
@@ -367,7 +453,7 @@ test('partial temporary writes and fsync failures do not replace the valid file'
       throw Object.assign(new Error('fsync failed'), { code: 'EIO' })
     },
   })
-  const fsyncStore = createConfigStore({ root: store.root, env: store.env, fsImpl: fsyncFs })
+  const fsyncStore = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl: fsyncFs })
   const fsyncResult = await fsyncStore.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
   assert.equal(fsyncResult.ok, false)
   assert.equal(await readFile(target, 'utf8'), rawBefore)
@@ -383,7 +469,7 @@ test('atomic replace failure preserves the original file', async () => {
       throw eio()
     },
   })
-  const failing = createConfigStore({ root: store.root, env: store.env, fsImpl })
+  const failing = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl })
   const result = await failing.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'CONFIG_REPLACE_FAILED')
@@ -404,14 +490,14 @@ test('post-save verification failure rolls back to the previous valid content', 
       renamed = true
     },
     readFileSync(file, ...args) {
-      if (renamed && !injected) {
+      if (String(file) === target && renamed && !injected) {
         injected = true
         throw Object.assign(new Error('verification read failed'), { code: 'EIO' })
       }
       return fs.readFileSync(file, ...args)
     },
   })
-  const failing = createConfigStore({ root: store.root, env: store.env, fsImpl })
+  const failing = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl })
   const result = await failing.write({ expectedRevision: before.revision, config: validConfig({ voice: { enabled: true } }) })
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'CONFIG_VERIFY_FAILED')
@@ -420,13 +506,14 @@ test('post-save verification failure rolls back to the previous valid content', 
 })
 
 test('read permission failure is explicit and does not invent state', async () => {
-  const { store } = await fixture()
+  const { store, target } = await fixture()
   const fsImpl = fsProxy({
-    readFileSync() {
-      throw eperm()
+    readFileSync(file, ...args) {
+      if (String(file) === target) throw eperm()
+      return fs.readFileSync(file, ...args)
     },
   })
-  const failing = createConfigStore({ root: store.root, env: store.env, fsImpl })
+  const failing = createConfigStore({ sandbox: store.sandbox, env: store.env, fsImpl })
   const result = failing.read()
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'CONFIG_PERMISSION_DENIED')
@@ -479,6 +566,9 @@ test('isolated HTTP API reads, writes and never returns IDs or tokens', async ()
     assert.equal(response.status, 200)
     const readBody = await response.json()
     assert.equal(readBody.config.permissions.privateCount, 1)
+    assert.equal(readBody.config.state, 'UNCHANGED')
+    assert.equal(readBody.config.application.state, 'UNCHANGED')
+    assert.equal(readBody.config.application.activeState, 'UNKNOWN')
     assert.equal(JSON.stringify(readBody).includes('wechat:private:fixture-a'), false)
     assert.equal(JSON.stringify(readBody).includes(api.token), false)
 
@@ -490,6 +580,8 @@ test('isolated HTTP API reads, writes and never returns IDs or tokens', async ()
     assert.equal(response.status, 200)
     const writeBody = await response.json()
     assert.equal(writeBody.state, 'SAVED')
+    assert.equal(writeBody.config.application.state, 'PENDING_APPLY')
+    assert.equal(writeBody.config.application.activeState, 'UNKNOWN')
     assert.equal(writeBody.config.application.activeRevision, null)
     assert.equal(writeBody.config.application.activeConfirmed, false)
     assert.equal(writeBody.config.permissions.privateCount, 1)
