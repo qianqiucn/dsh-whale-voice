@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; new `发送与安全` frontend is `MOCK`/disabled; native WeChatAgent voice is `UNSUPPORTED`; Phase 4B not started
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native WeChatAgent voice is `UNSUPPORTED`; Phase 4B not started
 **Latest associated commit:** `4da6d57b62f1a6bf8e094ae6557441589cbbd4b0` — `feat(ui): add unified send and safety page`
 **Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
 **PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
@@ -99,6 +99,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [x] Send & Safety frontend: new independent page for emergency stop, window/focus and game mode;
       unsupported controls disabled; failure fallback moved to Settings; Qwen auto-start moved to
       Components; UI tests cover Core-unavailable, disabled states, moved settings and narrow layout.
+- [x] Send & Safety real DSH GUI acceptance: actual renderer shows the new page; UIA confirms
+      disabled shortcut, discovery, focus and game switches; no duplicate settings; visual/resize
+      checks pass. Console/CSS DOM remains unreadable without unsupported debugging. See
+      [GUI_ACCEPTANCE_SEND_SAFETY.md](GUI_ACCEPTANCE_SEND_SAFETY.md).
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -172,6 +176,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
 | Voice delivery backends | UI Automation `SUPPORTED`; WeChatAgent 0.3.9 native voice `UNSUPPORTED`; no source SendVoice/record; no prototype |
 | Send & Safety UI | `MOCK`/disabled safety controls; moved game mode, failure fallback and Qwen auto-start; 12/12 isolated UI checks |
+| Send & Safety real DSH GUI | PASS visual/UIA read-only: new nav/page loaded, disabled shortcut/window/game controls, no duplicate settings; Console/CSS DOM unreadable without CDP |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |

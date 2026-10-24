@@ -223,6 +223,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
 - [Voice delivery backends](docs/VOICE_DELIVERY_BACKENDS.md) — native-vs-UI-automation research and decision.
 - [Send & Safety API](docs/SEND_SAFETY_API.md) — planned capability/status contract for the safety page.
+- [Send & Safety GUI acceptance](docs/GUI_ACCEPTANCE_SEND_SAFETY.md) — real DSH visual/UIA evidence and limitations.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.

@@ -244,8 +244,10 @@ after UNKNOWN; no group is enabled without verified identity.
 
 **Current status:** Backend prototype work exists outside this repository; frontend and repository
 integration are `PLANNED`. Group voice is deliberately not enabled. The unified `发送与安全` page now
-has the planned sections with unsupported controls disabled; no global hotkey, window automation,
-game detection or cancellation backend exists. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
+has the planned sections with unsupported controls disabled; real DSH GUI visual acceptance passed
+for this `MOCK` page, but no global hotkey, window automation, game detection or cancellation backend
+exists. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md) and
+[GUI_ACCEPTANCE_SEND_SAFETY.md](GUI_ACCEPTANCE_SEND_SAFETY.md).
 
 ---
 

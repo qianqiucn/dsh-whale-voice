@@ -30,6 +30,7 @@ not invent earlier releases or imply production maturity.
 - Moved TTS failure fallback to Settings and Qwen auto-start to Components; removed the duplicate game-mode toggle from Overview.
 - Voice delivery backend research: WeChatAgent 0.3.9 native voice is `UNSUPPORTED` (text/sticker only); UI Automation remains the supported path; dual-backend contract documented.
 - Send & Safety capability/status API contract documented; no backend implementation or real system operation.
+- Real DSH GUI visual acceptance for the Send & Safety MOCK page; disabled controls and migration verified with UIA/screenshots, with Console/CSS limits documented.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
