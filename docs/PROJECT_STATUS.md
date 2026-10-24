@@ -91,6 +91,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 10/10 checks, CI `ui`
       job, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`. This does not attach
       to the production DSH Electron window or use production data.
+- [x] DSH Electron Inspector feasibility: native Inspector is slot/service metadata only; no supported
+      DOM/accessibility/CSS/Console/CDP API. Level 2 remains `BLOCKED`; Option C recommended. No debug
+      port, production profile attachment or production page read. See
+      [DSH_ELECTRON_INSPECTOR_FEASIBILITY.md](DSH_ELECTRON_INSPECTOR_FEASIBILITY.md).
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -162,6 +166,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | `npm.cmd run test:ui` | 10/10 isolated Playwright checks: real-config readout, six surfaces, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
+| DSH Electron Inspector | native Inspector is slot/service metadata only; no DOM/a11y/CSS/Console/CDP; Level 2 `BLOCKED`; no debug port or production page read |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |

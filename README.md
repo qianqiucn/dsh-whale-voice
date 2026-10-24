@@ -221,6 +221,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
   authorization gates.
 - [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
 - [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
+- [DSH Electron Inspector feasibility](docs/DSH_ELECTRON_INSPECTOR_FEASIBILITY.md) — supported Inspector limits and option assessment.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.
