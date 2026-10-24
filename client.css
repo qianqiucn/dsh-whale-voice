@@ -448,6 +448,9 @@ body:not([data-ds-dark-theme]) .wv-root {
 .wv-setup-pill.starting { color: #e8c06b; border-color: color-mix(in srgb, #e8c06b 28%, var(--wv-hairline)); }
 .wv-setup-pill.error { color: #f19999; border-color: color-mix(in srgb, #f19999 28%, var(--wv-hairline)); }
 .wv-setup-pill.demo { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 25%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }
+.wv-setup-evidence { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: -4px 0 10px; color: var(--wv-muted); font-size: 9.5px; line-height: 1.45; }
+.wv-setup-evidence svg { flex: none; color: var(--wv-accent); opacity: .8; }
+.wv-setup-evidence-sep { opacity: .5; }
 
 .wv-setup-checks { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--wv-hairline); border-radius: 9px; overflow: hidden; background: color-mix(in srgb, var(--wv-bg) 26%, transparent); }
 .wv-setup-checks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }

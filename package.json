@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Whale Voice — 小鲸鱼语音中心：Qwen3-TTS / whale-v1 / 微信语音权限与诊断的原生控制中心（本轮仅前端 + Mock）。",
+  "description": "DSH voice center plugin for Qwen3-TTS / whale-v1 / WeChat voice permissions and diagnostics (frontend + Mock only)",
   "icon": "./icon.svg",
   "exports": {
     ".": "./index.js",
@@ -25,6 +25,9 @@
     "icon.svg",
     "README.md"
   ],
+  "scripts": {
+    "test": "node --test"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

@@ -31,6 +31,12 @@ const SETUP_STATE_LABELS = {
   not_installed: '未安装',
   not_running: '未启动',
   incompatible: '版本不兼容',
+  auth_required: '需要授权',
+  connection_failed: '连接失败',
+  timeout: '检测超时',
+  unsupported: '不支持',
+  not_configured: '未配置',
+  unknown: '未知',
   error: '连接异常',
   healthy: '运行正常',
   installed: '已安装',
@@ -67,8 +73,17 @@ function readSetupStatus() {
       checkedAt: new Date().toISOString(),
     })
   }
-  return Promise.resolve(bridge.getStatus()).then((data) => {
-    if (!data || typeof data !== 'object') {
+  const timeout = new Promise((resolve) => {
+    setTimeout(() => resolve({
+      checking: false,
+      available: false,
+      reason: 'core_timeout',
+      data: null,
+      checkedAt: new Date().toISOString(),
+    }), 5000)
+  })
+  const request = Promise.resolve().then(() => bridge.getStatus()).then((data) => {
+    if (!data || typeof data !== 'object' || data.schemaVersion !== 1 || typeof data.completed !== 'boolean') {
       return { checking: false, available: false, reason: 'core_invalid_response', data: null, checkedAt: new Date().toISOString() }
     }
     return { checking: false, available: true, reason: '', data, checkedAt: new Date().toISOString() }
@@ -79,6 +94,7 @@ function readSetupStatus() {
     data: null,
     checkedAt: new Date().toISOString(),
   }))
+  return Promise.race([request, timeout])
 }
 
 function setupStateLabel(state) {
@@ -107,6 +123,16 @@ function SetupMark({ ok, label, value }) {
 function SetupStatusPill({ state, demo }) {
   return h('span', { className: 'wv-setup-pill ' + (demo ? 'demo' : setupStateTone(state)) },
     demo ? '演示' : setupStateLabel(state))
+}
+
+function SetupEvidence({ data }) {
+  if (!data || !data.observedAt) return null
+  const source = data.evidence || data.source || 'Core 只读检测'
+  return h('div', { className: 'wv-setup-evidence' },
+    h(Icon, { name: 'clock', size: 12 }),
+    h('span', null, '检测于 ' + String(data.observedAt).replace('T', ' ').slice(0, 19)),
+    h('span', { className: 'wv-setup-evidence-sep' }, '·'),
+    h('span', { title: source }, '来源：' + String(source).slice(0, 120)))
 }
 
 function SetupBlocked({ status, onRefresh, onDemo, onNotify }) {
@@ -153,6 +179,7 @@ function SetupWeChatStep({ data, demo, status, onRefresh, onNotify }) {
         h('span', { className: 'wv-setup-statuslabel' }, 'WeChatAgent'),
         h(SetupStatusPill, { state: wa && wa.state, demo }),
         h('span', { className: 'wv-muted' }, wa && wa.version ? 'v' + wa.version : '版本未知')),
+      h(SetupEvidence, { data: wa }),
       h('div', { className: 'wv-setup-checks' },
         h(SetupMark, { ok: Boolean(wa && wa.installed), label: '程序安装', value: setupBool(wa && wa.installed) }),
         h(SetupMark, { ok: Boolean(wa && wa.processRunning), label: '进程运行', value: setupBool(wa && wa.processRunning) }),
@@ -193,6 +220,7 @@ function SetupSenderStep({ data, demo, status, onRefresh, onNotify }) {
         h('p', null, '让小鲸鱼可以在微信中发送真正的语音消息。'),
         h('p', { className: 'wv-muted' }, '技术名称：Voice Sender。它是独立安装的 Windows 组件，不会并入 Whale Voice Core。'),
         demo ? h(Badge, { tone: 'demo' }, '演示流程 · 不执行安装') : null)),
+    data && data.senderEvidence ? h(SetupEvidence, { data: data.senderEvidence }) : null,
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, '安装能力尚未接入'), h('p', null, '真实安装需要 Whale Voice Core 的 Installer API。本页面不会下载或执行任何安装脚本。'))) : h(React.Fragment, null,
       h('div', { className: 'wv-setup-checks two' },
         h(SetupMark, { ok: Boolean(env && env.windows), label: 'Windows', value: env && env.architecture ? env.architecture : '未检测' }),
@@ -255,6 +283,7 @@ function SetupTtsStep({ data, demo, onRefresh, onNotify }) {
         h('h3', null, '选择小鲸鱼的声音'),
         h('p', null, '没有独立显卡也可以选择云端语音。'),
         demo ? h(Badge, { tone: 'demo' }, '演示流程 · 不调用真实 TTS') : null)),
+    data && data.ttsEvidence ? h(SetupEvidence, { data: data.ttsEvidence }) : null,
     h('div', { className: 'wv-provider-grid' },
       h(SetupProviderCard, { id: 'cloud', title: '云端 TTS', subtitle: '无需 CUDA 或本地大模型；需要 Provider 凭据。', state: 'soon', selected: provider === 'cloud', onSelect: setProvider, demo },
         h('span', { className: 'wv-provider-meta' }, '费用与文本上传第三方需确认')),
@@ -288,7 +317,7 @@ function SetupFinishStep({ data, demo, onClose, onGoPermissions, onNotify }) {
     { ok: Boolean(data.wechatAgent && data.wechatAgent.compatibility === 'compatible'), label: '组件兼容' },
     { ok: !(data.sender && data.sender.recoveryPending), label: '没有待恢复音频设备状态' },
   ] : []
-  const complete = Boolean(data && data.completed && !demo && checks.every((c) => c.ok))
+  const complete = Boolean(data && data.completed && data.demo !== true && !demo && checks.every((c) => c.ok))
   return h(React.Fragment, null,
     h('div', { className: 'wv-setup-lead' },
       h('div', { className: 'wv-setup-lead-icon' + (complete ? ' ok' : '') }, h(Icon, { name: complete ? 'check' : 'alert', size: 22 })),
@@ -296,6 +325,7 @@ function SetupFinishStep({ data, demo, onClose, onGoPermissions, onNotify }) {
         h('h3', null, complete ? '小鲸鱼准备好了' : '还有一些步骤需要完成'),
         h('p', null, complete ? '所有真实检查通过。完成后仍需单独授权聊天目标和打开语音开关。' : '下面是当前检查结果；完成安装不等于自动开启微信语音。'),
         demo ? h(Badge, { tone: 'demo' }, '演示流程 · 不构成安装完成') : null)),
+    data && data.evidence ? h(SetupEvidence, { data }) : null,
     h('div', { className: 'wv-setup-checks' },
       checks.length ? checks.map((c) => h(SetupMark, { key: c.label, ok: c.ok, label: c.label, value: c.ok ? '通过' : '未通过' })) : h(SetupMark, { ok: false, label: 'Core 未连接', value: '无法检查' })),
     h('div', { className: 'wv-setup-callout ' + (complete ? 'ok' : 'warn') },
@@ -313,7 +343,8 @@ function SetupWizard({ open, status, onClose, onRefresh, onNotify, onGoPermissio
     try { return Math.max(0, Math.min(3, Number(sessionStorage.getItem('wv.setup.step')) || 0)) } catch { return 0 }
   })
   const [demo, setDemo] = React.useState(false)
-  const data = demo ? MOCK_SETUP : (status && status.available ? status.data : null)
+  const realData = status && status.available && status.data && status.data.demo !== true ? status.data : null
+  const data = demo ? MOCK_SETUP : realData
   const go = (next) => {
     setStep(next)
     try { sessionStorage.setItem('wv.setup.step', String(next)) } catch {}
@@ -352,7 +383,7 @@ function SetupWizard({ open, status, onClose, onRefresh, onNotify, onGoPermissio
 
 function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvanced, onNotify }) {
   if (!open) return null
-  const data = status && status.available ? status.data : null
+  const data = status && status.available && status.data && status.data.demo !== true ? status.data : null
   const rows = [
     { name: 'Whale Voice Core', desc: '安装状态、任务与 API 协调', state: data ? 'connected' : 'not_installed', detail: data && data.core ? data.core.version : '未连接' },
     { name: 'WeChatAgent', desc: '微信平台必需依赖', state: data && data.wechatAgent ? data.wechatAgent.state : 'not_installed', detail: data && data.wechatAgent ? data.wechatAgent.version : '未检测' },
@@ -376,9 +407,9 @@ function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvance
 
 function SetupBanner({ status, onSetup, onComponents }) {
   if (status && status.checking) return null
-  const data = status && status.available ? status.data : null
+  const data = status && status.available && status.data && status.data.demo !== true ? status.data : null
   const complete = Boolean(data && data.completed)
-  const unavailable = !status || !status.available
+  const unavailable = !data
   return h('section', { className: 'wv-setup-banner' },
     h('div', { className: 'wv-setup-banner-icon' }, h(Icon, { name: unavailable ? 'lock' : complete ? 'check' : 'spark', size: 18 })),
     h('div', { className: 'wv-setup-banner-copy' },

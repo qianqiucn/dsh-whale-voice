@@ -458,11 +458,14 @@ window.__ModuleLoader__.load({
       const [setupOpen, setSetupOpen] = React.useState(false)
       const [componentsOpen, setComponentsOpen] = React.useState(false)
       const autoSetupOpened = React.useRef(false)
+      const setupRequestSeq = React.useRef(0)
       const dirty = JSON.stringify(settings) !== JSON.stringify(saved)
 
       const refreshSetup = async () => {
+        const seq = ++setupRequestSeq.current
         setSetup((s) => ({ ...s, checking: true }))
         const next = await readSetupStatus()
+        if (seq !== setupRequestSeq.current) return next
         setSetup(next)
         if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
           autoSetupOpened.current = true
@@ -473,8 +476,9 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let alive = true
+        const seq = ++setupRequestSeq.current
         readSetupStatus().then((next) => {
-          if (!alive) return
+          if (!alive || seq !== setupRequestSeq.current) return
           setSetup(next)
           if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
             autoSetupOpened.current = true
