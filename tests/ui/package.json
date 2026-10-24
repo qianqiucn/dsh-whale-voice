@@ -1,0 +1,11 @@
+{
+  "name": "whale-voice-ui-tests",
+  "private": true,
+  "type": "module",
+  "description": "Isolated Playwright UI harness dependencies for Whale Voice",
+  "dependencies": {
+    "playwright": "1.64.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

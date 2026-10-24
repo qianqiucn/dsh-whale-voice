@@ -28,7 +28,9 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:ui": "node build.mjs && node tests/ui/run.mjs",
+    "test:ui:setup": "npm install --prefix tests/ui --no-audit --no-fund && node tests/ui/install-browser.mjs"
   },
   "dsh": {
     "bundle": {

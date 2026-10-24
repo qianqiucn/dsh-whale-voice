@@ -58,6 +58,23 @@ Do not label detection success as installation completion. Do not turn `auth_req
 unknown into a green health state. A future write/installer API needs its own threat model, explicit
 user confirmation and an isolated test environment.
 
+## 1.3 UI testing rule (development-only)
+
+The browser UI must be checked with the isolated Playwright harness before claiming a frontend change
+works:
+
+1. Build (`node build.mjs`).
+2. Run unit/behavior tests (`node --test`).
+3. Run the UI checks (`npm.cmd run test:ui` on Windows; `npm run test:ui` elsewhere).
+4. Inspect Console/page errors, failed local requests, component/dialog behavior, and narrow layout.
+5. Fix, rebuild, and repeat until the UI checks pass.
+
+The harness uses a fake `window.__WHALE_SETUP__`, isolated Chromium and test-only React under
+`tests/ui/`; it never connects to the real DSH Electron window, Core, Sender, Qwen, WeChat or
+production tokens. Prefer role/accessible-name selectors or a stable `data-testid`; do not encode
+absolute screen coordinates. Screenshots and reports belong in the gitignored
+`tests/ui/.artifacts/`. Playwright is a developer tool, not an end-user dependency.
+
 ## 2. Branch and change workflow
 
 Use a branch per task:

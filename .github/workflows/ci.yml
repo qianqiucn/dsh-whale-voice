@@ -45,3 +45,34 @@ jobs:
 
       - name: Generated client is in sync
         run: git diff --exit-code -- client.js
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install locked UI test dependencies
+        run: npm ci --prefix tests/ui --no-audit --no-fund
+
+      - name: Install Chromium for the pinned Playwright
+        run: node tests/ui/node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: Rebuild client bundle
+        run: node build.mjs
+
+      - name: Isolated UI harness
+        run: node tests/ui/run.mjs
+
+      - name: Upload UI test artifacts (fictional fixtures only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: whale-voice-ui-artifacts
+          path: tests/ui/.artifacts/
+          if-no-files-found: warn

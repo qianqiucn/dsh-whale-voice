@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Whale Voice UI Harness</title>
+  <style>
+    :root {
+      --dsw-alias-bg-base: #0e1624;
+      --dsw-alias-bg-layer-1: #172133;
+      --dsw-alias-bg-layer-2: #1d2940;
+      --dsw-alias-bg-overlay: #101a2b;
+      --dsw-alias-label-primary: #e8ecff;
+      --dsw-alias-label-secondary: #aab5d6;
+      --dsw-alias-border-l1: rgba(255, 255, 255, .10);
+      --dsw-alias-border-l2: rgba(255, 255, 255, .18);
+      --dsw-alias-brand-primary: #7c9cff;
+      --dsw-alias-state-success-primary: #66d9a4;
+      --dsw-alias-state-warn-primary: #ffbf69;
+      --dsw-alias-state-error-primary: #ff7b8a;
+      --dsw-alias-state-idle-primary: #8d9ab8;
+      --dsw-font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    }
+    html, body { margin: 0; min-height: 100%; background: #10131f; }
+    body { color: #e8ecff; font-family: system-ui, sans-serif; }
+    #wv-harness-root { height: 100vh; min-height: 100vh; }
+  </style>
+</head>
+<body data-ds-dark-theme>
+  <div id="wv-harness-root"></div>
+  <script src="/react.js"></script>
+  <script src="/react-dom.js"></script>
+  <script>
+    window.__ModuleLoader__ = {
+      load(spec) { window.__WHALE_VOICE_SPEC__ = spec },
+    }
+  </script>
+  <script src="/client.js"></script>
+  <script src="/harness.js"></script>
+</body>
+</html>
