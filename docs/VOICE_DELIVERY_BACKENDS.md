@@ -1,4 +1,4 @@
-﻿# Voice Delivery Backends 鈥?Research and Architecture
+# Voice Delivery Backends — Research and Architecture
 
 **Status:** research only. No WeChat message, voice bubble, Hook change, DLL install, service restart or
 production configuration write was performed.
@@ -81,7 +81,7 @@ of an outbound record implementation.
 
 The 0.3.9 README describes:
 
-> 鍘熺敓鏂囧瓧鍙婅〃鎯呭寘鍙戦€?
+> 原生文字及表情包发送
 The public 0.4.0 README adds files, assistant tasks and native stickers, but still does not advertise
 native voice sending. It explicitly lists unsupported items including voice/video understanding and
 general new-WeChat adaptation.
@@ -148,7 +148,7 @@ resent.
 There is **no voice send receipt contract** to evaluate. A generic OneBot success, HTTP 200, or local
 queue acknowledgement would not prove a WeChat voice bubble.
 
-### 3.4 Third-party native APIs 鈥?public documentation only
+### 3.4 Third-party native APIs — public documentation only
 
 Two unrelated public projects expose native voice methods:
 
@@ -173,7 +173,7 @@ A boolean or `msgId` is not the same as observing a locally created native voice
 The current Whale Voice frontend constrains generation to:
 
 ```text
-WAV 路 24 kHz / mono
+WAV · 24 kHz / mono
 ```
 
 The sender handles playback/recording and device recovery. This is a local WAV handoff, not evidence
@@ -336,14 +336,14 @@ Do not remove:
 
 ## 9. Frontend settings
 
-Future `鍙戦€佷笌瀹夊叏` delivery-method section:
+Future `发送与安全` delivery-method section:
 
 | Selection | State now | Display |
 |---|---|---|
-| 鎸夐敭妯℃嫙鍙戦€?(`ui-automation`) | supported implementation, not necessarily running | current verified backend; foreground/audio-device requirements |
-| 鍘熺敓鎺ュ彛鐩村彂 (`wechatagent-native`) | **disabled** | 鈥滃綋鍓?WeChatAgent 鏃犲師鐢熻闊虫帴鍙ｂ€?|
-| 鍘熺敓鎺ュ彛鐩村彂 (`third-party-native`) | **disabled / research candidate** | 鈥滅爺绌跺€欓€夛紝鏈獙璇佺増鏈€佽鍙€佸洖鎵т笌鍏卞瓨鈥?|
-| 鑷姩閫夋嫨 (`auto`) | **disabled** | 鈥滄湭鏉ヨ兘鍔涳紝灏氭湭鍚敤鈥?|
+| 按键模拟发送 (`ui-automation`) | supported implementation, not necessarily running | current verified backend; foreground/audio-device requirements |
+| 原生接口直发 (`wechatagent-native`) | **disabled** | “当前 WeChatAgent 无原生语音接口” |
+| 原生接口直发 (`third-party-native`) | **disabled / research candidate** | “研究候选，未验证版本、许可、回执与共存” |
+| 自动选择 (`auto`) | **disabled** | “未来能力，尚未启用” |
 
 Required display fields:
 
@@ -377,7 +377,7 @@ planning contract, not implemented UI.
 | Risk | foreground/device side effects | account/platform/licensing, unknown |
 | Recommendation | **keep as production path** | **do not implement now** |
 
-The third-party native candidates are not a third column of 鈥渟upported鈥?yet:
+The third-party native candidates are not a third column of “supported” yet:
 
 - WeChatPYAPI would add a proprietary Python/DLL/service dependency, has a 4.1.12.26 vs 4.1.10.27
   version gap, no repository license, and only a boolean return.

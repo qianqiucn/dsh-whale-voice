@@ -3,10 +3,10 @@
 **Project:** Whale Voice / `dsh-whale-voice`
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
-**Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; AI memory docs established; Phase 4B not started
-**Latest associated commit:** `696378c62559667e5e9fba7ecc0177b1ad25ea6a` — `docs: record Phase 4A-H PR synchronization`
-**Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
+**Updated:** 2026-10-25
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; PR #8 pre-merge documentation repair complete; AI memory/status refreshed and docs-encoding check added; **PR #3–#8 remain unmerged**; Phase 4B not started
+**Latest associated commit:** verify current branch HEAD; the last pre-repair head was `aec34f6` (historical evidence, not current)
+**Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open; documentation repair on current head; stacked on PR #6**
 **PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
 **PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
 **PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
@@ -50,8 +50,9 @@ reproducible repository integration. See
 [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
 
 The current UI is **Mock by default** and can display real read-only Core results when the host bridge
-is active. A demo or a successful detection is not installation completion. The live DSH process
-must be reloaded to load the new Host row; no DSH restart was performed.
+is active. A demo or a successful detection is not installation completion. Phase 3B/4A activation was
+previously completed after a normal DSH restart; this documentation-repair task performed no DSH
+reload or restart. A running DSH will only pick up new Host code after a separately authorized reload.
 
 ## Completed
 
@@ -112,13 +113,18 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [x] AI memory and handoff: `docs/AI_CONTEXT.md` summary, `docs/DECISIONS.md` decision log, startup
       and stage-end rules in `AGENTS.md`; all memory docs are explicitly subordinate to code,
       Git/GitHub state, tests and the named authoritative documents.
+- [x] Pre-merge documentation quality repair on PR #8: repaired four corrupted docs, normalized UTF-8,
+      replaced the obsolete "remote repository is no longer empty" stop condition, refreshed stale
+      memory/status facts, and added a lightweight Markdown encoding regression test. No runtime code
+      change.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] Review PR #3 (first-run setup wizard frontend/Mock).
-- [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
+- [ ] Review and merge PR #3–#8 in the approved order; PR #8 documentation repair is ready, PR #7
+      still needs a manual documentation union after #8.
+- [ ] Post-merge status/roadmap/changelog sync, then Phase 4B-1 under a separate authorization.
 - [ ] Phase 4B config write/schema/migration (not started; requires a separate authorization).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
@@ -172,7 +178,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 64 tests passed: config sources/safety/revision, schemas/tri-state, Qwen negatives, bounded HTTP/auth/origin, Host lifecycle, status loader, demo, stale |
+| `node --test` | 65 tests passed: 64 existing behavior tests + 1 documentation-integrity test; original 64/64 remain passing |
+| Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
+| Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider saved/configured=true, preview=false; completed=false; voiceEnabled=unknown |
 | Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
@@ -197,16 +205,21 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | PR #5 Phase 4A config | open; head `a4475071`; CI SUCCESS `40134993884`; stacked on PR #4; includes full-config HMAC revision; not merged |
 | PR #6 UI inspector | open; head `f576f61a`; CI SUCCESS `40135037332`; includes 64 behavior + 10 UI checks; not merged |
 | PR #7 Electron feasibility | open; head `d7e89097`; CI SUCCESS `40135131044`; docs only; not merged |
-| PR #8 Send & Safety / delivery research | open; head `077dbe64`; CI SUCCESS `40135354326`; 64 unit + 12 UI checks; not merged |
+| PR #8 Send & Safety / delivery research | open; documentation repair on current head (pre-repair `aec34f6`); re-verify CI on the repaired head; 64 behavior + 12 UI checks |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
 
-**Next: Phase 4B — controlled configuration write/schema/migration** (not started). It requires a
+**Next: complete the approved PR #3–#8 integration** (after explicit merge authorization). The
+code/security review is complete; PR #8 documentation repair is ready. Use merge commits, retarget
+each PR to `main` after its base merges, and resolve the three documentation conflicts when updating
+PR #7 with `main`.
+
+Only after integration should **Phase 4B-1 — isolated Core configuration write** start. It requires a
 separate task and production-write authorization; it must include schema versioning, conflict
-handling, atomic save, saved-vs-effective distinction and rollback. Do not start with an installer
-or a full event/identity Adapter. Voice Sender's final independent safety verification remains
-mandatory before real sending.
+handling, atomic save, saved-vs-effective distinction and rollback. Do not start with an installer or
+a full event/identity Adapter. Voice Sender's final independent safety verification remains mandatory
+before real sending.
 
 ## Update rule
 

@@ -1,4 +1,4 @@
-﻿# Whale Voice 鈥?Configuration Sources (Phase 4A)
+# Whale Voice — Configuration Sources (Phase 4A)
 
 **Scope:** read-only configuration discovery. No write endpoint exists in this phase.
 **Status:** `OFFLINE` until the live DSH GUI verifies the config snapshot; then Phase 4A can be
@@ -6,10 +6,10 @@ accepted as `INTEGRATED` only for the fields actually read.
 
 Path variables below are logical. The Core resolves them from its configured roots:
 
-- `%DSH_HOME%` 鈥?current DSH data directory, resolved by Core; never supplied by the browser.
-- `%WECHATAGENT_ROOT%` 鈥?configured WeChatAgent root.
-- `%VOICE_SENDER_ROOT%` 鈥?configured Voice Sender root.
-- `%QWEN_URL%` 鈥?configured loopback Qwen URL.
+- `%DSH_HOME%` — current DSH data directory, resolved by Core; never supplied by the browser.
+- `%WECHATAGENT_ROOT%` — configured WeChatAgent root.
+- `%VOICE_SENDER_ROOT%` — configured Voice Sender root.
+- `%QWEN_URL%` — configured loopback Qwen URL.
 
 No browser request can provide or override these paths.
 
@@ -17,7 +17,7 @@ No browser request can provide or override these paths.
 
 | Configuration | Authoritative source | Read method | Sensitive | Exposed to frontend | Runtime confirmation | Compatible version | Missing behavior |
 |---|---|---|---|---|---|---|---|
-| Core component roots / Qwen URL | `%DSH_HOME%/whale-voice/core.json` | small JSON read | No | Only logical source status; no absolute path | Host process boot | Core config v1 (legacy accepted) | roots empty 鈫?components `not_configured`, never 鈥渙ff鈥?|
+| Core component roots / Qwen URL | `%DSH_HOME%/whale-voice/core.json` | small JSON read | No | Only logical source status; no absolute path | Host process boot | Core config v1 (legacy accepted) | roots empty → components `not_configured`, never “off” |
 | DSH plugin settings | Current DSH profile | Not read as a separate voice file | No | No | N/A | DSH profile schema | `no_separate_plugin_settings`; Core config is authority |
 | User voice switch, mode, group, probability, default voice | `%WECHATAGENT_ROOT%/data/workspace/state/voice-settings.json` | allow-listed fields + target count only | Yes (allowed target names) | Values + count only; no names | No supported active-version endpoint | `enabled`/`mode`/`for_group`/`auto_probability`/`default_voice` shape | `enabled:null`; do not infer false |
 | WeChatAgent permissions / wake mode | `%WECHATAGENT_ROOT%/data/workspace/config/wechatagent.json` | selected `wechat.whitelist` array lengths and `wechat.wake_mode`; no names | Yes (private/group IDs) | Counts only; `detailAvailable:false` | WeChatAgent `/WeChatAgent/health` is auth-protected; no active-config read | WeChatAgent 0.3.9 | counts null; no empty-list claim |

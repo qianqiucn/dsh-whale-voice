@@ -3,7 +3,7 @@
 **Purpose:** compact cross-session recovery note. This is a summary, not an authority. Re-verify
 against the repository, Git/GitHub, tests and the linked authoritative documents before acting.
 
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-25
 
 ---
 
@@ -32,11 +32,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - **main HEAD:** `b552ac00e7fc05a5818965d61ab90c5ec115efee`
 - **Current development branch:** `feature/send-safety-page`
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; last safety-code baseline was `696378c`, and this memory-docs commit follows it.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; the last verified pre-repair head was `aec34f6` (historical evidence, not current).
 - **Worktree:** clean
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-No PR has been merged. `main` remains the old docs baseline.
+Only the documentation PRs #1/#2 have been merged. Feature PRs #3–#8 remain open; `main` remains the old docs baseline.
 
 ---
 
@@ -59,7 +59,7 @@ main
 | #5 | #4 | `feature/phase4a-config-read` | `a4475071` | build SUCCESS |
 | #6 | #5 | `chore/ui-inspector-playwright` | `f576f61a` | build + ui SUCCESS |
 | #7 | #6 | `docs/dsh-electron-inspector-feasibility` | `d7e89097` | build + ui SUCCESS |
-| #8 | #6 | `feature/send-safety-page` | live PR #8 (last observed `54330e7`) | build + ui SUCCESS |
+| #8 | #6 | `feature/send-safety-page` | current PR #8 head (verify live; pre-repair `aec34f6`) | build + ui SUCCESS pre-repair; re-verify after docs repair |
 
 All PRs are currently Open, `mergeable=clean`, with **0 reviews / 0 review comments**.
 PR #7 and #8 are parallel; neither is an ancestor of the other.
@@ -85,24 +85,26 @@ exists.
 
 ## 5. Current task
 
-This task: add/maintain long-term AI memory:
+This task: pre-merge documentation quality repair on PR #8:
 
-- `docs/AI_CONTEXT.md` (this file)
-- `docs/DECISIONS.md`
-- startup/stage-end rules in `AGENTS.md`
-- status/roadmap links
+- repair confirmed mojibake in `docs/DECISIONS.md`, `docs/CONFIG_SOURCES.md`,
+  `docs/NATIVE_VOICE_RESEARCH.md`, `docs/VOICE_DELIVERY_BACKENDS.md`;
+- replace the obsolete "remote repository is no longer empty" stop condition in `AGENTS.md`;
+- refresh stale AI memory/status facts and add a lightweight Markdown encoding check.
 
-No production behavior change.
+No runtime code, production configuration, service, or real send change.
 
 ---
 
 ## 6. Unresolved issues
 
-1. **PRs #3–#8 are unmerged**; main does not contain Phase 3B/4A/UI/Safety work.
+1. **PRs #3–#8 are unmerged**; main does not contain Phase 3B/4A/UI/Safety work. Only docs PRs
+   #1/#2 are merged.
 2. **0 human reviews**; CI green does not equal approval.
 3. Downstream PR bases are still stacked; they must be retargeted after each merge.
 4. **PR #7 / #8 docs overlap** in `CHANGELOG.md`, `README.md`, `docs/PROJECT_STATUS.md`; final
-   merge order should be #8 then #7 with manual doc union.
+   merge order should be #8 then #7 with manual doc union. PR #8 docs encoding was repaired; PR #7
+   still needs a `main` merge and manual resolution of the same three files.
 5. Phase 4B config-write API is not implemented.
 6. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
@@ -182,24 +184,26 @@ Recent current-branch result:
 
 ```text
 build: PASS, client.js 186092 bytes
-node --test: 64/64 PASS
+node --test: 65/65 PASS (64 existing behavior tests + 1 docs-integrity test)
 UI: 12/12 PASS
 ```
 
 CI:
 
+- PR #3: build SUCCESS
 - PR #4: build SUCCESS
 - PR #5: build SUCCESS
 - PR #6: build + ui SUCCESS
 - PR #7: build + ui SUCCESS
-- PR #8: build + ui SUCCESS
+- PR #8: build + ui SUCCESS pre-repair; re-verify after docs repair
 
 ---
 
 ## 11. Next priority
 
 1. Human review and merge of #3 → #4 → #5 → #6 → #8 → #7 with base retargeting and manual doc
-   conflict resolution.
+   conflict resolution. PR #8 documentation repair is complete; merging still requires separate
+   authorization.
 2. Then Phase 4B-1: isolated configuration write infrastructure
    (schema, revision/optimistic concurrency, atomic save/recovery, saved-vs-effective, rollback,
    secrets scan, isolated tests). Production write still needs separate authorization.
@@ -224,4 +228,5 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-24**, after Phase 4A-H fixes and PR #4–#8 synchronization.
+**2026-10-25**, after PR #8 pre-merge documentation repair (mojibake, AGENTS stop condition, memory
+refresh, docs-integrity test). No runtime code change.

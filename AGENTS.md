@@ -244,7 +244,7 @@ a roadmap automatically executes. The next cycle is triggered by the user's inst
 Stop and ask before proceeding if:
 
 - the work requires a real WeChat UI action or real send;
-- the remote repository is no longer empty or history diverged;
+- the remote history diverged unexpectedly, or a force-push/rewrite would be required;
 - a secret or private datum is found in the staged content;
 - the only way to pass is to remove a safety check;
 - the task would modify a running production service;

@@ -1,4 +1,4 @@
-﻿# Architectural Decisions
+# Architectural Decisions
 
 **Status legend:** `ACCEPTED` = current project rule; `SUPERSEDED` = replaced; `RESEARCH` = not implemented;
 `REJECTED` = explicitly not chosen.
@@ -7,7 +7,7 @@ All decisions are dated **2026-10-24** unless noted. Each links to its authorita
 
 ---
 
-## ADR-001 鈥?WeChatAgent is the required WeChat platform dependency
+## ADR-001 — WeChatAgent is the required WeChat platform dependency
 
 **Status:** `ACCEPTED`
 **Decision:** Whale Voice does not implement a second WeChat reader, account manager, session store or
@@ -25,7 +25,7 @@ main integration.
 
 ---
 
-## ADR-002 鈥?Voice Sender remains an independent delivery backend
+## ADR-002 — Voice Sender remains an independent delivery backend
 
 **Status:** `ACCEPTED`
 **Decision:** The Voice Sender is a separate Windows component responsible for final target check,
@@ -42,7 +42,7 @@ automation into the plugin client.
 
 ---
 
-## ADR-003 鈥?Native voice delivery remains a research candidate
+## ADR-003 — Native voice delivery remains a research candidate
 
 **Status:** `RESEARCH`
 **Decision:** Keep `third-party-native` as a `RESEARCH_CANDIDATE`. WeChatAgent 0.3.9/0.4.0 native
@@ -60,7 +60,7 @@ DLL or disabling antivirus; silently upgrading WeChat; using an unlicensed servi
 
 ---
 
-## ADR-004 鈥?Core owns unified configuration and delivery coordination
+## ADR-004 — Core owns unified configuration and delivery coordination
 
 **Status:** `ACCEPTED`
 **Decision:** Whale Voice Core is the authority for configuration reading, target authorization and
@@ -76,7 +76,7 @@ per-backend retry.
 
 ---
 
-## ADR-005 鈥?Bridge switch and Worker safety permit are different layers
+## ADR-005 — Bridge switch and Worker safety permit are different layers
 
 **Status:** `ACCEPTED`
 **Decision:** `voice-settings.json.enabled` is the Bridge user switch.
@@ -92,7 +92,7 @@ Bridge false. Collapsing them creates false mismatch or unsafe bypass.
 
 ---
 
-## ADR-006 鈥?UNKNOWN never triggers automatic resend
+## ADR-006 — UNKNOWN never triggers automatic resend
 
 **Status:** `ACCEPTED`
 **Decision:** `UNKNOWN` is terminal for automatic retry. No backend switch, new delivery ID or silent
@@ -109,7 +109,7 @@ after plugin reload.
 
 ---
 
-## ADR-007 鈥?Saved configuration is not runtime-effective configuration
+## ADR-007 — Saved configuration is not runtime-effective configuration
 
 **Status:** `ACCEPTED`
 **Decision:** `savedRevision` and `application.state` describe the saved snapshot, not proof of the
@@ -117,7 +117,7 @@ running configuration. `activeRevision` remains `null` until a supported runtime
 exists.
 
 **Reason:** File mtime, process liveness or a saved value cannot prove the Bridge/Worker loaded that
-value. UI must show 鈥滅敓鏁堟湭纭/鏈煡鈥?rather than 鈥滃凡鐢熸晥鈥?
+value. UI must show “已保存，生效未确认/未知” rather than “已生效”.
 
 **Rejected alternatives:** Equating a successful read or save with live effect; treating mtime as
 proof.
@@ -126,7 +126,7 @@ proof.
 
 ---
 
-## ADR-008 鈥?UI Inspector uses isolated Playwright; real Electron debugging needs separate authorization
+## ADR-008 — UI Inspector uses isolated Playwright; real Electron debugging needs separate authorization
 
 **Status:** `ACCEPTED`
 **Decision:** Level 1 UI testing uses a pinned Playwright harness with fake setup data. The production
@@ -139,12 +139,12 @@ opening debugging would create unsafe access to private UI.
 **Rejected alternatives:** Enabling CDP on production DSH; reusing the production profile; reading
 production page content via unsupported means.
 
-**Related:** [UI_TESTING.md](UI_TESTING.md),
-[DSH_ELECTRON_INSPECTOR_FEASIBILITY.md](DSH_ELECTRON_INSPECTOR_FEASIBILITY.md).
+**Related:** [UI_TESTING.md](UI_TESTING.md); the DSH Electron Inspector feasibility document is
+introduced by [PR #7](https://github.com/qianqiucn/dsh-whale-voice/pull/7) (docs-only).
 
 ---
 
-## ADR-009 鈥?Production changes and isolated tests are separate
+## ADR-009 — Production changes and isolated tests are separate
 
 **Status:** `ACCEPTED`
 **Decision:** Development and tests must use isolated profiles, fake data and read-only sources.
@@ -161,7 +161,7 @@ test pass; disabling security controls.
 
 ---
 
-## ADR-010 鈥?Phase 4A-H request and revision hardening
+## ADR-010 — Phase 4A-H request and revision hardening
 
 **Status:** `ACCEPTED`
 **Decision:**
@@ -185,7 +185,7 @@ Content-Length; inferring account verification from a generic object; partial UI
 
 ---
 
-## ADR-011 鈥?Stage handoff memory is maintained, but not authoritative
+## ADR-011 — Stage handoff memory is maintained, but not authoritative
 
 **Status:** `ACCEPTED`
 **Decision:** Each stage maintains `AI_CONTEXT.md` as a concise recovery summary and `DECISIONS.md`

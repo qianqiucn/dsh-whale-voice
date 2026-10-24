@@ -19,11 +19,13 @@ prototype exists outside this repository.
 platform layer, not an optional TTS feature. TTS providers may be swapped freely; WeChatAgent may
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
-**Next development gate (after read-only verification):** Core unified configuration management —
-read, schema validation, version-conflict detection, atomic save, saved-versus-effective separation,
-and controlled writes only in an isolated configuration. This precedes any installer or full
-event/identity Adapter work. Production config writes require separate authorization; Voice Sender
-final independent safety verification remains required before real sending.
+**Next development gate (after read-only verification):** first integrate the completed read-only PR
+stack (#3–#8) with merge commits and a post-merge documentation sync; then start Core unified
+configuration management — read, schema validation, version-conflict detection, atomic save,
+saved-versus-effective separation, and controlled writes only in an isolated configuration. This
+precedes any installer or full event/identity Adapter work. Production config writes require separate
+authorization; Voice Sender final independent safety verification remains required before real
+sending.
 
 ---
 
@@ -51,7 +53,8 @@ contains no secrets, private chat data, audio, runtime state or screenshots.
 still external and was not changed by this repository work. The isolated Playwright UI harness is
 available for development (`npm run test:ui`); real DSH Electron debugging remains unsupported and
 unauthorized. `AI_CONTEXT.md` and `DECISIONS.md` are maintained as cross-session memory and decision
-records, explicitly subordinate to repository evidence.
+records, explicitly subordinate to repository evidence. A lightweight Markdown encoding test guards
+the documentation against the previously observed mojibake regression.
 
 ---
 
@@ -221,9 +224,10 @@ no-Core state; it is not install acceptance.
 and covered by isolated tests. Phase 3B is **INTEGRATED**: current DSH Host routes return 401, the
 trusted bridge injects, Core reads the authorized `core.json`, and the real GUI shows WeChatAgent
 `auth_required`, Sender offline, Qwen health valid, and unknown recovery/voice fields. Sender was not
-started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is not
-`VERIFIED`. Real installation, upgrade, rollback, TTS credentials and clean-machine acceptance remain
-`PLANNED`; no one-click installer exists today.
+started. PR #3–#8 remain open pending integration; PR #8 documentation repair is complete. Live
+No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is not `VERIFIED`. Real
+installation, upgrade, rollback, TTS credentials and clean-machine acceptance remain `PLANNED`; no
+one-click installer exists today.
 
 ---
 
@@ -308,5 +312,6 @@ features. These remain planned and are not coupled to native delivery.
 **Acceptance:** CI is meaningful; release artifact is reproducible; private data is excluded; owner
 approves any visibility change or release.
 
-**Current status:** `IN PROGRESS`: private repository initialization, documentation and initial
-checks. No release, no public visibility, no meaningful UI/backend CI yet.
+**Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
+UI CI and Markdown encoding checks. PR #3–#8 remain open pending integration. No release, no public
+visibility and no release artifact yet.

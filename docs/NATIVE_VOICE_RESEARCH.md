@@ -1,4 +1,4 @@
-﻿# Native Voice Delivery 鈥?Research Candidates
+# Native Voice Delivery — Research Candidates
 
 **Status:** documentation research only. No third-party package, DLL, Hook, service or WeChat client
 was installed or changed. No voice message was sent and no production state was touched.
@@ -31,7 +31,7 @@ Current Whale Voice delivery status:
 
 ---
 
-## 2. Candidate A 鈥?WeChatPYAPI
+## 2. Candidate A — WeChatPYAPI
 
 - Repository: https://github.com/mrsanshui/WeChatPYAPI
 - Public README: `send_voice(to_wx, path, voice_time)`
@@ -60,7 +60,7 @@ missing receipt semantics prevent `PROTOTYPE_READY`.
 
 ---
 
-## 3. Candidate B 鈥?PadChat-SDK
+## 3. Candidate B — PadChat-SDK
 
 - Repository: https://github.com/AvengersWeChat/PadChat-SDK
 - Public documentation: `sendVoice(toUserName, file, time)`
@@ -92,7 +92,7 @@ Windows-WeChat integration path.
 
 ---
 
-## 4. Candidate C 鈥?WeChatAgent upstream
+## 4. Candidate C — WeChatAgent upstream
 
 - Repository: https://github.com/sourcepro5/WeChatAgent
 - Installed local version: `0.3.9`
@@ -234,5 +234,5 @@ This round performed none of those steps.
 - Keep `wechatagent-native` `UNSUPPORTED` for 0.3.9/0.4.0.
 - Keep `third-party-native` as `RESEARCH_CANDIDATE`, not as an enabled feature.
 - Do not integrate WeChatPYAPI or PadChat-SDK now.
-- Research can continue in parallel with Phase 4B鈥?, without blocking the mainline.
+- Research can continue in parallel with Phase 4B, without blocking the mainline.
 - No native send service, DLL, Hook, package or WeChat version change is authorized.
