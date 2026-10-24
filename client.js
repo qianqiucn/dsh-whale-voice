@@ -696,7 +696,7 @@ function deriveConfigView(config) {
   const runtime = tts.runtime && typeof tts.runtime === 'object' ? tts.runtime : {}
   const permissions = c.permissions && typeof c.permissions === 'object' ? c.permissions : {}
   const sender = c.sender && typeof c.sender === 'object' ? c.sender : {}
-  const alternate = voice.alternate && typeof voice.alternate === 'object' ? voice.alternate : null
+  const worker = voice.worker && typeof voice.worker === 'object' ? voice.worker : null
   return {
     available: true,
     demo: c.demo === true,
@@ -713,7 +713,7 @@ function deriveConfigView(config) {
     },
     voice: {
       enabled: typeof voice.enabled === 'boolean' ? voice.enabled : null,
-      enabledText: configBoolText(voice.enabled, '已保存：开启', '已保存：关闭'),
+      enabledText: configBoolText(voice.enabled, 'Bridge 已保存：开启', 'Bridge 已保存：关闭'),
       activeText: '实际生效：未确认',
       mode: typeof voice.mode === 'string' ? voice.mode : null,
       triggerMode: typeof voice.triggerMode === 'string' ? voice.triggerMode : null,
@@ -721,12 +721,15 @@ function deriveConfigView(config) {
       autoProbabilityText: typeof voice.autoProbability === 'number' ? '已保存：' + voice.autoProbability + '%' : '未知',
       defaultVoice: voice.defaultVoice || null,
       source: voice.source || null,
-      consistency: voice.consistency || 'unknown',
-      alternate: alternate ? {
-        source: alternate.source || null,
-        enabledText: configBoolText(alternate.enabled, 'Worker：开启', 'Worker：关闭'),
-        mode: alternate.mode || null,
-        forGroup: typeof alternate.forGroup === 'boolean' ? alternate.forGroup : null,
+      semantics: voice.semantics || 'unknown',
+      consistency: voice.consistency || 'not_comparable',
+      worker: worker ? {
+        source: worker.source || null,
+        enabled: typeof worker.enabled === 'boolean' ? worker.enabled : null,
+        enabledText: configBoolText(worker.enabled, 'Worker 安全许可：开启', 'Worker 安全许可：关闭'),
+        mode: worker.mode || null,
+        role: worker.role || 'final_safety_gate',
+        note: worker.note || '独立安全许可，不是 Bridge 用户开关。',
       } : null,
     },
     tts: {
@@ -823,7 +826,7 @@ function ConfigReadout({ setup }) {
       h('div', { className: 'wv-config-grid' },
         h('div', { className: 'wv-config-item' },
           h('span', null, '语音开关'), h('strong', null, view.voice.enabledText),
-          h('small', null, view.voice.activeText)),
+          h('small', null, view.voice.activeText + (view.voice.worker ? ' · ' + view.voice.worker.enabledText : ''))),
         h('div', { className: 'wv-config-item' },
           h('span', null, '模式 / 群聊'), h('strong', null, (view.voice.mode || '未知') + ' · ' + view.voice.forGroupText),
           h('small', null, '触发：' + (view.voice.triggerMode || '未知') + ' · 自动概率：' + view.voice.autoProbabilityText)),
@@ -1364,11 +1367,11 @@ function AdvancedPage({ notify, setup, onSetup, onComponents }) {
       h('span', null, '本页不会写入配置、不会启动 Qwen、不会结束进程。数值为演示占位，真实值需等待后端接入。')),
     h(ConfigReadout, { setup }),
     h('div', { className: 'wv-adv-grid' },
-      h(Card, { title: '语音引擎', desc: 'Qwen3-TTS Provider', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: '语音引擎', desc: 'Qwen3-TTS Provider', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.engine.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
-      h(Card, { title: 'Voice Sender', desc: '桌面音频执行器', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: 'Voice Sender', desc: '桌面音频执行器', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.sender.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
-      h(Card, { title: 'WeChatAgent', desc: 'Bridge 与配置映射', actions: h(Badge, { tone: 'demo' }, '只读') },
+      h(Card, { title: 'WeChatAgent', desc: 'Bridge 与配置映射', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.wechat.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
       h(Card, { title: '安装与组件', desc: '首次安装向导与组件生命周期入口', actions: h(Badge, { tone: setup && setup.available ? 'accent' : 'wait' }, setup && setup.available ? 'Core 已连接' : 'Core 未连接') },
         h('div', { className: 'wv-settings-group' },
@@ -1787,6 +1790,7 @@ function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvance
       h(Button, { variant: 'primary', onClick: onSetup }, '打开安装向导')),
   },
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, 'Whale Voice Core 未连接'), h('p', null, '无法读取真实组件状态。当前不会把 Mock 显示成在线。'))) : null,
+    data ? h(ConfigReadout, { setup: status }) : null,
     h('div', { className: 'wv-component-list' }, rows.map((r) => h('div', { className: 'wv-component-row', key: r.name },
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),
       h('span', { className: 'wv-component-detail' }, r.detail),

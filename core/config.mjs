@@ -187,26 +187,24 @@ export function readConfigSnapshot(options = {}) {
     allowedTargetCount: countKeys(voiceSettings.allowed_targets),
   }
   const voicePrimaryAvailable = voiceSettingsResult.ok
-  const workerFallback = !voicePrimaryAvailable && voiceSettingsResult.error === 'missing' && workerResult.ok
   const voice = {
-    enabled: voicePrimaryAvailable ? savedVoice.enabled : (workerFallback ? workerVoice.enabled : null),
-    mode: voicePrimaryAvailable ? savedVoice.mode : (workerFallback ? workerVoice.mode : null),
+    enabled: voicePrimaryAvailable ? savedVoice.enabled : null,
+    mode: voicePrimaryAvailable ? savedVoice.mode : null,
     triggerMode: text(waWechat.wake_mode),
-    forGroup: voicePrimaryAvailable ? savedVoice.forGroup : (workerFallback ? workerVoice.forGroup : null),
+    forGroup: voicePrimaryAvailable ? savedVoice.forGroup : null,
     autoProbability: voicePrimaryAvailable ? savedVoice.autoProbability : null,
     defaultVoice: savedVoice.defaultVoice || text(serviceTts.voiceId),
-    source: voicePrimaryAvailable ? 'voice-settings' : (workerFallback ? 'sender-worker' : null),
-    alternate: workerResult.ok ? {
+    source: voicePrimaryAvailable ? 'voice-settings' : null,
+    worker: workerResult.ok ? {
       source: 'sender-worker',
       enabled: workerVoice.enabled,
       mode: workerVoice.mode,
       forGroup: workerVoice.forGroup,
+      role: 'final_safety_gate',
+      note: 'Worker voice_enabled 是独立安全许可，不是 Bridge 用户开关；不会覆盖 Bridge 的 false。',
     } : null,
-    consistency: compareFields(
-      voicePrimaryAvailable ? savedVoice : null,
-      workerResult.ok ? workerVoice : null,
-      ['enabled', 'mode', 'forGroup'],
-    ),
+    semantics: 'bridge_user_setting_vs_worker_safety',
+    consistency: 'not_comparable',
     active: {
       confirmed: false,
       enabled: null,
@@ -270,6 +268,7 @@ export function readConfigSnapshot(options = {}) {
       forGroup: voice.forGroup,
       autoProbability: voice.autoProbability,
       defaultVoice: voice.defaultVoice,
+      workerEnabled: voice.worker ? voice.worker.enabled : null,
     },
     tts: {
       provider: tts.provider,
@@ -290,9 +289,7 @@ export function readConfigSnapshot(options = {}) {
   }
   const savedRevision = hashSafe(safeSnapshot)
   const hasReadableSource = coreResult.ok || waResult.ok || voiceSettingsResult.ok || serviceResult.ok || workerResult.ok
-  const applicationState = voice.consistency === 'mismatch' || sender.serviceWorkerConsistency === 'mismatch'
-    ? 'MISMATCH'
-    : 'UNKNOWN'
+  const applicationState = sender.serviceWorkerConsistency === 'mismatch' ? 'MISMATCH' : 'UNKNOWN'
 
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
@@ -332,6 +329,8 @@ export function configStatusFromSnapshot(snapshot) {
       forGroup: snapshot.voice.forGroup,
       autoProbability: snapshot.voice.autoProbability,
       defaultVoice: snapshot.voice.defaultVoice,
+      worker: snapshot.voice.worker,
+      semantics: snapshot.voice.semantics,
       consistency: snapshot.voice.consistency,
       activeConfirmed: snapshot.voice.active.confirmed,
     },

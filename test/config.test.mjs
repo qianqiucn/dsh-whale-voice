@@ -126,7 +126,27 @@ test('saved enabled false is read as false, not unknown', async () => {
   assert.equal(snapshot.voice.enabled, false)
   assert.equal(snapshot.voice.mode, 'explicit')
   assert.equal(snapshot.voice.triggerMode, 'mention')
-  assert.equal(snapshot.voice.consistency, 'match')
+  assert.equal(snapshot.voice.consistency, 'not_comparable')
+  assert.equal(snapshot.voice.worker.enabled, false)
+  assert.equal(snapshot.voice.worker.role, 'final_safety_gate')
+})
+
+test('Bridge user switch and Worker safety permit are separate layers', async () => {
+  const { config } = await makeFixture({
+    voiceSettings: { enabled: false, mode: 'explicit', default_voice: 'whale-v1' },
+    worker: { voice_enabled: true, voice_auto_mode: 'manual', voice_allow_group_auto: false },
+    service: {
+      tts: { provider: 'qwen-local', voiceId: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' },
+      automation: { mode: 'manual', autoFindWindow: true, autoOpenChat: false, autoRestoreMinimized: true, pauseWhenFullscreen: true },
+      allowedChats: ['fixture'],
+    },
+  })
+  const snapshot = readConfigSnapshot({ config, runtime: runtime() })
+  assert.equal(snapshot.voice.enabled, false)
+  assert.equal(snapshot.voice.worker.enabled, true)
+  assert.equal(snapshot.voice.consistency, 'not_comparable')
+  assert.equal(snapshot.application.state, 'UNKNOWN')
+  assert.equal(snapshot.voice.worker.role, 'final_safety_gate')
 })
 
 test('saved enabled true is read as true, not treated as active', async () => {
@@ -237,7 +257,7 @@ test('frontend config view uses real values and unknown stays unknown', async ()
   const snapshot = readConfigSnapshot({ config, runtime: runtime() })
   const view = deriveConfigView(snapshot)
   assert.equal(view.available, true)
-  assert.equal(view.voice.enabledText, '已保存：关闭')
+  assert.equal(view.voice.enabledText, 'Bridge 已保存：关闭')
   assert.equal(view.voice.activeText, '实际生效：未确认')
   assert.equal(view.tts.provider, 'qwen-local')
   assert.equal(view.permissions.detailAvailable, false)

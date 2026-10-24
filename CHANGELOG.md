@@ -23,7 +23,7 @@ not invent earlier releases or imply production maturity.
 - Phase 3B integrated after normal DSH restart: routes 401, trusted bridge, Core config loaded, real GUI shows WeChatAgent auth_required, Sender offline, Qwen health valid.
 - Phase 3B is `INTEGRATED`, not `VERIFIED`; live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`.
 - Phase 4A read-only config snapshot, source inventory, sanitized revision, config API and UI readout.
-- Saved/active config separation, voice-source mismatch detection, count-only permission exposure and 51 behavior tests.
+- Saved/active config separation, Bridge-vs-Worker layer separation, count-only permission exposure and 52 behavior tests.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

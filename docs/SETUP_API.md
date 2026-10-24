@@ -116,14 +116,15 @@ ready health response. Version strings marked `config_expected` are not runtime 
   "application": {
     "savedRevision": "17d122c5700fdd96",
     "activeRevision": null,
-    "state": "MISMATCH",
+    "state": "UNKNOWN",
     "saved": true,
     "activeConfirmed": false
   },
   "voice": {
     "enabled": false, "mode": "explicit", "forGroup": false,
     "autoProbability": 0, "defaultVoice": "whale-v1",
-    "source": "voice-settings", "consistency": "mismatch",
+    "source": "voice-settings", "consistency": "not_comparable",
+    "worker": { "source": "sender-worker", "enabled": true, "mode": "manual", "role": "final_safety_gate" },
     "active": { "confirmed": false, "enabled": null, "mode": null, "source": null }
   },
   "tts": {

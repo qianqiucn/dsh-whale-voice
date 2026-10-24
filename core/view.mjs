@@ -204,7 +204,7 @@ export function deriveConfigView(config) {
   const runtime = tts.runtime && typeof tts.runtime === 'object' ? tts.runtime : {}
   const permissions = c.permissions && typeof c.permissions === 'object' ? c.permissions : {}
   const sender = c.sender && typeof c.sender === 'object' ? c.sender : {}
-  const alternate = voice.alternate && typeof voice.alternate === 'object' ? voice.alternate : null
+  const worker = voice.worker && typeof voice.worker === 'object' ? voice.worker : null
   return {
     available: true,
     demo: c.demo === true,
@@ -221,7 +221,7 @@ export function deriveConfigView(config) {
     },
     voice: {
       enabled: typeof voice.enabled === 'boolean' ? voice.enabled : null,
-      enabledText: configBoolText(voice.enabled, '已保存：开启', '已保存：关闭'),
+      enabledText: configBoolText(voice.enabled, 'Bridge 已保存：开启', 'Bridge 已保存：关闭'),
       activeText: '实际生效：未确认',
       mode: typeof voice.mode === 'string' ? voice.mode : null,
       triggerMode: typeof voice.triggerMode === 'string' ? voice.triggerMode : null,
@@ -229,12 +229,15 @@ export function deriveConfigView(config) {
       autoProbabilityText: typeof voice.autoProbability === 'number' ? '已保存：' + voice.autoProbability + '%' : '未知',
       defaultVoice: voice.defaultVoice || null,
       source: voice.source || null,
-      consistency: voice.consistency || 'unknown',
-      alternate: alternate ? {
-        source: alternate.source || null,
-        enabledText: configBoolText(alternate.enabled, 'Worker：开启', 'Worker：关闭'),
-        mode: alternate.mode || null,
-        forGroup: typeof alternate.forGroup === 'boolean' ? alternate.forGroup : null,
+      semantics: voice.semantics || 'unknown',
+      consistency: voice.consistency || 'not_comparable',
+      worker: worker ? {
+        source: worker.source || null,
+        enabled: typeof worker.enabled === 'boolean' ? worker.enabled : null,
+        enabledText: configBoolText(worker.enabled, 'Worker 安全许可：开启', 'Worker 安全许可：关闭'),
+        mode: worker.mode || null,
+        role: worker.role || 'final_safety_gate',
+        note: worker.note || '独立安全许可，不是 Bridge 用户开关。',
       } : null,
     },
     tts: {

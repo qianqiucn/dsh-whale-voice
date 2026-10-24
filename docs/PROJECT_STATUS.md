@@ -72,7 +72,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       Phase 3A remains `OFFLINE`; Phase 3B later integrated live.
 - [x] P7 Phase 3 live integration: user restarted DSH; routes return 401; no Host reload was used.
 - [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
-      demo isolation; 51 behavior tests pass; local read-only smoke recorded in
+      demo isolation; 52 behavior tests pass; local read-only smoke recorded in
       `docs/PHASE3_READONLY.md`.
 - [x] Phase 3B read-only Host activation review and minimal-reload options documented in
       [PHASE3B_HOST_ACTIVATION.md](PHASE3B_HOST_ACTIVATION.md); no reload/restart performed by Agent.
@@ -126,9 +126,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
    WeChatAgent `auth_required`, Sender offline, Qwen health valid. Sender is not running; it was not
    started. Live No-Core/timeout/invalid-schema/stale GUI tests were not performed and remain
    `OFFLINE` behavior tests; this is why Phase 3B is `INTEGRATED`, not `VERIFIED`.
-9. Phase 4A is `OFFLINE`: config snapshot/readout and tests are complete, but the running DSH Host
-   predates the new `/config` routes. Live readout requires a normal Host reload/DSH restart, not
-   performed here. No write API exists.
+9. Phase 4A is `OFFLINE`: config snapshot/readout and tests are complete, and the current Host has
+   the `/config` routes (401 without token), but the loaded snapshot still predates the Bridge/Worker
+   layer correction. Live semantic readout requires another normal Host reload/DSH restart. No write
+   API exists.
 
 ## Verification evidence
 
@@ -143,15 +144,15 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 51 tests passed: config sources/safety, sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
+| `node --test` | 52 tests passed: config sources/safety, sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
 | Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider saved/configured=true, preview=false; completed=false; voiceEnabled=unknown |
-| Config snapshot | saved voice false (voice-settings) vs worker true → MISMATCH; TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
+| Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
-| Core setup API | read-only status/detect live (401 without token); config routes implemented in code, Host reload pending; write/installer API absent |
+| Core setup API | status/detect and config routes are live (401 without token); loaded config snapshot predates Bridge/Worker layer correction; write/installer API absent |
 | Live DSH host bridge | current port 53832; Host routes 401; trusted bridge injects; real GUI shows actual component data |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
-| Phase 4A config read | `OFFLINE`; 51 tests/build pass; real GUI config readout requires Host reload/DSH restart |
+| Phase 4A config read | `OFFLINE`; 52 tests/build pass; `/config*` routes live; loaded semantic snapshot requires another Host reload/DSH restart |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
