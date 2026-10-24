@@ -33,10 +33,25 @@ async function components() {
   return { wechatAgentRoot: wa, senderRoot: sender, qwenUrl: 'http://127.0.0.1:8765' }
 }
 function response(status, body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body)
   return {
     status,
     ok: status >= 200 && status < 300,
-    async text() { return typeof body === 'string' ? body : JSON.stringify(body) },
+    body: {
+      getReader() {
+        let sent = false
+        return {
+          async read() {
+            if (sent) return { done: true }
+            sent = true
+            return { done: false, value: new TextEncoder().encode(text) }
+          },
+          async cancel() {},
+          releaseLock() {},
+        }
+      },
+    },
+    async text() { return text },
   }
 }
 function healthyFetch() {

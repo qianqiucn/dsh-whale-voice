@@ -102,11 +102,14 @@ export async function detectWeChatAgent(config, options = {}) {
   else if (health.state === 'unsupported') state = 'unknown'
   if (connected) state = 'connected'
   if (version && version !== SUPPORTED_WECHATAGENT) state = 'incompatible'
+  const accountVerified = connected && typeof body.accountVerified === 'boolean'
+    ? body.accountVerified
+    : null
   return {
     ...base,
     state, installed: true, version, installPath: maskPath(root), processRunning: anyRunning,
     connected,
-    accountVerified: connected && typeof body.account === 'object' ? true : null,
+    accountVerified,
     reader: pids.reader.running ? 'running' : 'unknown',
     bridge: health.state === 'ok' ? (connected ? 'ok' : 'unexpected_response') : health.state,
     dsh: 'unknown', compatibility,

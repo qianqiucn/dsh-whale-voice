@@ -39,10 +39,25 @@ async function senderFixture(version = '0.1.0') {
   return root
 }
 function response(status, body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body)
   return {
     status,
     ok: status >= 200 && status < 300,
-    async text() { return typeof body === 'string' ? body : JSON.stringify(body) },
+    body: {
+      getReader() {
+        let sent = false
+        return {
+          async read() {
+            if (sent) return { done: true }
+            sent = true
+            return { done: false, value: new TextEncoder().encode(text) }
+          },
+          async cancel() {},
+          releaseLock() {},
+        }
+      },
+    },
+    async text() { return text },
   }
 }
 function fakeFetch(handler) {
@@ -106,6 +121,33 @@ test('401 from health is classified as auth_required, not connected/healthy', as
   assert.equal(status.sender.healthy, null)
   assert.equal(status.sender.health, 'auth_required')
   assert.equal(status.completed, false)
+})
+
+test('account verification is explicit, not inferred from an account object', async () => {
+  const wa = await wechatFixture()
+  const sender = await senderFixture()
+  async function detect(health) {
+    const detector = createDetector({
+      config: { wechatAgentRoot: wa, senderRoot: sender, qwenUrl: 'http://127.0.0.1:8765' },
+      fetchImpl: fakeFetch((url) => url.includes('/WeChatAgent/health') ? response(200, health) : response(401, {})),
+      timeoutMs: 100,
+    })
+    return (await detector.detectAll()).wechatAgent
+  }
+  const connected = {
+    integration: 'WeChatAgent-1', backend: 'wechat-hook', startupState: 'ready',
+    version: '4.1.10.27',
+  }
+  assert.equal((await detect({ ...connected, account: {} })).accountVerified, null)
+  assert.equal((await detect({ ...connected, account: { nickname: 'fixture' } })).accountVerified, null)
+  assert.equal((await detect({ ...connected, accountVerified: true })).accountVerified, true)
+  assert.equal((await detect({ ...connected, accountVerified: false })).accountVerified, false)
+  const auth = createDetector({
+    config: { wechatAgentRoot: wa, senderRoot: sender, qwenUrl: 'http://127.0.0.1:8765' },
+    fetchImpl: fakeFetch(() => response(401, {})),
+    timeoutMs: 100,
+  })
+  assert.equal((await auth.detectAll()).wechatAgent.accountVerified, null)
 })
 
 test('version mismatch is visible and cannot be marked compatible', async () => {
@@ -187,6 +229,15 @@ test('core server requires its token and rejects writes / arbitrary components',
     assert.equal(res.status, 405)
     res = await fetch(base + '/setup/status', { headers: { 'x-whale-core-token': 'test-token', 'sec-fetch-site': 'cross-site' } })
     assert.equal(res.status, 403)
+    const origin = 'http://127.0.0.1:' + address.port
+    res = await fetch(base + '/setup/status', { headers: { 'x-whale-core-token': 'test-token', origin } })
+    assert.equal(res.status, 200)
+    res = await fetch(base + '/setup/status', { headers: { 'x-whale-core-token': 'test-token', origin: 'https://127.0.0.1:' + address.port } })
+    assert.equal(res.status, 403)
+    res = await fetch(base + '/setup/status', { headers: { 'x-whale-core-token': 'test-token', origin: 'http://127.0.0.1:' + (address.port + 1) } })
+    assert.equal(res.status, 403)
+    res = await fetch(base + '/setup/status', { headers: { origin } })
+    assert.equal(res.status, 401)
   } finally {
     await core.close()
   }
@@ -264,6 +315,23 @@ test('HTTP body limit is enforced while streaming and cancels the reader', async
   const result = await fetchJson(async () => ({ status: 200, ok: true, body }), 'http://127.0.0.1:8765/health', { timeoutMs: 100, maxBytes: 16 })
   assert.equal(result.state, 'oversize')
   assert.equal(cancelled > 0, true)
+})
+
+test('HTTP response without a streaming reader fails closed', async () => {
+  const result = await fetchJson(async () => ({
+    status: 200,
+    ok: true,
+    headers: { get() { return '4' } },
+    async text() { return '{"ok":true}' },
+  }), 'http://127.0.0.1:8765/health', { timeoutMs: 100, maxBytes: 16 })
+  assert.equal(result.state, 'unsupported')
+  assert.equal(result.error, 'body_stream_unsupported')
+})
+
+test('HTTP array response is returned without treating it as a service object', async () => {
+  const result = await fetchJson(async () => response(200, '[{"unexpected":true}]'), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(result.state, 'ok')
+  assert.equal(Array.isArray(result.body), true)
 })
 
 test('HTTP non-JSON, redirect, auth and not-found states are explicit', async () => {
@@ -378,6 +446,19 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   }, response)
   assert.equal(response.status, 200)
   assert.equal(JSON.parse(response.body).schemaVersion, 1)
+
+  const originOk = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+  await route.handler({
+    method: 'GET', url: '/whale-voice/setup/status', socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:59575', 'x-whale-core-token': 'host-token', origin: 'http://127.0.0.1:59575' },
+  }, originOk)
+  assert.equal(originOk.status, 200)
+  const originWrongScheme = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+  await route.handler({
+    method: 'GET', url: '/whale-voice/setup/status', socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:59575', 'x-whale-core-token': 'host-token', origin: 'https://127.0.0.1:59575' },
+  }, originWrongScheme)
+  assert.equal(originWrongScheme.status, 403)
 
   const denied = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
   await route.handler({
