@@ -20,11 +20,11 @@ platform layer, not an optional TTS feature. TTS providers may be swapped freely
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
 **Next development gate:** the read-only PR stack (#3–#8) is integrated into `main` with merge
-commits. The next gate is Core unified configuration management — read, schema validation,
-version-conflict detection, atomic save, saved-versus-effective separation, and controlled writes only
-in an isolated configuration. This precedes any installer or full event/identity Adapter work.
-Production config writes require separate authorization; Voice Sender final independent safety
-verification remains required before real sending.
+commits, and Phase 4B-1 provides the isolated single-file configuration store (`OFFLINE`). The next
+gate is Phase 4B-2: a controlled production write/apply path, multi-file transaction/journal,
+cross-process locking/CAS and trusted runtime-effect confirmation. Production config writes require
+separate authorization; Voice Sender final independent safety verification remains required before
+real sending.
 
 ---
 
@@ -95,9 +95,12 @@ and no secret or private mapping is logged.
 
 **Current status:** Phase 4A read-only config snapshot and UI readout are `INTEGRATED` in the live DSH
 Host (port 57393): 401-protected config routes, trusted bridge, six GUI surfaces and refresh verified.
-Saved-vs-active is separated; Bridge and Worker safety layers are distinct. Write APIs, migration and
-permission-detail management remain `PLANNED`; no production write exists. Live No-Core/timeout/
-invalid-schema/stale injections remain `OFFLINE` tests.
+Saved-vs-active is separated; Bridge and Worker safety layers are distinct. Phase 4B-1 adds an
+**isolated single-file** config store (`OFFLINE`): trusted sandbox capability, strict schema, v0→v1
+migration, HMAC revision, `expectedRevision` conflict detection, atomic save/rollback, read/write
+state separation and a test-only API. Production write, multi-file transaction, cross-process CAS and
+runtime apply remain `PLANNED`; no production write exists. Live No-Core/timeout/invalid-schema/stale
+injections remain `OFFLINE` tests.
 
 ---
 
@@ -312,5 +315,6 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI and Markdown encoding checks. PR #3–#8 are integrated into `main`; the clean development
-baseline is the post-integration `main`. No release, no public visibility and no release artifact yet.
+UI CI, Markdown encoding checks and 98 Node tests. PR #3–#8 are integrated into `main`; Phase 4B-1
+isolated config write is `OFFLINE` on its review branch. The clean development baseline is
+post-integration `main`. No release, no public visibility and no release artifact yet.

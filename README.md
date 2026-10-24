@@ -220,6 +220,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
   authorization gates.
 - [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
+- [Isolated configuration write](docs/CONFIG_WRITE_API.md) — Phase 4B-1 single-file schema, revision, atomic save and limits.
 - [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
 - [DSH Electron Inspector feasibility](docs/DSH_ELECTRON_INSPECTOR_FEASIBILITY.md) — supported Inspector limits and option assessment.
 - [Voice delivery backends](docs/VOICE_DELIVERY_BACKENDS.md) — native-vs-UI-automation research and decision.

@@ -30,15 +30,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 2. Git baseline
 
-- **main HEAD:** verify live with `git rev-parse origin/main`; the pre-integration baseline is tag
-  `pre-pr3-8-integration` at `b552ac0` (historical backup, not current).
-- **Current development baseline:** `main` after PR #3–#8 integration.
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; this memory does not pin an
-  integration SHA.
+- **main HEAD:** verify live with `git rev-parse origin/main`; the PR #3–#8 integration baseline is
+  `16c858b`; `pre-pr3-8-integration` at `b552ac0` is the older backup tag.
+- **Current development branch:** `feature/phase4b-isolated-config-write` (Phase 4B-1).
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; this memory does not pin the Phase
+  4B-1 commit SHA.
 - **Worktree:** clean
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-PRs #1/#2 and feature PRs #3–#8 are merged. `main` now contains the Phase 3B/4A/UI/Safety work.
+PRs #1/#2 and feature PRs #3–#8 are merged. Phase 4B-1 is a separate, unmerged branch; its isolated
+write infrastructure is `OFFLINE` and has no production route.
 
 ---
 
@@ -66,6 +67,10 @@ main
 All six PRs were merged with merge commits and retargeted to `main` in order. There were
 **0 prior human reviews** at integration time; CI green is not approval.
 
+Phase 4B-1 is on `feature/phase4b-isolated-config-write`: isolated single-file config store, schema,
+migration, revision/conflict handling, atomic save/rollback and a test-only API. It is not merged and
+has no production write route.
+
 ---
 
 ## 4. Completed stages and acceptance levels
@@ -78,7 +83,8 @@ All six PRs were merged with merge commits and retargeted to `main` in order. Th
 | Isolated Playwright UI Inspector | Merged in #6/#7/#8; 12/12 UI checks |
 | Send & Safety frontend | `MOCK` / disabled backend controls; real DSH GUI visual acceptance PASS |
 | Native voice delivery | `RESEARCH_CANDIDATE`; WeChatAgent native = `UNSUPPORTED` |
-| Phase 4B | **Not started** |
+| Phase 4B-1 isolated config write | **`OFFLINE`** — single-file store + test-only API; no production write |
+| Phase 4B-2 production write/apply | **Not started** |
 
 Real GUI evidence exists for the Send & Safety page; it does **not** mean the Windows safety backend
 exists.
@@ -87,20 +93,26 @@ exists.
 
 ## 5. Current task
 
-This task completed the PR #3–#8 GitHub integration:
+This task implemented Phase 4B-1 isolated configuration writes:
 
-- merged #3 → #4 → #5 → #6 → #8 → #7 with merge commits and base retargeting;
-- resolved the PR #7 documentation union in favour of #8's newer state;
-- verified the final `main` with build, 65 Node tests and 12 UI checks.
+- opaque trusted sandbox capability under the OS temporary root; ordinary/forged/production paths rejected;
+- strict v1 schema and pure v0→v1 migration;
+- process-local HMAC revision and `expectedRevision` conflict detection;
+- single-file temp+fsync+rename save with post-save verification/rollback;
+- pure read returns `UNCHANGED`; successful write returns `SAVED`/`PENDING_APPLY`;
+- sanitized public projection with `activeRevision:null` / `activeConfirmed:false` / `activeState:UNKNOWN`;
+- test-only loopback write API, not registered on the production Host;
+- 33 new behavior tests; 98 Node tests total.
 
-No runtime code, production configuration, service restart or real send was involved.
+No production configuration, service restart, DSH reload or real send was involved.
 
 ---
 
 ## 6. Unresolved issues
 
 1. **0 prior human reviews** at integration time; CI green does not equal approval.
-2. Phase 4B configuration-write API is not implemented.
+2. Phase 4B-2 production write/apply, multi-file transaction and cross-process CAS are not
+   implemented.
 3. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
 4. Native voice delivery candidates remain unintegrated and unverified.
@@ -124,8 +136,12 @@ No runtime code, production configuration, service restart or real send was invo
 - Bounded streamed health/config reads; no unbounded fallback body read.
 - Explicit-only `accountVerified`; account object alone stays unknown.
 - Opaque process-keyed config revision covering voice/worker/TTS/permission/source fields.
+- Phase 4B-1 isolated store: trusted sandbox capability, strict v1 schema, pure v0→v1 migration,
+  HMAC revision, `expectedRevision` conflict detection, single-file atomic save/verify/rollback,
+  sanitized public projection, read/write state separation and a test-only loopback API. No production
+  write route.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 64 behavior tests and 12 UI checks pass on the current PR #8 branch.
+- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on the Phase 4B-1 branch.
 
 ---
 
@@ -139,7 +155,8 @@ Do not present these as working:
 - fullscreen/game detection and pause policy;
 - automatic Qwen startup;
 - native voice delivery (`wechatagent-native` or `third-party-native`);
-- actual configuration write API;
+- production configuration write/apply API (Phase 4B-1 has an isolated single-file store only);
+- multi-file transaction/partial-success recovery and cross-process CAS;
 - actual TTS preview/cloud provider;
 - real group voice;
 - production installer/update/rollback.
@@ -149,6 +166,10 @@ Do not present these as working:
 ## 9. Critical safety boundaries
 
 - No production configuration writes without a separate explicit authorization.
+- Phase 4B-1 store/API must remain isolated: only a trusted sandbox capability may be used; never
+  point it at production directories or register its write route on the Host without separate
+  authorization. No silent overwrite; use `expectedRevision`. Do not claim a multi-file transaction
+  from separate single-file renames.
 - Never modify `voice.enabled`, Worker safety permit, whitelist, target maps or audio devices as part
   of development/tests.
 - No real WeChat text/voice send without explicit authorization and the existing safety gates.
@@ -175,32 +196,31 @@ node --test
 npm.cmd run test:ui
 ```
 
-Final integration result:
+Phase 4B-1 result:
 
 ```text
 build: PASS, client.js 186092 bytes
-node --test: 65/65 PASS (64 existing behavior tests + 1 docs-integrity test)
+node --test: 98/98 PASS (65 prior tests + 33 Phase 4B-1 store/API tests)
 UI: 12/12 PASS
 ```
 
 CI:
 
 - PR #3–#8: each merged after its CI reached SUCCESS;
-- `main`: build + ui SUCCESS after every merge;
-- final `main`: build + ui SUCCESS.
+- `main` at `16c858b`: build + ui SUCCESS;
+- Phase 4B-1 branch: CI to be verified after push; no merge in this task.
 
 ---
 
 ## 11. Next priority
 
-1. Phase 4B-1: isolated configuration write infrastructure
-   (schema, revision/optimistic concurrency, atomic save/recovery, saved-vs-effective, rollback,
-   secrets scan, isolated tests). It requires a separate task and authorization; production write
-   still needs separate authorization.
+1. Phase 4B-2: controlled production write/apply API, multi-file transaction/journal, cross-process
+   locking/CAS and trusted runtime-effect confirmation. It requires a separate task and authorization;
+   production writes still require separate authorization.
 2. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
 3. Start new development branches from the integrated `main`; do not reuse the merged stacked
-   branches as the baseline.
+   branches or the Phase 4B-1 branch as the baseline after it is reviewed.
 
 ---
 
@@ -220,6 +240,6 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after merging PR #3–#8 into `main` with merge commits, resolving the PR #7
-documentation union, and verifying the final tree with 65 Node tests and 12 UI checks. No runtime
-code or production behavior change.
+**2026-10-25**, after Phase 4B-1 isolated config write: strict schema/migration, HMAC revision,
+atomic single-file save/rollback, test-only API, 98 Node tests and 12 UI checks. No production
+configuration or runtime behavior change.

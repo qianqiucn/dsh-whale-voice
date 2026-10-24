@@ -123,7 +123,7 @@ write rather than reusing a stale revision.
 This keyed 32-hex revision is intentionally stronger than an unprotected SHA-256 of a small private
 allowlist. It remains an opaque identifier; it is not a secret and must not be treated as one.
 
-### Phase 4B write contract (planned, not implemented)
+### Phase 4B write contract (production planned)
 
 - The future write API must require `expectedRevision`.
 - A stale revision must be rejected with a conflict; there is no silent overwrite.
@@ -134,6 +134,20 @@ allowlist. It remains an opaque identifier; it is not a secret and must not be t
   transitively atomic. The future design must define a transaction/journal or explicitly limited
   atomicity and recovery.
 - Saved success remains separate from runtime effective state.
+
+### Phase 4B-1 isolated implementation (OFFLINE)
+
+`core/config-sandbox.mjs` + `core/config-store.mjs` + `core/config-schema.mjs` now implement a
+**single-file, sandboxed** configuration store with a trusted test-sandbox capability, strict v1
+schema validation, pure v0→v1 migration, a process-local HMAC revision, `expectedRevision` conflict
+detection, temp+fsync+rename atomic save, post-save verification/rollback and read/write state
+separation. `core/isolated-write-server.mjs` is a test-only loopback API and is not registered by the
+production DSH Host.
+
+The isolated file is not one of the authoritative production files above. No production path,
+WeChatAgent, Bridge, Sender, Qwen or `core.json` write is performed. Multi-file transaction, a
+production write route, cross-process CAS and runtime apply confirmation remain future work. See
+[CONFIG_WRITE_API.md](CONFIG_WRITE_API.md).
 
 Missing/unreadable source behavior remains: affected fields `null`; source error is preserved; the
 revision changes because source state is part of the declared coverage.
