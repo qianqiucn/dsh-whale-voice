@@ -84,7 +84,9 @@ connection required; no secret values.
 **Acceptance:** Config round-trips, invalid config fails closed, task state transitions are tested,
 and no secret or private mapping is logged.
 
-**Current status:** `PLANNED`.
+**Current status:** Phase 4A read-only config snapshot and UI readout implemented and tested
+(`OFFLINE`). Saved-vs-active is separated; live DSH integration requires a Host reload/DSH restart.
+Write APIs, migration and permission-detail management remain `PLANNED`; no production write exists.
 
 ---
 

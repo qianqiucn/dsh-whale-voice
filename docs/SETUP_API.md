@@ -14,6 +14,9 @@ The DSH Host row (`index.js`) registers these same-origin, token-protected loopb
 GET /whale-voice/setup/health
 GET /whale-voice/setup/status
 GET /whale-voice/setup/detect?component=wechatagent|sender|qwen
+GET /whale-voice/setup/config
+GET /whale-voice/setup/config/sources
+GET /whale-voice/setup/config/status
 ```
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
@@ -43,6 +46,9 @@ The current client reads the trusted host bridge:
 ```js
 window.__WHALE_SETUP__ = {
   getStatus(): Promise<SetupStatus>,
+  getConfig(): Promise<ConfigSnapshot>,
+  getConfigSources(): Promise<ConfigSources>,
+  getConfigStatus(): Promise<ConfigStatus>,
   detect(component): Promise<ComponentStatus>
 }
 ```
@@ -98,6 +104,47 @@ validation.
 Health endpoints requiring a token are reported as `auth_required`; Whale Voice does **not** read
 Hook/Sender token files to turn that into a green status. `connected` is true only for a validated,
 ready health response. Version strings marked `config_expected` are not runtime proof.
+
+### ConfigSnapshot shape (v1 read-only)
+
+```json
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-24T03:49:32.528Z",
+  "readMode": "read-only",
+  "configRevision": "17d122c5700fdd96",
+  "application": {
+    "savedRevision": "17d122c5700fdd96",
+    "activeRevision": null,
+    "state": "MISMATCH",
+    "saved": true,
+    "activeConfirmed": false
+  },
+  "voice": {
+    "enabled": false, "mode": "explicit", "forGroup": false,
+    "autoProbability": 0, "defaultVoice": "whale-v1",
+    "source": "voice-settings", "consistency": "mismatch",
+    "active": { "confirmed": false, "enabled": null, "mode": null, "source": null }
+  },
+  "tts": {
+    "provider": "qwen-local", "model": null, "voice": "whale-v1",
+    "configured": true,
+    "runtime": { "reachable": true, "state": "ok", "model": "Qwen3-TTS-12Hz-1.7B-Base", "voice": "whale-v1", "preview": false },
+    "mismatch": null
+  },
+  "permissions": { "privateCount": 2, "groupCount": 1, "senderAllowedCount": 1, "detailAvailable": false },
+  "sender": { "configAvailable": true, "serviceVersion": "0.1.0", "workerVersion": null, "serviceRunning": false, "healthReachable": false, "healthy": null, "recoveryPending": null, "serviceWorkerConsistency": "match" },
+  "sources": [{ "id": "voice-settings", "available": true, "readable": true, "error": null, "sensitive": true, "exposed": false }]
+}
+```
+
+`application.state` is `UNKNOWN` or `MISMATCH`; it is **not** `ACTIVE` without a supported runtime
+config-version interface. `recoveryPending:null` means unknown. Permission details are never
+returned; `detailAvailable:false` is intentional. See
+[CONFIG_SOURCES.md](CONFIG_SOURCES.md) for authority and sensitive-field rules.
+
+The config routes accept no path, URL, component or command from the browser. `GET /config` is the
+only source of these values; `sources` and `status` are projections of the same snapshot.
 
 `completed` is authoritative only when produced by Core from real checks. It must never be derived
 only from a browser flag, LocalStorage, file existence, or a Mock screen.

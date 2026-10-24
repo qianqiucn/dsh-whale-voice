@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; **Phase 3B `INTEGRATED`** (real DSH Host + trusted bridge + real GUI component data), not `VERIFIED`; Phase 4A not started
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `OFFLINE`** (code/tests complete, live Host reload pending), not `INTEGRATED`/`VERIFIED`
 **Latest associated commit:** `832fc24ab2133dfebcfe455112d26d804e2540c3` — `docs: record Phase 3A closure`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -71,13 +71,17 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       Phase 3A remains `OFFLINE`; Phase 3B later integrated live.
 - [x] P7 Phase 3 live integration: user restarted DSH; routes return 401; no Host reload was used.
 - [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
-      demo isolation; 34 behavior tests pass; local read-only smoke recorded in
+      demo isolation; 51 behavior tests pass; local read-only smoke recorded in
       `docs/PHASE3_READONLY.md`.
 - [x] Phase 3B read-only Host activation review and minimal-reload options documented in
       [PHASE3B_HOST_ACTIVATION.md](PHASE3B_HOST_ACTIVATION.md); no reload/restart performed by Agent.
 - [x] Phase 3B real GUI acceptance: Core read `%DSH_HOME%\whale-voice\core.json`, WeChatAgent
       0.3.9/auth_required, Sender 0.1.0 offline, Qwen health valid, recovery/voice unknown,
       completion false. Status `INTEGRATED`, not `VERIFIED`.
+- [x] Phase 4A read-only config snapshot: voice, TTS, permissions counts, sender config, saved/active
+      separation, source inventory and sanitized revision; config and sources endpoints added.
+- [x] Phase 4A real frontend readout in overview/settings/permissions/studio/advanced; Mock remains
+      labelled; no write controls enabled. `OFFLINE` pending Host reload.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -85,7 +89,8 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
-- [ ] Phase 4A: Core configuration read-only management (not started; requires separate task).
+- [ ] Phase 4A live verification: Host reload/DSH restart, then confirm real config readout and no secrets.
+- [ ] Phase 4B config write/schema/migration (not started; requires a separate authorization).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -120,6 +125,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
    WeChatAgent `auth_required`, Sender offline, Qwen health valid. Sender is not running; it was not
    started. Live No-Core/timeout/invalid-schema/stale GUI tests were not performed and remain
    `OFFLINE` behavior tests; this is why Phase 3B is `INTEGRATED`, not `VERIFIED`.
+9. Phase 4A is `OFFLINE`: config snapshot/readout and tests are complete, but the running DSH Host
+   predates the new `/config` routes. Live readout requires a normal Host reload/DSH restart, not
+   performed here. No write API exists.
 
 ## Verification evidence
 
@@ -134,13 +142,15 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 34 tests passed: sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
-| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider configured=false; completed=false; voiceEnabled=unknown |
+| `node --test` | 51 tests passed: config sources/safety, sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
+| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 detection provider configured=false; completed=false; voiceEnabled=unknown |
+| Config snapshot | saved voice false (voice-settings) vs worker true → MISMATCH; TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
-| Core setup API | read-only host route is live (401 without token); write/installer API absent |
+| Core setup API | read-only status/detect live (401 without token); config routes implemented in code, Host reload pending; write/installer API absent |
 | Live DSH host bridge | current port 53832; Host routes 401; trusted bridge injects; real GUI shows actual component data |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
+| Phase 4A config read | `OFFLINE`; 51 tests/build pass; real GUI config readout requires Host reload/DSH restart |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
@@ -150,12 +160,11 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 ## Next highest-priority task
 
-**Next: Phase 4A — Core configuration read-only management** (not started). It must cover config
-source/read, schema validation, version information and explicit separation of "saved" versus
-"effective"; production writes require separate authorization. Phase 3B is `INTEGRATED`; live
-No-Core/timeout/invalid-schema/stale GUI tests remain explicitly `OFFLINE`, not `VERIFIED`. Do not
-start with an installer or a full event/identity Adapter. Voice Sender's final independent safety
-verification remains mandatory before real sending.
+**Next: Phase 4A live verification** — after an authorized Host reload/DSH restart, confirm
+`getConfig`/`getConfigSources`/`getConfigStatus`, the real GUI readout, saved-vs-active separation and
+absence of secrets. Then **Phase 4B** (schema/version, atomic write, migration) requires a separate
+task and production-write authorization. Do not start with an installer or a full event/identity
+Adapter. Voice Sender's final independent safety verification remains mandatory before real sending.
 
 ## Update rule
 

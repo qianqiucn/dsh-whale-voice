@@ -526,9 +526,9 @@ window.__ModuleLoader__.load({
 
       let body = null
       if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
-      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify })
-      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify })
-      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify })
+      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup })
+      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup })
+      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup })
       else if (page === 'emotions') body = h(EmotionsPage, { emotion, setEmotion, notify })
       else if (page === 'activity') body = h(ActivityPage, { notify, openActivity: setActivityDetail })
       else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })

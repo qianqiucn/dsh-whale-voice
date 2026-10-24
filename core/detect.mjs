@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fetchJson } from './http.mjs'
 import { detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
+import { readConfigSnapshot, configStatusFromSnapshot } from './config.mjs'
 export { SUPPORTED_WECHATAGENT, detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
 
 export const SCHEMA_VERSION = 1
@@ -204,6 +205,11 @@ export function createDetector(options = {}) {
       detectComponent('sender').catch((e) => normalizeFailure('sender', e)),
       detectComponent('qwen').catch((e) => normalizeFailure('qwen', e)),
     ])
+    const configSnapshot = readConfigSnapshot({
+      config,
+      runtime: { wechatAgent, sender, tts: qwen },
+      now,
+    })
     const completed = false
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -212,12 +218,15 @@ export function createDetector(options = {}) {
       core: { version: '0.1.0', mode: 'read-only' },
       environment: { windows: process.platform === 'win32', architecture: process.arch, node: process.version },
       voiceEnabled: null,
-      voiceStateSource: 'not_read',
+      voiceStateSource: 'not_read_active_only',
       wechatAgent,
       sender,
       senderEvidence: { observedAt: sender.observedAt, evidence: sender.evidence },
       tts: {
         configured: false,
+        savedProvider: configSnapshot.tts.provider,
+        savedVoice: configSnapshot.tts.voice,
+        savedConfigured: configSnapshot.tts.configured,
         provider: qwen.state === 'ok' ? 'qwen-local' : null,
         available: qwen.state === 'ok' ? ['qwen-local'] : [],
         model: qwen.model || null,
@@ -229,6 +238,8 @@ export function createDetector(options = {}) {
       },
       ttsEvidence: { observedAt: qwen.observedAt, evidence: qwen.evidence },
       qwen,
+      config: configSnapshot,
+      configStatus: configStatusFromSnapshot(configSnapshot),
       observedAt: now().toISOString(),
       durationMs: Date.now() - started,
       generation: myGeneration,
@@ -237,10 +248,30 @@ export function createDetector(options = {}) {
     }
   }
 
+  async function getConfigSnapshot() {
+    return (await detectAll()).config
+  }
+
+  async function getConfigStatus() {
+    return configStatusFromSnapshot(await getConfigSnapshot())
+  }
+
+  async function getConfigSources() {
+    const snapshot = await getConfigSnapshot()
+    return {
+      schemaVersion: snapshot.schemaVersion,
+      observedAt: snapshot.observedAt,
+      sources: snapshot.sources,
+    }
+  }
+
   return {
     config,
     detectComponent,
     detectAll,
+    getConfigSnapshot,
+    getConfigStatus,
+    getConfigSources,
     isCurrent(g) { return g === generation },
     get generation() { return generation },
   }

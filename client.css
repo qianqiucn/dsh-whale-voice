@@ -604,3 +604,13 @@ body:not([data-ds-dark-theme]) .wv-root {
 @media (prefers-reduced-motion: reduce) {
   .wv-root *, .wv-root *::before, .wv-root *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
+
+/* Real config readout - read-only Core snapshot */
+.wv-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.wv-config-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 11px; border: 1px solid var(--wv-hairline); border-radius: var(--wv-r-sm); background: color-mix(in srgb, var(--wv-layer2) 26%, transparent); min-width: 0; }
+.wv-config-item span { color: var(--wv-muted); font-size: 10.5px; }
+.wv-config-item strong { font-size: 12.5px; font-weight: 620; overflow-wrap: anywhere; }
+.wv-config-item small { color: var(--wv-muted); font-size: 10.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.wv-config-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 10.5px; }
+.wv-config-warn { color: var(--wv-warn); }
+@media (max-width: 760px) { .wv-config-grid { grid-template-columns: 1fr; } }

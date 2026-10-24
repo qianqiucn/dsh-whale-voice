@@ -75,6 +75,15 @@ export function createCoreServer(options = {}) {
       if (url.pathname === '/setup/status') {
         return send(res, 200, await detector.detectAll())
       }
+      if (url.pathname === '/setup/config') {
+        return send(res, 200, await detector.getConfigSnapshot())
+      }
+      if (url.pathname === '/setup/config/sources') {
+        return send(res, 200, await detector.getConfigSources())
+      }
+      if (url.pathname === '/setup/config/status') {
+        return send(res, 200, await detector.getConfigStatus())
+      }
       if (url.pathname === '/setup/detect') {
         const component = url.searchParams.get('component') || ''
         if (!components.includes(component)) return send(res, 400, { ok: false, error: 'unsupported_component' })
