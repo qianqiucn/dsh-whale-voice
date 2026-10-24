@@ -202,10 +202,12 @@ Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation 
 no-Core state; it is not install acceptance.
 
 **Current status:** Phase 2 wizard/component UI and Phase 3 read-only Core detection are implemented
-and covered by isolated tests (`OFFLINE`). Phase 3B is `BLOCKED`: no verified supported single-plugin
-Host reload was found; the normal DSH quit/relaunch (Plan B) awaits second authorization. No
-reload/restart was performed. Real installation, upgrade, rollback, TTS credentials and clean-machine
-acceptance remain `PLANNED`; no one-click installer exists today.
+and covered by isolated tests (`OFFLINE`). Phase 3B Host transport is now verified live (routes
+return 401; trusted bridge injects; GUI Core v0.1.0 connected), but full acceptance is `BLOCKED`:
+Core has no configured component roots, so the GUI truthfully shows `未配置`, and live
+No-Core/timeout/stale tests remain. A read-only Core config and normal DSH restart need separate
+authorization. No such config write or restart was performed. Real installation, upgrade, rollback,
+TTS credentials and clean-machine acceptance remain `PLANNED`; no one-click installer exists today.
 
 ---
 

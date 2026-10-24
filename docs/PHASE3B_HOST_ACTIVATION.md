@@ -1,9 +1,13 @@
-# Phase 3B — Host Activation Plan (Read-only Review)
+# Phase 3B — Host Activation and GUI Integration
 
-**Status:** `BLOCKED` — the authorized Plan A investigation found **no verified supported
-single-plugin Host reload** in this DSH build. No reload/restart was executed.
+**Status:** Host route and trusted bridge are **INTEGRATED at transport level**; full Phase 3B is
+`BLOCKED` because Core has no configured component roots and live No-Core/timeout/stale tests remain
+unverified.
 **Phase 3A:** `OFFLINE` (34 behavior tests pass).
-**No Host reload, DSH restart or production-service restart was performed.**
+**No Host reload, DSH restart or production-service restart was performed by this task.**
+
+The DSH process was observed to have been restarted externally at 2026-10-24 05:19:43. That new
+process loaded the current Host row; no restart was performed by the Agent.
 
 ---
 
@@ -12,151 +16,95 @@ single-plugin Host reload** in this DSH build. No reload/restart was executed.
 | Check | Result |
 |---|---|
 | Git branch | `feature/phase3-core-detect` |
-| HEAD | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
+| Source HEAD at inspection | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
 | PR #3 | Open |
 | PR #4 | Open; base `feature/first-run-setup-wizard` |
-| Current Host route | `GET /whale-voice/setup/health` → **404** |
+| DSH process start | 2026-10-24 05:19:43 (external restart; not by Agent) |
+| Current DSH GUI | `http://127.0.0.1:55389` |
+| `GET /whale-voice/setup/health` (no token) | **401** (route exists; auth required) |
+| `GET /whale-voice/setup/status` (no token) | **401** (route exists; auth required) |
+| `window.__WHALE_SETUP__` actual use | proven by real UI Core row `0.1.0 / 已连接` and real setup banner |
+| UI banner | `首次设置还没有完成` (not No-Core) |
+| Component manager | Core `0.1.0 / 已连接`; WeChatAgent/Sender/TTS `未配置` |
+| Core component roots | not configured; `%DSH_HOME%\whale-voice\core.json` absent |
 | `dsh-whale-voice` package link | Junction → this workspace |
-| Profile bundle list | includes `dsh-whale-voice` |
-| Host row inventory | `include:dsh-whale-voice`, `enabled`, `fiberPhase=active` |
-| Host Config entry | `status: absent` (plugin has no Config schema; not itself a route error) |
-| `webServer` service | active |
-| `connection` service | active |
+| Profile bundle / Host row | present / active |
+| `webServer` + `connection` | active |
 | Host module import | `host-import-ok`; exports `apply` |
-| Host load error in available hub log | not found |
-| DSH process start | 2026-10-23 22:56:32 |
-| Current `index.js` mtime | 2026-10-24 04:55:33 |
-| Current client bundle | rebuilt, 171720 bytes |
-| Host loaded module version | **unknown** (live module instance not exposed through Inspector) |
-| Source HEAD | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
+| Host load error | not found in available hub log |
 
-The running process predates the current Host source. This is strong evidence for a stale Host
-row, but **not a complete proof of the final root cause**: the live Host module instance cannot be
-read directly through the available Inspector API. The 404 proves the route is not registered;
-it does not by itself prove whether the cause is stale code, an apply failure or a registration
-failure.
+The earlier 404 is resolved. The 401 responses are **normal authentication rejection**, not a missing
+route. The UI uses the trusted Host bridge and displays real Core data, not a Mock fallback.
 
-## 2. What is already ruled out
+The observed Core status is:
 
-- The workspace/profile link target is correct.
-- The package is listed in the profile bundles and its Host row is active.
-- `package.json` exports `./index.js`; the bundle patch path is present.
-- The Host module parses and exports `apply` outside DSH.
-- `webServer` and `connection` services are active.
-- No Host load error was found in the available hub log.
-- A 404 here is **not** an authentication rejection (401/403) and not evidence that the token
-  check failed; it means no matching named route answered.
+- Core: connected, v0.1.0.
+- WeChatAgent: not configured (no detection root supplied).
+- Voice Sender: not configured.
+- TTS: `qwen-local` known only as a provider label; not configured.
+- Setup completed: false.
 
-## 3. What remains unknown
+This is a truthful real status. It is not the final component acceptance because the Core must be
+given explicit read-only roots before installed/auth_required/unknown component states can be shown
+in the GUI.
 
-- Which exact Host module instance the running DSH process holds.
-- Whether a host-plugin reload is supported as a one-click/plugin-manager operation, or whether the
-  only reliable path is a DSH process restart.
-- Whether `hmr.reconcileProfile()` can be invoked through a supported administrative surface without
-  restarting the whole process.
-- Whether the page currently has an injected `window.__WHALE_SETUP__` at all (the UI remains
-  No-Core; route 404 is consistent with injection being absent, but not proof of the injection
-  state).
+## 2. What is already verified
 
-## 4. Reload options
+- Real Host route exists (401 instead of 404).
+- Unauthenticated requests are rejected.
+- The trusted bridge is actually used by the page (real Core version/status).
+- No Mock fallback is shown as real.
+- The route requires the plugin token; no authentication was weakened.
+- No production service was restarted or modified by the Agent.
 
-### Option A — targeted Host/plugin reload (authorized, investigated, not executable)
+## 3. What remains blocked
 
-Investigating this path found:
+- Core has no explicit read-only roots. A Core config file would be a production config write and
+  was not created without authorization.
+- Consequently the GUI shows `未配置`, not the actual installed WeChatAgent/Sender states.
+- Live No-Core, Core timeout, abnormal response and stale-scan behavior are covered by behavior tests
+  but not exercised against the live Host because doing so would require stopping/breaking the Host
+  or removing the bridge.
+- The safe next step needs either an authorized read-only Core config plus a Host reload/restart, or
+  explicit authorization to configure roots in another supported way.
 
-- `hmr.reconcileProfile()` exists as a Host service API, but is **not exposed to this Agent** as a
-  supported tool or user-facing command.
-- The installed Plugin Manager exposes the Host entry but no verified single-plugin code-reload
-  action; its own UI copy says some plugin changes require a host restart.
-- Disable/enable through the Plugin Manager cannot be assumed to evict the loaded module or
-  re-execute `apply()`; using it would be an unverified state toggle, not a reliable reload.
-- A page refresh cannot load a Host row.
-- Triggering HMR by touching production config/files is not an approved mechanism and was not
-  performed.
+## 4. Historical note
 
-**Outcome:** Plan A stopped. No unsupported workaround, no disable/enable experiment, no forced
-termination, no full restart.
+The earlier 404 was observed while the running DSH process held the old empty Host row. That process
+was subsequently restarted externally at 05:19:43; the new process registered the Host routes. The
+Agent did not perform that restart or any Host reload.
 
-### Option B — DSH process restart (proposed fallback, awaiting second authorization)
+The earlier Plan A investigation found no verified supported single-plugin reload; it did not execute
+an unsupported toggle or a full restart.
 
-Close and relaunch DSH using its supported exit/launch path.
+## 5. Remaining blocker and next authorization
 
-- Scope: whole DSH Host process and all Host rows/client session.
-- Likely impact: current DSH UI session and remote session reconnect; in-flight DSH operations may
-  be interrupted.
-- WeChatAgent, Voice Sender and Qwen are separate processes and are not intentionally restarted.
-- Config writes: none planned.
-- Rollback: normal DSH restart; no repository/data deletion.
-- Must not use uninstrumented process termination.
+The transport-level bridge is now integrated, but full Phase 3B acceptance is still blocked:
 
-### Option C — client/page refresh (not sufficient)
+- Core has no explicit read-only component roots.
+- The GUI truthfully shows `未配置` for WeChatAgent/Sender/TTS.
+- To show installed/auth_required states, an authorized read-only Core configuration is required.
+- Creating `%DSH_HOME%\whale-voice\core.json` would be a new configuration write and was not
+  performed under the current authorization.
+- After adding read-only roots, a Host reload or DSH quit/relaunch would be needed for the Host
+  detector to read them, because no verified single-plugin reload is available.
+- Live No-Core, timeout, abnormal-response and stale-scan GUI tests also require a controlled way to
+  break/restore the bridge without touching WeChatAgent, Sender or Qwen.
 
-Refreshes client assets only. It cannot install a new Host row or register a Host route. It is not an
-acceptable fix for the 404.
+### Proposed next minimal steps (awaiting authorization)
 
-## 5. Candidate commands / APIs (do not execute without authorization)
+1. Authorize a read-only Whale Voice Core config containing only the component roots and Qwen URL.
+2. Use the normal DSH Quit/Relaunch path (no forced process termination) so the Host reads it.
+3. Reopen the GUI and verify installed/auth_required/unknown states, then run No-Core/timeout/stale
+   tests with the approved test method.
+4. Roll back by removing the read-only Core config and relaunching normally; no WeChatAgent, Sender,
+   Qwen, WeChat, allow-list or voice switch is modified.
 
-The DSH Host exposes an HMR service with:
+### Current post-reload checks
 
-```text
-hmr.reconcileProfile(requiredIds?: string[]): Promise<ProfileReconciliation>
-```
-
-This is a Host service API, not a shell command. Its documented behavior is to recompose the profile
-and replace running plugins whose loaded files changed. The Whale Voice Host entry is
-`include:dsh-whale-voice`. This is the closest targeted reload primitive found; it is **not exposed
-to this Agent as an invocation tool**, and invoking it needs a trusted DSH administrative path.
-
-The Plugin Manager inventory exposes the Host entry:
-
-```text
-entryId: include:dsh-whale-voice
-moduleName: dsh-whale-voice
-fiberPhase: active
-```
-
-No verified Plugin Manager code-reload action was found. Disable/enable is not accepted as proof of a
-module reload. The fallback is a normal DSH application **Quit/Exit** and relaunch. Do not use Task
-Manager, `Stop-Process`, `taskkill`, or any uninstrumented termination.
-
-## 6. Plan B minimal restart (awaiting second authorization)
-
-This is **not authorized yet** and has not been performed.
-
-1. Save/close any active DSH work.
-2. Use the DSH application menu (or tray) **Quit/Exit**, not a forced process kill.
-3. Wait for the DSH process to exit completely.
-4. Relaunch the same DSH installation/profile.
-5. Reopen Whale Voice and run the post-reload acceptance checks.
-
-Impact:
-
-- The current DSH process, UI page and this Agent/session will terminate/reconnect; in-flight DSH
-  operations may be interrupted.
-- WeChatAgent, Voice Sender, Qwen and WeChat are separate and must remain untouched.
-- No production config, allow-list, voice switch, audio device or DSH repository data is written.
-- Rollback: normal DSH relaunch; no data/repository deletion.
-
-## 7. Authorization gates
-
-Plan A is stopped because no reliable supported single-plugin reload was found. Before Plan B,
-require explicit second authorization for:
-
-1. The normal DSH quit/relaunch operation.
-2. Acceptance that the current DSH session and Agent connection will be interrupted.
-3. Confirmation that WeChatAgent, Voice Sender, Qwen and WeChat remain untouched.
-4. Confirmation of no production config writes and the rollback path.
-
-## 8. Post-reload acceptance (only after authorization)
-
-1. `/whale-voice/setup/health` responds according to route/auth state.
-2. `/whale-voice/setup/status` returns the Core status schema.
-3. Unauthenticated request is rejected (401/403), not silently accepted.
-4. A legitimate same-origin DSH request reaches Core.
-5. Missing connection fails closed (503).
-6. Connection rejection/replacement/dispose behavior is rechecked.
-7. `window.__WHALE_SETUP__` is injected by the Host, not defined by the client.
-8. The UI shows real component status, not Mock fallback.
-9. No-Core, timeout, invalid response and stale scan behavior are rechecked in the real GUI.
-
-Until all of the above are verified, Phase 3B remains `BLOCKED`, not `INTEGRATED`.
+- `GET /whale-voice/setup/health` without token → **401** (route exists; auth required).
+- `GET /whale-voice/setup/status` without token → **401** (route exists; auth required).
+- Real GUI banner: `首次设置还没有完成`.
+- Real component manager: Core `0.1.0 / 已连接`; WeChatAgent/Sender/TTS `未配置`.
+- The page is using real Core data, not a Mock fallback.
+- Full Phase 3B remains `BLOCKED`, not `INTEGRATED`.
