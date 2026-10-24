@@ -4,9 +4,9 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0 baseline complete; P9 private repository and CI baseline complete
-**Latest associated commit:** `a054613e10dfef4638976cefd5ea67ba412f4154` — `docs: document WeChatAgent dependency and compatibility`
-**Latest PR:** [#1 — docs: establish WeChatAgent required dependency](https://github.com/qianqiucn/dsh-whale-voice/pull/1)
+**Current stage:** P0 baseline complete; P9 private repository, docs sync and CI baseline complete
+**Latest associated commit:** `e836a9e5802160893e507189725f27f93d49110b` — `docs: establish WeChatAgent required dependency (#1)`
+**Latest PR:** [#1 — docs: establish WeChatAgent required dependency](https://github.com/qianqiucn/dsh-whale-voice/pull/1) — **merged**
 
 ---
 
@@ -62,12 +62,12 @@ not implemented yet.
       Changelog, License and .gitignore.
 - [x] Local screenshot evidence reviewed and intentionally excluded from Git.
 - [x] First private-repository commit and `main` push completed.
+- [x] WeChatAgent dependency documentation merged to `main` via PR #1.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] Review/merge PR #1 (WeChatAgent dependency documentation).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -110,6 +110,7 @@ not implemented yet.
 | WeChatAgent Adapter | not implemented; documented dependency only |
 | Missing-WeChatAgent UI state | documented requirement; not implemented |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
+| PR #1 WeChatAgent docs | merged to `main`; CI passed |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
