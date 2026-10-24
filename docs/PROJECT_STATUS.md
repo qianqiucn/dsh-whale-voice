@@ -5,8 +5,8 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 frontend/Mock complete; Phase 3 blocked on Core
-**Latest associated commit:** `b552ac00e7fc05a5818965d61ab90c5ec115efee` — `docs: record WeChatAgent dependency merge (#2)`
-**Latest PR:** [#2 — docs: record WeChatAgent dependency merge](https://github.com/qianqiucn/dsh-whale-voice/pull/2) — **merged**
+**Latest associated commit:** `474359f66bfb35912eafd1c5cd150f60c9cfde36` — `feat: add first-run setup wizard UI`
+**Latest PR:** [#3 — feat: first-run setup wizard (frontend/Mock phase 2)](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open**
 
 ---
 
@@ -70,6 +70,7 @@ not implemented yet.
 
 ## In progress
 
+- [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -121,6 +122,7 @@ not implemented yet.
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
+| PR #3 setup wizard | open; CI passed; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
