@@ -5,9 +5,9 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI + Phase 3 read-only detection complete
-**Latest associated commit:** `8dc05708933e96581fd62d91dbfb38c87a34c236` — `fix: harden setup status and add contract tests`
-**Latest PR:** [#3 — feat: first-run setup wizard (frontend/Mock phase 2)](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open**
-**Dependent work:** Phase 3 Core/read-only branch, PR pending; depends on PR #3
+**Latest associated commit:** `f920f9fa0327d31515fe8352c017ee8324e884d1` — `feat: add read-only core detection bridge`
+**Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
+**PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
 
 ---
 
@@ -131,6 +131,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
 | PR #3 setup wizard | open; CI passed; not merged |
+| PR #4 read-only Core | open; CI passed; depends on PR #3 |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
