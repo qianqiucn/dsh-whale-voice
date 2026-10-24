@@ -202,12 +202,12 @@ Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation 
 no-Core state; it is not install acceptance.
 
 **Current status:** Phase 2 wizard/component UI and Phase 3 read-only Core detection are implemented
-and covered by isolated tests (`OFFLINE`). Phase 3B Host transport is now verified live (routes
-return 401; trusted bridge injects; GUI Core v0.1.0 connected), but full acceptance is `BLOCKED`:
-Core has no configured component roots, so the GUI truthfully shows `未配置`, and live
-No-Core/timeout/stale tests remain. A read-only Core config and normal DSH restart need separate
-authorization. No such config write or restart was performed. Real installation, upgrade, rollback,
-TTS credentials and clean-machine acceptance remain `PLANNED`; no one-click installer exists today.
+and covered by isolated tests. Phase 3B is **INTEGRATED**: current DSH Host routes return 401, the
+trusted bridge injects, Core reads the authorized `core.json`, and the real GUI shows WeChatAgent
+`auth_required`, Sender offline, Qwen health valid, and unknown recovery/voice fields. Sender was not
+started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is not
+`VERIFIED`. Real installation, upgrade, rollback, TTS credentials and clean-machine acceptance remain
+`PLANNED`; no one-click installer exists today.
 
 ---
 

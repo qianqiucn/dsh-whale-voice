@@ -20,8 +20,8 @@ not invent earlier releases or imply production maturity.
 - Strict Qwen health validation, bounded response bodies, redirect/body-limit handling.
 - Host authentication lifecycle fail-closed, connection replacement and dispose tests.
 - Phase 3B Host activation review: 404 evidence, reload options and authorization gates.
-- Phase 3B Host transport verified after an external DSH restart: routes return 401, trusted bridge injects, real GUI shows Core v0.1.0 connected.
-- Full Phase 3B remains blocked because Core component roots are unconfigured and read-only config/restart authorization is pending.
+- Phase 3B integrated after normal DSH restart: routes 401, trusted bridge, Core config loaded, real GUI shows WeChatAgent auth_required, Sender offline, Qwen health valid.
+- Phase 3B is `INTEGRATED`, not `VERIFIED`; live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

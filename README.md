@@ -75,11 +75,11 @@ The wizard reads the trusted `window.__WHALE_SETUP__` bridge injected by the hos
 bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuses to claim completion.
 “查看演示流程” is an explicitly labelled demo and does not install, download or send anything.
 
-This is **Phase 2 UI plus Phase 3 read-only detection**, with the Host transport **INTEGRATED** after
-an external DSH restart: `/whale-voice/setup/*` returns 401 without a token, the trusted bridge
-injects, and the GUI shows real Core v0.1.0 connected. Core has no configured component roots, so the
-GUI truthfully shows `未配置` and full Phase 3B remains `BLOCKED` pending an authorized read-only Core
-config and normal DSH restart. No config write or restart was performed by this repository. Real
+This is **Phase 2 UI plus Phase 3 read-only detection**, with **Phase 3B integrated** after a normal
+DSH restart: `/whale-voice/setup/*` returns 401 without a token, the trusted bridge injects, Core
+reads the authorized `core.json`, and the real GUI shows WeChatAgent `auth_required`, Sender offline,
+Qwen health valid, and unknown recovery/voice fields. Sender was not started. Live No-Core/timeout/
+invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is `INTEGRATED`, not `VERIFIED`. Real
 installation, TTS configuration and cleanup remain disabled and require the write API in
 [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
 [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host

@@ -1,13 +1,13 @@
 # Phase 3B — Host Activation and GUI Integration
 
-**Status:** Host route and trusted bridge are **INTEGRATED at transport level**; full Phase 3B is
-`BLOCKED` because Core has no configured component roots and live No-Core/timeout/stale tests remain
-unverified.
+**Status:** Phase 3B is **INTEGRATED** (real DSH Host + trusted bridge + real GUI component data).
+It is **not VERIFIED**: Sender is offline, WeChatAgent health is `auth_required`, TTS is not configured,
+and live No-Core/timeout/stale GUI tests were not performed.
 **Phase 3A:** `OFFLINE` (34 behavior tests pass).
 **No Host reload, DSH restart or production-service restart was performed by this task.**
 
-The DSH process was observed to have been restarted externally at 2026-10-24 05:19:43. That new
-process loaded the current Host row; no restart was performed by the Agent.
+The user performed the normal DSH restart. The current process started at 2026-10-24 05:36:38 and
+loaded the current Host row; the Agent re-discovered the new port and did not reuse the old PID/port.
 
 ---
 
@@ -16,95 +16,94 @@ process loaded the current Host row; no restart was performed by the Agent.
 | Check | Result |
 |---|---|
 | Git branch | `feature/phase3-core-detect` |
-| Source HEAD at inspection | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
+| Source HEAD at inspection | `2b4c6eb9db6305b68e7e795a4a45db7450d15c18` |
 | PR #3 | Open |
 | PR #4 | Open; base `feature/first-run-setup-wizard` |
-| DSH process start | 2026-10-24 05:19:43 (external restart; not by Agent) |
-| Current DSH GUI | `http://127.0.0.1:55389` |
+| DSH process start | 2026-10-24 05:36:38 (normal user restart) |
+| Current DSH GUI | `http://127.0.0.1:53832` |
 | `GET /whale-voice/setup/health` (no token) | **401** (route exists; auth required) |
 | `GET /whale-voice/setup/status` (no token) | **401** (route exists; auth required) |
-| `window.__WHALE_SETUP__` actual use | proven by real UI Core row `0.1.0 / 已连接` and real setup banner |
-| UI banner | `首次设置还没有完成` (not No-Core) |
-| Component manager | Core `0.1.0 / 已连接`; WeChatAgent/Sender/TTS `未配置` |
-| Core component roots | not configured; `%DSH_HOME%\whale-voice\core.json` absent |
-| `dsh-whale-voice` package link | Junction → this workspace |
-| Profile bundle / Host row | present / active |
-| `webServer` + `connection` | active |
-| Host module import | `host-import-ok`; exports `apply` |
-| Host load error | not found in available hub log |
+| `window.__WHALE_SETUP__` actual use | proven by real wizard data: WeChatAgent 0.3.9, 3 runtime PIDs, health 401, Sender 0.1.0 offline |
+| Core config | `%DSH_HOME%\whale-voice\core.json` (read by current Host) |
+| UI setup banner | `首次设置还没有完成` (real Core, not No-Core) |
+| Detection timestamp | `2026-10-24T03:40:45Z` shown in the real wizard |
+| WeChatAgent | v0.3.9 installed; 3 runtime PIDs; `/WeChatAgent/health` → 401 |
+| Voice Sender | v0.1.0 installed; runtime PID 35592 gone; `/health` connection failed |
+| Qwen | `/health` 200; model/voice valid; provider `configured:false` |
+| Setup completed | **false** |
+| `voiceEnabled` / recovery | **unknown** |
 
 The earlier 404 is resolved. The 401 responses are **normal authentication rejection**, not a missing
-route. The UI uses the trusted Host bridge and displays real Core data, not a Mock fallback.
+route. The real wizard uses the trusted Host bridge and displays the actual Core data; the overview
+page remains explicitly marked `演示数据`/`Mock`, and no Mock value is presented as a detection result.
 
-The observed Core status is:
+Observed real component state:
 
-- Core: connected, v0.1.0.
-- WeChatAgent: not configured (no detection root supplied).
-- Voice Sender: not configured.
-- TTS: `qwen-local` known only as a provider label; not configured.
-- Setup completed: false.
+- WeChatAgent 0.3.9 installed; process running; compatibility `compatible`; health 401 →
+  `auth_required`; account/connection unknown or failed, never healthy.
+- Voice Sender 0.1.0 installed; **not running**; health endpoint unreachable; `healthy:null`;
+  `recoveryPending:null`.
+- Qwen health valid; model `Qwen3-TTS-12Hz-1.7B-Base`; voice `whale-v1`; provider not configured;
+  preview not generated.
+- Finish page remains incomplete and explicitly says installation success is not WeChat voice enablement.
 
-This is a truthful real status. It is not the final component acceptance because the Core must be
-given explicit read-only roots before installed/auth_required/unknown component states can be shown
-in the GUI.
+## 2. What is verified
 
-## 2. What is already verified
-
-- Real Host route exists (401 instead of 404).
+- Current Host route exists (401 instead of 404).
 - Unauthenticated requests are rejected.
-- The trusted bridge is actually used by the page (real Core version/status).
-- No Mock fallback is shown as real.
-- The route requires the plugin token; no authentication was weakened.
-- No production service was restarted or modified by the Agent.
+- The trusted bridge is actually used by the page.
+- Core reads the minimal read-only config and reports actual components.
+- WeChatAgent 401 is shown as authentication required, not healthy.
+- Sender offline is shown as offline; it was not started or repaired.
+- Qwen service health is separated from Provider configuration.
+- Unknown recovery/voice fields remain unknown; completion stays false.
+- No Mock is presented as a real setup result.
+- No production service, allow-list, audio device, voice or chat setting was modified.
 
-## 3. What remains blocked
+## 3. Explicitly retained exceptions
 
-- Core has no explicit read-only roots. A Core config file would be a production config write and
-  was not created without authorization.
-- Consequently the GUI shows `未配置`, not the actual installed WeChatAgent/Sender states.
-- Live No-Core, Core timeout, abnormal response and stale-scan behavior are covered by behavior tests
-  but not exercised against the live Host because doing so would require stopping/breaking the Host
-  or removing the bridge.
-- The safe next step needs either an authorized read-only Core config plus a Host reload/restart, or
-  explicit authorization to configure roots in another supported way.
+- Live GUI No-Core, Core timeout, invalid schema and stale-scan behavior were not exercised because
+  that would require breaking/restoring the live Host connection; they remain covered by automated
+  behavior tests only (`OFFLINE`, not GUI-verified).
+- Sender is offline in the live environment; its 401 health state was not observed because no
+  service is listening. The UI correctly displays the offline/connection-failed state.
+- TTS audio preview was not generated; Provider configuration remains false.
+- WeChatAgent is not connected; its account verification/connection remain unknown or failed.
 
 ## 4. Historical note
 
-The earlier 404 was observed while the running DSH process held the old empty Host row. That process
-was subsequently restarted externally at 05:19:43; the new process registered the Host routes. The
-Agent did not perform that restart or any Host reload.
+The earlier 404 was observed while the running DSH process held the old empty Host row. The user
+subsequently performed a normal DSH restart; the current process (05:36:38) registered the Host
+routes. The Agent did not perform that restart or any Host reload.
 
 The earlier Plan A investigation found no verified supported single-plugin reload; it did not execute
 an unsupported toggle or a full restart.
 
-## 5. Remaining blocker and next authorization
+## 5. Current result and next stage
 
-The transport-level bridge is now integrated, but full Phase 3B acceptance is still blocked:
+Phase 3B is `INTEGRATED`:
 
-- Core has no explicit read-only component roots.
-- The GUI truthfully shows `未配置` for WeChatAgent/Sender/TTS.
-- To show installed/auth_required states, an authorized read-only Core configuration is required.
-- Creating `%DSH_HOME%\whale-voice\core.json` would be a new configuration write and was not
-  performed under the current authorization.
-- After adding read-only roots, a Host reload or DSH quit/relaunch would be needed for the Host
-  detector to read them, because no verified single-plugin reload is available.
-- Live No-Core, timeout, abnormal-response and stale-scan GUI tests also require a controlled way to
-  break/restore the bridge without touching WeChatAgent, Sender or Qwen.
+- Current DSH Host loaded the current plugin and registered the routes.
+- Unauthenticated requests return 401.
+- The trusted bridge reads Core.
+- Core read `%DSH_HOME%\whale-voice\core.json`.
+- The real wizard shows actual WeChatAgent/Sender/Qwen status and detection timestamp/source.
+- The finish page remains incomplete; unknown recovery/voice fields stay unknown.
+- No Mock is presented as a real setup result.
+- No production service, allow-list, audio device, voice or chat setting was modified.
 
-### Proposed next minimal steps (awaiting authorization)
+The following are explicitly not `VERIFIED` in the live GUI:
+No-Core, Core timeout, invalid-schema and stale-scan behavior. They remain covered by `OFFLINE`
+behavior tests only.
 
-1. Authorize a read-only Whale Voice Core config containing only the component roots and Qwen URL.
-2. Use the normal DSH Quit/Relaunch path (no forced process termination) so the Host reads it.
-3. Reopen the GUI and verify installed/auth_required/unknown states, then run No-Core/timeout/stale
-   tests with the approved test method.
-4. Roll back by removing the read-only Core config and relaunching normally; no WeChatAgent, Sender,
-   Qwen, WeChat, allow-list or voice switch is modified.
+Phase 4A is not started. It requires a separate task instruction; this report stops after accepting
+Phase 3B.
 
 ### Current post-reload checks
 
 - `GET /whale-voice/setup/health` without token → **401** (route exists; auth required).
 - `GET /whale-voice/setup/status` without token → **401** (route exists; auth required).
-- Real GUI banner: `首次设置还没有完成`.
-- Real component manager: Core `0.1.0 / 已连接`; WeChatAgent/Sender/TTS `未配置`.
-- The page is using real Core data, not a Mock fallback.
-- Full Phase 3B remains `BLOCKED`, not `INTEGRATED`.
+- Real wizard: WeChatAgent `0.3.9`, health `401` → `auth_required`; Sender `0.1.0`, offline;
+  Qwen health valid, provider not configured.
+- Detection timestamp/source shown: `2026-10-24T03:40:45Z`.
+- Setup completion: **false**; `voiceEnabled`/recovery: **unknown**.

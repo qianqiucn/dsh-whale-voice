@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B Host route/bridge **INTEGRATED at transport level**, full acceptance `BLOCKED` on read-only Core component configuration
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; **Phase 3B `INTEGRATED`** (real DSH Host + trusted bridge + real GUI component data), not `VERIFIED`; Phase 4A not started
 **Latest associated commit:** `832fc24ab2133dfebcfe455112d26d804e2540c3` — `docs: record Phase 3A closure`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -68,15 +68,16 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [x] P7 Phase 2 frontend: first-run four-step wizard and component-management entry point.
 - [x] Explicit no-Core and demo states; no fabricated completion/online state.
 - [x] P7 Phase 3: minimal read-only Core, token-protected host bridge, real component detection.
-      Classified `OFFLINE`: isolated tests pass; live DSH Host integration is not verified.
-- [ ] P7 Phase 3 live integration: Host route 404 until host reload/DSH restart; no restart performed.
+      Phase 3A remains `OFFLINE`; Phase 3B later integrated live.
+- [x] P7 Phase 3 live integration: user restarted DSH; routes return 401; no Host reload was used.
 - [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
       demo isolation; 34 behavior tests pass; local read-only smoke recorded in
       `docs/PHASE3_READONLY.md`.
 - [x] Phase 3B read-only Host activation review and minimal-reload options documented in
-      [PHASE3B_HOST_ACTIVATION.md](PHASE3B_HOST_ACTIVATION.md); no reload/restart performed.
-- [x] Phase 3B transport check after external DSH restart: Host routes return 401, trusted bridge
-      injects, real GUI shows Core v0.1.0 connected; component roots are not configured.
+      [PHASE3B_HOST_ACTIVATION.md](PHASE3B_HOST_ACTIVATION.md); no reload/restart performed by Agent.
+- [x] Phase 3B real GUI acceptance: Core read `%DSH_HOME%\whale-voice\core.json`, WeChatAgent
+      0.3.9/auth_required, Sender 0.1.0 offline, Qwen health valid, recovery/voice unknown,
+      completion false. Status `INTEGRATED`, not `VERIFIED`.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -84,8 +85,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
-- [ ] Phase 3B: authorize a read-only Core component config, restart/reload the Host normally, then
-      verify installed/auth_required/unknown component states and live No-Core/timeout/stale behavior.
+- [ ] Phase 4A: Core configuration read-only management (not started; requires separate task).
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -116,10 +116,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 5. No automated browser/DOM test harness exists yet; Core and static UI contract tests exist.
 6. Real WeChat UI/window tests require separate explicit authorization.
 7. Group identity cannot be proven from display name alone, so group voice is not enabled.
-8. The Host route/bridge is now live (401 without token; GUI Core 0.1.0 connected), but Core has no
-   explicit read-only component roots. The GUI truthfully shows `未配置`; adding a Core config is a
-   production configuration write and needs separate authorization. Live No-Core/timeout/stale tests
-   are also still pending.
+8. Phase 3B is live: routes return 401, Core reads the authorized config, and the real GUI shows
+   WeChatAgent `auth_required`, Sender offline, Qwen health valid. Sender is not running; it was not
+   started. Live No-Core/timeout/invalid-schema/stale GUI tests were not performed and remain
+   `OFFLINE` behavior tests; this is why Phase 3B is `INTEGRATED`, not `VERIFIED`.
 
 ## Verification evidence
 
@@ -132,15 +132,15 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | `node --check setup.js` | passed |
 | `node --check build.mjs` | passed |
 | DSH slot registration | verified earlier in the live runtime |
-| Setup wizard UI smoke | no-Core state, demo step 1–4, component-manager entry reviewed in live DSH |
+| Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
 | `node --test` | 34 tests passed: sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
-| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 auth_required/healthReachable=true/healthy=null; Qwen 200; completed=false; voiceEnabled=unknown |
+| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider configured=false; completed=false; voiceEnabled=unknown |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
-| Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active, but Core component config absent |
+| Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
 | Core setup API | read-only host route is live (401 without token); write/installer API absent |
-| Live DSH host bridge | Host routes return 401; trusted bridge injects; real GUI shows Core v0.1.0 connected |
-| Phase 3B activation | Host transport `INTEGRATED`; full acceptance `BLOCKED` on read-only Core component config and live degradation tests |
+| Live DSH host bridge | current port 53832; Host routes 401; trusted bridge injects; real GUI shows actual component data |
+| Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
@@ -150,11 +150,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 ## Next highest-priority task
 
-**Immediate next step: Phase 3B completion** — authorize a read-only Core component config and a
-normal DSH quit/relaunch, then verify installed/auth_required/unknown component states plus live
-No-Core/timeout/stale behavior. After Phase 3B passes, enter **Phase 4A Core configuration read**.
-That phase must cover read, schema validation, version-conflict detection, atomic save, and explicit
-separation of "saved" versus "effective"; production writes require separate authorization. Do not
+**Next: Phase 4A — Core configuration read-only management** (not started). It must cover config
+source/read, schema validation, version information and explicit separation of "saved" versus
+"effective"; production writes require separate authorization. Phase 3B is `INTEGRATED`; live
+No-Core/timeout/invalid-schema/stale GUI tests remain explicitly `OFFLINE`, not `VERIFIED`. Do not
 start with an installer or a full event/identity Adapter. Voice Sender's final independent safety
 verification remains mandatory before real sending.
 
