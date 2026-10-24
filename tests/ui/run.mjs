@@ -122,15 +122,20 @@ await check('all primary navigation surfaces render', async () => {
       ['语音设置', /WHALE VOICE \/ SETTINGS/],
       ['权限管理', /WHALE VOICE \/ PERMISSIONS/],
       ['音色中心', /WHALE VOICE \/ STUDIO/],
+      ['情绪系统', /WHALE VOICE \/ EMOTION/],
+      ['任务与日志', /WHALE VOICE \/ ACTIVITY/],
       ['高级设置', /WHALE VOICE \/ ADVANCED/],
     ]) {
-      await page.getByRole('button', { name, exact: true }).click()
+      const navName = name === '任务与日志' ? /^任务与日志/ : name
+      await page.getByRole('button', { name: navName, exact: true }).click()
       await page.waitForTimeout(250)
       const text = await page.locator('body').innerText()
       assert.match(text, marker)
-      assert.match(text, /Bridge 已保存：关闭/)
-      assert.match(text, /Worker 安全许可：开启/)
-      assert.doesNotMatch(text, /配置来源不一致/)
+      if (['语音设置', '权限管理', '音色中心', '高级设置'].includes(name)) {
+        assert.match(text, /Bridge 已保存：关闭/)
+        assert.match(text, /Worker 安全许可：开启/)
+        assert.doesNotMatch(text, /配置来源不一致/)
+      }
     }
     await page.screenshot({ path: path.join(artifactDir, 'pages-1440.png') })
   })
