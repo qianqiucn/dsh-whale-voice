@@ -14,6 +14,11 @@ Status legend:
 This roadmap is intentionally conservative. A roadmap item is not complete merely because a
 prototype exists outside this repository.
 
+**Platform dependency:** WeChat messaging/voice integration depends on the independent
+[sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent) project. It is a required
+platform layer, not an optional TTS feature. TTS providers may be swapped freely; WeChatAgent may
+not be removed or replaced by a second WeChat bot in Whale Voice.
+
 ---
 
 ## P0 — Existing baseline, backup and safety isolation
@@ -99,21 +104,31 @@ repository is `PLANNED`.
 
 ---
 
-## P4 — WeChatAgent stable adapter
+## P4 — WeChatAgent required adapter
 
-**Goal:** Integrate through WeChatAgent rather than coupling the UI to WeChat internals.
+**Goal:** Integrate WeChat capability through the independent
+[sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent) project. Whale Voice does not
+implement a second WeChat reader or bot.
 
 **Core tasks:**
-- Define adapter capabilities, version checks and health states.
+- Create `packages/adapter-wechatagent` as the only version-specific WeChat integration layer.
+- Detect installation, running instance, version, Bridge/session health and effective config.
+- Define supported message/event and target-identity contracts.
 - Map trusted targets via stable IDs, not display names alone.
+- Implement the missing/incompatible WeChatAgent UI state and disable WeChat voice until checks pass.
 - Handle bridge disconnects, stale sessions and message dedupe.
-- Document Windows/WeChat version constraints.
+- Document Windows/WeChat/DSH/WeChatAgent version constraints and upstream patch policy.
 
-**Dependencies:** P1/P3; WeChatAgent API availability; authorized test environment.
+**Dependencies:** P1/P3; sourcepro5/WeChatAgent availability and stable interfaces; authorized test
+environment. WeChatAgent is a **required platform dependency** for WeChat features, not an optional
+plugin.
 
-**Acceptance:** Adapter contract tests pass; unavailable bridge fails closed; no message replay.
+**Acceptance:** Adapter contract tests pass; an absent/incompatible WeChatAgent opens the rest of the
+plugin but disables WeChat voice with the documented install message; unavailable bridge fails
+closed; no fake online state; no message replay; no private fork/unsynchronized patch.
 
-**Current status:** `PLANNED` in this repository. The existing local deployment is external.
+**Current status:** `PLANNED` in this repository. The existing local deployment is external and is
+recorded as a development baseline, not as an Adapter implementation.
 
 ---
 
@@ -128,7 +143,8 @@ repository is `PLANNED`.
 - Error states for disconnected/locked/blocked conditions.
 - Keep Mock provider available for development and screenshots.
 
-**Dependencies:** P1–P4; real backend available for authorized integration tests.
+**Dependencies:** P1–P4, including the required WeChatAgent Adapter; real backend available for
+authorized integration tests.
 
 **Acceptance:** UI accurately distinguishes Mock, offline, connected, degraded and blocked states;
 no optimistic claim of sent status; no direct UI automation from frontend.
@@ -162,7 +178,9 @@ committed.
 
 **Core tasks:**
 - Supported DSH plugin install flow and version checks.
-- Windows dependency checks and guided setup for external Voice Sender/WeChatAgent/Qwen.
+- Windows dependency checks and guided setup for external WeChatAgent, Voice Sender and Qwen;
+- explicit version/compatibility gate before enabling WeChat voice;
+- no unverified third-party installer download/execution.
 - Upgrade/rollback and uninstall.
 - Clear separation of plugin files and local runtime data.
 

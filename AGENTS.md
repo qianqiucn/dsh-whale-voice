@@ -20,6 +20,33 @@ do not silently weaken a safety boundary.
 7. If the task requires real WeChat UI/window operations, real sending, driver changes, service
    restarts or production configuration changes, stop and obtain explicit authorization first.
 
+## 1.1 WeChatAgent dependency rule (permanent)
+
+Whale Voice's WeChat capability is built on the independent upstream project
+[sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent). It is a **required platform
+dependency**, not an optional plugin and not a TTS provider.
+
+**任何影响 Whale Voice 微信消息、会话、身份、权限或语音发送的开发任务，都必须首先检查
+WeChatAgent 兼容性及 Adapter 接口。不得假定 Whale Voice 可以脱离 WeChatAgent 独立完成微信接入。**
+
+Required checks before any such task:
+
+1. Read [docs/WECHATAGENT_COMPATIBILITY.md](docs/WECHATAGENT_COMPATIBILITY.md).
+2. Inspect the planned/current `packages/adapter-wechatagent` contract and version table.
+3. Determine the installed WeChatAgent version and the compatible Windows WeChat version.
+4. Check connection/Bridge health and the documented failure state.
+5. Verify target identity and authorization through the Adapter, never by display name alone.
+6. If the dependency is absent, keep TTS/provider settings and preview available, disable WeChat
+   voice, and show the installation message. Never fabricate an online WeChat state.
+7. Prefer stable public interfaces. If a version-specific internal hook is unavoidable, isolate it
+   in the Adapter, pin the exact version and document it; do not spread it into Core.
+8. Prefer an upstream WeChatAgent PR over a permanent private patch/fork.
+
+Do not reimplement a second WeChat reader, account manager, session database or bot in Whale Voice.
+Do not automatically upgrade a user's WeChatAgent because upstream has a new release. Do not bundle
+WeChatAgent/WeChat Hook binaries or restricted third-party components. Never download or execute a
+third-party installer without confirmed provenance, permission and integrity checks.
+
 ## 2. Branch and change workflow
 
 Use a branch per task:

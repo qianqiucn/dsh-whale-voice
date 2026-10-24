@@ -10,6 +10,9 @@ not invent earlier releases or imply production maturity.
 - Private GitHub repository baseline and long-term agent workflow documentation.
 - Initial `main` commit and CI baseline (build, syntax, generated-client sync).
 - Roadmap P0–P9, project status, architecture, changelog and license.
+- WeChatAgent required-dependency documentation, Adapter boundary, version matrix and
+  missing-dependency UX contract.
+- No runtime/code changes in this documentation-only change.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
 

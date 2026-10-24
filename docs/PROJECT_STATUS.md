@@ -21,6 +21,32 @@ This repository contains the **DSH frontend plugin and Mock UI** only. It does n
 The existing production voice chain is external and must not be changed by documentation or
 frontend work in this repository.
 
+## WeChatAgent platform baseline
+
+**WeChatAgent is the required WeChat platform dependency** for message access, contact/group
+context, account/session identity, DSH bridging and the existing send capability. Whale Voice must
+not be described as an independent WeChat bot.
+
+| Component | Baseline | Verification |
+|---|---|---|
+| Whale Voice | 0.1.0 | this repository |
+| WeChatAgent | 0.3.9 | verified locally from `app/resources/project/package.json` |
+| WeChatAgent upstream latest observed | 0.4.0 | GitHub README, not installed/verified here |
+| DSH plugin SDK | 0.2.0-rc.2 | supplied development baseline |
+| DSH shell observed | 0.2.1-rc.2 | local executable version; formal SDK compatibility not re-tested |
+| Windows WeChat | 4.1.10.27 | verified local client path |
+| Voice Sender | 0.1.0 | external local prototype; not in this repository |
+| WeChatAgent Adapter | not implemented | `packages/adapter-wechatagent` is planned |
+
+The existing private voice pipeline (outside this repository) previously completed a native voice
+bubble in the configured private chat; that evidence does not constitute an Adapter test or a
+reproducible repository integration. See
+[WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
+
+The current UI is **Mock only**. Its demo WeChatAgent status is not a real connection check and must
+not be treated as an online status. The required missing/incompatible state and version checks are
+not implemented yet.
+
 ## Completed
 
 - [x] Seven-page native DSH client plugin: Overview, Voice Settings, Access, Voice Studio,
@@ -49,7 +75,8 @@ frontend work in this repository.
 - [ ] P1: module boundaries and unified protocol.
 - [ ] P2: Core configuration, permissions and task state.
 - [ ] P3: versioned Voice Sender component contract.
-- [ ] P4: WeChatAgent adapter contract.
+- [ ] P4: required `packages/adapter-wechatagent` contract, version/connection checks and
+      missing-WeChatAgent UI state.
 - [ ] P5: real frontend connection replacing Mock data.
 - [ ] P6: explicit cloud TTS provider and GPU-free mode.
 - [ ] P7: installation wizard and one-click install.
@@ -59,9 +86,11 @@ frontend work in this repository.
 ## Current technical blockers
 
 1. The real backend services are external and not represented by source in this repository.
-2. No automated browser/DOM test harness exists yet; current checks are build + syntax only.
-3. Real WeChat UI/window tests require separate explicit authorization.
-4. Group identity cannot be proven from the current UI by display name alone, so group voice is not
+2. The WeChatAgent Adapter is not implemented; the frontend cannot detect a missing installation or
+   prove a real Bridge/version connection.
+3. No automated browser/DOM test harness exists yet; current checks are build + syntax only.
+4. Real WeChat UI/window tests require separate explicit authorization.
+5. Group identity cannot be proven from the current UI by display name alone, so group voice is not
    enabled.
 
 ## Verification evidence
@@ -76,6 +105,8 @@ frontend work in this repository.
 | DSH slot registration | verified earlier in the live runtime |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
 | Automated test suite | none in this repository yet |
+| WeChatAgent Adapter | not implemented; documented dependency only |
+| Missing-WeChatAgent UI state | documented requirement; not implemented |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
