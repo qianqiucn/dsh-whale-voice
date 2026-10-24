@@ -30,16 +30,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 2. Git baseline
 
-- **main HEAD:** verify live with `git rev-parse origin/main`; the PR #3–#8 integration baseline is
-  `16c858b`; `pre-pr3-8-integration` at `b552ac0` is the older backup tag.
-- **Current development branch:** `feature/phase4b-isolated-config-write` (Phase 4B-1).
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; this memory does not pin the Phase
-  4B-1 commit SHA.
-- **Worktree:** clean
+- **main HEAD:** `97e96b5964139edf240261117dced6236ed5cb00` (merge of PR #9); verify live with
+  `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
+  `pre-pr3-8-integration` backup tag is `b552ac0`.
+- **Current development branch:** `chore/phase-r1-repository-audit` (Phase R1 repository audit),
+  branched from `main` at `97e96b5`.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; R1 is docs/non-runtime hygiene and does not
+  pin a future commit SHA.
+- **Worktree:** clean at the R1 audit baseline
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-PRs #1/#2 and feature PRs #3–#8 are merged. Phase 4B-1 is a separate, unmerged branch; its isolated
-write infrastructure is `OFFLINE` and has no production route.
+PRs #1/#2 and feature PRs #3–#9 are merged. Phase 4B-1 is merged into `main`; its isolated write
+infrastructure remains `OFFLINE` and has no production route.
 
 ---
 
@@ -47,12 +49,7 @@ write infrastructure is `OFFLINE` and has no production route.
 
 ```text
 main
-  └─ #3 first-run setup wizard
-       └─ #4 read-only Core / Host bridge
-            └─ #5 Phase 4A config read
-                 └─ #6 isolated Playwright UI inspector
-                      ├─ #7 DSH Electron inspector feasibility (docs)
-                      └─ #8 Send & Safety + delivery research
+  └─ #3 → #4 → #5 → #6 → #8 → #7 → #9 Phase 4B-1 isolated config write
 ```
 
 | PR | Merge commit | Result |
@@ -62,14 +59,16 @@ main
 | #5 | `9688ff8` | merged; Phase 4A config read |
 | #6 | `95a3528` | merged; isolated UI harness + CI `ui` |
 | #8 | `5c4bc56` | merged; Send & Safety + research + docs repair |
-| #7 | final documentation merge | merged last; Inspector research + docs union |
+| #7 | final documentation merge | merged; Inspector research + docs union |
+| #9 | `97e96b5` | merged; Phase 4B-1 isolated config write foundation (2 commits) |
 
-All six PRs were merged with merge commits and retargeted to `main` in order. There were
-**0 prior human reviews** at integration time; CI green is not approval.
+The Phase 3/4 stack (#3–#8) was integrated in order. Phase 4B-1 (#9) was merged with a Merge Commit
+after explicit authorization, with CI build+ui SUCCESS. **0 human reviews** were recorded at merge
+time; CI green is not approval.
 
-Phase 4B-1 is on `feature/phase4b-isolated-config-write`: isolated single-file config store, schema,
-migration, revision/conflict handling, atomic save/rollback and a test-only API. It is not merged and
-has no production write route.
+Phase 4B-1 consists of `core/config-sandbox.mjs`, `core/config-schema.mjs`, `core/config-store.mjs`,
+`core/isolated-write-server.mjs` and `test/config-store.test.mjs`. It remains `OFFLINE` and has no
+production write route.
 
 ---
 
@@ -79,12 +78,12 @@ has no production write route.
 |---|---|
 | Phase 3B real DSH Host | **INTEGRATED** (not `VERIFIED`) |
 | Phase 4A read-only config | **INTEGRATED** (not `VERIFIED`) |
-| Phase 4A-H safety contract fixes | Merged in #4/#5/#8; 64 behavior tests pass |
+| Phase 4A-H safety contract fixes | Merged in #4/#5/#8; current 98-test suite includes these contracts |
 | Isolated Playwright UI Inspector | Merged in #6/#7/#8; 12/12 UI checks |
 | Send & Safety frontend | `MOCK` / disabled backend controls; real DSH GUI visual acceptance PASS |
 | Native voice delivery | `RESEARCH_CANDIDATE`; WeChatAgent native = `UNSUPPORTED` |
-| Phase 4B-1 isolated config write | **`OFFLINE`** — single-file store + test-only API; no production write |
-| Phase 4B-2 production write/apply | **Not started** |
+| Phase 4B-1 isolated config write | **Merged into `main`; `OFFLINE`** — single-file store + test-only API; no production write |
+| Phase 4B-2A production write/apply | **Not started** |
 
 Real GUI evidence exists for the Send & Safety page; it does **not** mean the Windows safety backend
 exists.
@@ -93,25 +92,26 @@ exists.
 
 ## 5. Current task
 
-This task implemented Phase 4B-1 isolated configuration writes:
+This task is **Phase R1 repository audit and non-destructive documentation cleanup**, after PR #9 was
+merged into `main`.
 
-- opaque trusted sandbox capability under the OS temporary root; ordinary/forged/production paths rejected;
-- strict v1 schema and pure v0→v1 migration;
-- process-local HMAC revision and `expectedRevision` conflict detection;
-- single-file temp+fsync+rename save with post-save verification/rollback;
-- pure read returns `UNCHANGED`; successful write returns `SAVED`/`PENDING_APPLY`;
-- sanitized public projection with `activeRevision:null` / `activeConfirmed:false` / `activeState:UNKNOWN`;
-- test-only loopback write API, not registered on the production Host;
-- 33 new behavior tests; 98 Node tests total.
+R1 scope:
 
-No production configuration, service restart, DSH reload or real send was involved.
+- audit merged branches, local worktrees/temp directories, docs and resource hygiene;
+- reconcile README / AGENTS / AI_CONTEXT / PROJECT_STATUS / ROADMAP;
+- classify current and historical docs; fix confirmed stale statements and links;
+- review `.gitignore`, CI/test commands, module boundaries, fixed paths and license risks;
+- no runtime refactor, module move, branch/tag deletion, production config write or service restart;
+- commit docs and non-runtime hygiene changes to an independent branch and open an R1 PR without merging.
+
+No production configuration, service restart, DSH reload or real send is involved.
 
 ---
 
 ## 6. Unresolved issues
 
-1. **0 prior human reviews** at integration time; CI green does not equal approval.
-2. Phase 4B-2 production write/apply, multi-file transaction and cross-process CAS are not
+1. **0 human reviews** were recorded for PR #9 at merge time; CI green does not equal approval.
+2. Phase 4B-2A production write/apply, multi-file transaction and cross-process CAS are not
    implemented.
 3. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
@@ -141,7 +141,7 @@ No production configuration, service restart, DSH reload or real send was involv
   sanitized public projection, read/write state separation and a test-only loopback API. No production
   write route.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on the Phase 4B-1 branch.
+- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on `main` after PR #9.
 
 ---
 
@@ -206,21 +206,23 @@ UI: 12/12 PASS
 
 CI:
 
-- PR #3–#8: each merged after its CI reached SUCCESS;
-- `main` at `16c858b`: build + ui SUCCESS;
-- Phase 4B-1 branch: CI to be verified after push; no merge in this task.
+- PR #9 head `f54538c`: build + ui SUCCESS (run `40143287505`);
+- `main` at `97e96b5` after the merge: build + ui SUCCESS (run `40143846299`);
+- R1 branch: local build/tests/UI/docs checks must pass before push; CI is reported only from the
+  actual R1 PR run.
 
 ---
 
 ## 11. Next priority
 
-1. Phase 4B-2: controlled production write/apply API, multi-file transaction/journal, cross-process
+1. Complete Phase R1 repository audit and merge its independent docs PR after review.
+2. Phase 4B-2A: controlled production write/apply API, multi-file transaction/journal, cross-process
    locking/CAS and trusted runtime-effect confirmation. It requires a separate task and authorization;
    production writes still require separate authorization.
-2. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
+3. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
-3. Start new development branches from the integrated `main`; do not reuse the merged stacked
-   branches or the Phase 4B-1 branch as the baseline after it is reviewed.
+4. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
+   baseline.
 
 ---
 
@@ -240,6 +242,6 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after Phase 4B-1 isolated config write: strict schema/migration, HMAC revision,
-atomic single-file save/rollback, test-only API, 98 Node tests and 12 UI checks. No production
+**2026-10-25**, after Phase R1 audit: PR #9 merged into `main` as `97e96b5`; docs/status reconciled,
+historical records marked, and 98 Node / 12 UI checks remain green. R1 is docs/non-runtime hygiene; no production
 configuration or runtime behavior change.

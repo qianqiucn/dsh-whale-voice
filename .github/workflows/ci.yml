@@ -79,4 +79,5 @@ jobs:
         with:
           name: whale-voice-ui-artifacts
           path: tests/ui/.artifacts/
+          include-hidden-files: true
           if-no-files-found: warn

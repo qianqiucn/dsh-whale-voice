@@ -36,7 +36,9 @@ not invent earlier releases or imply production maturity.
 - Pre-merge documentation repair: corrected four corrupted docs, removed an obsolete stop condition, refreshed AI memory/status, and added a Markdown encoding regression test; no runtime code change.
 - DSH Electron Inspector feasibility assessment: no supported DOM/CDP access; Level 2 remains blocked with Option C recommended.
 - PR #3–#8 integrated into `main` with merge commits, preserving the reviewed commit ancestry; PR #7 final documentation union does not revert PR #8 state.
-- Phase 4B-1 isolated config store: trusted sandbox capability, strict v1 schema/migration, HMAC revision, `expectedRevision` conflicts, single-file atomic save/rollback, read/write state separation and a test-only loopback API; no production write route.
+- Phase 4B-1 isolated config store: trusted sandbox capability, strict v1 schema/migration, HMAC revision, `expectedRevision` conflicts, single-file atomic save/rollback, read/write state separation and a test-only loopback API; merged via PR #9, no production write route.
+- Eight-view navigation including Send & Safety; unsupported controls remain disabled.
+- Phase R1 repository audit: current/historical documentation index, historical-record banners, status reconciliation, `.gitignore` hardening and CI artifact hidden-directory fix; no runtime code change.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
