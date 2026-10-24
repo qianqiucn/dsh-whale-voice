@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -29,8 +28,12 @@ jobs:
           node --check client.js
           node --check client.template.js
           node --check pages.js
+          node --check setup.js
           node --check build.mjs
           node --check index.js
+
+      - name: Contract tests
+        run: node --test
 
       - name: Generated client is in sync
         run: git diff --exit-code -- client.js

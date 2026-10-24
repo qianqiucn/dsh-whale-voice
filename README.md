@@ -45,10 +45,33 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
 
 - Native DSH client bundle (`dsh-whale-voice`) registered in the plugin sidebar and main slot.
 - Seven views: Overview, Voice Settings, Access, Voice Studio, Emotions, Activity, Advanced.
+- First-run setup wizard UI (four steps) and a component-management entry point.
+- Explicit no-Core / demo state: the wizard never fabricates installation or online success.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
 - Mock services, permissions, activity history, diagnostics and demo settings.
 - Accessible controls, keyboard focus states, reduced-motion handling, scoped CSS.
 - Rebuildable client artifact committed for direct plugin loading.
+
+## First-run setup (frontend preview)
+
+`setup.js` adds the first-run flow and component manager:
+
+```text
+Overview / Advanced
+  → 首次安装向导
+      1. 连接微信助手
+      2. 安装微信语音功能
+      3. 选择小鲸鱼的声音
+      4. 完成检查
+```
+
+The wizard reads an optional `window.__WHALE_SETUP__` host bridge. If it is absent, the UI shows
+“还需要连接 Whale Voice Core” and refuses to claim completion. “查看演示流程” is an explicitly
+labelled demo and does not install, download or send anything.
+
+This is **Phase 2 frontend/Mock only**. Real environment detection, installation, TTS configuration
+and cleanup require the Core API described in [docs/SETUP_API.md](docs/SETUP_API.md); Phase 1
+findings are in [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md).
 
 The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
 dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
@@ -60,7 +83,7 @@ from this repository because they contain the developer's private desktop and ch
 - Real task queue, cancellation, device restore or permission writes.
 - Real Qwen3-TTS invocation or audio preview.
 - `packages/adapter-wechatagent` and live WeChatAgent detection/version/connection checks.
-- A real “WeChatAgent missing / incompatible” state backed by actual detection.
+- Real setup detection, install/update/repair, component control and task recovery.
 - WeChat window discovery, chat navigation or emergency-stop controls in the frontend.
 - Group voice UI backed by real group-identity verification.
 - Cloud TTS providers or a no-GPU mode.
@@ -75,7 +98,7 @@ Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and the living sta
 Current repository
   DSH host
     └─ dsh-whale-voice (client.js)
-         └─ seven Mock views + scoped CSS
+         └─ seven Mock views + setup wizard + scoped CSS
 
 Target architecture (not implemented here)
   DSH plugin UI
@@ -104,8 +127,8 @@ Requirements:
 
 The plugin frontend and TTS provider settings must remain usable without WeChatAgent. If
 WeChatAgent is missing or incompatible, WeChat voice stays disabled and the UI shows the documented
-installation message instead of a fake online state. This installation-check UI is not implemented
-yet.
+installation message instead of a fake online state. The frontend wizard exists; **real Core-backed
+detection and installation are not implemented yet**.
 
 The plugin has no npm runtime dependencies and no install step.
 
@@ -118,8 +141,8 @@ node build.mjs
 node --check client.js
 ```
 
-`client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js` and
-`client.css`. The generated file is committed because it is the runtime artifact referenced by
+`client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js`, `setup.js`
+and `client.css`. The generated file is committed because it is the runtime artifact referenced by
 `package.json` (`exports["./client"]`), and the DSH plugin manager does not run a build lifecycle.
 
 The repository does not install, start or modify Voice Sender, WeChatAgent, WeChat or Qwen.
@@ -166,6 +189,8 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Architecture](docs/ARCHITECTURE.md) — current and target architecture.
 - [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) — versions, adapter boundary,
   missing-dependency UX and upgrade rules.
+- [Setup capability review](docs/SETUP_CAPABILITY_REVIEW.md) — Phase 1 capability audit.
+- [Setup API contract](docs/SETUP_API.md) — Core bridge, state machine, errors and security rules.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.

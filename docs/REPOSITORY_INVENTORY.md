@@ -1,7 +1,8 @@
 # Repository Inventory and Commit Scope
 
 Audit date: 2026-10-24. This file describes the original 33-file working directory and what was
-selected for the initial commit.
+selected for the initial commit. Files added by later tasks (`setup.js`, `docs/SETUP_*` and
+`docs/WECHATAGENT_COMPATIBILITY.md`) are included below but were not part of that initial directory.
 
 ## Source and project files — committed
 
@@ -12,8 +13,9 @@ selected for the initial commit.
 | `client.js` | generated runtime | DSH loads this file directly; kept in sync by CI |
 | `client.template.js` | source | App shell, slots, components and `WhaleGlyph` |
 | `pages.js` | source | Seven view components |
+| `setup.js` | source | First-run wizard and component-management UI |
 | `client.css` | source | Scoped tokens, layout, glass and responsive CSS |
-| `build.mjs` | build | Injects CSS/pages into `client.js` |
+| `build.mjs` | build | Injects CSS/pages/setup into `client.js` |
 | `cordis.patch.yml` | config | Registers the bundle row |
 | `icon.svg` | original asset | Plugin icon; no third-party image |
 | `locale/zh.json` | resource | Chinese plugin metadata |
@@ -26,6 +28,9 @@ selected for the initial commit.
 | `docs/ROADMAP.md` | documentation | P0–P9 roadmap |
 | `docs/PROJECT_STATUS.md` | documentation | Living evidence-based status |
 | `docs/ARCHITECTURE.md` | documentation | Current vs target architecture |
+| `docs/WECHATAGENT_COMPATIBILITY.md` | documentation | Required upstream dependency and version policy |
+| `docs/SETUP_CAPABILITY_REVIEW.md` | documentation | Phase 1 setup capability audit |
+| `docs/SETUP_API.md` | documentation | Core setup bridge/state-machine contract |
 | `docs/REPOSITORY_INVENTORY.md` | documentation | This audit |
 | `.github/workflows/ci.yml` | CI | Real build/syntax/sync checks only |
 

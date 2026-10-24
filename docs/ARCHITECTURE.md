@@ -28,6 +28,9 @@ Properties:
 - No voice sending, WeChat access, TTS calls or credential access.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.
+- The first-run setup wizard reads only an optional `window.__WHALE_SETUP__.getStatus()` bridge. It
+  never runs shell commands, downloads installers or writes system configuration; see
+  [SETUP_API.md](SETUP_API.md).
 
 ### Build boundary
 

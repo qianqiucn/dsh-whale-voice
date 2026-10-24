@@ -178,17 +178,24 @@ committed.
 
 **Core tasks:**
 - Supported DSH plugin install flow and version checks.
+- Four-step first-run wizard UI: WeChatAgent, Voice Sender, TTS, final checks.
+- Six-state-safe frontend behavior: no Core, missing dependency, incompatible, installed, degraded,
+  complete; demo mode must be explicit and must not write completion.
 - Windows dependency checks and guided setup for external WeChatAgent, Voice Sender and Qwen;
 - explicit version/compatibility gate before enabling WeChat voice;
 - no unverified third-party installer download/execution.
 - Upgrade/rollback and uninstall.
 - Clear separation of plugin files and local runtime data.
 
-**Dependencies:** P2–P6; release packaging and signing decisions.
+**Dependencies:** P2–P6; release packaging and signing decisions; Core setup API.
 
 **Acceptance:** Clean-machine install test, upgrade test, rollback test; no destructive default.
+Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation and a failing-closed
+no-Core state; it is not install acceptance.
 
-**Current status:** `PLANNED`; no one-click installer exists today.
+**Current status:** `IN PROGRESS` — Phase 2 frontend wizard and component-management entry are
+implemented as `MOCK` UI. Real detection, install, upgrade and rollback are `PLANNED` and blocked on
+the Core setup API; no one-click installer exists today.
 
 ---
 
