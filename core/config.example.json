@@ -1,0 +1,5 @@
+{
+  "wechatAgentRoot": "C:\\path\\to\\WeChatAgent",
+  "voiceSenderRoot": "C:\\path\\to\\WeChatAgent\\data\\workspace\\voice-sender",
+  "qwenUrl": "http://127.0.0.1:8765"
+}

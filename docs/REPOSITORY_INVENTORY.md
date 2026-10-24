@@ -9,7 +9,13 @@ selected for the initial commit. Files added by later tasks (`setup.js`, `docs/S
 | Path | Category | Reason |
 |---|---|---|
 | `package.json` | manifest | DSH bundle identity, exports, engines, license |
-| `index.js` | host entry | Empty Host row required for bundle inventory |
+| `index.js` | host bridge | Read-only Host route + token-protected `window.__WHALE_SETUP__` injection |
+| `core/detect.mjs` | Core | Read-only WeChatAgent / Sender / Qwen detection |
+| `core/server.mjs` | Core test | Loopback read-only server for isolated tests |
+| `packages/adapter-wechatagent/index.mjs` | Adapter | Read-only WeChatAgent manifest/runtime/health boundary |
+| `core/config.example.json` | config example | Explicit roots/URLs; no disk-wide discovery |
+| `test/core.test.mjs` | test | Auth, timeout, stale, missing/partial, bridge tests |
+| `test/setup-contract.test.mjs` | test | No-shell, demo isolation and completion guards |
 | `client.js` | generated runtime | DSH loads this file directly; kept in sync by CI |
 | `client.template.js` | source | App shell, slots, components and `WhaleGlyph` |
 | `pages.js` | source | Seven view components |
@@ -31,6 +37,8 @@ selected for the initial commit. Files added by later tasks (`setup.js`, `docs/S
 | `docs/WECHATAGENT_COMPATIBILITY.md` | documentation | Required upstream dependency and version policy |
 | `docs/SETUP_CAPABILITY_REVIEW.md` | documentation | Phase 1 setup capability audit |
 | `docs/SETUP_API.md` | documentation | Core setup bridge/state-machine contract |
+| `docs/PHASE3_READONLY.md` | documentation | Phase 3 detection evidence and unknowns |
+| `docs/PHASE3B_HOST_ACTIVATION.md` | documentation | Host 404 evidence, reload options and authorization gates |
 | `docs/REPOSITORY_INVENTORY.md` | documentation | This audit |
 | `.github/workflows/ci.yml` | CI | Real build/syntax/sync checks only |
 

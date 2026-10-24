@@ -47,6 +47,17 @@ Do not automatically upgrade a user's WeChatAgent because upstream has a new rel
 WeChatAgent/WeChat Hook binaries or restricted third-party components. Never download or execute a
 third-party installer without confirmed provenance, permission and integrity checks.
 
+## 1.2 Core detection rule
+
+The current `core/detect.mjs` and Host bridge are **read-only**. They may read explicitly configured
+roots, small manifests, process liveness and fixed loopback health endpoints. They must never run
+shell commands, download/install components, write config, read Hook/audit token files, read chat
+databases or accept paths/URLs/commands from the browser.
+
+Do not label detection success as installation completion. Do not turn `auth_required`, timeout or
+unknown into a green health state. A future write/installer API needs its own threat model, explicit
+user confirmation and an isolated test environment.
+
 ## 2. Branch and change workflow
 
 Use a branch per task:
@@ -115,6 +126,7 @@ node --check client.js
 node --check client.template.js
 node --check pages.js
 node --check build.mjs
+node --test
 ```
 
 Rules:

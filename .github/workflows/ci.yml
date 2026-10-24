@@ -31,6 +31,13 @@ jobs:
           node --check setup.js
           node --check build.mjs
           node --check index.js
+          node --check core/detect.mjs
+          node --check core/http.mjs
+          node --check core/request-guards.mjs
+          node --check core/view.mjs
+          node --check core/setup-status.mjs
+          node --check core/server.mjs
+          node --check packages/adapter-wechatagent/index.mjs
 
       - name: Contract tests
         run: node --test

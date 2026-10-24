@@ -3,13 +3,15 @@
 Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) client plugin for managing a
 Qwen3-TTS / `whale-v1` / WeChat native-voice workflow in one place.
 
-This repository currently contains the **Whale Voice frontend plugin only**. The working Windows
-voice pipeline (Voice Sender, WeChatAgent, WeChat UI automation, VB-CABLE, the Qwen runtime and the
-private `whale-v1` reference audio) is a separate local system and is **not included here**.
+This repository currently contains the **Whale Voice frontend plugin and a minimal read-only Core
+detector**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeChat UI automation,
+VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
+is **not included here**.
 
-> **Current status: frontend + Mock.**
-> The UI does not read or write production voice configuration, does not call Qwen, does not control
-> Voice Sender, and does not send WeChat messages.
+> **Current status: frontend + Mock + read-only detection (`OFFLINE`).**
+> The UI does not write production voice configuration, does not install or start components, does
+> not send WeChat messages, and does not generate audio in this phase. The live DSH Host bridge is
+> not activated in the current process.
 
 ## WeChat platform dependency
 
@@ -47,12 +49,16 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
 - Seven views: Overview, Voice Settings, Access, Voice Studio, Emotions, Activity, Advanced.
 - First-run setup wizard UI (four steps) and a component-management entry point.
 - Explicit no-Core / demo state: the wizard never fabricates installation or online success.
+- Minimal read-only Core (`core/`) and DSH host bridge (`index.js`) with token-protected loopback
+  routes.
+- Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
+  installation/runtime/health evidence, and local Qwen health/model/voice.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
 - Mock services, permissions, activity history, diagnostics and demo settings.
 - Accessible controls, keyboard focus states, reduced-motion handling, scoped CSS.
 - Rebuildable client artifact committed for direct plugin loading.
 
-## First-run setup (frontend preview)
+## First-run setup (read-only phase)
 
 `setup.js` adds the first-run flow and component manager:
 
@@ -65,13 +71,20 @@ Overview / Advanced
       4. 完成检查
 ```
 
-The wizard reads an optional `window.__WHALE_SETUP__` host bridge. If it is absent, the UI shows
-“还需要连接 Whale Voice Core” and refuses to claim completion. “查看演示流程” is an explicitly
-labelled demo and does not install, download or send anything.
+The wizard reads the trusted `window.__WHALE_SETUP__` bridge injected by the host plugin. If the
+bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuses to claim completion.
+“查看演示流程” is an explicitly labelled demo and does not install, download or send anything.
 
-This is **Phase 2 frontend/Mock only**. Real environment detection, installation, TTS configuration
-and cleanup require the Core API described in [docs/SETUP_API.md](docs/SETUP_API.md); Phase 1
-findings are in [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md).
+This is **Phase 2 UI plus Phase 3 read-only detection**, with **Phase 3B integrated** after a normal
+DSH restart: `/whale-voice/setup/*` returns 401 without a token, the trusted bridge injects, Core
+reads the authorized `core.json`, and the real GUI shows WeChatAgent `auth_required`, Sender offline,
+Qwen health valid, and unknown recovery/voice fields. Sender was not started. Live No-Core/timeout/
+invalid-schema/stale GUI tests remain `OFFLINE`, so Phase 3B is `INTEGRATED`, not `VERIFIED`. Real
+installation, TTS configuration and cleanup remain disabled and require the write API in
+[docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
+[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host
+activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md) and
+[docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md).
 
 The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
 dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
@@ -79,14 +92,14 @@ from this repository because they contain the developer's private desktop and ch
 
 ## What is not implemented
 
-- Real connection to the DSH Core / Voice Sender HTTP API.
+- Real write/install Core API and Voice Sender control API.
 - Real task queue, cancellation, device restore or permission writes.
 - Real Qwen3-TTS invocation or audio preview.
-- `packages/adapter-wechatagent` and live WeChatAgent detection/version/connection checks.
-- Real setup detection, install/update/repair, component control and task recovery.
+- `packages/adapter-wechatagent` and a supported-event/identity adapter (read-only evidence only).
+- Real setup write operations: install/update/repair, component control and task recovery.
 - WeChat window discovery, chat navigation or emergency-stop controls in the frontend.
 - Group voice UI backed by real group-identity verification.
-- Cloud TTS providers or a no-GPU mode.
+- Cloud TTS providers, credentials or a no-GPU configured path.
 - One-click installer or packaged release.
 
 Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and the living status file
@@ -97,8 +110,10 @@ Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and the living sta
 ```text
 Current repository
   DSH host
-    └─ dsh-whale-voice (client.js)
-         └─ seven Mock views + setup wizard + scoped CSS
+    ├─ dsh-whale-voice client bundle
+    │    └─ seven Mock views + setup wizard + scoped CSS
+    └─ read-only Host bridge
+         └─ core/detect.mjs (WeChatAgent / Sender / Qwen evidence)
 
 Target architecture (not implemented here)
   DSH plugin UI
@@ -127,8 +142,8 @@ Requirements:
 
 The plugin frontend and TTS provider settings must remain usable without WeChatAgent. If
 WeChatAgent is missing or incompatible, WeChat voice stays disabled and the UI shows the documented
-installation message instead of a fake online state. The frontend wizard exists; **real Core-backed
-detection and installation are not implemented yet**.
+installation message instead of a fake online state. The frontend wizard and **read-only Core
+detection** exist; installation and write operations do not.
 
 The plugin has no npm runtime dependencies and no install step.
 
@@ -139,7 +154,14 @@ The plugin has no npm runtime dependencies and no install step.
 ```powershell
 node build.mjs
 node --check client.js
+node --test
 ```
+
+Read-only detection is configured explicitly; there is no disk-wide search. Copy
+[`core/config.example.json`](core/config.example.json) to `%DSH_HOME%\whale-voice\core.json`, or set
+`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The Host route must be
+loaded by a host-plugin reload or DSH process restart before the UI can read real results; a page
+refresh alone is insufficient and no restart was performed.
 
 `client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js`, `setup.js`
 and `client.css`. The generated file is committed because it is the runtime artifact referenced by
@@ -155,8 +177,9 @@ The repository does not install, start or modify Voice Sender, WeChatAgent, WeCh
   local Qwen runtime. None of those are distributed in this repository.
 - WeChatAgent is the required WeChat platform dependency. Whale Voice does not provide an
   independent WeChat message reader, account manager or bot.
-- Real voice sending is disabled in the current project state. `voice.enabled` remains false in the
-  developer environment.
+- Real voice sending is disabled in the current project state. The developer environment has
+  `voice.enabled=false`; the read-only detector does **not** read or change this switch, so the UI
+  must show it as unknown unless a future Core supplies the state.
 - Group chat automation is intentionally not opened until a stable real-group identity source is
   verified.
 
@@ -191,6 +214,9 @@ repository; it does not pretend to verify the real WeChat pipeline.
   missing-dependency UX and upgrade rules.
 - [Setup capability review](docs/SETUP_CAPABILITY_REVIEW.md) — Phase 1 capability audit.
 - [Setup API contract](docs/SETUP_API.md) — Core bridge, state machine, errors and security rules.
+- [Phase 3 read-only report](docs/PHASE3_READONLY.md) — detected versions, evidence and unknowns.
+- [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
+  authorization gates.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.

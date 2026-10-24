@@ -11,33 +11,44 @@ target diagram as implemented functionality.
 DSH host
   ├─ sidebar.panellist slot
   │    └─ whale-voice icon
-  └─ main slot (key: whale-voice)
-       └─ client.js
-            ├─ client.template.js  app shell, slots, components, WhaleGlyph
-            ├─ pages.js            seven view components
-            └─ client.css          scoped visual system
-                 └─ Mock data only
+  ├─ main slot (key: whale-voice)
+  │    └─ client.js
+  │         ├─ client.template.js  app shell, slots, components, WhaleGlyph
+  │         ├─ pages.js            seven view components
+  │         ├─ setup.js            first-run wizard / component manager
+  │         └─ client.css          scoped visual system
+  └─ Host row (`index.js`)
+       ├─ read-only loopback route /whale-voice/setup/*
+       ├─ token-protected window.__WHALE_SETUP__ bridge
+       └─ core/detect.mjs
+            ├─ packages/adapter-wechatagent (read-only manifest/version/runtime/health evidence)
+            ├─ Voice Sender manifest/runtime/health evidence
+            └─ Qwen /health model+voice evidence
 ```
 
 Properties:
 
-- Client-only bundle; `index.js` provides an empty Host row so the bundle has a normal inventory
-  entry.
+- The client bundle is UI-only; the Host row exposes a **read-only** Core bridge and detector.
 - No npm runtime dependencies.
-- No HTTP calls, no filesystem access, no service control.
-- No voice sending, WeChat access, TTS calls or credential access.
+- The Host route reads only explicitly configured roots, small manifests, process liveness and fixed
+  loopback health endpoints. It does not read Hook/audit tokens, chat databases or arbitrary paths.
+- No component start/stop, installation, update, driver change, WeChat send or audio generation.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.
-- The first-run setup wizard reads only an optional `window.__WHALE_SETUP__.getStatus()` bridge. It
-  never runs shell commands, downloads installers or writes system configuration; see
-  [SETUP_API.md](SETUP_API.md).
+- The first-run setup wizard reads only the token-protected
+  `window.__WHALE_SETUP__.getStatus()` bridge; see [SETUP_API.md](SETUP_API.md).
+- The host route and bridge require a page/DSH reload to activate after a host-plugin change. No DSH
+  or production service restart is performed by this repository.
 
 ### Build boundary
 
 ```text
-client.css ──┐
-pages.js ────┼─ build.mjs ─→ client.js ─→ DSH web client
-client.template.js ─┘
+client.css ──────────┐
+pages.js ────────────┼─ build.mjs ─→ client.js ─→ DSH web client
+setup.js ────────────┤
+client.template.js ──┘
+
+index.js ─→ core/detect.mjs ─→ core/server.mjs (isolated tests only)
 ```
 
 `client.js` is committed because it is the runtime artifact referenced by the DSH bundle, and the

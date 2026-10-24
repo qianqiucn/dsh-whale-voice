@@ -458,14 +458,15 @@ window.__ModuleLoader__.load({
       const [setupOpen, setSetupOpen] = React.useState(false)
       const [componentsOpen, setComponentsOpen] = React.useState(false)
       const autoSetupOpened = React.useRef(false)
-      const setupRequestSeq = React.useRef(0)
+      const setupScanGate = React.useRef(null)
+      if (!setupScanGate.current) setupScanGate.current = createSetupScanGate()
       const dirty = JSON.stringify(settings) !== JSON.stringify(saved)
 
       const refreshSetup = async () => {
-        const seq = ++setupRequestSeq.current
+        const seq = setupScanGate.current.begin()
         setSetup((s) => ({ ...s, checking: true }))
         const next = await readSetupStatus()
-        if (seq !== setupRequestSeq.current) return next
+        if (!setupScanGate.current.isCurrent(seq)) return next
         setSetup(next)
         if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
           autoSetupOpened.current = true
@@ -476,9 +477,9 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let alive = true
-        const seq = ++setupRequestSeq.current
+        const seq = setupScanGate.current.begin()
         readSetupStatus().then((next) => {
-          if (!alive || seq !== setupRequestSeq.current) return
+          if (!alive || !setupScanGate.current.isCurrent(seq)) return
           setSetup(next)
           if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
             autoSetupOpened.current = true
