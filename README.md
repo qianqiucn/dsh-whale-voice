@@ -226,6 +226,8 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Send & Safety API](docs/SEND_SAFETY_API.md) — planned capability/status contract for the safety page.
 - [Send & Safety GUI acceptance](docs/GUI_ACCEPTANCE_SEND_SAFETY.md) — real DSH visual/UIA evidence and limitations.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
+- [AI context](docs/AI_CONTEXT.md) — cross-session recovery summary.
+- [Architecture decisions](docs/DECISIONS.md) — accepted decisions, rationale and rejected alternatives.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.
 - [License](LICENSE) — MIT, matching `package.json`.

@@ -4,8 +4,8 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; Phase 4B not started
-**Latest associated commit:** `077dbe6d23b06f018ccee699babf2cb531d9058b` — `docs: record Phase 4A-H safety contracts`
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; AI memory docs established; Phase 4B not started
+**Latest associated commit:** `696378c62559667e5e9fba7ecc0177b1ad25ea6a` — `docs: record Phase 4A-H PR synchronization`
 **Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
 **PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
 **PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
@@ -109,6 +109,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       bounded streaming-only HTTP bodies, explicit-only `accountVerified`, and an opaque
       process-keyed full-config revision covering Worker/TTS/allowlist/source changes. 64 behavior
       tests and 12 UI checks pass; PR #4–#8 branches synchronized without force push.
+- [x] AI memory and handoff: `docs/AI_CONTEXT.md` summary, `docs/DECISIONS.md` decision log, startup
+      and stage-end rules in `AGENTS.md`; all memory docs are explicitly subordinate to code,
+      Git/GitHub state, tests and the named authoritative documents.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 

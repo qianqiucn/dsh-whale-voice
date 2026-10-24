@@ -38,6 +38,8 @@ final independent safety verification remains required before real sending.
 - Establish Git history and a reviewable initial commit.
 - Maintain an isolated Playwright UI harness for DOM/layout/Console checks; never debug the
   production DSH Electron window without separate authorization.
+- Maintain [AI_CONTEXT.md](AI_CONTEXT.md) as a recovery summary and [DECISIONS.md](DECISIONS.md) as
+  the architecture decision log; neither replaces code, Git state, tests or named authority docs.
 
 **Dependencies:** DSH client plugin runtime; existing local installation; user approval for the
 private GitHub repository.
@@ -48,7 +50,8 @@ contains no secrets, private chat data, audio, runtime state or screenshots.
 **Current status:** `DONE` for the local baseline and repository initialization. The live backend is
 still external and was not changed by this repository work. The isolated Playwright UI harness is
 available for development (`npm run test:ui`); real DSH Electron debugging remains unsupported and
-unauthorized.
+unauthorized. `AI_CONTEXT.md` and `DECISIONS.md` are maintained as cross-session memory and decision
+records, explicitly subordinate to repository evidence.
 
 ---
 
