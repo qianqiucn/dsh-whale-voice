@@ -5,7 +5,7 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; Phase 4B not started
-**Latest associated commit:** `0c5278f32115feefe8f8b0bbf49dfc9df8af85c0` — `test(ui): cover all primary navigation surfaces`
+**Latest associated commit:** `113eafde1c118c3e3049124a1dd037def067d94d` — `ci: use locked UI test dependencies`
 **Latest PR:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
 **PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
 **PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
@@ -169,7 +169,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | PR #3 setup wizard | open; CI passed; not merged |
 | PR #4 read-only Core | open; CI passed; depends on PR #3 |
 | PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
-| PR #6 UI inspector | open; CI SUCCESS `40127467138`; stacked on PR #5; 10/10 isolated UI checks; not merged |
+| PR #6 UI inspector | open; CI SUCCESS `40128127566` (build + ui jobs); stacked on PR #5; 10/10 isolated UI checks; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
