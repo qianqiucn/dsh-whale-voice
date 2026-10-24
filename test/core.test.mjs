@@ -7,7 +7,8 @@ import { test, after } from 'node:test'
 
 import { createDetector, detectQwen } from '../core/detect.mjs'
 import { createCoreServer } from '../core/server.mjs'
-import { installHostBridge } from '../index.js'
+import { fetchJson } from '../core/http.mjs'
+import { installHostBridge, apply as applyHost } from '../index.js'
 
 const roots = []
 async function fixture() {
@@ -217,11 +218,127 @@ test('healthy evidence still cannot claim setup completion or preview', async ()
 
 test('detector source has no shell, write or installer side effects', () => {
   const source = readFileSync(new URL('../core/detect.mjs', import.meta.url), 'utf8')
+  const httpSource = readFileSync(new URL('../core/http.mjs', import.meta.url), 'utf8')
   for (const forbidden of ['child_process', 'execFile', 'spawn(', 'writeFile', 'mkdir(', 'unlink(', 'rename(', 'createWriteStream']) {
     assert.equal(source.includes(forbidden), false, 'forbidden detector primitive: ' + forbidden)
   }
-  assert.match(source, /method: 'GET'/)
+  assert.match(httpSource, /method: 'GET'/)
+  assert.match(httpSource, /maxBytes/)
   assert.match(source, /voiceEnabled: null/)
+})
+
+test('HTTP deadline covers a hanging response body and cancels it', async () => {
+  let cancelled = 0
+  const body = {
+    getReader() {
+      return {
+        read() { return new Promise(() => {}) },
+        cancel() { cancelled++ },
+        releaseLock() {},
+      }
+    },
+    cancel() { cancelled++ },
+  }
+  const result = await fetchJson(async () => ({ status: 200, ok: true, body }), 'http://127.0.0.1:8765/health', { timeoutMs: 30, maxBytes: 32 })
+  assert.equal(result.state, 'timeout')
+  assert.equal(cancelled > 0, true)
+})
+
+test('HTTP body limit is enforced while streaming and cancels the reader', async () => {
+  let cancelled = 0
+  const body = {
+    getReader() {
+      let sent = false
+      return {
+        async read() {
+          if (sent) return { done: true }
+          sent = true
+          return { done: false, value: new Uint8Array(64) }
+        },
+        cancel() { cancelled++ },
+        releaseLock() {},
+      }
+    },
+    cancel() { cancelled++ },
+  }
+  const result = await fetchJson(async () => ({ status: 200, ok: true, body }), 'http://127.0.0.1:8765/health', { timeoutMs: 100, maxBytes: 16 })
+  assert.equal(result.state, 'oversize')
+  assert.equal(cancelled > 0, true)
+})
+
+test('HTTP non-JSON, redirect, auth and not-found states are explicit', async () => {
+  const nonJson = await fetchJson(async () => response(200, 'not json'), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(nonJson.state, 'invalid_json')
+  const redirect = await fetchJson(async () => response(302, {}), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(redirect.state, 'redirect')
+  const auth = await fetchJson(async () => response(401, {}), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(auth.state, 'auth_required')
+  const forbidden = await fetchJson(async () => response(403, {}), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(forbidden.state, 'auth_required')
+  const missing = await fetchJson(async () => response(404, {}), 'http://127.0.0.1:8765/health', { timeoutMs: 100 })
+  assert.equal(missing.state, 'unsupported')
+})
+
+test('HTTP fetch that never returns is bounded by the deadline', async () => {
+  const result = await fetchJson(() => new Promise(() => {}), 'http://127.0.0.1:8765/health', { timeoutMs: 30 })
+  assert.equal(result.state, 'timeout')
+})
+
+test('host bridge fails closed without connection and follows replacement', async () => {
+  const routes = []
+  const rows = []
+  let connection = { requestRejection() { return null } }
+  let disposedRoutes = 0
+  let disposedInject = 0
+  const scope = {
+    webServer: {
+      register(route) { routes.push(route); return () => { disposedRoutes++ } },
+      tapIndex() { return () => {} },
+    },
+    get(name) { return name === 'connection' ? connection : null },
+    on(name, callback) {
+      if (name === 'webserver/index-inject') callback(rows)
+      return () => { disposedInject++ }
+    },
+    effect() {},
+  }
+  const detector = createDetector({
+    config: { wechatAgentRoot: await fixture(), senderRoot: await fixture(), qwenUrl: 'http://127.0.0.1:8765' },
+    fetchImpl: fakeFetch(() => response(500, {})),
+    timeoutMs: 100,
+  })
+  const host = installHostBridge(scope, { token: 'lifecycle-token', detector })
+  const route = routes.find((r) => r.path === '/whale-voice/setup/status')
+  const call = async () => {
+    const res = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+    await route.handler({
+      method: 'GET', url: '/whale-voice/setup/status', socket: { remoteAddress: '127.0.0.1' },
+      headers: { host: '127.0.0.1:59575', 'x-whale-core-token': 'lifecycle-token' },
+    }, res)
+    return res.status
+  }
+  assert.equal(await call(), 200)
+  connection = null
+  assert.equal(await call(), 503)
+  connection = { requestRejection() { return 401 } }
+  assert.equal(await call(), 401)
+  connection = { requestRejection() { return null } }
+  assert.equal(await call(), 200)
+  host.dispose()
+  assert.equal(disposedRoutes, 3)
+  assert.equal(disposedInject, 1)
+})
+
+test('host plugin injects only after webServer and connection are available', () => {
+  const seen = []
+  const scope = {
+    webServer: { register() { return () => {} }, tapIndex() { return () => {} } },
+    get() { return { requestRejection() { return null } } },
+    on() { return () => {} },
+    effect() {},
+  }
+  applyHost({ inject(services, callback) { seen.push(services.slice()); callback(scope) } })
+  assert.deepEqual(seen, [['webServer', 'connection']])
 })
 
 test('host bridge injects a token-protected bridge and same-origin route', async () => {

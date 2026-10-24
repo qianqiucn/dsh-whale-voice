@@ -1,6 +1,7 @@
 # Phase 3 — Read-only Core and Detection
 
-**Status:** read-only detection implemented; installation/write operations intentionally absent.
+**Status:** read-only implementation and isolated tests pass; **OFFLINE**, not integrated into the
+running DSH Host. Installation/write operations intentionally absent.
 **Branch:** `feature/phase3-core-detect` (depends on the first-run setup PR).
 **Production mutation:** none. No service was started, stopped, restarted or installed.
 
@@ -58,7 +59,8 @@ after the request.
 | WeChatAgent Bridge | `auth_required` | token was **not** read, so health could not be verified |
 | WeChatAgent WeChat client | 4.1.10.27 from config | **config expectation, not verified** |
 | Voice Sender | installed, v0.1.0, PID alive, health unknown | `/health` = 401 |
-| Voice Sender health | `auth_required`, `healthy=null` | token was **not** read; no start/stop |
+| Voice Sender health | `auth_required`, `healthReachable=true`, `healthy=null` | token was **not** read; no start/stop |
+| Voice Sender recovery | `null` / unknown | no recovery script or device probe was run |
 | Qwen local | reachable, model Qwen3-TTS-12Hz-1.7B-Base, voice `whale-v1` | `/health` = 200 |
 | TTS preview | not run | no audio generation in this phase |
 | Setup completion | **false** | installation/preview are not implemented |
@@ -68,18 +70,15 @@ The 401 responses are not treated as success. They are displayed as “需要授
 
 ## 4. Automated test coverage
 
-`node --test` covers 15 tests:
+`node --test` covers 28 tests:
 
-- No configured roots → fail closed, completed false.
-- Empty roots → not installed, not online.
-- 401 → `auth_required`, not connected/healthy.
-- Version mismatch → incompatible/unknown.
-- Timeout even for a fetch implementation that ignores abort.
-- Qwen health metadata accepted, preview still false.
-- Concurrent detection → old result marked `stale`.
-- Core server: missing token 401, arbitrary component 400, POST 405, cross-site 403.
-- Host bridge: injected token-protected route and denial without token.
-- Setup UI: no shell/fetch execution, demo cannot be authoritative, stale guard, safety copy.
+- Missing/partial components and 401 health.
+- Sender installed/process/health-reachable/service-healthy separation using actual Core output.
+- Null recovery/voice fields stay unknown; only explicit booleans become pass/fail.
+- Qwen `ok:false`, unrelated service, missing model/voice, arrays and error objects are invalid.
+- Full-request deadline, hanging body, streaming byte cap, redirect, non-JSON, 401/403/404.
+- Host bridge missing connection → 503; connection rejection/replacement; dispose.
+- Demo isolation, stale request guard, no-shell/no-write checks.
 
 ## 5. Unknown / unsupported
 
@@ -90,8 +89,30 @@ The 401 responses are not treated as success. They are displayed as “需要授
   the health endpoint requires authorization.
 - Group identity, installation, update/repair, preview and real send remain out of scope.
 - The host bridge source and fake-host test pass, but the **currently running DSH process** still
-  returns 404 for `/whale-voice/setup/health` until a DSH/page reload loads the new Host row. No DSH
-  restart was performed.
+  returns 404 for `/whale-voice/setup/health`.
+- `index.js` mtime is later than the running DSH process start time; the running process loaded the
+  earlier empty Host row. A client/page refresh only reloads client assets and cannot install the new
+  Host route. **Host-plugin reload or DSH process restart** is required; neither was performed.
+- Status is therefore `OFFLINE`: implementation + isolated tests pass, real host/page integration is
+  not verified. It is not `INTEGRATED`.
+
+## 5.1 Host activation check
+
+Read-only checks performed:
+
+- workspace/profile link resolves to this repository (`dsh-whale-voice` junction);
+- profile bundle list includes `dsh-whale-voice`;
+- package exports and bundle patch resolve;
+- Host row `dsh-whale-voice` is enabled/active in the plugin inventory;
+- `host-import-ok` outside DSH (module parses and exports `apply`);
+- `webServer` and `connection` services are active;
+- no Host load error was found in the available hub log;
+- running process start time predates the new `index.js`.
+
+Minimal operation for real GUI bridge acceptance (not performed): reload the Host plugin or restart
+DSH. This affects the running Host/session, not WeChatAgent, Voice Sender or WeChat. Rollback is a
+normal reload of the same profile; no data/config write is planned. This requires separate user
+authorization.
 
 ## 6. Safety
 

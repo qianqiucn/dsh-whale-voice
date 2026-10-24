@@ -126,6 +126,7 @@ node --check client.js
 node --check client.template.js
 node --check pages.js
 node --check build.mjs
+node --test
 ```
 
 Rules:

@@ -91,8 +91,8 @@ Required actions:
 5. View compatibility issues.
 6. Install Voice Sender.
 
-This state is implemented in the first-run wizard; the host route must be loaded by a DSH/page reload
-before real detection appears. The demo row is not a connection probe.
+This state is implemented in the first-run wizard; the host route must be loaded by a Host-plugin
+reload or DSH process restart before real detection appears. The demo row is not a connection probe.
 
 ## 5. Upstream compatibility procedure
 
@@ -115,7 +115,8 @@ https://github.com/sourcepro5/WeChatAgent/releases
 
 - Only read-only Adapter detection exists; events/identity/send and writes remain unimplemented.
 - Token-protected health endpoints are reported as `auth_required`; tokens are not read.
-- The live DSH host route requires a DSH/page reload; the current process may still return 404.
+- The live DSH host route requires a Host-plugin reload or DSH process restart; the current process
+  predates the new Host row and returns 404. Client/page refresh is insufficient. Status is `OFFLINE`.
 - WeChatAgent versions other than 0.3.9 are untested here; upstream 0.4.0 is observed only.
 - Windows WeChat versions other than 4.1.10.27 are untested.
 - Non-Windows real WeChat operation is unsupported.

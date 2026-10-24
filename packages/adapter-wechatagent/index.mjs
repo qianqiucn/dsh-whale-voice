@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fetchJson } from '../../core/http.mjs'
 
 export const SUPPORTED_WECHATAGENT = '0.3.9'
 const DEFAULT_TIMEOUT_MS = 1500
@@ -56,40 +57,6 @@ function safeHttpUrl(value) {
   }
 }
 
-async function httpJson(fetchImpl, url, timeoutMs) {
-  if (!fetchImpl) return { state: 'unsupported', status: null, error: 'fetch_unavailable' }
-  const controller = new AbortController()
-  let timer
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(() => {
-      try { controller.abort() } catch {}
-      resolve({ __timeout: true })
-    }, timeoutMs)
-  })
-  try {
-    const request = fetchImpl(url, {
-      method: 'GET', redirect: 'manual', signal: controller.signal, headers: { accept: 'application/json' },
-    })
-    const response = await Promise.race([request, timeout])
-    if (response && response.__timeout) return { state: 'timeout', status: null, error: 'timeout' }
-    let body = null
-    try {
-      const text = await response.text()
-      if (text.length <= 16 * 1024) body = JSON.parse(text)
-    } catch {}
-    if (response.status === 401 || response.status === 403) return { state: 'auth_required', status: response.status, body: null, error: 'auth_required' }
-    if (response.status === 404) return { state: 'unsupported', status: 404, body: null, error: 'endpoint_not_found' }
-    if (!response.ok) return { state: 'connection_failed', status: response.status, body: null, error: 'http_' + response.status }
-    if (!body || typeof body !== 'object') return { state: 'unknown', status: response.status, body: null, error: 'invalid_json' }
-    return { state: 'ok', status: response.status, body, error: null }
-  } catch (error) {
-    const aborted = error && (error.name === 'AbortError' || error.code === 'ABORT_ERR')
-    return { state: aborted ? 'timeout' : 'connection_failed', status: null, error: aborted ? 'timeout' : String(error && error.code || error && error.name || error).slice(0, 80) }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 export async function detectWeChatAgent(config, options = {}) {
   const started = Date.now()
   const observedAt = new Date().toISOString()
@@ -121,7 +88,7 @@ export async function detectWeChatAgent(config, options = {}) {
   const expectedWechat = typeof hook.expectedVersion === 'string' ? hook.expectedVersion : null
   const baseUrl = safeHttpUrl(hook.baseUrl)
   let health = { state: 'unknown', status: null, body: null, error: 'bridge_url_missing' }
-  if (baseUrl) health = await httpJson(options.fetchImpl || globalThis.fetch, new URL('/WeChatAgent/health', baseUrl), options.timeoutMs || DEFAULT_TIMEOUT_MS)
+  if (baseUrl) health = await fetchJson(options.fetchImpl || globalThis.fetch, new URL('/WeChatAgent/health', baseUrl), { timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS })
   const body = health.body || {}
   const connected = health.state === 'ok'
     && body.integration === 'WeChatAgent-1'

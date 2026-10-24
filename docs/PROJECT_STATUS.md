@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI + Phase 3 read-only detection complete
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3 read-only **OFFLINE**; live host integration pending
 **Latest associated commit:** `ba4bef55721145bc6b9b2a19975a17efb0da8d38` — `refactor: isolate wechatagent read-only adapter`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -68,6 +68,8 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [x] P7 Phase 2 frontend: first-run four-step wizard and component-management entry point.
 - [x] Explicit no-Core and demo states; no fabricated completion/online state.
 - [x] P7 Phase 3: minimal read-only Core, token-protected host bridge, real component detection.
+      Classified `OFFLINE`: isolated tests pass; live DSH Host integration is not verified.
+- [ ] P7 Phase 3 live integration: Host route 404 until host reload/DSH restart; no restart performed.
 - [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
       demo isolation; local read-only smoke recorded in `docs/PHASE3_READONLY.md`.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
@@ -107,6 +109,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 5. No automated browser/DOM test harness exists yet; Core and static UI contract tests exist.
 6. Real WeChat UI/window tests require separate explicit authorization.
 7. Group identity cannot be proven from display name alone, so group voice is not enabled.
+8. The running DSH process predates the new `index.js`; the Host route returns 404. Client/page refresh
+   cannot load a new Host row. Host-plugin reload or DSH process restart requires separate
+   authorization; neither was performed.
 
 ## Verification evidence
 
@@ -121,12 +126,12 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | no-Core state, demo step 1–4, component-manager entry reviewed in live DSH |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 15 tests passed: missing/partial, 401, version, timeout, stale, auth, bridge, demo, safe side effects |
-| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 auth_required; Qwen 200; completed=false; voiceEnabled=unknown |
+| `node --test` | 28 tests passed: sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, demo, stale |
+| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 auth_required/healthReachable=true/healthy=null; Qwen 200; completed=false; voiceEnabled=unknown |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; real detection requires host reload |
 | Core setup API | read-only host route implemented; write/installer API absent |
-| Live DSH host bridge | source + fake-host test pass; actual DSH returns 404 until reload |
+| Live DSH host bridge | source + fake-host test pass; actual DSH returns 404 because the Host process predates the new `index.js` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
@@ -136,10 +141,12 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 ## Next highest-priority task
 
-**Phase 4: define the Core write/installer contract and a full WeChatAgent Adapter** (events,
-identity, missing-dependency UI wiring after host reload). Do not add shell commands to the browser,
-install drivers, or start real installation without an isolated test environment and explicit
-authorization.
+**Next: Core unified configuration management** — read, schema validation, version-conflict
+detection, atomic save, explicit separation of "saved" vs "effective", and controlled writes only in
+an isolated configuration. Production config writes require separate authorization. Host activation
+(live bridge) remains a prerequisite for GUI integration and requires host reload/DSH restart
+authorization. Do not start with an installer or a full event/identity Adapter. Voice Sender's final
+independent safety verification remains mandatory before real sending.
 
 ## Update rule
 

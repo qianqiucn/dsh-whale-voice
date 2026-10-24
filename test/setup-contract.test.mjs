@@ -17,7 +17,8 @@ test('demo data cannot become authoritative completion', () => {
   assert.match(setup, /const MOCK_SETUP = \{[\s\S]*?demo: true,[\s\S]*?completed: false,/)
   assert.match(setup, /const data = demo \? MOCK_SETUP : realData/)
   assert.match(setup, /data\.demo !== true/)
-  assert.match(setup, /data\.completed && data\.demo !== true && !demo/)
+  assert.match(setup, /deriveSetupView/)
+  assert.match(setup, /view\.complete/)
   assert.equal(/localStorage/.test(setup), false)
 })
 

@@ -78,22 +78,22 @@ export function bridgeScript(token) {
 }
 
 function makeGuard(scope) {
-  const connection = (() => {
+  function currentConnection() {
     try { return typeof scope.get === 'function' ? scope.get('connection') : null } catch { return null }
-  })()
+  }
   return function guard(req) {
     if (!isLoopbackAddress(req.socket && req.socket.remoteAddress)) return 403
     if (!loopbackHost(req)) return 403
     if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') return 403
     if (!sameOrigin(req)) return 403
     if (req.method !== 'GET') return 405
-    if (connection && typeof connection.requestRejection === 'function') {
-      try {
-        const code = connection.requestRejection(req)
-        if (code !== undefined && code !== null && code !== false) return typeof code === 'number' ? code : 403
-      } catch {
-        return 403
-      }
+    const connection = currentConnection()
+    if (!connection || typeof connection.requestRejection !== 'function') return 503
+    try {
+      const code = connection.requestRejection(req)
+      if (code !== undefined && code !== null && code !== false) return typeof code === 'number' ? code : 403
+    } catch {
+      return 403
     }
     return null
   }
@@ -165,7 +165,7 @@ export function installHostBridge(scope, options = {}) {
 }
 
 export function apply(ctx) {
-  ctx.inject(['webServer'], (scope) => {
+  ctx.inject(['webServer', 'connection'], (scope) => {
     const host = installHostBridge(scope, { env: process.env })
     if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
   })

@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fetchJson } from './http.mjs'
 import { detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
 export { SUPPORTED_WECHATAGENT, detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
 
@@ -78,52 +79,6 @@ export function readCoreConfig(env = process.env) {
   }
 }
 
-async function httpJson(fetchImpl, url, timeoutMs) {
-  if (!fetchImpl) return { state: 'unsupported', status: null, error: 'fetch_unavailable' }
-  const controller = new AbortController()
-  let timer
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(() => {
-      try { controller.abort() } catch {}
-      resolve({ __timeout: true })
-    }, timeoutMs)
-  })
-  try {
-    const request = fetchImpl(url, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: controller.signal,
-      headers: { accept: 'application/json' },
-    })
-    const response = await Promise.race([request, timeout])
-    if (response && response.__timeout) return { state: 'timeout', status: null, error: 'timeout' }
-    let body = null
-    let text = ''
-    try {
-      text = await response.text()
-      if (text.length <= 16 * 1024) body = JSON.parse(text)
-    } catch {}
-    if (response.status === 401 || response.status === 403) {
-      return { state: 'auth_required', status: response.status, body: null, error: 'auth_required' }
-    }
-    if (response.status === 404) {
-      return { state: 'unsupported', status: 404, body: null, error: 'endpoint_not_found' }
-    }
-    if (!response.ok) {
-      return { state: 'connection_failed', status: response.status, body: null, error: 'http_' + response.status }
-    }
-    if (!body || typeof body !== 'object') {
-      return { state: 'unknown', status: response.status, body: null, error: 'invalid_json' }
-    }
-    return { state: 'ok', status: response.status, body, error: null }
-  } catch (error) {
-    const aborted = error && (error.name === 'AbortError' || error.code === 'ABORT_ERR')
-    return { state: aborted ? 'timeout' : 'connection_failed', status: null, error: aborted ? 'timeout' : String(error && error.code || error && error.name || error).slice(0, 80) }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 function baseEvidence(sources) {
   return sources.filter(Boolean).join(' + ')
 }
@@ -135,6 +90,7 @@ export async function detectVoiceSender(config, options = {}) {
   const base = {
     state: 'not_configured', installed: false, version: null, installPath: null,
     processRunning: false, health: null, healthy: null, powershell: null, dotnet: null, node: null,
+    healthState: null, healthStatus: null, healthReachable: false,
     vbCable: null, capture: null, queue: null, recoveryPending: null,
     observedAt, durationMs: 0, evidence: 'no configured Voice Sender root',
   }
@@ -152,7 +108,7 @@ export async function detectVoiceSender(config, options = {}) {
   const running = processAlive(pid)
   const port = Number(serviceConfig.port) || 43371
   const url = safeHttpUrl('http://127.0.0.1:' + port + '/health')
-  const health = url ? await httpJson(options.fetchImpl || globalThis.fetch, url, options.timeoutMs || DEFAULT_TIMEOUT_MS) : { state: 'unsupported', status: null, error: 'invalid_port' }
+  const health = url ? await fetchJson(options.fetchImpl || globalThis.fetch, url, { timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS }) : { state: 'unsupported', status: null, error: 'invalid_port' }
   const body = health.body || {}
   const healthy = health.state === 'ok' ? body.ok === true && body.service === 'voice-sender' : null
   let state = 'installed'
@@ -169,6 +125,9 @@ export async function detectVoiceSender(config, options = {}) {
     installPath: maskPath(root),
     processRunning: running,
     health: health.state,
+    healthState: health.state,
+    healthStatus: health.status,
+    healthReachable: health.status !== null,
     healthy,
     powershell: null,
     dotnet: null,
@@ -195,21 +154,26 @@ export async function detectQwen(config, options = {}) {
   if (!url) {
     return { state: 'not_configured', reachable: false, configured: false, preview: { ok: false, reason: 'invalid_url' }, error: 'qwen_url_invalid', observedAt, durationMs: Date.now() - started, evidence: 'invalid configured URL' }
   }
-  const health = await httpJson(options.fetchImpl || globalThis.fetch, new URL('/health', url), options.timeoutMs || DEFAULT_TIMEOUT_MS)
+  const health = await fetchJson(options.fetchImpl || globalThis.fetch, new URL('/health', url), { timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS })
   const body = health.body || {}
-  const ok = health.state === 'ok' && body.ok === true
+  const model = typeof body.model === 'string' ? body.model.trim() : ''
+  const voice = typeof body.voice === 'string' ? body.voice.trim() : ''
+  const service = typeof body.service === 'string' ? body.service.trim() : ''
+  const serviceLooksQwen = !service || /qwen|tts/i.test(service)
+  const valid = health.state === 'ok' && body.ok === true && Boolean(model) && Boolean(voice) && serviceLooksQwen
+  const state = valid ? 'ok' : (health.state === 'ok' ? 'invalid_response' : health.state)
   return {
-    state: ok ? 'ok' : health.state,
-    reachable: ok,
+    state,
+    reachable: health.state === 'ok',
     configured: false,
     provider: 'qwen-local',
-    model: ok && typeof body.model === 'string' ? body.model : null,
-    voice: ok && typeof body.voice === 'string' ? body.voice : null,
+    model: valid ? model : null,
+    voice: valid ? voice : null,
     preview: { ok: false, reason: 'not_run_in_readonly_phase' },
     observedAt,
     durationMs: Date.now() - started,
-    evidence: 'GET /health -> ' + (health.status || health.state),
-    error: ok ? null : health.error,
+    evidence: 'GET /health -> ' + (health.status || health.state) + '; ok=' + String(body.ok === true) + '; model=' + (model || 'missing') + '; voice=' + (voice || 'missing'),
+    error: valid ? null : (health.error || 'invalid_qwen_health'),
   }
 }
 

@@ -8,9 +8,10 @@ detector**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeCha
 VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
 is **not included here**.
 
-> **Current status: frontend + Mock + read-only detection.**
+> **Current status: frontend + Mock + read-only detection (`OFFLINE`).**
 > The UI does not write production voice configuration, does not install or start components, does
-> not send WeChat messages, and does not generate audio in this phase.
+> not send WeChat messages, and does not generate audio in this phase. The live DSH Host bridge is
+> not activated in the current process.
 
 ## WeChat platform dependency
 
@@ -74,12 +75,13 @@ The wizard reads the trusted `window.__WHALE_SETUP__` bridge injected by the hos
 bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuses to claim completion.
 “查看演示流程” is an explicitly labelled demo and does not install, download or send anything.
 
-This is **Phase 2 UI plus Phase 3 read-only detection**. The host route is implemented, but the live
-DSH page must be reloaded to pick up the new host plugin; this repository does not restart DSH or any
-production component. Real installation, TTS configuration and cleanup remain disabled and require
-the write API in [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
-[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results are in
-[docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md).
+This is **Phase 2 UI plus Phase 3 read-only detection**, classified `OFFLINE`: implementation and
+isolated tests pass, but the running DSH Host has not loaded the new Host row. A client/page refresh
+cannot load a new Host route; **host-plugin reload or DSH process restart** is required and was not
+performed. Real installation, TTS configuration and cleanup remain disabled and require the write
+API in [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
+[docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host
+activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md).
 
 The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
 dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
@@ -154,8 +156,9 @@ node --test
 
 Read-only detection is configured explicitly; there is no disk-wide search. Copy
 [`core/config.example.json`](core/config.example.json) to `%DSH_HOME%\whale-voice\core.json`, or set
-`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The host route must
-be loaded by a DSH/page reload before the UI shows real results.
+`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The Host route must be
+loaded by a host-plugin reload or DSH process restart before the UI can read real results; a page
+refresh alone is insufficient and no restart was performed.
 
 `client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js`, `setup.js`
 and `client.css`. The generated file is committed because it is the runtime artifact referenced by

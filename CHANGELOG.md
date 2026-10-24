@@ -16,6 +16,9 @@ not invent earlier releases or imply production maturity.
 - Setup capability review and Core Setup API contract; no real installer or detection.
 - Read-only Core/host bridge with WeChatAgent, Voice Sender and Qwen detection.
 - Token/Origin/loopback protection, timeouts, stale-result handling and contract tests.
+- Sender installed/process/health-reachable/service-healthy contract and tri-state unknown handling.
+- Strict Qwen health validation, bounded response bodies, redirect/body-limit handling.
+- Host authentication lifecycle fail-closed, connection replacement and dispose tests.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

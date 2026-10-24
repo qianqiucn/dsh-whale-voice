@@ -19,6 +19,12 @@ prototype exists outside this repository.
 platform layer, not an optional TTS feature. TTS providers may be swapped freely; WeChatAgent may
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
+**Next development gate (after read-only verification):** Core unified configuration management —
+read, schema validation, version-conflict detection, atomic save, saved-versus-effective separation,
+and controlled writes only in an isolated configuration. This precedes any installer or full
+event/identity Adapter work. Production config writes require separate authorization; Voice Sender
+final independent safety verification remains required before real sending.
+
 ---
 
 ## P0 — Existing baseline, backup and safety isolation
@@ -127,9 +133,10 @@ plugin.
 plugin but disables WeChat voice with the documented install message; unavailable bridge fails
 closed; no fake online state; no message replay; no private fork/unsynchronized patch.
 
-**Current status:** `IN PROGRESS` — read-only installation/version/process/health evidence exists in
-`core/detect.mjs`; event subscription, account/group identity, send-result feedback and the full
-version-pinned Adapter remain `PLANNED`.
+**Current status:** `OFFLINE` — read-only installation/version/process/health evidence exists in
+`core/detect.mjs` and `packages/adapter-wechatagent`; isolated tests pass. Event subscription,
+account/group identity, send-result feedback and the full version-pinned Adapter remain `PLANNED`.
+Live host integration is not verified.
 
 ---
 
@@ -194,10 +201,10 @@ committed.
 Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation and a failing-closed
 no-Core state; it is not install acceptance.
 
-**Current status:** `IN PROGRESS` — Phase 2 wizard/component UI and Phase 3 read-only Core detection
-are implemented (`OFFLINE` evidence, no writes). Real installation, upgrade, rollback, TTS
-credentials and clean-machine acceptance remain `PLANNED`; no one-click installer exists today. The
-live DSH host route requires a DSH/page reload to activate.
+**Current status:** `OFFLINE` — Phase 2 wizard/component UI and Phase 3 read-only Core detection are
+implemented and covered by isolated tests. The running DSH Host predates the new Host row, so the live
+bridge is not integrated. Real installation, upgrade, rollback, TTS credentials and clean-machine
+acceptance remain `PLANNED`; no one-click installer exists today.
 
 ---
 

@@ -458,8 +458,9 @@ body:not([data-ds-dark-theme]) .wv-root {
 .wv-setup-check:last-child { border-bottom: 0; }
 .wv-setup-checks.two .wv-setup-check:nth-last-child(2) { border-bottom: 0; }
 .wv-setup-check-icon { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 48%, transparent); }
-.wv-setup-check-icon.ok { color: #61d6a2; background: color-mix(in srgb, #61d6a2 10%, transparent); }
-.wv-setup-check-icon.wait { color: #e7bf69; background: color-mix(in srgb, #e7bf69 10%, transparent); }
+.wv-setup-check-icon.ok, .wv-setup-check-icon.pass { color: #61d6a2; background: color-mix(in srgb, #61d6a2 10%, transparent); }
+.wv-setup-check-icon.wait, .wv-setup-check-icon.unknown { color: #e7bf69; background: color-mix(in srgb, #e7bf69 10%, transparent); }
+.wv-setup-check-icon.fail { color: #f19999; background: color-mix(in srgb, #f19999 10%, transparent); }
 .wv-setup-check-label { min-width: 0; color: var(--wv-text); }
 .wv-setup-check-value { color: var(--wv-muted); font-size: 10.5px; white-space: nowrap; }
 

@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Core detector implemented; **write operations are not implemented**.
+**Status:** Phase 3 read-only host bridge and Core detector implemented (`OFFLINE`); **write operations are not implemented**.
 **Scope:** first-run setup, read-only component status, and future controlled installation.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
@@ -76,7 +76,8 @@ validation.
   },
   "sender": {
     "state": "auth_required", "installed": true, "version": "0.1.0",
-    "health": "auth_required", "healthy": null,
+    "health": "auth_required", "healthState": "auth_required", "healthStatus": 401,
+    "healthReachable": true, "healthy": null,
     "processRunning": true, "powershell": null, "dotnet": null, "node": null,
     "vbCable": null, "capture": null, "queue": null, "recoveryPending": null,
     "observedAt": "2026-10-24T02:34:21.772Z", "durationMs": 8,
@@ -177,6 +178,6 @@ semantics. `core/server.mjs` is an isolated test server with the same contract.
 Write methods, installation, component control, TTS credentials and preview remain absent. Phase 3
 therefore reports `OFFLINE`/read-only evidence, not `INTEGRATED` installation or `PRODUCTION READY`.
 
-The host route is implemented in source but the running DSH process must be reloaded to activate the
-new Host row; this task does not restart DSH or production services. Until then the live page keeps
-the No-Core state.
+The host route is implemented in source but the running DSH process must reload the Host plugin or
+restart to activate the new row. The current process predates `index.js` and returns 404; a
+client/page refresh is not sufficient. No host reload or DSH restart was performed.

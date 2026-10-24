@@ -80,7 +80,7 @@ would violate the architecture and safety rules.
 |---|---|
 | Phase 1 — source/interface review | **complete** (this document) |
 | Phase 2 — frontend wizard | **complete** as frontend/Mock only; see status |
-| Phase 3 — read-only detection | **complete** for installation/version/process/health evidence; no writes |
+| Phase 3 — read-only detection | **OFFLINE** — implementation + isolated tests pass; live host not verified |
 | Phase 4 — Sender installer | **blocked** on Core Installer + packaging/signing |
 | Phase 5 — TTS configuration/preview | **blocked** on Provider Manager/credentials |
 | Phase 6 — clean-machine integration | **not started**; requires isolated environment and authorization |
