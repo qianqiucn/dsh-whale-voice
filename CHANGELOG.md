@@ -34,6 +34,8 @@ not invent earlier releases or imply production maturity.
 - Phase 4A-H safety contract fixes: full-origin validation, bounded streaming HTTP only, explicit-only account verification, and an opaque complete-config revision covering Worker/TTS/allowlists/source state.
 - AI memory/handoff docs: `docs/AI_CONTEXT.md`, `docs/DECISIONS.md`, updated startup and stage-end rules in `AGENTS.md`; summaries remain subordinate to repository and test evidence.
 - Pre-merge documentation repair: corrected four corrupted docs, removed an obsolete stop condition, refreshed AI memory/status, and added a Markdown encoding regression test; no runtime code change.
+- DSH Electron Inspector feasibility assessment: no supported DOM/CDP access; Level 2 remains blocked with Option C recommended.
+- PR #3–#8 integrated into `main` with merge commits, preserving the reviewed commit ancestry; PR #7 final documentation union does not revert PR #8 state.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

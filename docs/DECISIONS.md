@@ -139,8 +139,8 @@ opening debugging would create unsafe access to private UI.
 **Rejected alternatives:** Enabling CDP on production DSH; reusing the production profile; reading
 production page content via unsupported means.
 
-**Related:** [UI_TESTING.md](UI_TESTING.md); the DSH Electron Inspector feasibility document is
-introduced by [PR #7](https://github.com/qianqiucn/dsh-whale-voice/pull/7) (docs-only).
+**Related:** [UI_TESTING.md](UI_TESTING.md),
+[DSH_ELECTRON_INSPECTOR_FEASIBILITY.md](DSH_ELECTRON_INSPECTOR_FEASIBILITY.md).
 
 ---
 
@@ -198,3 +198,22 @@ authoritative docs win.
 secrets/private data into memory files.
 
 **Related:** [AI_CONTEXT.md](AI_CONTEXT.md), [AGENTS.md](../AGENTS.md).
+
+---
+
+## ADR-012 — Stacked PR integration uses merge commits and sequential retargeting
+
+**Status:** `ACCEPTED`
+**Date:** 2026-10-25
+**Decision:** PR #3–#8 were integrated into `main` with merge commits. Each downstream PR was
+retargeted to `main` after its base merged; no squash, rebase or force-push was used. The final PR #7
+documentation union preserves the newer PR #8 state.
+
+**Reason:** Preserves reviewed commit ancestry and PR boundaries, avoids duplicate diffs, and keeps
+history auditable. Squash/rebase would break the stacked ancestry or rewrite shared history.
+
+**Rejected alternatives:** Squash-merging the stack; rebasing branches onto `main`; force-pushing
+rewritten branches; deleting branches to trigger automatic retargeting.
+
+**Related:** [PROJECT_STATUS.md](PROJECT_STATUS.md), [AI_CONTEXT.md](AI_CONTEXT.md),
+[AGENTS.md](../AGENTS.md).

@@ -81,10 +81,12 @@ committed artifacts.
 
 ## Real DSH Electron limitation
 
-The current DSH desktop process has no supported, intentionally enabled CDP endpoint for this
-harness. We do **not** open debugging on the production instance, remove Host authentication or
-automate the real Electron window. Real DSH verification remains a separate, explicitly authorized
-step; an isolated harness PASS is not an `INTEGRATED` real-host proof.
+The current DSH desktop process has no supported, intentionally enabled DOM/CDP endpoint for this
+harness. Native `cordis_inspect` provides slot/registration metadata only. We do **not** open a debug
+port on the production instance, remove Host authentication or automate the real Electron window.
+Real DSH verification remains a separate, explicitly authorized step; an isolated harness PASS is not
+an `INTEGRATED` real-host proof. See
+[DSH_ELECTRON_INSPECTOR_FEASIBILITY.md](DSH_ELECTRON_INSPECTOR_FEASIBILITY.md).
 
 ## When to use
 

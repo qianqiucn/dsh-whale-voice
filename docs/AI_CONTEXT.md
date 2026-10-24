@@ -30,17 +30,19 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 2. Git baseline
 
-- **main HEAD:** `b552ac00e7fc05a5818965d61ab90c5ec115efee`
-- **Current development branch:** `feature/send-safety-page`
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; the last verified pre-repair head was `aec34f6` (historical evidence, not current).
+- **main HEAD:** verify live with `git rev-parse origin/main`; the pre-integration baseline is tag
+  `pre-pr3-8-integration` at `b552ac0` (historical backup, not current).
+- **Current development baseline:** `main` after PR #3–#8 integration.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; this memory does not pin an
+  integration SHA.
 - **Worktree:** clean
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-Only the documentation PRs #1/#2 have been merged. Feature PRs #3–#8 remain open; `main` remains the old docs baseline.
+PRs #1/#2 and feature PRs #3–#8 are merged. `main` now contains the Phase 3B/4A/UI/Safety work.
 
 ---
 
-## 3. Open PRs and dependency chain
+## 3. Merged PR chain
 
 ```text
 main
@@ -52,17 +54,17 @@ main
                       └─ #8 Send & Safety + delivery research
 ```
 
-| PR | Base | Head | Head SHA | CI |
-|---|---|---|---|---|
-| #3 | main | `feature/first-run-setup-wizard` | `8dc05708` | build SUCCESS |
-| #4 | #3 | `feature/phase3-core-detect` | `347acf31` | build SUCCESS |
-| #5 | #4 | `feature/phase4a-config-read` | `a4475071` | build SUCCESS |
-| #6 | #5 | `chore/ui-inspector-playwright` | `f576f61a` | build + ui SUCCESS |
-| #7 | #6 | `docs/dsh-electron-inspector-feasibility` | `d7e89097` | build + ui SUCCESS |
-| #8 | #6 | `feature/send-safety-page` | current PR #8 head (verify live; pre-repair `aec34f6`) | build + ui SUCCESS pre-repair; re-verify after docs repair |
+| PR | Merge commit | Result |
+|---|---|---|
+| #3 | `7b66dca` | merged; setup wizard |
+| #4 | `91929fd` | merged; read-only Core / Host bridge |
+| #5 | `9688ff8` | merged; Phase 4A config read |
+| #6 | `95a3528` | merged; isolated UI harness + CI `ui` |
+| #8 | `5c4bc56` | merged; Send & Safety + research + docs repair |
+| #7 | final documentation merge | merged last; Inspector research + docs union |
 
-All PRs are currently Open, `mergeable=clean`, with **0 reviews / 0 review comments**.
-PR #7 and #8 are parallel; neither is an ancestor of the other.
+All six PRs were merged with merge commits and retargeted to `main` in order. There were
+**0 prior human reviews** at integration time; CI green is not approval.
 
 ---
 
@@ -72,8 +74,8 @@ PR #7 and #8 are parallel; neither is an ancestor of the other.
 |---|---|
 | Phase 3B real DSH Host | **INTEGRATED** (not `VERIFIED`) |
 | Phase 4A read-only config | **INTEGRATED** (not `VERIFIED`) |
-| Phase 4A-H safety contract fixes | Implemented and locally tested; awaiting review/merge |
-| Isolated Playwright UI Inspector | Implemented; 12/12 UI checks on PR #8; CI passing |
+| Phase 4A-H safety contract fixes | Merged in #4/#5/#8; 64 behavior tests pass |
+| Isolated Playwright UI Inspector | Merged in #6/#7/#8; 12/12 UI checks |
 | Send & Safety frontend | `MOCK` / disabled backend controls; real DSH GUI visual acceptance PASS |
 | Native voice delivery | `RESEARCH_CANDIDATE`; WeChatAgent native = `UNSUPPORTED` |
 | Phase 4B | **Not started** |
@@ -85,32 +87,25 @@ exists.
 
 ## 5. Current task
 
-This task: pre-merge documentation quality repair on PR #8:
+This task completed the PR #3–#8 GitHub integration:
 
-- repair confirmed mojibake in `docs/DECISIONS.md`, `docs/CONFIG_SOURCES.md`,
-  `docs/NATIVE_VOICE_RESEARCH.md`, `docs/VOICE_DELIVERY_BACKENDS.md`;
-- replace the obsolete "remote repository is no longer empty" stop condition in `AGENTS.md`;
-- refresh stale AI memory/status facts and add a lightweight Markdown encoding check.
+- merged #3 → #4 → #5 → #6 → #8 → #7 with merge commits and base retargeting;
+- resolved the PR #7 documentation union in favour of #8's newer state;
+- verified the final `main` with build, 65 Node tests and 12 UI checks.
 
-No runtime code, production configuration, service, or real send change.
+No runtime code, production configuration, service restart or real send was involved.
 
 ---
 
 ## 6. Unresolved issues
 
-1. **PRs #3–#8 are unmerged**; main does not contain Phase 3B/4A/UI/Safety work. Only docs PRs
-   #1/#2 are merged.
-2. **0 human reviews**; CI green does not equal approval.
-3. Downstream PR bases are still stacked; they must be retargeted after each merge.
-4. **PR #7 / #8 docs overlap** in `CHANGELOG.md`, `README.md`, `docs/PROJECT_STATUS.md`; final
-   merge order should be #8 then #7 with manual doc union. PR #8 docs encoding was repaired; PR #7
-   still needs a `main` merge and manual resolution of the same three files.
-5. Phase 4B config-write API is not implemented.
-6. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
+1. **0 prior human reviews** at integration time; CI green does not equal approval.
+2. Phase 4B configuration-write API is not implemented.
+3. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
-7. Native voice delivery candidates remain unintegrated and unverified.
-8. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
-9. Real DSH Electron DOM/CSS/Console cannot be read without separate authorized debugging; current
+4. Native voice delivery candidates remain unintegrated and unverified.
+5. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
+6. Real DSH Electron DOM/CSS/Console cannot be read without separate authorized debugging; current
    GUI acceptance used UIA + screenshots.
 
 ---
@@ -180,7 +175,7 @@ node --test
 npm.cmd run test:ui
 ```
 
-Recent current-branch result:
+Final integration result:
 
 ```text
 build: PASS, client.js 186092 bytes
@@ -190,25 +185,22 @@ UI: 12/12 PASS
 
 CI:
 
-- PR #3: build SUCCESS
-- PR #4: build SUCCESS
-- PR #5: build SUCCESS
-- PR #6: build + ui SUCCESS
-- PR #7: build + ui SUCCESS
-- PR #8: build + ui SUCCESS pre-repair; re-verify after docs repair
+- PR #3–#8: each merged after its CI reached SUCCESS;
+- `main`: build + ui SUCCESS after every merge;
+- final `main`: build + ui SUCCESS.
 
 ---
 
 ## 11. Next priority
 
-1. Human review and merge of #3 → #4 → #5 → #6 → #8 → #7 with base retargeting and manual doc
-   conflict resolution. PR #8 documentation repair is complete; merging still requires separate
-   authorization.
-2. Then Phase 4B-1: isolated configuration write infrastructure
+1. Phase 4B-1: isolated configuration write infrastructure
    (schema, revision/optimistic concurrency, atomic save/recovery, saved-vs-effective, rollback,
-   secrets scan, isolated tests). Production write still needs separate authorization.
-3. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
+   secrets scan, isolated tests). It requires a separate task and authorization; production write
+   still needs separate authorization.
+2. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
+3. Start new development branches from the integrated `main`; do not reuse the merged stacked
+   branches as the baseline.
 
 ---
 
@@ -228,5 +220,6 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after PR #8 pre-merge documentation repair (mojibake, AGENTS stop condition, memory
-refresh, docs-integrity test). No runtime code change.
+**2026-10-25**, after merging PR #3–#8 into `main` with merge commits, resolving the PR #7
+documentation union, and verifying the final tree with 65 Node tests and 12 UI checks. No runtime
+code or production behavior change.

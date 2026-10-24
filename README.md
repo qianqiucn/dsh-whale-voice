@@ -221,6 +221,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
   authorization gates.
 - [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
 - [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
+- [DSH Electron Inspector feasibility](docs/DSH_ELECTRON_INSPECTOR_FEASIBILITY.md) — supported Inspector limits and option assessment.
 - [Voice delivery backends](docs/VOICE_DELIVERY_BACKENDS.md) — native-vs-UI-automation research and decision.
 - [Native voice research](docs/NATIVE_VOICE_RESEARCH.md) — WeChatPYAPI, PadChat-SDK and WeChatAgent candidate evidence and gates.
 - [Send & Safety API](docs/SEND_SAFETY_API.md) — planned capability/status contract for the safety page.
