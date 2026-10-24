@@ -20,6 +20,7 @@ not invent earlier releases or imply production maturity.
 - Strict Qwen health validation, bounded response bodies, redirect/body-limit handling.
 - Host authentication lifecycle fail-closed, connection replacement and dispose tests.
 - Phase 3B Host activation review: 404 evidence, reload options and authorization gates.
+- Phase 3B Plan A outcome: no verified supported single-plugin Host reload; Plan B awaits second authorization.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

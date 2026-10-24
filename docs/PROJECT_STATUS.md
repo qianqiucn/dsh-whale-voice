@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `BLOCKED` on Host-reload authorization; live Host integration not verified
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `BLOCKED` — no supported single-plugin Host reload; Plan B DSH restart awaits second authorization
 **Latest associated commit:** `832fc24ab2133dfebcfe455112d26d804e2540c3` — `docs: record Phase 3A closure`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
@@ -82,7 +82,8 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
-- [ ] Phase 3B: Host reload/DSH restart authorization, then real GUI bridge verification.
+- [ ] Phase 3B: no supported single-plugin Host reload found; await second authorization for the
+      normal DSH quit/relaunch (Plan B), then verify the real GUI bridge.
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -115,8 +116,8 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 7. Group identity cannot be proven from display name alone, so group voice is not enabled.
 8. The running DSH process predates the new `index.js`; the Host route returns 404. The live loaded
    module instance cannot be read directly, so stale-code is strong evidence but not a final root
-   cause. Client/page refresh cannot load a new Host row. Host-plugin reload or DSH process restart
-   requires separate authorization; neither was performed.
+   cause. Plan A found no verified supported single-plugin Host reload; a normal DSH quit/relaunch
+   requires a second explicit authorization. Neither was performed.
 
 ## Verification evidence
 
@@ -137,7 +138,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | Missing-WeChatAgent state | wizard/UI implemented; real detection requires host reload |
 | Core setup API | read-only host route implemented; write/installer API absent |
 | Live DSH host bridge | source + fake-host test pass; actual DSH returns 404; loaded module instance unavailable, stale Host code is strong evidence not final proof |
-| Phase 3B activation | `BLOCKED`; minimal reload options documented; no reload/restart performed |
+| Phase 3B activation | `BLOCKED`; no supported single-plugin reload; Plan B restart awaits second authorization; no reload/restart performed |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |

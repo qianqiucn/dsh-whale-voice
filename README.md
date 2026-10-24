@@ -77,9 +77,9 @@ bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuse
 
 This is **Phase 2 UI plus Phase 3 read-only detection**, classified `OFFLINE`: implementation and
 isolated tests pass, but the running DSH Host has not loaded the new Host row. A client/page refresh
-cannot load a new Host route; **host-plugin reload or DSH process restart** is required and was not
-performed. Phase 3B is therefore `BLOCKED` pending authorization. Real installation, TTS
-configuration and cleanup remain disabled and require the write API in
+cannot load a new Host route. No verified supported single-plugin Host reload was found; the normal
+DSH quit/relaunch Plan B awaits second authorization. Phase 3B is therefore `BLOCKED`. Real
+installation, TTS configuration and cleanup remain disabled and require the write API in
 [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
 [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host
 activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md) and

@@ -1,6 +1,7 @@
 # Phase 3B — Host Activation Plan (Read-only Review)
 
-**Status:** `BLOCKED` pending explicit authorization for a Host reload or DSH restart.
+**Status:** `BLOCKED` — the authorized Plan A investigation found **no verified supported
+single-plugin Host reload** in this DSH build. No reload/restart was executed.
 **Phase 3A:** `OFFLINE` (34 behavior tests pass).
 **No Host reload, DSH restart or production-service restart was performed.**
 
@@ -11,7 +12,7 @@
 | Check | Result |
 |---|---|
 | Git branch | `feature/phase3-core-detect` |
-| HEAD | `832fc24ab2133dfebcfe455112d26d804e2540c3` |
+| HEAD | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
 | PR #3 | Open |
 | PR #4 | Open; base `feature/first-run-setup-wizard` |
 | Current Host route | `GET /whale-voice/setup/health` → **404** |
@@ -27,7 +28,7 @@
 | Current `index.js` mtime | 2026-10-24 04:55:33 |
 | Current client bundle | rebuilt, 171720 bytes |
 | Host loaded module version | **unknown** (live module instance not exposed through Inspector) |
-| Source HEAD | `832fc24ab2133dfebcfe455112d26d804e2540c3` |
+| Source HEAD | `5bea5c96f8286f5c9ac73e5190d122960065930d` |
 
 The running process predates the current Host source. This is strong evidence for a stale Host
 row, but **not a complete proof of the final root cause**: the live Host module instance cannot be
@@ -59,22 +60,24 @@ failure.
 
 ## 4. Reload options
 
-### Option A — targeted Host/plugin reload (preferred if supported)
+### Option A — targeted Host/plugin reload (authorized, investigated, not executable)
 
-Use the DSH plugin manager to **disable and re-enable only `dsh-whale-voice`**, or use the Host HMR
-`reconcileProfile(['include:dsh-whale-voice'])` path through a trusted DSH administrative action.
+Investigating this path found:
 
-- Scope: one Host row and its linked workspace code.
-- Expected effect: stop/restart that row; route/bridge should be registered from the current
-  `index.js`.
-- Likely DSH session impact: brief plugin unload/reload; other plugins should remain.
-- WeChatAgent, Voice Sender, Qwen: **not started, stopped or modified by this plan**.
-- Config writes: none.
-- Rollback: re-enable the same row or reload again; the previous code remains in Git.
-- Caveat: the exact single-plugin reload affordance has **not been verified** in this DSH build.
-  Do not assume a page refresh performs it.
+- `hmr.reconcileProfile()` exists as a Host service API, but is **not exposed to this Agent** as a
+  supported tool or user-facing command.
+- The installed Plugin Manager exposes the Host entry but no verified single-plugin code-reload
+  action; its own UI copy says some plugin changes require a host restart.
+- Disable/enable through the Plugin Manager cannot be assumed to evict the loaded module or
+  re-execute `apply()`; using it would be an unverified state toggle, not a reliable reload.
+- A page refresh cannot load a Host row.
+- Triggering HMR by touching production config/files is not an approved mechanism and was not
+  performed.
 
-### Option B — DSH process restart (fallback, broader impact)
+**Outcome:** Plan A stopped. No unsupported workaround, no disable/enable experiment, no forced
+termination, no full restart.
+
+### Option B — DSH process restart (proposed fallback, awaiting second authorization)
 
 Close and relaunch DSH using its supported exit/launch path.
 
@@ -112,23 +115,39 @@ moduleName: dsh-whale-voice
 fiberPhase: active
 ```
 
-A supported Plugin Manager disable/enable of only this entry is the least invasive UI-level
-candidate. Whether a particular DSH build implements that as a code reload or only a state toggle
-must be verified during the authorized window.
+No verified Plugin Manager code-reload action was found. Disable/enable is not accepted as proof of a
+module reload. The fallback is a normal DSH application **Quit/Exit** and relaunch. Do not use Task
+Manager, `Stop-Process`, `taskkill`, or any uninstrumented termination.
 
-The fallback is a normal DSH application **Quit/Exit** and relaunch. Do not use Task Manager,
-`Stop-Process`, `taskkill`, or any uninstrumented termination.
+## 6. Plan B minimal restart (awaiting second authorization)
 
-## 6. Authorization gates
+This is **not authorized yet** and has not been performed.
 
-Before executing either option, require explicit user approval for:
+1. Save/close any active DSH work.
+2. Use the DSH application menu (or tray) **Quit/Exit**, not a forced process kill.
+3. Wait for the DSH process to exit completely.
+4. Relaunch the same DSH installation/profile.
+5. Reopen Whale Voice and run the post-reload acceptance checks.
 
-1. The exact operation (single Host reload or DSH restart).
-2. Expected DSH session interruption and consent to it.
-3. Confirmation that WeChatAgent, Voice Sender, Qwen and WeChat must remain untouched.
+Impact:
+
+- The current DSH process, UI page and this Agent/session will terminate/reconnect; in-flight DSH
+  operations may be interrupted.
+- WeChatAgent, Voice Sender, Qwen and WeChat are separate and must remain untouched.
+- No production config, allow-list, voice switch, audio device or DSH repository data is written.
+- Rollback: normal DSH relaunch; no data/repository deletion.
+
+## 7. Authorization gates
+
+Plan A is stopped because no reliable supported single-plugin reload was found. Before Plan B,
+require explicit second authorization for:
+
+1. The normal DSH quit/relaunch operation.
+2. Acceptance that the current DSH session and Agent connection will be interrupted.
+3. Confirmation that WeChatAgent, Voice Sender, Qwen and WeChat remain untouched.
 4. Confirmation of no production config writes and the rollback path.
 
-## 7. Post-reload acceptance (only after authorization)
+## 8. Post-reload acceptance (only after authorization)
 
 1. `/whale-voice/setup/health` responds according to route/auth state.
 2. `/whale-voice/setup/status` returns the Core status schema.
