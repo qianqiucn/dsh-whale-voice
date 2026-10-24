@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
       { id: 'overview', label: '总览', en: 'Overview', icon: 'overview', hint: '一眼看清语音系统' },
       { id: 'settings', label: '语音设置', en: 'Voice', icon: 'settings', hint: '开关与生成参数' },
       { id: 'permissions', label: '权限管理', en: 'Access', icon: 'shield', hint: '私聊与群聊白名单' },
+      { id: 'safety', label: '发送与安全', en: 'Safety', icon: 'lock', hint: '紧急停止、窗口焦点与游戏保护' },
       { id: 'studio', label: '音色中心', en: 'Studio', icon: 'wave', hint: 'whale-v1 与试听' },
       { id: 'emotions', label: '情绪系统', en: 'Emotion', icon: 'smile', hint: '实验性情绪表达' },
       { id: 'activity', label: '任务与日志', en: 'Activity', icon: 'activity', hint: '任务状态与诊断' },
@@ -528,6 +529,7 @@ window.__ModuleLoader__.load({
       if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
       else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup })
       else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup })
+      else if (page === 'safety') body = h(SafetyPage, { settings, setup })
       else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup })
       else if (page === 'emotions') body = h(EmotionsPage, { emotion, setEmotion, notify })
       else if (page === 'activity') body = h(ActivityPage, { notify, openActivity: setActivityDetail })

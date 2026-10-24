@@ -215,6 +215,12 @@ Errors must not include secrets or raw private chat data.
 - No real WeChat send as part of setup or diagnostics.
 - No API key in LocalStorage, logs, diagnostics or Git.
 - The local API is not a general-purpose web endpoint; enforce authentication and origin checks.
+- A supplied Origin must match the complete `http` scheme, host and port of the Host header. The DSH
+  same-origin GET may omit Origin; that path still requires loopback Host, `Sec-Fetch-Site`, the
+  per-process token and the DSH connection guard. Missing authentication fails closed.
+- Health/config HTTP reads use bounded streaming. A response without a streaming reader is rejected
+  (`body_stream_unsupported`) rather than read with unbounded `response.text()`. Content-Length is
+  not trusted as the sole limit.
 - Setup completion and `voice.enabled` are separate states.
 
 ## 6. Current implementation

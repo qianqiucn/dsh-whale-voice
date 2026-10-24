@@ -398,6 +398,9 @@ function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvance
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),
       h('span', { className: 'wv-component-detail' }, r.detail),
       h(SetupStatusPill, { state: r.state, demo: Boolean(data && data.demo) })))),
+    h('div', { className: 'wv-settings-group', style: { marginTop: 12 } },
+      h(SettingRow, { title: '自动启动本地 TTS 服务', desc: '属于 Qwen 组件生命周期；等待 Core 受控 API，不会自动启动 Python 或加载模型。' },
+        h('div', { className: 'wv-row' }, h(Badge, { tone: 'wait' }, '未支持'), h(Toggle, { checked: false, disabled: true, onChange: () => {}, label: '自动启动本地 TTS 服务' })))),
     h('div', { className: 'wv-setup-callout' }, h(Icon, { name: 'info', size: 16 }), h('div', null, h('strong', null, '组件控制尚未开放'), h('p', null, '启动、停止、升级、修复、卸载必须通过 Core 的受控 API；本轮前端只展示状态和安装入口。'))) )
 }
 

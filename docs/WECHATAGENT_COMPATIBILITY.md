@@ -18,7 +18,8 @@ account/group identity and send-result feedback remain planned; installation and
 |---|---|---|
 | Whale Voice `dsh-whale-voice` | **0.1.0** | repository `package.json` |
 | WeChatAgent local runtime | **0.3.9** | local `app/resources/project/package.json` |
-| WeChatAgent upstream latest observed | **0.4.0** | upstream README on 2026-10-24; **not installed or verified locally** |
+| WeChatAgent native voice send | **UNSUPPORTED** | 0.3.9 and public 0.4.0 outbound adapter expose text/sticker only; no source `SendVoice`/record path |
+| WeChatAgent upstream latest observed | **0.4.0** | public README/adapter on 2026-10-24; **not installed or verified locally** |
 | DSH plugin SDK baseline | **0.2.0-rc.2** | supplied development baseline |
 | DSH desktop shell observed | **0.2.1-rc.2** | local executable version; plugin UI loads, but SDK-level compatibility was not re-tested |
 | Windows WeChat client | **4.1.10.27** | verified local client path |
@@ -52,6 +53,11 @@ routing, native recording/sending, emergency cancel and microphone restore.
 Whale Voice must **not** add a second WeChat reader, account manager, session store or independent
 bot to replace any of these upstream responsibilities.
 
+WeChatPYAPI and PadChat-SDK are **not** WeChatAgent components or official extension points. They are
+external native-voice research candidates with separate login/service/licensing models. See
+[NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md). They must not be presented as WeChatAgent
+features or as currently integrated Whale Voice backends.
+
 ## 3. Adapter contract (read-only implemented; writes/events planned)
 
 `packages/adapter-wechatagent` isolates version-specific behavior. Current read-only subset:
@@ -64,6 +70,25 @@ Planned (not implemented): supported events, private/group identity, send capabi
 `resolveTarget()`, `submitVoiceResult()` and write/config operations. No Core/UI component may import
 a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must be
 pinned, documented and covered by a compatibility test.
+
+### Account-verification semantics
+
+`accountVerified` is only an explicit boolean supplied by a supported health contract. A generic
+`account` object, a logged-in process, a reachable Bridge or a 401/403 response is **not** proof of
+account verification. If the upstream health response has no explicit verified field, Whale Voice
+keeps the value `null` and the UI shows `未知`. It must not be reused as target-identity or
+send-permission evidence.
+
+### Native outbound capability
+
+The installed 0.3.9 and public 0.4.0 OneBot adapters implement **text and sticker** outbound messages
+only. They do not expose a `SendVoice`, `sendVoice`, `record` or audio message action. The `VOICE`
+social decision in the current Bridge is delivered through the independent Voice Sender UI Automation
+service, not a WeChatAgent native voice bubble. See
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
+
+A generic OneBot `record` segment is not evidence that this adapter implements it. Native voice is
+**UNSUPPORTED** until an upstream method/action, format, server receipt and version contract exist.
 
 ## 4. Missing or incompatible WeChatAgent
 

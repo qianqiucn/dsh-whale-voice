@@ -3,14 +3,11 @@
 **Project:** Whale Voice / `dsh-whale-voice`
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
-**Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; Phase 4B not started
-**Latest associated commit:** `7872bdfb90329995fd373cd258c908e4e72291e1` — `docs: assess DSH Electron inspector feasibility`
-**Latest PR:** [#7 — docs: DSH Electron inspector feasibility](https://github.com/qianqiucn/dsh-whale-voice/pull/7) — **open, stacked on PR #6**
-**PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
-**PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
-**PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
-**PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
+**Updated:** 2026-10-25
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#8 integrated into `main` with merge commits**; docs encoding repaired and 65 Node + 12 UI checks green; Phase 4B not started
+**Latest associated commit:** see current `main` HEAD; the pre-integration baseline is tagged `pre-pr3-8-integration` at `b552ac0` (historical backup)
+**Latest PR:** [#7 — docs: DSH Electron inspector feasibility](https://github.com/qianqiucn/dsh-whale-voice/pull/7) — **merged as the final documentation integration**
+**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7, all merged with merge commits; #7 resolved the `CHANGELOG.md` / `README.md` / `PROJECT_STATUS.md` union without reverting #8 state.
 
 ---
 
@@ -50,8 +47,9 @@ reproducible repository integration. See
 [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
 
 The current UI is **Mock by default** and can display real read-only Core results when the host bridge
-is active. A demo or a successful detection is not installation completion. The live DSH process
-must be reloaded to load the new Host row; no DSH restart was performed.
+is active. A demo or a successful detection is not installation completion. Phase 3B/4A activation was
+previously completed after a normal DSH restart; this documentation-repair task performed no DSH
+reload or restart. A running DSH will only pick up new Host code after a separately authorized reload.
 
 ## Completed
 
@@ -89,21 +87,49 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       routes, real `window.__WHALE_SETUP__` readout, component manager, and refresh all verified.
       Status `INTEGRATED`; live No-Core/timeout/invalid-schema/stale remain `OFFLINE` tests.
 - [x] Development-only UI inspector: interactive `@playwright/cli` `0.1.22`; automation uses pinned
-      `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 10/10 checks, CI `ui`
+      `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 12/12 checks, CI `ui`
       job, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`. This does not attach
       to the production DSH Electron window or use production data.
 - [x] DSH Electron Inspector feasibility: native Inspector is slot/service metadata only; no supported
       DOM/accessibility/CSS/Console/CDP API. Level 2 remains `BLOCKED`; Option C recommended. No debug
       port, production profile attachment or production page read. See
       [DSH_ELECTRON_INSPECTOR_FEASIBILITY.md](DSH_ELECTRON_INSPECTOR_FEASIBILITY.md).
+- [x] Voice delivery backend research: WeChatAgent 0.3.9 and public 0.4.0 adapters have text/sticker
+      only; WeChatAgent native voice is `UNSUPPORTED`. UI Automation remains the supported backend.
+      Third-party native APIs (WeChatPYAPI, PadChat-SDK) are **RESEARCH_CANDIDATE** only; no install,
+      send, DLL, Hook, version or production config change. See
+      [VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md) and
+      [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md).
+- [x] Send & Safety frontend: new independent page for emergency stop, window/focus and game mode;
+      unsupported controls disabled; failure fallback moved to Settings; Qwen auto-start moved to
+      Components; UI tests cover Core-unavailable, disabled states, moved settings and narrow layout.
+- [x] Send & Safety real DSH GUI acceptance: actual renderer shows the new page; UIA confirms
+      disabled shortcut, discovery, focus and game switches; no duplicate settings; visual/resize
+      checks pass. Console/CSS DOM remains unreadable without unsupported debugging. See
+      [GUI_ACCEPTANCE_SEND_SAFETY.md](GUI_ACCEPTANCE_SEND_SAFETY.md).
+- [x] Phase 4A-H pre-merge safety: full scheme/host/port Origin check shared by Host and Core,
+      bounded streaming-only HTTP bodies, explicit-only `accountVerified`, and an opaque
+      process-keyed full-config revision covering Worker/TTS/allowlist/source changes. 64 behavior
+      tests and 12 UI checks pass; PR #4–#8 branches synchronized without force push.
+- [x] AI memory and handoff: `docs/AI_CONTEXT.md` summary, `docs/DECISIONS.md` decision log, startup
+      and stage-end rules in `AGENTS.md`; all memory docs are explicitly subordinate to code,
+      Git/GitHub state, tests and the named authoritative documents.
+- [x] Pre-merge documentation quality repair on PR #8: repaired four corrupted docs, normalized UTF-8,
+      replaced the obsolete "remote repository is no longer empty" stop condition, refreshed stale
+      memory/status facts, and added a lightweight Markdown encoding regression test. No runtime code
+      change.
+- [x] PR #3–#8 integration: merge commits for #3 (`7b66dca`), #4 (`91929fd`), #5 (`9688ff8`),
+      #6 (`95a3528`), #8 (`5c4bc56`), and the final #7 documentation merge; main CI build+ui green;
+      65 Node tests and 12 UI checks on the final tree. No runtime code or production change in the
+      documentation union.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] Review PR #3 (first-run setup wizard frontend/Mock).
-- [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
-- [ ] Phase 4B config write/schema/migration (not started; requires a separate authorization).
+- [ ] Phase 4B-1: isolated Core configuration schema, revision/conflict handling, atomic save,
+      saved-vs-effective separation and rollback (not started; requires a separate authorization).
+- [ ] Keep the post-integration `main` as the clean development baseline; new work must branch from it.
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -120,6 +146,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [ ] P7: installation wizard backend, real detection, install/update/repair/rollback and clean-machine
       acceptance.
 - [ ] P8: verified group identity, emergency stop and WeChat auto-location integration.
+- [ ] Native Voice Delivery Research: continue source/license/API review; no prototype until all gates pass and owner authorizes.
 - [ ] P9: meaningful expanded CI, release validation and any visibility decision.
 
 ## Current technical blockers
@@ -155,37 +182,46 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 52 tests passed: config sources/safety, sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
+| `node --test` | 65 tests passed: 64 existing behavior tests + 1 documentation-integrity test; original 64/64 remain passing |
+| Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
+| Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider saved/configured=true, preview=false; completed=false; voiceEnabled=unknown |
 | Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
 | Core setup API | status/detect and config routes are live (401 without token); trusted bridge reads real config; write/installer API absent |
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
-| Phase 4A config read | `INTEGRATED`; 52 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
+| Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
-| `npm.cmd run test:ui` | 10/10 isolated Playwright checks: real-config readout, six surfaces, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
+| `npm.cmd run test:ui` | 12/12 isolated Playwright checks: real-config readout, navigation including Send & Safety, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
 | DSH Electron Inspector | native Inspector is slot/service metadata only; no DOM/a11y/CSS/Console/CDP; Level 2 `BLOCKED`; no debug port or production page read |
+| Voice delivery backends | UI Automation `SUPPORTED`; WeChatAgent 0.3.9/0.4.0 native voice `UNSUPPORTED`; third-party native `RESEARCH_CANDIDATE`; no prototype |
+| Send & Safety UI | `MOCK`/disabled safety controls; moved game mode, failure fallback and Qwen auto-start; 12/12 isolated UI checks |
+| Native voice research | WeChatPYAPI (SILK/bool, 4.1.12.26) and PadChat-SDK (SILK/msgId, separate iPad service) reviewed; both fail current-version/license/coexistence gates; no send |
+| Send & Safety real DSH GUI | PASS visual/UIA read-only: new nav/page loaded, disabled shortcut/window/game controls, no duplicate settings; Console/CSS DOM unreadable without CDP |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
-| PR #3 setup wizard | open; CI passed; not merged |
-| PR #4 read-only Core | open; CI passed; depends on PR #3 |
-| PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
-| PR #6 UI inspector | open; CI SUCCESS `40128127566` (build + ui jobs); stacked on PR #5; 10/10 isolated UI checks; not merged |
-| PR #7 Electron feasibility | open; CI SUCCESS `40129793979` (build + ui jobs); stacked on PR #6; documentation only; not merged |
+| PR #3–#8 integration | merged with merge commits; `main` contains all six heads; main CI build+ui SUCCESS |
+| PR #3 setup wizard | merged; merge commit `7b66dca`; CI passed |
+| PR #4 read-only Core | merged; merge commit `91929fd`; shared Origin guard, bounded HTTP and explicit account verification |
+| PR #5 Phase 4A config | merged; merge commit `9688ff8`; full-config HMAC revision |
+| PR #6 UI inspector | merged; merge commit `95a3528`; isolated UI harness + CI `ui` job |
+| PR #7 Electron feasibility | merged as the final documentation integration; Inspector research + docs union |
+| PR #8 Send & Safety / delivery research | merged; merge commit `5c4bc56`; 65 tests + 12 UI checks |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
 
-**Next: Phase 4B — controlled configuration write/schema/migration** (not started). It requires a
-separate task and production-write authorization; it must include schema versioning, conflict
-handling, atomic save, saved-vs-effective distinction and rollback. Do not start with an installer
-or a full event/identity Adapter. Voice Sender's final independent safety verification remains
-mandatory before real sending.
+**Next: Phase 4B-1 — isolated Core configuration write** (not started; requires a separate
+authorization). The read-only PR stack is integrated. Phase 4B-1 must include schema versioning,
+conflict handling, atomic save, saved-vs-effective distinction and rollback; it must not touch
+production configuration or send real messages. Do not start with an installer or a full
+event/identity Adapter. Voice Sender's final independent safety verification remains mandatory before
+real sending.
 
 ## Update rule
 
