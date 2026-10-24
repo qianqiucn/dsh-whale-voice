@@ -5,8 +5,9 @@
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `OFFLINE`** (code/tests complete, live Host reload pending), not `INTEGRATED`/`VERIFIED`
-**Latest associated commit:** `832fc24ab2133dfebcfe455112d26d804e2540c3` — `docs: record Phase 3A closure`
-**Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
+**Latest associated commit:** `52820a94a27ff985f542835917190320f65735f8` — `fix(ci): normalize generated client output`
+**Latest PR:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
+**PR #4:** [#4 — read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
 
 ---
@@ -156,6 +157,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
 | PR #3 setup wizard | open; CI passed; not merged |
 | PR #4 read-only Core | open; CI passed; depends on PR #3 |
+| PR #5 Phase 4A config | open; CI SUCCESS `40060260529`; stacked on PR #4; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
