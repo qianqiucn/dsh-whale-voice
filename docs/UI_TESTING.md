@@ -5,9 +5,13 @@ end-user plugin and does not connect to the real DSH Electron window, Core, Send
 
 ## Toolchain
 
-- Official CLI: `@playwright/cli` (installed globally during setup; verified `0.1.22`).
-- Browser: isolated Playwright Chromium (downloaded under the user's Playwright cache, not this repo).
-- Test-only React/ReactDOM: `tests/ui/package.json`; install with `npm.cmd run test:ui:setup`.
+- **Automation runtime:** pinned `playwright@1.64.1` in `tests/ui/package.json` and
+  `tests/ui/package-lock.json`; installed under `tests/ui/node_modules` (gitignored).
+- **Interactive tool:** `@playwright/cli` `0.1.22` may still be used by a developer, but
+  `npm run test:ui` does **not** depend on a global CLI or a CLI-internal path.
+- **Browser:** isolated Playwright Chromium matching the pinned package; installed by
+  `test:ui:setup` into the user Playwright cache, not this repo.
+- **Test-only React/ReactDOM:** `tests/ui/package.json`; no root runtime dependency.
 - Harness: `tests/ui/harness.html` + `tests/ui/harness.js`.
 - Driver: `tests/ui/run.mjs` starts a loopback static server, launches headless Chromium, drives the
   actual generated `client.js`, and writes reports/screenshots to `tests/ui/.artifacts/`.
@@ -18,8 +22,8 @@ Windows PowerShell may block `npm.ps1`; use `npm.cmd`:
 
 ```powershell
 cd <repo-root>
-npm.cmd run test:ui:setup   # once, creates tests/ui/node_modules (gitignored)
-npm.cmd run test:ui         # builds client.js, runs browser checks
+npm.cmd run test:ui:setup   # installs pinned test deps + matching Chromium
+npm.cmd run test:ui         # builds client.js, runs 10 browser checks
 ```
 
 Other shells may use `npm run test:ui`. The root unit suite remains:
@@ -29,10 +33,27 @@ node build.mjs
 node --test
 ```
 
+`test:ui` fails with a clear setup message if `tests/ui/node_modules` is missing; it never falls back
+to a globally installed CLI.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` has a separate `ui` job that:
+
+1. installs locked `tests/ui` dependencies;
+2. installs the matching Chromium with `--with-deps`;
+3. rebuilds `client.js`;
+4. runs `node tests/ui/run.mjs`;
+5. fails on any required check failure;
+6. uploads only the fictional-fixture screenshots/report from `tests/ui/.artifacts/`.
+
+The job does not connect to DSH, WeChatAgent, Voice Sender or Qwen and requires no production token.
+
 ## What the UI harness checks
 
 - Actual generated client bundle is loaded; no source-string assertions.
-- Overview and primary navigation: voice settings, permissions, studio, advanced.
+- Overview and primary navigation: voice settings, permissions, studio, emotions, activity, advanced.
+- 10 checks total; every check has a clear PASS/FAIL name.
 - Real-config readout: Bridge saved value, Worker safety permit, Provider/voice/model, permission
   counts, Sender offline, saved/active separation.
 - Component-manager dialog opens/closes and includes the read-only config panel.

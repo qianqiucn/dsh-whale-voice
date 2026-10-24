@@ -87,9 +87,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [x] Phase 4A live GUI acceptance after normal DSH restart: current Host, 401-protected config
       routes, real `window.__WHALE_SETUP__` readout, component manager, and refresh all verified.
       Status `INTEGRATED`; live No-Core/timeout/invalid-schema/stale remain `OFFLINE` tests.
-- [x] Development-only UI inspector: official `@playwright/cli` `0.1.22`, isolated harness with fake
-      bridge, 10/10 checks, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`.
-      This does not attach to the production DSH Electron window or use production data.
+- [x] Development-only UI inspector: interactive `@playwright/cli` `0.1.22`; automation uses pinned
+      `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 10/10 checks, CI `ui`
+      job, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`. This does not attach
+      to the production DSH Electron window or use production data.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -159,6 +160,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | Phase 4A config read | `INTEGRATED`; 52 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | `npm.cmd run test:ui` | 10/10 isolated Playwright checks: real-config readout, six surfaces, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
+| GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |

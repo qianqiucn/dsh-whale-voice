@@ -1,30 +1,33 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { createRequire } from 'node:module'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
 const artifactDir = path.join(here, '.artifacts')
 const reactDir = path.join(here, 'node_modules', 'react', 'umd')
 const reactDomDir = path.join(here, 'node_modules', 'react-dom', 'umd')
+const playwrightPackage = path.join(here, 'node_modules', 'playwright', 'package.json')
 
 function failMissing(message) {
   console.error('\nUI harness setup is incomplete:\n' + message + '\n')
   process.exit(1)
 }
 if (!existsSync(path.join(reactDir, 'react.development.js')) || !existsSync(path.join(reactDomDir, 'react-dom.development.js'))) {
-  failMissing('Install test-only dependencies with: npm install --prefix tests/ui')
+  failMissing('Install locked test-only dependencies with: npm.cmd run test:ui:setup')
 }
-
-const cliHome = process.env.PLAYWRIGHT_CLI_HOME || path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@playwright', 'cli')
-const playwrightEntry = path.join(cliHome, 'node_modules', 'playwright', 'index.mjs')
-if (!existsSync(playwrightEntry)) {
-  failMissing('Install the official Playwright CLI first: npm install -g @playwright/cli@latest')
+if (!existsSync(playwrightPackage)) {
+  failMissing('Playwright is not installed in tests/ui. Run: npm.cmd run test:ui:setup')
 }
-const playwright = await import(pathToFileURL(playwrightEntry).href)
+let playwright
+try {
+  playwright = await import('playwright')
+} catch (error) {
+  failMissing('Could not load the pinned Playwright package from tests/ui: ' + String(error && error.message || error))
+}
+const playwrightVersion = JSON.parse(readFileSync(playwrightPackage, 'utf8')).version
 
 const files = new Map([
   ['/', [path.join(here, 'harness.html'), 'text/html; charset=utf-8']],
@@ -248,6 +251,7 @@ const report = {
   generatedAt: new Date().toISOString(),
   base,
   playwright: playwright.chromium.name(),
+  playwrightVersion,
   results,
   consoleMessages,
   failedRequests,
