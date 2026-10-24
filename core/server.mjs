@@ -10,38 +10,9 @@
  */
 
 import { createServer } from 'node:http'
-import { timingSafeEqual, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { createDetector, components } from './detect.mjs'
-
-function isLoopbackAddress(address) {
-  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
-}
-
-function hostIsLoopback(req) {
-  try {
-    const host = new URL('http://' + String(req.headers.host || ''))
-    return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(host.hostname)
-  } catch {
-    return false
-  }
-}
-
-function sameOrigin(req) {
-  const origin = req.headers.origin
-  if (!origin) return true
-  try {
-    return new URL(origin).host === new URL('http://' + String(req.headers.host || '')).host
-  } catch {
-    return false
-  }
-}
-
-function tokenMatches(given, expected) {
-  if (typeof given !== 'string' || typeof expected !== 'string') return false
-  const a = Buffer.from(given)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
+import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './request-guards.mjs'
 
 function send(res, status, body) {
   res.writeHead(status, {
@@ -62,7 +33,7 @@ export function createCoreServer(options = {}) {
   const server = createServer(async (req, res) => {
     try {
       if (!isLoopbackAddress(req.socket && req.socket.remoteAddress)) return send(res, 403, { ok: false, error: 'not_loopback' })
-      if (!hostIsLoopback(req)) return send(res, 403, { ok: false, error: 'host_not_loopback' })
+      if (!loopbackHost(req)) return send(res, 403, { ok: false, error: 'host_not_loopback' })
       if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') return send(res, 403, { ok: false, error: 'cross_site' })
       if (!sameOrigin(req)) return send(res, 403, { ok: false, error: 'origin_mismatch' })
       if (!tokenMatches(req.headers['x-whale-core-token'], token)) return send(res, 401, { ok: false, error: 'unauthorized' })

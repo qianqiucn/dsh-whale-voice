@@ -34,6 +34,7 @@ jobs:
           node --check core/detect.mjs
           node --check core/config.mjs
           node --check core/http.mjs
+          node --check core/request-guards.mjs
           node --check core/view.mjs
           node --check core/setup-status.mjs
           node --check core/server.mjs
