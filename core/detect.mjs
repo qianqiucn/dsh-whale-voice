@@ -223,7 +223,7 @@ export function createDetector(options = {}) {
       sender,
       senderEvidence: { observedAt: sender.observedAt, evidence: sender.evidence },
       tts: {
-        configured: false,
+        configured: configSnapshot.tts.configured,
         savedProvider: configSnapshot.tts.provider,
         savedVoice: configSnapshot.tts.voice,
         savedConfigured: configSnapshot.tts.configured,
