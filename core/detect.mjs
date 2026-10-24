@@ -8,9 +8,10 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
+export { SUPPORTED_WECHATAGENT, detectWeChatAgent } from '../packages/adapter-wechatagent/index.mjs'
 
 export const SCHEMA_VERSION = 1
-export const SUPPORTED_WECHATAGENT = '0.3.9'
 const MAX_JSON_BYTES = 512 * 1024
 const DEFAULT_TIMEOUT_MS = 1500
 const DEFAULT_QWEN_URL = 'http://127.0.0.1:8765'
@@ -125,85 +126,6 @@ async function httpJson(fetchImpl, url, timeoutMs) {
 
 function baseEvidence(sources) {
   return sources.filter(Boolean).join(' + ')
-}
-
-export async function detectWeChatAgent(config, options = {}) {
-  const started = Date.now()
-  const observedAt = new Date().toISOString()
-  const root = config.wechatAgentRoot
-  const base = {
-    state: 'not_configured', installed: false, version: null, installPath: null,
-    processRunning: false, connected: false, accountVerified: null,
-    reader: 'unknown', bridge: 'unknown', dsh: 'unknown', compatibility: 'unknown',
-    wechatVersion: null, wechatVersionSource: null, wechatVersionVerified: false,
-    observedAt, durationMs: 0, evidence: 'no configured WeChatAgent root', processes: {},
-  }
-  if (!root) {
-    return { ...base, error: 'wechatagent_not_configured', observedAt, durationMs: Date.now() - started }
-  }
-  const packageFile = path.join(root, 'app', 'resources', 'project', 'package.json')
-  const configFile = path.join(root, 'data', 'workspace', 'config', 'wechatagent.json')
-  const runtimeFile = path.join(root, 'data', 'workspace', 'state', 'runtime.json')
-  const pkg = readJson(packageFile)
-  if (!pkg || typeof pkg !== 'object') {
-    return { ...base, installPath: maskPath(root), error: 'wechatagent_not_installed', evidence: 'package.json missing', observedAt, durationMs: Date.now() - started }
-  }
-  const configJson = readJson(configFile) || {}
-  const runtime = readJson(runtimeFile) || {}
-  const hook = configJson.hook && typeof configJson.hook === 'object' ? configJson.hook : {}
-  const pids = {}
-  for (const name of ['reader', 'bridge', 'adapter']) {
-    const pid = runtime[name] && runtime[name].pid
-    pids[name] = { pid: Number(pid) || null, running: processAlive(pid) }
-  }
-  const anyRunning = Object.values(pids).some((p) => p.running)
-  const version = typeof pkg.version === 'string' ? pkg.version : null
-  const compatibility = version === SUPPORTED_WECHATAGENT ? 'compatible' : 'unknown'
-  const expectedWechat = typeof hook.expectedVersion === 'string' ? hook.expectedVersion : null
-  const baseUrl = safeHttpUrl(hook.baseUrl)
-  let health = { state: 'unknown', status: null, body: null, error: 'bridge_url_missing' }
-  if (baseUrl) {
-    health = await httpJson(options.fetchImpl || globalThis.fetch, new URL('/WeChatAgent/health', baseUrl), options.timeoutMs || DEFAULT_TIMEOUT_MS)
-  }
-  const body = health.body || {}
-  const connected = health.state === 'ok'
-    && body.integration === 'WeChatAgent-1'
-    && body.backend === 'wechat-hook'
-    && body.startupState === 'ready'
-  let state = 'installed'
-  if (!anyRunning) state = 'not_running'
-  if (health.state === 'auth_required') state = 'auth_required'
-  else if (health.state === 'timeout') state = 'timeout'
-  else if (health.state === 'connection_failed') state = 'connection_failed'
-  else if (health.state === 'unsupported') state = 'unknown'
-  if (connected) state = 'connected'
-  if (version && version !== SUPPORTED_WECHATAGENT) state = 'incompatible'
-  return {
-    ...base,
-    state,
-    installed: true,
-    version,
-    installPath: maskPath(root),
-    processRunning: anyRunning,
-    connected,
-    accountVerified: connected && typeof body.account === 'object' ? true : null,
-    reader: pids.reader.running ? 'running' : 'unknown',
-    bridge: health.state === 'ok' ? (connected ? 'ok' : 'unexpected_response') : health.state,
-    dsh: 'unknown',
-    compatibility,
-    wechatVersion: expectedWechat,
-    wechatVersionSource: expectedWechat ? 'config_expected' : null,
-    wechatVersionVerified: false,
-    processes: pids,
-    observedAt,
-    durationMs: Date.now() - started,
-    evidence: baseEvidence([
-      'app/resources/project/package.json v' + (version || '?'),
-      'state/runtime.json pids=' + Object.values(pids).filter((p) => p.running).length,
-      baseUrl ? 'GET /WeChatAgent/health -> ' + (health.status || health.state) : 'bridge URL not configured',
-    ]),
-    error: connected ? null : (health.error || (anyRunning ? null : 'not_running')),
-  }
 }
 
 export async function detectVoiceSender(config, options = {}) {

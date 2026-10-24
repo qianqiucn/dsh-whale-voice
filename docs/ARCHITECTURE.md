@@ -21,7 +21,7 @@ DSH host
        ├─ read-only loopback route /whale-voice/setup/*
        ├─ token-protected window.__WHALE_SETUP__ bridge
        └─ core/detect.mjs
-            ├─ WeChatAgent manifest/version/runtime/health evidence
+            ├─ packages/adapter-wechatagent (read-only manifest/version/runtime/health evidence)
             ├─ Voice Sender manifest/runtime/health evidence
             └─ Qwen /health model+voice evidence
 ```

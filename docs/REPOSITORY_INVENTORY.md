@@ -12,6 +12,7 @@ selected for the initial commit. Files added by later tasks (`setup.js`, `docs/S
 | `index.js` | host bridge | Read-only Host route + token-protected `window.__WHALE_SETUP__` injection |
 | `core/detect.mjs` | Core | Read-only WeChatAgent / Sender / Qwen detection |
 | `core/server.mjs` | Core test | Loopback read-only server for isolated tests |
+| `packages/adapter-wechatagent/index.mjs` | Adapter | Read-only WeChatAgent manifest/runtime/health boundary |
 | `core/config.example.json` | config example | Explicit roots/URLs; no disk-wide discovery |
 | `test/core.test.mjs` | test | Auth, timeout, stale, missing/partial, bridge tests |
 | `test/setup-contract.test.mjs` | test | No-shell, demo isolation and completion guards |

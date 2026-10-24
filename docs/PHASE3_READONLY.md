@@ -8,7 +8,9 @@
 
 ## 1. What was implemented
 
-- `core/detect.mjs`: bounded, read-only detectors for WeChatAgent, Voice Sender and local Qwen.
+- `core/detect.mjs`: bounded, read-only detectors for Voice Sender and local Qwen.
+- `packages/adapter-wechatagent/index.mjs`: read-only WeChatAgent adapter (manifest/version,
+  runtime PIDs, fixed health endpoint).
 - `core/server.mjs`: isolated loopback Core test server with token/Origin/Host checks.
 - `index.js`: DSH Host row with token-protected `/whale-voice/setup/*` routes and a
   `window.__WHALE_SETUP__` bridge injection.

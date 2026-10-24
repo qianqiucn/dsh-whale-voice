@@ -33,6 +33,7 @@ jobs:
           node --check index.js
           node --check core/detect.mjs
           node --check core/server.mjs
+          node --check packages/adapter-wechatagent/index.mjs
 
       - name: Contract tests
         run: node --test

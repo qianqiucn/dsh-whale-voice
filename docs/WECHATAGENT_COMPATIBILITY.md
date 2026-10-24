@@ -6,9 +6,9 @@ identity, authorization and platform-send capability depends on the independent 
 **[sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent)** — MIT-licensed upstream
 project with its own third-party terms.
 
-The target integration is a dedicated `packages/adapter-wechatagent`. It is **not implemented in
-this repository yet**. This document records the current development baseline and the rules for
-adding or changing support.
+The target integration is a dedicated `packages/adapter-wechatagent`. A **read-only adapter** is now
+implemented (manifest/version, runtime PIDs and fixed health endpoint). Event subscription,
+account/group identity and send-result feedback remain planned; installation and writes are absent.
 
 ---
 
@@ -23,7 +23,7 @@ adding or changing support.
 | DSH desktop shell observed | **0.2.1-rc.2** | local executable version; plugin UI loads, but SDK-level compatibility was not re-tested |
 | Windows WeChat client | **4.1.10.27** | verified local client path |
 | Voice Sender service | **0.1.0** | separate local prototype; not in this repository |
-| Whale Voice Adapter | **not implemented** | planned `packages/adapter-wechatagent` |
+| Whale Voice Adapter | **read-only** | `packages/adapter-wechatagent`; install/events/send pending |
 
 The version matrix is a **development baseline**, not a promise that adjacent versions work. Do not
 change a version number to bypass a compatibility check.
@@ -52,20 +52,18 @@ routing, native recording/sending, emergency cancel and microphone restore.
 Whale Voice must **not** add a second WeChat reader, account manager, session store or independent
 bot to replace any of these upstream responsibilities.
 
-## 3. Adapter contract (planned)
+## 3. Adapter contract (read-only implemented; writes/events planned)
 
-`packages/adapter-wechatagent` must isolate all version-specific behavior and expose, at minimum:
+`packages/adapter-wechatagent` isolates version-specific behavior. Current read-only subset:
 
-- `detect()` — installed, running, version, executable/data location;
-- `health()` — Bridge/session/connection state and last error;
-- `capabilities()` — supported events, private/group identity, send capability;
-- `resolveTarget()` — trusted target identity evidence, not display-name matching;
-- `subscribe()` — supported message/event stream;
-- `submitVoiceResult()` — feedback to the bridge, with idempotent request IDs;
-- `verifyConfig()` — whether settings are actually in effect.
+- `detect()` — installed, version, data location, runtime PID liveness;
+- `health()` — fixed `/WeChatAgent/health` evidence; 401 is `auth_required`, never green;
+- `compatibility` — exact 0.3.9 baseline; other versions are unknown/incompatible.
 
-No Core/UI component may import a wechat-specific file layout or hard-coded internal path. Any
-version-specific extension must be pinned, documented and covered by a compatibility test.
+Planned (not implemented): supported events, private/group identity, send capability,
+`resolveTarget()`, `submitVoiceResult()` and write/config operations. No Core/UI component may import
+a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must be
+pinned, documented and covered by a compatibility test.
 
 ## 4. Missing or incompatible WeChatAgent
 
@@ -93,8 +91,8 @@ Required actions:
 5. View compatibility issues.
 6. Install Voice Sender.
 
-This state is **documented but not implemented** in the current frontend. The current frontend is
-Mock-only; its demo WeChatAgent row is not a connection probe.
+This state is implemented in the first-run wizard; the host route must be loaded by a DSH/page reload
+before real detection appears. The demo row is not a connection probe.
 
 ## 5. Upstream compatibility procedure
 
@@ -115,8 +113,9 @@ https://github.com/sourcepro5/WeChatAgent/releases
 
 ## 6. Known issues / unsupported environments
 
-- No Adapter implementation or real version/connection detection in this repository.
-- No missing-WeChatAgent UI state yet; Mock status is not evidence.
+- Only read-only Adapter detection exists; events/identity/send and writes remain unimplemented.
+- Token-protected health endpoints are reported as `auth_required`; tokens are not read.
+- The live DSH host route requires a DSH/page reload; the current process may still return 404.
 - WeChatAgent versions other than 0.3.9 are untested here; upstream 0.4.0 is observed only.
 - Windows WeChat versions other than 4.1.10.27 are untested.
 - Non-Windows real WeChat operation is unsupported.
