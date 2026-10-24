@@ -32,7 +32,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - **main HEAD:** `b552ac00e7fc05a5818965d61ab90c5ec115efee`
 - **Current development branch:** `feature/send-safety-page`
-- **Current local HEAD:** `696378c62559667e5e9fba7ecc0177b1ad25ea6a`
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; last safety-code baseline was `696378c`, and this memory-docs commit follows it.
 - **Worktree:** clean
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
@@ -59,7 +59,7 @@ main
 | #5 | #4 | `feature/phase4a-config-read` | `a4475071` | build SUCCESS |
 | #6 | #5 | `chore/ui-inspector-playwright` | `f576f61a` | build + ui SUCCESS |
 | #7 | #6 | `docs/dsh-electron-inspector-feasibility` | `d7e89097` | build + ui SUCCESS |
-| #8 | #6 | `feature/send-safety-page` | `696378c6` | build + ui SUCCESS |
+| #8 | #6 | `feature/send-safety-page` | live PR #8 (last observed `54330e7`) | build + ui SUCCESS |
 
 All PRs are currently Open, `mergeable=clean`, with **0 reviews / 0 review comments**.
 PR #7 and #8 are parallel; neither is an ancestor of the other.
