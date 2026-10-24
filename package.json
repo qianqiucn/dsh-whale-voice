@@ -18,6 +18,7 @@
     "client.css",
     "client.template.js",
     "pages.js",
+    "setup.js",
     "build.mjs",
     "cordis.patch.yml",
     "locale/*.json",

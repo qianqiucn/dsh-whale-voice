@@ -29,6 +29,7 @@ jobs:
           node --check client.js
           node --check client.template.js
           node --check pages.js
+          node --check setup.js
           node --check build.mjs
           node --check index.js
 

@@ -454,7 +454,35 @@ window.__ModuleLoader__.load({
       const [activityDetail, setActivityDetail] = React.useState(null)
       const [confirmReset, setConfirmReset] = React.useState(false)
       const [toast, setToast] = React.useState(null)
+      const [setup, setSetup] = React.useState({ checking: true, available: false, reason: '', data: null })
+      const [setupOpen, setSetupOpen] = React.useState(false)
+      const [componentsOpen, setComponentsOpen] = React.useState(false)
+      const autoSetupOpened = React.useRef(false)
       const dirty = JSON.stringify(settings) !== JSON.stringify(saved)
+
+      const refreshSetup = async () => {
+        setSetup((s) => ({ ...s, checking: true }))
+        const next = await readSetupStatus()
+        setSetup(next)
+        if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
+          autoSetupOpened.current = true
+          setSetupOpen(true)
+        }
+        return next
+      }
+
+      React.useEffect(() => {
+        let alive = true
+        readSetupStatus().then((next) => {
+          if (!alive) return
+          setSetup(next)
+          if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
+            autoSetupOpened.current = true
+            setSetupOpen(true)
+          }
+        })
+        return () => { alive = false }
+      }, [])
 
       React.useEffect(() => {
         if (!toast) return
@@ -492,14 +520,14 @@ window.__ModuleLoader__.load({
       }
 
       let body = null
-      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail })
+      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
       else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify })
       else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify })
       else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify })
       else if (page === 'emotions') body = h(EmotionsPage, { emotion, setEmotion, notify })
       else if (page === 'activity') body = h(ActivityPage, { notify, openActivity: setActivityDetail })
-      else if (page === 'advanced') body = h(AdvancedPage, { notify })
-      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail })
+      else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
 
       return h('div', { ref: rootRef, className: 'wv-root', 'data-layout': layout },
         h('div', { className: 'wv-aurora', 'aria-hidden': true }),
@@ -518,6 +546,15 @@ window.__ModuleLoader__.load({
             h(Button, { onClick: () => setConfirmReset(false) }, '取消'),
             h(Button, { variant: 'danger', onClick: resetSettings }, '恢复默认')),
         }, h('p', { style: { margin: 0, color: 'var(--wv-muted)', fontSize: 12, lineHeight: 1.6 } }, '当前未保存的演示表单内容会丢失。')) : null,
+        setupOpen ? h(SetupWizard, {
+          open: true, status: setup, onClose: () => setSetupOpen(false), onRefresh: refreshSetup, onNotify: notify,
+          onGoPermissions: () => { setSetupOpen(false); setPage('permissions') },
+        }) : null,
+        componentsOpen ? h(ComponentsDialog, {
+          open: true, status: setup, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
+          onSetup: () => { setComponentsOpen(false); setSetupOpen(true) },
+          onAdvanced: () => { setComponentsOpen(false); setPage('advanced') }, onNotify: notify,
+        }) : null,
         h(Toast, { toast }))
     }
 

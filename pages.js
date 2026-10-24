@@ -39,7 +39,7 @@ function ActivityMini({ activity, onOpen, last }) {
     h('span', { className: 'wv-activity-chev' }, h(Icon, { name: 'chevron', size: 14 })))
 }
 
-function OverviewPage({ settings, setSetting, setPage, notify, openService, openActivity }) {
+function OverviewPage({ settings, setSetting, setPage, notify, openService, openActivity, setup, onSetup, onComponents }) {
   const stats = [
     { label: '服务', value: '2 / 3', sub: '演示在线 · 1 忙碌' },
     { label: '专属音色', value: '1', sub: 'whale-v1 · 已就绪' },
@@ -61,6 +61,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
           h(Button, { variant: 'primary', onClick: () => setPage('settings') }, h(Icon, { name: 'settings', size: 14 }), '进入语音设置'),
           h(Button, { onClick: () => setPage('studio') }, h(Icon, { name: 'wave', size: 14 }), '打开音色中心'))),
       h('div', { className: 'wv-hero-art' }, h(WhaleArt))),
+    h(SetupBanner, { status: setup, onSetup, onComponents }),
     h('div', { className: 'wv-grid four', style: { marginTop: 12 } },
       stats.map((s) => h('div', { key: s.label, className: 'wv-card wv-stat' },
         h('span', { className: 'wv-stat-label' }, s.label),
@@ -523,7 +524,7 @@ function ActivityPage({ notify, openActivity }) {
             h(Button, { variant: 'ghost', size: 'sm', onClick: async () => { const ok = await copyText(e); notify(ok ? '已复制错误码。' : '复制失败：剪贴板不可用。', ok ? 'success' : 'error') } }, h(Icon, { name: 'copy', size: 12 }), '复制')))))))
 }
 
-function AdvancedPage({ notify }) {
+function AdvancedPage({ notify, setup, onSetup, onComponents }) {
   const diag = React.useMemo(() => JSON.stringify({
     plugin: 'dsh-whale-voice', version: '0.1.0', mode: 'mock',
     bridge: 'r4 (demo)', target: 'private:demo-1001', voice: 'whale-v1',
@@ -550,6 +551,15 @@ function AdvancedPage({ notify }) {
         h('dl', { className: 'wv-kv' }, ADVANCED.sender.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
       h(Card, { title: 'WeChatAgent', desc: 'Bridge 与配置映射', actions: h(Badge, { tone: 'demo' }, '只读') },
         h('dl', { className: 'wv-kv' }, ADVANCED.wechat.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),
+      h(Card, { title: '安装与组件', desc: '首次安装向导与组件生命周期入口', actions: h(Badge, { tone: setup && setup.available ? 'accent' : 'wait' }, setup && setup.available ? 'Core 已连接' : 'Core 未连接') },
+        h('div', { className: 'wv-settings-group' },
+          h(SettingRow, { title: '首次安装向导', desc: '连接微信助手、安装语音发送器、选择 TTS、完成检查' },
+            h(Button, { onClick: onSetup }, '打开向导')),
+          h(SettingRow, { title: '组件管理', desc: '检测 WeChatAgent、Voice Sender 与 TTS 状态' },
+            h(Button, { variant: 'ghost', onClick: onComponents }, '管理组件'))),
+        h('div', { className: 'wv-notice', style: { marginTop: 10 } },
+          h(Icon, { name: 'lock', size: 14 }),
+          h('span', null, '向导不会直接执行系统命令；安装、升级、驱动与微信操作均需要 Core 和你的单独确认。'))),
       h(Card, { title: '开发与诊断', desc: '前端版本与 Mock 说明', actions: h(Badge, { tone: 'demo' }, 'Mock') },
         h('div', { className: 'wv-settings-group' },
           h(SettingRow, { title: '前端版本', desc: 'dsh-whale-voice' }, h('span', { className: 'wv-mono' }, 'v0.1.0')),

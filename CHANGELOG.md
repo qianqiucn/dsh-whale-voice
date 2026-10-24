@@ -12,7 +12,9 @@ not invent earlier releases or imply production maturity.
 - Roadmap P0–P9, project status, architecture, changelog and license.
 - WeChatAgent required-dependency documentation, Adapter boundary, version matrix and
   missing-dependency UX contract.
-- No runtime/code changes in this documentation-only change.
+- First-run setup wizard and component-management entry (frontend/Mock only).
+- Setup capability review and Core Setup API contract; no real installer or detection.
+- Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
 
