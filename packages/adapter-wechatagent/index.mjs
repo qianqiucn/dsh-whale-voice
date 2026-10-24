@@ -72,7 +72,7 @@ export async function detectWeChatAgent(config, options = {}) {
 
   const pkg = readJson(path.join(root, 'app', 'resources', 'project', 'package.json'))
   if (!pkg || typeof pkg !== 'object') {
-    return { ...base, installPath: maskPath(root), error: 'wechatagent_not_installed', evidence: 'package.json missing', observedAt, durationMs: Date.now() - started }
+    return { ...base, state: 'not_installed', installPath: maskPath(root), error: 'wechatagent_not_installed', evidence: 'package.json missing', observedAt, durationMs: Date.now() - started }
   }
   const configJson = readJson(path.join(root, 'data', 'workspace', 'config', 'wechatagent.json')) || {}
   const runtime = readJson(path.join(root, 'data', 'workspace', 'state', 'runtime.json')) || {}

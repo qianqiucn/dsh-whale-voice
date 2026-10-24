@@ -27,17 +27,38 @@ export function deriveSetupView(status) {
 
   const installed = boolOrNull(sender.installed)
   const processRunning = boolOrNull(sender.processRunning)
-  const healthReachable = sender.healthReachable === true
-    || (typeof sender.healthStatus === 'number' && sender.healthStatus > 0)
-    || sender.health === 'ok'
+  const senderState = sender.state || 'unknown'
+  const installedState = installed === true
+    ? 'pass'
+    : installed === false
+      ? (senderState === 'not_configured' ? 'unknown' : 'fail')
+      : 'unknown'
+  const processState = processRunning === true
+    ? 'pass'
+    : processRunning === false
+      ? (senderState === 'not_configured' ? 'unknown' : 'fail')
+      : 'unknown'
+  let healthReachable = null
+  if (sender.healthReachable === true || (typeof sender.healthStatus === 'number' && sender.healthStatus > 0) || sender.health === 'ok') {
+    healthReachable = true
+  } else if (!(senderState === 'not_configured' || senderState === 'not_installed' || sender.health == null)) {
+    healthReachable = false
+  }
   const healthy = boolOrNull(sender.healthy)
   const recoveryKnown = boolOrNull(sender.recoveryPending)
   const voiceKnown = boolOrNull(data.voiceEnabled)
   const recoveryState = recoveryKnown === false ? 'pass' : recoveryKnown === true ? 'fail' : 'unknown'
   const voiceState = typeof voiceKnown === 'boolean' ? 'pass' : 'unknown'
 
-  const senderReady = combine([installed, processRunning, healthReachable, healthy])
-  const wechatConnected = boolOrNull(wa.connected)
+  const senderReady = combine([
+    senderState === 'not_configured' ? null : installed,
+    senderState === 'not_configured' ? null : processRunning,
+    healthReachable,
+    healthy,
+  ])
+  const wechatConnected = wa.state === 'not_configured'
+    ? null
+    : boolOrNull(wa.connected)
   const compatibility = wa.compatibility === 'compatible'
     ? 'pass'
     : wa.compatibility === 'incompatible'
@@ -93,7 +114,8 @@ export function deriveSetupView(status) {
       finish: complete,
     },
     wechat: {
-      installed: boolOrNull(wa.installed),
+      installed: wa.state === 'not_configured' ? null : boolOrNull(wa.installed),
+      installedState: wa.state === 'not_configured' ? 'unknown' : stateOf(boolOrNull(wa.installed)),
       processRunning: boolOrNull(wa.processRunning),
       connected: wechatConnected,
       connectedState: stateOf(wechatConnected),
@@ -110,9 +132,9 @@ export function deriveSetupView(status) {
     },
     sender: {
       installed: installed === true,
-      installedState: stateOf(installed),
+      installedState,
       processRunning: processRunning === true,
-      processState: stateOf(processRunning),
+      processState,
       healthReachable,
       healthReachableState: stateOf(healthReachable),
       healthy: healthy === true,

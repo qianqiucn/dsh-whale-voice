@@ -100,7 +100,7 @@ export async function detectVoiceSender(config, options = {}) {
   const stateFile = path.join(root, 'service', 'runtime', 'service.json')
   const pkg = readJson(packageFile)
   if (!pkg || typeof pkg !== 'object') {
-    return { ...base, installPath: maskPath(root), error: 'sender_not_installed', evidence: 'service/package.json missing', observedAt, durationMs: Date.now() - started }
+    return { ...base, state: 'not_installed', installPath: maskPath(root), error: 'sender_not_installed', evidence: 'service/package.json missing', observedAt, durationMs: Date.now() - started }
   }
   const serviceConfig = readJson(configFile) || {}
   const runtime = readJson(stateFile) || {}

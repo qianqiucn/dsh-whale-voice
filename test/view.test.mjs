@@ -64,6 +64,25 @@ after(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true })
 })
 
+test('unconfigured components stay unknown, not failed or installed', async () => {
+  const detector = createDetector({
+    config: { wechatAgentRoot: '', senderRoot: '', qwenUrl: 'http://127.0.0.1:8765' },
+    fetchImpl: async () => response(500, {}),
+    timeoutMs: 100,
+  })
+  const status = await detector.detectAll()
+  const view = deriveSetupView(status)
+  assert.equal(view.wechat.installedState, 'unknown')
+  assert.equal(view.wechat.connectedState, 'unknown')
+  assert.equal(view.sender.installedState, 'unknown')
+  assert.equal(view.sender.processState, 'unknown')
+  assert.equal(view.sender.healthReachableState, 'unknown')
+  assert.equal(view.sender.ready, 'unknown')
+  assert.equal(view.advance.sender, false)
+  assert.equal(view.checks.find((c) => c.id === 'sender').state, 'unknown')
+  assert.equal(view.checks.find((c) => c.id === 'wechat').state, 'unknown')
+})
+
 test('Core sender health ok + healthy true drives the sender step', async () => {
   const status = await createDetector({ config: await components(), fetchImpl: healthyFetch(), timeoutMs: 100 }).detectAll()
   assert.equal(status.sender.health, 'ok')

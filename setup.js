@@ -68,40 +68,7 @@ const MOCK_SETUP = {
 
 function readSetupStatus() {
   const bridge = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
-  if (!bridge || typeof bridge.getStatus !== 'function') {
-    return Promise.resolve({
-      checking: false,
-      available: false,
-      reason: 'core_not_connected',
-      data: null,
-      checkedAt: new Date().toISOString(),
-    })
-  }
-  let timeoutTimer
-  const timeout = new Promise((resolve) => {
-    timeoutTimer = setTimeout(() => resolve({
-      checking: false,
-      available: false,
-      reason: 'core_timeout',
-      data: null,
-      checkedAt: new Date().toISOString(),
-    }), 5000)
-  })
-  const request = Promise.resolve().then(() => bridge.getStatus()).then((data) => {
-    if (!data || typeof data !== 'object' || data.schemaVersion !== 1 || typeof data.completed !== 'boolean') {
-      return { checking: false, available: false, reason: 'core_invalid_response', data: null, checkedAt: new Date().toISOString() }
-    }
-    return { checking: false, available: true, reason: '', data, checkedAt: new Date().toISOString() }
-  }).catch((error) => ({
-    checking: false,
-    available: false,
-    reason: 'core_error:' + String(error && error.message ? error.message : error).slice(0, 120),
-    data: null,
-    checkedAt: new Date().toISOString(),
-  }))
-  const raced = Promise.race([request, timeout])
-  raced.finally(() => clearTimeout(timeoutTimer))
-  return raced
+  return readBridgeSetupStatus(bridge, { timeoutMs: 5000 })
 }
 
 function setupStateLabel(state) {
@@ -201,14 +168,14 @@ function SetupWeChatStep({ data, demo, status, onRefresh, onNotify }) {
         h('span', { className: 'wv-muted' }, wa && wa.wechatVersion ? '微信 ' + wa.wechatVersion + (wa.wechatVersionVerified ? '' : '（配置期望，未验证）') : '微信版本未知')),
       h(SetupEvidence, { data: wa }),
       h('div', { className: 'wv-setup-checks' },
-        h(SetupMark, { state: setupTri(wa && wa.installed), label: '程序安装', value: setupViewStateText(setupTri(wa && wa.installed)) }),
-        h(SetupMark, { state: setupTri(wa && wa.processRunning), label: '进程运行', value: setupViewStateText(setupTri(wa && wa.processRunning)) }),
-        h(SetupMark, { state: setupTri(wa && wa.accountVerified), label: '账号验证', value: setupViewStateText(setupTri(wa && wa.accountVerified)) }),
-        h(SetupMark, { state: setupTri(wa && wa.connected), label: '微信连接', value: setupViewStateText(setupTri(wa && wa.connected)) }),
-        h(SetupMark, { state: wa && wa.reader === 'ok' ? 'pass' : 'unknown', label: 'Reader', value: wa && wa.reader === 'ok' ? '正常' : wa && wa.reader === 'running' ? '运行中（未验证）' : '未知' }),
-        h(SetupMark, { state: wa && wa.bridge === 'ok' ? 'pass' : wa && wa.bridge === 'connection_failed' ? 'fail' : 'unknown', label: 'Bridge', value: wa && wa.bridge === 'ok' ? '正常' : setupStateLabel(wa && wa.bridge) }),
-        h(SetupMark, { state: wa && wa.dsh === 'ok' ? 'pass' : 'unknown', label: 'DSH 连接', value: wa && wa.dsh === 'ok' ? '已连接' : '未知' }),
-        h(SetupMark, { state: wa && wa.compatibility === 'compatible' ? 'pass' : wa && wa.compatibility === 'incompatible' ? 'fail' : 'unknown', label: '接口兼容性', value: wa && wa.compatibility === 'compatible' ? '兼容' : '未知' })),
+        h(SetupMark, { state: waView.installedState, label: '程序安装', value: setupViewStateText(waView.installedState) }),
+        h(SetupMark, { state: setupTri(waView.processRunning), label: '进程运行', value: setupViewStateText(setupTri(waView.processRunning)) }),
+        h(SetupMark, { state: waView.accountVerified, label: '账号验证', value: setupViewStateText(waView.accountVerified) }),
+        h(SetupMark, { state: waView.connectedState, label: '微信连接', value: setupViewStateText(waView.connectedState) }),
+        h(SetupMark, { state: waView.reader === 'ok' ? 'pass' : 'unknown', label: 'Reader', value: waView.reader === 'ok' ? '正常' : waView.reader === 'running' ? '运行中（未验证）' : '未知' }),
+        h(SetupMark, { state: waView.bridge === 'ok' ? 'pass' : waView.bridge === 'connection_failed' ? 'fail' : 'unknown', label: 'Bridge', value: waView.bridge === 'ok' ? '正常' : setupStateLabel(waView.bridge) }),
+        h(SetupMark, { state: waView.dsh === 'ok' ? 'pass' : 'unknown', label: 'DSH 连接', value: waView.dsh === 'ok' ? '已连接' : '未知' }),
+        h(SetupMark, { state: waView.compatibility, label: '接口兼容性', value: waView.compatibility === 'pass' ? '兼容' : '未知' })),
       missing ? h('div', { className: 'wv-setup-callout warn' },
         h(Icon, { name: 'alert', size: 16 }),
         h('div', null,

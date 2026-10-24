@@ -126,7 +126,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | no-Core state, demo step 1–4, component-manager entry reviewed in live DSH |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 28 tests passed: sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, demo, stale |
+| `node --test` | 34 tests passed: sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
 | Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 auth_required/healthReachable=true/healthy=null; Qwen 200; completed=false; voiceEnabled=unknown |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; real detection requires host reload |

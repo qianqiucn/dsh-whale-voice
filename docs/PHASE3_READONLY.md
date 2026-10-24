@@ -70,9 +70,11 @@ The 401 responses are not treated as success. They are displayed as “需要授
 
 ## 4. Automated test coverage
 
-`node --test` covers 28 tests:
+`node --test` covers 34 tests:
 
 - Missing/partial components and 401 health.
+- No-Core, timeout, invalid schema and rejected bridge behavior.
+- Scan gate: an older request cannot become current.
 - Sender installed/process/health-reachable/service-healthy separation using actual Core output.
 - Null recovery/voice fields stay unknown; only explicit booleans become pass/fail.
 - Qwen `ok:false`, unrelated service, missing model/voice, arrays and error objects are invalid.

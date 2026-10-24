@@ -4,6 +4,7 @@ import { test } from 'node:test'
 
 const setup = readFileSync(new URL('../setup.js', import.meta.url), 'utf8')
 const template = readFileSync(new URL('../client.template.js', import.meta.url), 'utf8')
+const status = readFileSync(new URL('../core/setup-status.mjs', import.meta.url), 'utf8')
 
 test('setup UI has no shell, installer or fetch execution path', () => {
   assert.equal(/\bchild_process\b/.test(setup), false)
@@ -23,11 +24,12 @@ test('demo data cannot become authoritative completion', () => {
 })
 
 test('core status is validated, bounded and stale-safe', () => {
-  assert.match(setup, /data\.schemaVersion !== 1/)
-  assert.match(setup, /core_timeout/)
-  assert.match(setup, /core_invalid_response/)
-  assert.match(template, /setupRequestSeq/)
-  assert.match(template, /seq !== setupRequestSeq\.current/)
+  assert.match(status, /data\.schemaVersion !== 1/)
+  assert.match(status, /core_timeout/)
+  assert.match(status, /core_invalid_response/)
+  assert.match(status, /createSetupScanGate/)
+  assert.match(template, /setupScanGate/)
+  assert.match(template, /isCurrent\(seq\)/)
 })
 
 test('safety copy and bridge contract remain present', () => {

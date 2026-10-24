@@ -438,7 +438,59 @@ window.__ModuleLoader__.load({
       return layout
     }
 
-    /* Pure setup-view derivation shared by the browser wizard and behavior tests.
+    /* Pure browser-side setup status reader and scan gate.
+ *
+ * This module is injected into client.js by build.mjs and imported directly by tests.
+ * It contains no shell, installer or component operation.
+ */
+
+function createSetupScanGate() {
+  let sequence = 0
+  return {
+    begin() { return ++sequence },
+    isCurrent(id) { return id === sequence },
+    get current() { return sequence },
+  }
+}
+
+function readBridgeSetupStatus(bridge, options = {}) {
+  const timeoutMs = options.timeoutMs || 5000
+  const now = options.now || (() => new Date().toISOString())
+  if (!bridge || typeof bridge.getStatus !== 'function') {
+    return Promise.resolve({
+      checking: false, available: false, reason: 'core_not_connected', data: null, checkedAt: now(),
+    })
+  }
+
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({
+      checking: false, available: false, reason: 'core_timeout', data: null, checkedAt: now(),
+    }), timeoutMs)
+  })
+
+  const request = Promise.resolve()
+    .then(() => bridge.getStatus())
+    .then((data) => {
+      if (!data || typeof data !== 'object' || data.schemaVersion !== 1 || typeof data.completed !== 'boolean') {
+        return { checking: false, available: false, reason: 'core_invalid_response', data: null, checkedAt: now() }
+      }
+      return { checking: false, available: true, reason: '', data, checkedAt: now() }
+    })
+    .catch((error) => ({
+      checking: false,
+      available: false,
+      reason: 'core_error:' + String(error && error.message ? error.message : error).slice(0, 120),
+      data: null,
+      checkedAt: now(),
+    }))
+
+  const raced = Promise.race([request, timeout])
+  raced.finally(() => clearTimeout(timer))
+  return raced
+}
+
+/* Pure setup-view derivation shared by the browser wizard and behavior tests.
  *
  * IMPORTANT: null/undefined means unknown. Only an explicit boolean true/false becomes pass/fail.
  * A 401 health response is "reachable but not healthy", never "healthy".
@@ -467,17 +519,38 @@ function deriveSetupView(status) {
 
   const installed = boolOrNull(sender.installed)
   const processRunning = boolOrNull(sender.processRunning)
-  const healthReachable = sender.healthReachable === true
-    || (typeof sender.healthStatus === 'number' && sender.healthStatus > 0)
-    || sender.health === 'ok'
+  const senderState = sender.state || 'unknown'
+  const installedState = installed === true
+    ? 'pass'
+    : installed === false
+      ? (senderState === 'not_configured' ? 'unknown' : 'fail')
+      : 'unknown'
+  const processState = processRunning === true
+    ? 'pass'
+    : processRunning === false
+      ? (senderState === 'not_configured' ? 'unknown' : 'fail')
+      : 'unknown'
+  let healthReachable = null
+  if (sender.healthReachable === true || (typeof sender.healthStatus === 'number' && sender.healthStatus > 0) || sender.health === 'ok') {
+    healthReachable = true
+  } else if (!(senderState === 'not_configured' || senderState === 'not_installed' || sender.health == null)) {
+    healthReachable = false
+  }
   const healthy = boolOrNull(sender.healthy)
   const recoveryKnown = boolOrNull(sender.recoveryPending)
   const voiceKnown = boolOrNull(data.voiceEnabled)
   const recoveryState = recoveryKnown === false ? 'pass' : recoveryKnown === true ? 'fail' : 'unknown'
   const voiceState = typeof voiceKnown === 'boolean' ? 'pass' : 'unknown'
 
-  const senderReady = combine([installed, processRunning, healthReachable, healthy])
-  const wechatConnected = boolOrNull(wa.connected)
+  const senderReady = combine([
+    senderState === 'not_configured' ? null : installed,
+    senderState === 'not_configured' ? null : processRunning,
+    healthReachable,
+    healthy,
+  ])
+  const wechatConnected = wa.state === 'not_configured'
+    ? null
+    : boolOrNull(wa.connected)
   const compatibility = wa.compatibility === 'compatible'
     ? 'pass'
     : wa.compatibility === 'incompatible'
@@ -533,7 +606,8 @@ function deriveSetupView(status) {
       finish: complete,
     },
     wechat: {
-      installed: boolOrNull(wa.installed),
+      installed: wa.state === 'not_configured' ? null : boolOrNull(wa.installed),
+      installedState: wa.state === 'not_configured' ? 'unknown' : stateOf(boolOrNull(wa.installed)),
       processRunning: boolOrNull(wa.processRunning),
       connected: wechatConnected,
       connectedState: stateOf(wechatConnected),
@@ -550,9 +624,9 @@ function deriveSetupView(status) {
     },
     sender: {
       installed: installed === true,
-      installedState: stateOf(installed),
+      installedState,
       processRunning: processRunning === true,
-      processState: stateOf(processRunning),
+      processState,
       healthReachable,
       healthReachableState: stateOf(healthReachable),
       healthy: healthy === true,
@@ -1233,40 +1307,7 @@ const MOCK_SETUP = {
 
 function readSetupStatus() {
   const bridge = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
-  if (!bridge || typeof bridge.getStatus !== 'function') {
-    return Promise.resolve({
-      checking: false,
-      available: false,
-      reason: 'core_not_connected',
-      data: null,
-      checkedAt: new Date().toISOString(),
-    })
-  }
-  let timeoutTimer
-  const timeout = new Promise((resolve) => {
-    timeoutTimer = setTimeout(() => resolve({
-      checking: false,
-      available: false,
-      reason: 'core_timeout',
-      data: null,
-      checkedAt: new Date().toISOString(),
-    }), 5000)
-  })
-  const request = Promise.resolve().then(() => bridge.getStatus()).then((data) => {
-    if (!data || typeof data !== 'object' || data.schemaVersion !== 1 || typeof data.completed !== 'boolean') {
-      return { checking: false, available: false, reason: 'core_invalid_response', data: null, checkedAt: new Date().toISOString() }
-    }
-    return { checking: false, available: true, reason: '', data, checkedAt: new Date().toISOString() }
-  }).catch((error) => ({
-    checking: false,
-    available: false,
-    reason: 'core_error:' + String(error && error.message ? error.message : error).slice(0, 120),
-    data: null,
-    checkedAt: new Date().toISOString(),
-  }))
-  const raced = Promise.race([request, timeout])
-  raced.finally(() => clearTimeout(timeoutTimer))
-  return raced
+  return readBridgeSetupStatus(bridge, { timeoutMs: 5000 })
 }
 
 function setupStateLabel(state) {
@@ -1366,14 +1407,14 @@ function SetupWeChatStep({ data, demo, status, onRefresh, onNotify }) {
         h('span', { className: 'wv-muted' }, wa && wa.wechatVersion ? '微信 ' + wa.wechatVersion + (wa.wechatVersionVerified ? '' : '（配置期望，未验证）') : '微信版本未知')),
       h(SetupEvidence, { data: wa }),
       h('div', { className: 'wv-setup-checks' },
-        h(SetupMark, { state: setupTri(wa && wa.installed), label: '程序安装', value: setupViewStateText(setupTri(wa && wa.installed)) }),
-        h(SetupMark, { state: setupTri(wa && wa.processRunning), label: '进程运行', value: setupViewStateText(setupTri(wa && wa.processRunning)) }),
-        h(SetupMark, { state: setupTri(wa && wa.accountVerified), label: '账号验证', value: setupViewStateText(setupTri(wa && wa.accountVerified)) }),
-        h(SetupMark, { state: setupTri(wa && wa.connected), label: '微信连接', value: setupViewStateText(setupTri(wa && wa.connected)) }),
-        h(SetupMark, { state: wa && wa.reader === 'ok' ? 'pass' : 'unknown', label: 'Reader', value: wa && wa.reader === 'ok' ? '正常' : wa && wa.reader === 'running' ? '运行中（未验证）' : '未知' }),
-        h(SetupMark, { state: wa && wa.bridge === 'ok' ? 'pass' : wa && wa.bridge === 'connection_failed' ? 'fail' : 'unknown', label: 'Bridge', value: wa && wa.bridge === 'ok' ? '正常' : setupStateLabel(wa && wa.bridge) }),
-        h(SetupMark, { state: wa && wa.dsh === 'ok' ? 'pass' : 'unknown', label: 'DSH 连接', value: wa && wa.dsh === 'ok' ? '已连接' : '未知' }),
-        h(SetupMark, { state: wa && wa.compatibility === 'compatible' ? 'pass' : wa && wa.compatibility === 'incompatible' ? 'fail' : 'unknown', label: '接口兼容性', value: wa && wa.compatibility === 'compatible' ? '兼容' : '未知' })),
+        h(SetupMark, { state: waView.installedState, label: '程序安装', value: setupViewStateText(waView.installedState) }),
+        h(SetupMark, { state: setupTri(waView.processRunning), label: '进程运行', value: setupViewStateText(setupTri(waView.processRunning)) }),
+        h(SetupMark, { state: waView.accountVerified, label: '账号验证', value: setupViewStateText(waView.accountVerified) }),
+        h(SetupMark, { state: waView.connectedState, label: '微信连接', value: setupViewStateText(waView.connectedState) }),
+        h(SetupMark, { state: waView.reader === 'ok' ? 'pass' : 'unknown', label: 'Reader', value: waView.reader === 'ok' ? '正常' : waView.reader === 'running' ? '运行中（未验证）' : '未知' }),
+        h(SetupMark, { state: waView.bridge === 'ok' ? 'pass' : waView.bridge === 'connection_failed' ? 'fail' : 'unknown', label: 'Bridge', value: waView.bridge === 'ok' ? '正常' : setupStateLabel(waView.bridge) }),
+        h(SetupMark, { state: waView.dsh === 'ok' ? 'pass' : 'unknown', label: 'DSH 连接', value: waView.dsh === 'ok' ? '已连接' : '未知' }),
+        h(SetupMark, { state: waView.compatibility, label: '接口兼容性', value: waView.compatibility === 'pass' ? '兼容' : '未知' })),
       missing ? h('div', { className: 'wv-setup-callout warn' },
         h(Icon, { name: 'alert', size: 16 }),
         h('div', null,
@@ -1637,14 +1678,15 @@ function SetupBanner({ status, onSetup, onComponents }) {
       const [setupOpen, setSetupOpen] = React.useState(false)
       const [componentsOpen, setComponentsOpen] = React.useState(false)
       const autoSetupOpened = React.useRef(false)
-      const setupRequestSeq = React.useRef(0)
+      const setupScanGate = React.useRef(null)
+      if (!setupScanGate.current) setupScanGate.current = createSetupScanGate()
       const dirty = JSON.stringify(settings) !== JSON.stringify(saved)
 
       const refreshSetup = async () => {
-        const seq = ++setupRequestSeq.current
+        const seq = setupScanGate.current.begin()
         setSetup((s) => ({ ...s, checking: true }))
         const next = await readSetupStatus()
-        if (seq !== setupRequestSeq.current) return next
+        if (!setupScanGate.current.isCurrent(seq)) return next
         setSetup(next)
         if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
           autoSetupOpened.current = true
@@ -1655,9 +1697,9 @@ function SetupBanner({ status, onSetup, onComponents }) {
 
       React.useEffect(() => {
         let alive = true
-        const seq = ++setupRequestSeq.current
+        const seq = setupScanGate.current.begin()
         readSetupStatus().then((next) => {
-          if (!alive || seq !== setupRequestSeq.current) return
+          if (!alive || !setupScanGate.current.isCurrent(seq)) return
           setSetup(next)
           if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
             autoSetupOpened.current = true
