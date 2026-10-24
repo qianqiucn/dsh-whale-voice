@@ -19,6 +19,7 @@ not invent earlier releases or imply production maturity.
 - Sender installed/process/health-reachable/service-healthy contract and tri-state unknown handling.
 - Strict Qwen health validation, bounded response bodies, redirect/body-limit handling.
 - Host authentication lifecycle fail-closed, connection replacement and dispose tests.
+- Phase 3B Host activation review: 404 evidence, reload options and authorization gates.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

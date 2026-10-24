@@ -78,10 +78,12 @@ bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuse
 This is **Phase 2 UI plus Phase 3 read-only detection**, classified `OFFLINE`: implementation and
 isolated tests pass, but the running DSH Host has not loaded the new Host row. A client/page refresh
 cannot load a new Host route; **host-plugin reload or DSH process restart** is required and was not
-performed. Real installation, TTS configuration and cleanup remain disabled and require the write
-API in [docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
+performed. Phase 3B is therefore `BLOCKED` pending authorization. Real installation, TTS
+configuration and cleanup remain disabled and require the write API in
+[docs/SETUP_API.md](docs/SETUP_API.md). Phase 1 findings are in
 [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results and the host
-activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md).
+activation check are in [docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md) and
+[docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md).
 
 The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
 dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
@@ -212,6 +214,8 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Setup capability review](docs/SETUP_CAPABILITY_REVIEW.md) — Phase 1 capability audit.
 - [Setup API contract](docs/SETUP_API.md) — Core bridge, state machine, errors and security rules.
 - [Phase 3 read-only report](docs/PHASE3_READONLY.md) — detected versions, evidence and unknowns.
+- [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
+  authorization gates.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.

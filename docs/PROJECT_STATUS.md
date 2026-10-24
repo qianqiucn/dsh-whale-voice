@@ -4,8 +4,8 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3 read-only **OFFLINE**; live host integration pending
-**Latest associated commit:** `4dd7be422b562ef847235b11aab65b6f584bc15d` — `fix: close setup status and unknown-state gaps`
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `BLOCKED` on Host-reload authorization; live Host integration not verified
+**Latest associated commit:** `832fc24ab2133dfebcfe455112d26d804e2540c3` — `docs: record Phase 3A closure`
 **Latest PR:** [#4 — feat: phase 3 read-only core and trusted bridge](https://github.com/qianqiucn/dsh-whale-voice/pull/4) — **open, depends on PR #3**
 **PR #3:** [#3 — first-run setup wizard](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open; merge first**
 
@@ -71,7 +71,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       Classified `OFFLINE`: isolated tests pass; live DSH Host integration is not verified.
 - [ ] P7 Phase 3 live integration: Host route 404 until host reload/DSH restart; no restart performed.
 - [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
-      demo isolation; local read-only smoke recorded in `docs/PHASE3_READONLY.md`.
+      demo isolation; 34 behavior tests pass; local read-only smoke recorded in
+      `docs/PHASE3_READONLY.md`.
+- [x] Phase 3B read-only Host activation review and minimal-reload options documented in
+      [PHASE3B_HOST_ACTIVATION.md](PHASE3B_HOST_ACTIVATION.md); no reload/restart performed.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -79,6 +82,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
 - [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
+- [ ] Phase 3B: Host reload/DSH restart authorization, then real GUI bridge verification.
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
@@ -109,9 +113,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 5. No automated browser/DOM test harness exists yet; Core and static UI contract tests exist.
 6. Real WeChat UI/window tests require separate explicit authorization.
 7. Group identity cannot be proven from display name alone, so group voice is not enabled.
-8. The running DSH process predates the new `index.js`; the Host route returns 404. Client/page refresh
-   cannot load a new Host row. Host-plugin reload or DSH process restart requires separate
-   authorization; neither was performed.
+8. The running DSH process predates the new `index.js`; the Host route returns 404. The live loaded
+   module instance cannot be read directly, so stale-code is strong evidence but not a final root
+   cause. Client/page refresh cannot load a new Host row. Host-plugin reload or DSH process restart
+   requires separate authorization; neither was performed.
 
 ## Verification evidence
 
@@ -131,7 +136,8 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; real detection requires host reload |
 | Core setup API | read-only host route implemented; write/installer API absent |
-| Live DSH host bridge | source + fake-host test pass; actual DSH returns 404 because the Host process predates the new `index.js` |
+| Live DSH host bridge | source + fake-host test pass; actual DSH returns 404; loaded module instance unavailable, stale Host code is strong evidence not final proof |
+| Phase 3B activation | `BLOCKED`; minimal reload options documented; no reload/restart performed |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |

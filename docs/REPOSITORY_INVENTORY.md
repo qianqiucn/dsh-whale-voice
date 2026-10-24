@@ -38,6 +38,7 @@ selected for the initial commit. Files added by later tasks (`setup.js`, `docs/S
 | `docs/SETUP_CAPABILITY_REVIEW.md` | documentation | Phase 1 setup capability audit |
 | `docs/SETUP_API.md` | documentation | Core setup bridge/state-machine contract |
 | `docs/PHASE3_READONLY.md` | documentation | Phase 3 detection evidence and unknowns |
+| `docs/PHASE3B_HOST_ACTIVATION.md` | documentation | Host 404 evidence, reload options and authorization gates |
 | `docs/REPOSITORY_INVENTORY.md` | documentation | This audit |
 | `.github/workflows/ci.yml` | CI | Real build/syntax/sync checks only |
 

@@ -201,9 +201,10 @@ committed.
 Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation and a failing-closed
 no-Core state; it is not install acceptance.
 
-**Current status:** `OFFLINE` — Phase 2 wizard/component UI and Phase 3 read-only Core detection are
-implemented and covered by isolated tests. The running DSH Host predates the new Host row, so the live
-bridge is not integrated. Real installation, upgrade, rollback, TTS credentials and clean-machine
+**Current status:** Phase 2 wizard/component UI and Phase 3 read-only Core detection are implemented
+and covered by isolated tests (`OFFLINE`). Phase 3B is `BLOCKED`: the running DSH Host predates the
+new Host row and real GUI bridge verification requires an authorized Host reload or DSH restart. No
+reload/restart was performed. Real installation, upgrade, rollback, TTS credentials and clean-machine
 acceptance remain `PLANNED`; no one-click installer exists today.
 
 ---
