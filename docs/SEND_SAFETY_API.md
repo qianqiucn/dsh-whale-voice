@@ -24,7 +24,18 @@ type ApplyState =
   | 'pending'      // saved/requested, not yet confirmed effective
   | 'error'
   | 'unknown'
+
+type DeliveryBackendState =
+  | 'supported'
+  | 'unsupported'
+  | 'research_candidate'
+  | 'prototype_ready'
+  | 'integrated'
+  | 'verified'
 ```
+
+`research_candidate` is a planning state, not an available option. `supported` does not mean the
+backend is currently running or that a native bubble has been observed.
 
 These are separate:
 
@@ -47,6 +58,38 @@ The UI must show the distinction and must never turn `unknown`/`null` into “of
   "schemaVersion": 1,
   "observedAt": "ISO-8601",
   "core": { "state": "connected|unavailable", "version": "0.1.0" },
+  "delivery": {
+    "selected": "ui-automation",
+    "autoSelect": "unsupported",
+    "backends": [
+      {
+        "id": "ui-automation",
+        "state": "supported",
+        "wechatVersions": ["4.1.10.27"],
+        "audioFormats": ["wav"],
+        "requiresForeground": true,
+        "requiresAudioDriver": true,
+        "receipt": "local-bubble",
+        "reason": "existing Voice Sender path"
+      },
+      {
+        "id": "wechatagent-native",
+        "state": "unsupported",
+        "wechatVersions": [],
+        "audioFormats": [],
+        "receipt": "none",
+        "reason": "no SendVoice in 0.3.9/0.4.0 adapter"
+      },
+      {
+        "id": "third-party-native",
+        "state": "research_candidate",
+        "wechatVersions": [],
+        "audioFormats": ["silk-documented-unverified"],
+        "receipt": "unknown",
+        "reason": "version, license, coexistence and bubble receipt unverified"
+      }
+    ]
+  },
   "emergencyStop": {
     "state": "supported|unsupported|unavailable|unknown",
     "shortcut": { "state": "registered|unregistered|conflict|unknown", "value": "Ctrl+Shift+F12" },
@@ -148,6 +191,7 @@ No endpoint may accept arbitrary commands, paths, window titles or target names.
 
 | Page section | Current binding | Future binding |
 |---|---|---|
+| Delivery method | not implemented; UI Automation is the only real path | selected backend + per-backend capability/version/receipt |
 | Emergency stop | disabled controls, `unknown` status | capabilities + status + cancel |
 | Shortcut | candidate text only | capability + registration result |
 | Window discovery | disabled, `unknown` | status/capabilities |
@@ -173,3 +217,7 @@ Until the contract exists, all executable safety controls are disabled and no wr
    demonstration.
 8. Existing Voice Sender allow-list, final identity, recovery and anti-replay mechanisms remain in
    force.
+9. A task locks one backend before the first external submission; changing backend never creates a
+   second delivery ID.
+10. `third-party-native` remains `research_candidate` and cannot be selected or rendered as usable.
+11. No automatic cross-backend fallback after timeout, submission, receipt or `UNKNOWN`.

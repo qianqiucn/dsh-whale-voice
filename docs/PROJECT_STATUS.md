@@ -4,7 +4,7 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native WeChatAgent voice is `UNSUPPORTED`; Phase 4B not started
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4B not started
 **Latest associated commit:** `4da6d57b62f1a6bf8e094ae6557441589cbbd4b0` — `feat(ui): add unified send and safety page`
 **Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
 **PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
@@ -92,10 +92,12 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 12/12 checks, CI `ui`
       job, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`. This does not attach
       to the production DSH Electron window or use production data.
-- [x] Voice delivery backend research: WeChatAgent 0.3.9 adapter has text/sticker only; native voice
-      is `UNSUPPORTED`, no source-level `SendVoice`/record path. UI Automation remains the supported
-      backend; dual-backend contract documented in `docs/VOICE_DELIVERY_BACKENDS.md`. No send, Hook,
-      DLL, version or production config change.
+- [x] Voice delivery backend research: WeChatAgent 0.3.9 and public 0.4.0 adapters have text/sticker
+      only; WeChatAgent native voice is `UNSUPPORTED`. UI Automation remains the supported backend.
+      Third-party native APIs (WeChatPYAPI, PadChat-SDK) are **RESEARCH_CANDIDATE** only; no install,
+      send, DLL, Hook, version or production config change. See
+      [VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md) and
+      [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md).
 - [x] Send & Safety frontend: new independent page for emergency stop, window/focus and game mode;
       unsupported controls disabled; failure fallback moved to Settings; Qwen auto-start moved to
       Components; UI tests cover Core-unavailable, disabled states, moved settings and narrow layout.
@@ -127,6 +129,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 - [ ] P7: installation wizard backend, real detection, install/update/repair/rollback and clean-machine
       acceptance.
 - [ ] P8: verified group identity, emergency stop and WeChat auto-location integration.
+- [ ] Native Voice Delivery Research: continue source/license/API review; no prototype until all gates pass and owner authorizes.
 - [ ] P9: meaningful expanded CI, release validation and any visibility decision.
 
 ## Current technical blockers
@@ -174,8 +177,9 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | `npm.cmd run test:ui` | 12/12 isolated Playwright checks: real-config readout, navigation including Send & Safety, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
-| Voice delivery backends | UI Automation `SUPPORTED`; WeChatAgent 0.3.9 native voice `UNSUPPORTED`; no source SendVoice/record; no prototype |
+| Voice delivery backends | UI Automation `SUPPORTED`; WeChatAgent 0.3.9/0.4.0 native voice `UNSUPPORTED`; third-party native `RESEARCH_CANDIDATE`; no prototype |
 | Send & Safety UI | `MOCK`/disabled safety controls; moved game mode, failure fallback and Qwen auto-start; 12/12 isolated UI checks |
+| Native voice research | WeChatPYAPI (SILK/bool, 4.1.12.26) and PadChat-SDK (SILK/msgId, separate iPad service) reviewed; both fail current-version/license/coexistence gates; no send |
 | Send & Safety real DSH GUI | PASS visual/UIA read-only: new nav/page loaded, disabled shortcut/window/game controls, no duplicate settings; Console/CSS DOM unreadable without CDP |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |

@@ -119,8 +119,9 @@ Whale Voice Core
   ├─ task state and routing
   ├─ capability + connection state
   ├─ delivery backend router
-  │    ├─ UI Automation backend (Voice Sender) — current
-  │    └─ WeChatAgent native backend — UNSUPPORTED in 0.3.9
+  │    ├─ UI Automation backend (Voice Sender) — current, SUPPORTED
+  │    ├─ WeChatAgent native backend — UNSUPPORTED in 0.3.9/0.4.0
+  │    └─ Third-party native backend — RESEARCH_CANDIDATE, not integrated
   └─ redacted diagnostics
        ├─ TTS Provider Registry
        │    ├─ local Qwen3-TTS adapter
@@ -146,14 +147,17 @@ fallback, no credential leakage, no committed API keys.
 voice bubbles. It must expose a versioned contract and retain its own safety checks.
 
 **Delivery backend router:** Core selects exactly one backend before submission and records it.
-`ui-automation` is the current supported path. `wechatagent-native` is disabled until WeChatAgent
-publishes a real voice action with format, target and receipt contracts; it must not create a second
-queue or retry a possibly-submitted task.
+`ui-automation` is the current supported path. `wechatagent-native` is unsupported for WeChatAgent
+0.3.9/0.4.0. `third-party-native` remains a research candidate with no integration; it must not
+create a second queue or retry a possibly-submitted task. No automatic fallback is allowed after a
+possible external send.
 
 **WeChatAgent adapter:** required bridge to the independent sourcepro5/WeChatAgent platform. It
 owns version/compatibility discovery, connection health, target identity evidence and result
 feedback. It is not an optional TTS feature and must not be replaced by a second WeChat bot inside
-Whale Voice. Display names are not sufficient for group identity.
+Whale Voice. Display names are not sufficient for group identity. WeChatPYAPI or PadChat-SDK are
+**not** WeChatAgent extensions and are not architectural dependencies; they remain external research
+candidates only.
 
 ### Planned protocol principles
 

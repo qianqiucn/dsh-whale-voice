@@ -251,6 +251,43 @@ exists. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md) and
 
 ---
 
+## Native Voice Delivery Research (parallel, non-blocking)
+
+**Status:** `RESEARCH_CANDIDATE` — not implemented, not integrated, not verified.
+
+**Goal:** preserve the long-term possibility of native WeChat voice sending without weakening the
+existing UI Automation path or creating duplicate delivery.
+
+**Current evidence:**
+
+- `ui-automation` — **SUPPORTED** existing Voice Sender path; historical native-bubble observation.
+- `wechatagent-native` — **UNSUPPORTED** in installed 0.3.9 and public 0.4.0; text/sticker outbound only.
+- `third-party-native` — **RESEARCH_CANDIDATE**:
+  - WeChatPYAPI publicly documents `send_voice` (SILK, boolean), professional WeChat 4.1.12.26;
+  - PadChat-SDK publicly documents `sendVoice` (SILK, `msgId`), old separate iPad-protocol service;
+  - no current Windows 4.1.10.27, license, coexistence, receipt or bubble evidence.
+- `auto` — **PLANNED**; no automatic cross-backend retry.
+
+**Research rules:**
+
+- Do not install third-party components, DLLs or services during document research.
+- Do not upgrade/downgrade WeChat.
+- Do not disable antivirus, Smart App Control or other security features.
+- Do not bundle unlicensed DLLs or services.
+- Do not treat API documentation as a working implementation.
+- Do not start a native prototype until all admission gates in
+  [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md) pass and the owner authorizes it.
+
+**Priority:** the mainline remains Phase 4B → Phase 5 → Phase 6 → Phase 7. Native research may run in
+parallel with source/license/API review, but its implementation is below Core configuration and
+frontend usability. The existing Voice Sender is the stable default.
+
+**Later extensions (not this round):** lightweight offline TTS installer guidance; sherpa-onnx /
+Kokoro / Piper candidates; CPU/no-GPU operation; community voice packages; optional RVC; AI cover
+features. These remain planned and are not coupled to native delivery.
+
+---
+
 ## P9 — Performance, release validation and GitHub open-source readiness
 
 **Goal:** Make the project maintainable and releasable without overstating maturity.

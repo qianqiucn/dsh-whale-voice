@@ -28,7 +28,7 @@ not invent earlier releases or imply production maturity.
 - Development-only isolated Playwright UI harness (`@playwright/cli` 0.1.22 interactive; pinned `playwright@1.64.1` automation), test-only React, CI `ui` job, screenshots/report artifacts and `npm run test:ui`.
 - Unified `发送与安全` page with emergency-stop, WeChat-window/focus and game-mode sections; unsupported controls disabled and not persisted.
 - Moved TTS failure fallback to Settings and Qwen auto-start to Components; removed the duplicate game-mode toggle from Overview.
-- Voice delivery backend research: WeChatAgent 0.3.9 native voice is `UNSUPPORTED` (text/sticker only); UI Automation remains the supported path; dual-backend contract documented.
+- Voice delivery backend research: WeChatAgent 0.3.9/0.4.0 native voice is `UNSUPPORTED` (text/sticker only); UI Automation remains supported; WeChatPYAPI and PadChat-SDK are documented `RESEARCH_CANDIDATE`s with version/license/coexistence caveats.
 - Send & Safety capability/status API contract documented; no backend implementation or real system operation.
 - Real DSH GUI visual acceptance for the Send & Safety MOCK page; disabled controls and migration verified with UIA/screenshots, with Console/CSS limits documented.
 - Documentation-only WeChatAgent dependency/status updates.
