@@ -31,7 +31,8 @@ test('core status is validated, bounded and stale-safe', () => {
 
 test('safety copy and bridge contract remain present', () => {
   assert.match(setup, /尚未检测到 WeChatAgent/)
-  assert.match(setup, /voice\.enabled=false/)
+  assert.match(setup, /检测不会读取或修改/)
+  assert.equal(/voice\.enabled=false/.test(setup), false)
   assert.match(setup, /window\.__WHALE_SETUP__/)
   assert.match(setup, /由 Core 凭据管理/)
 })

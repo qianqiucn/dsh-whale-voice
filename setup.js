@@ -37,6 +37,9 @@ const SETUP_STATE_LABELS = {
   unsupported: '不支持',
   not_configured: '未配置',
   unknown: '未知',
+  unexpected_response: '响应异常',
+  running: '运行中',
+  ok: '正常',
   error: '连接异常',
   healthy: '运行正常',
   installed: '已安装',
@@ -73,8 +76,9 @@ function readSetupStatus() {
       checkedAt: new Date().toISOString(),
     })
   }
+  let timeoutTimer
   const timeout = new Promise((resolve) => {
-    setTimeout(() => resolve({
+    timeoutTimer = setTimeout(() => resolve({
       checking: false,
       available: false,
       reason: 'core_timeout',
@@ -94,7 +98,9 @@ function readSetupStatus() {
     data: null,
     checkedAt: new Date().toISOString(),
   }))
-  return Promise.race([request, timeout])
+  const raced = Promise.race([request, timeout])
+  raced.finally(() => clearTimeout(timeoutTimer))
+  return raced
 }
 
 function setupStateLabel(state) {
@@ -110,6 +116,7 @@ function setupStateTone(state) {
 }
 
 function setupBool(value, yes = '就绪', no = '未就绪') {
+  if (value === null || typeof value === 'undefined') return '未知'
   return value ? yes : no
 }
 
@@ -178,17 +185,18 @@ function SetupWeChatStep({ data, demo, status, onRefresh, onNotify }) {
       h('div', { className: 'wv-setup-statusline' },
         h('span', { className: 'wv-setup-statuslabel' }, 'WeChatAgent'),
         h(SetupStatusPill, { state: wa && wa.state, demo }),
-        h('span', { className: 'wv-muted' }, wa && wa.version ? 'v' + wa.version : '版本未知')),
+        h('span', { className: 'wv-muted' }, wa && wa.version ? 'v' + wa.version : '版本未知'),
+        h('span', { className: 'wv-muted' }, wa && wa.wechatVersion ? '微信 ' + wa.wechatVersion + (wa.wechatVersionVerified ? '' : '（配置期望，未验证）') : '微信版本未知')),
       h(SetupEvidence, { data: wa }),
       h('div', { className: 'wv-setup-checks' },
         h(SetupMark, { ok: Boolean(wa && wa.installed), label: '程序安装', value: setupBool(wa && wa.installed) }),
         h(SetupMark, { ok: Boolean(wa && wa.processRunning), label: '进程运行', value: setupBool(wa && wa.processRunning) }),
         h(SetupMark, { ok: Boolean(wa && wa.accountVerified), label: '账号验证', value: setupBool(wa && wa.accountVerified) }),
         h(SetupMark, { ok: Boolean(wa && wa.connected), label: '微信连接', value: setupBool(wa && wa.connected) }),
-        h(SetupMark, { ok: Boolean(wa && wa.reader === 'ok'), label: 'Reader', value: setupBool(wa && wa.reader === 'ok') }),
-        h(SetupMark, { ok: Boolean(wa && wa.bridge === 'ok'), label: 'Bridge', value: setupBool(wa && wa.bridge === 'ok') }),
-        h(SetupMark, { ok: Boolean(wa && wa.dsh === 'ok'), label: 'DSH 连接', value: setupBool(wa && wa.dsh === 'ok') }),
-        h(SetupMark, { ok: Boolean(wa && wa.compatibility === 'compatible'), label: '接口兼容性', value: setupBool(wa && wa.compatibility === 'compatible') })),
+        h(SetupMark, { ok: Boolean(wa && wa.reader === 'ok'), label: 'Reader', value: wa && wa.reader === 'ok' ? '正常' : wa && wa.reader === 'running' ? '运行中（未验证）' : '未知' }),
+        h(SetupMark, { ok: Boolean(wa && wa.bridge === 'ok'), label: 'Bridge', value: wa && wa.bridge === 'ok' ? '正常' : setupStateLabel(wa && wa.bridge) }),
+        h(SetupMark, { ok: Boolean(wa && wa.dsh === 'ok'), label: 'DSH 连接', value: wa && wa.dsh === 'ok' ? '已连接' : '未知' }),
+        h(SetupMark, { ok: Boolean(wa && wa.compatibility === 'compatible'), label: '接口兼容性', value: wa && wa.compatibility === 'compatible' ? '兼容' : '未知' })),
       missing ? h('div', { className: 'wv-setup-callout warn' },
         h(Icon, { name: 'alert', size: 16 }),
         h('div', null,
@@ -227,14 +235,14 @@ function SetupSenderStep({ data, demo, status, onRefresh, onNotify }) {
         h(SetupMark, { ok: Boolean(env && env.powershell), label: 'PowerShell', value: setupBool(env && env.powershell) }),
         h(SetupMark, { ok: Boolean(env && env.dotnet), label: 'C# / .NET', value: setupBool(env && env.dotnet) }),
         h(SetupMark, { ok: Boolean(env && env.node), label: 'Node 运行时', value: setupBool(env && env.node) }),
-        h(SetupMark, { ok: Boolean(sender && sender.vbCable), label: 'VB-CABLE', value: setupBool(sender && sender.vbCable) }),
-        h(SetupMark, { ok: Boolean(sender && sender.capture), label: '默认录音设备', value: sender && sender.capture ? sender.capture : '未检测' }),
-        h(SetupMark, { ok: Boolean(sender && !sender.recoveryPending), label: '音频恢复快照', value: sender && sender.recoveryPending ? '待恢复' : '无待恢复' }),
-        h(SetupMark, { ok: Boolean(sender && sender.queue === 0), label: '任务队列', value: sender && Number(sender.queue) > 0 ? String(sender.queue) + ' 个任务' : '空闲' })),
+        h(SetupMark, { ok: Boolean(sender && sender.vbCable === true), label: 'VB-CABLE', value: setupBool(sender && sender.vbCable, '就绪', '未就绪') }),
+        h(SetupMark, { ok: Boolean(sender && sender.capture), label: '默认录音设备', value: sender && sender.capture ? sender.capture : '未知' }),
+        h(SetupMark, { ok: Boolean(sender && sender.recoveryPending === false), label: '音频恢复快照', value: sender && typeof sender.recoveryPending === 'boolean' ? (sender.recoveryPending ? '待恢复' : '无待恢复') : '未知' }),
+        h(SetupMark, { ok: Boolean(sender && sender.queue === 0), label: '任务队列', value: sender && typeof sender.queue === 'number' ? (sender.queue > 0 ? String(sender.queue) + ' 个任务' : '空闲') : '未知' })),
       installed ? h('div', { className: 'wv-setup-callout ok' },
         h(Icon, { name: 'check', size: 16 }),
         h('div', null, h('strong', null, '检测到已安装的微信语音发送器'),
-          h('p', null, '默认复用现有安装，不覆盖、不重复安装。版本：' + (sender.version || '未知') + '；健康：' + (sender.health || '未知') + '。'),
+          h('p', null, '默认复用现有安装，不覆盖、不重复安装。版本：' + (sender.version || '未知') + '；健康：' + setupStateLabel(sender.health) + '。'),
           demo ? h('p', { className: 'wv-muted' }, '演示状态；真实升级/修复需要单独授权。') : null)) : h('div', { className: 'wv-setup-callout warn' },
         h(Icon, { name: 'alert', size: 16 }),
         h('div', null, h('strong', null, '还没有安装微信语音发送器'),
@@ -259,7 +267,7 @@ function SetupSenderStep({ data, demo, status, onRefresh, onNotify }) {
 }
 
 function SetupProviderCard({ id, title, subtitle, state, selected, onSelect, demo, children }) {
-  const stateLabel = state === 'soon' ? '即将支持' : demo ? '演示' : state === 'ready' ? '可用' : '待配置'
+  const stateLabel = state === 'soon' ? '即将支持' : demo ? '演示' : state === 'ready' ? '已检测' : '待配置'
   return h('button', {
     type: 'button', disabled: state === 'soon',
     className: 'wv-provider-card' + (selected ? ' selected' : '') + (state === 'soon' ? ' disabled' : ''),
@@ -318,6 +326,9 @@ function SetupFinishStep({ data, demo, onClose, onGoPermissions, onNotify }) {
     { ok: !(data.sender && data.sender.recoveryPending), label: '没有待恢复音频设备状态' },
   ] : []
   const complete = Boolean(data && data.completed && data.demo !== true && !demo && checks.every((c) => c.ok))
+  const voiceState = data && typeof data.voiceEnabled === 'boolean'
+    ? (data.voiceEnabled ? '已开启（需单独授权）' : '已关闭')
+    : '未知（本次检测不会读取或修改）'
   return h(React.Fragment, null,
     h('div', { className: 'wv-setup-lead' },
       h('div', { className: 'wv-setup-lead-icon' + (complete ? ' ok' : '') }, h(Icon, { name: complete ? 'check' : 'alert', size: 22 })),
@@ -331,7 +342,7 @@ function SetupFinishStep({ data, demo, onClose, onGoPermissions, onNotify }) {
     h('div', { className: 'wv-setup-callout ' + (complete ? 'ok' : 'warn') },
       h(Icon, { name: complete ? 'shield' : 'lock', size: 16 }),
       h('div', null, h('strong', null, complete ? '安全默认值仍然生效' : '安装成功不等于微信语音已开启'),
-        h('p', null, 'voice.enabled=false；不新增私聊授权；群聊语音关闭；不自动发送消息；不重放历史任务。聊天权限与语音开关需要你单独确认。'))),
+        h('p', null, '微信语音开关：' + voiceState + '。不新增私聊授权；群聊语音关闭；不自动发送消息；不重放历史任务。聊天权限与语音开关需要你单独确认。'))),
     h('div', { className: 'wv-setup-actions' },
       h(Button, { variant: 'primary', onClick: onClose }, complete ? '进入 Whale Voice' : '稍后继续'),
       h(Button, { onClick: onGoPermissions }, '设置聊天权限'),

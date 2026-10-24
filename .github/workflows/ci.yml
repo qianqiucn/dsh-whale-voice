@@ -31,6 +31,8 @@ jobs:
           node --check setup.js
           node --check build.mjs
           node --check index.js
+          node --check core/detect.mjs
+          node --check core/server.mjs
 
       - name: Contract tests
         run: node --test

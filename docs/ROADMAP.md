@@ -127,8 +127,9 @@ plugin.
 plugin but disables WeChat voice with the documented install message; unavailable bridge fails
 closed; no fake online state; no message replay; no private fork/unsynchronized patch.
 
-**Current status:** `PLANNED` in this repository. The existing local deployment is external and is
-recorded as a development baseline, not as an Adapter implementation.
+**Current status:** `IN PROGRESS` — read-only installation/version/process/health evidence exists in
+`core/detect.mjs`; event subscription, account/group identity, send-result feedback and the full
+version-pinned Adapter remain `PLANNED`.
 
 ---
 
@@ -193,9 +194,10 @@ committed.
 Frontend-only Phase 2 acceptance is limited to UI/navigation/state presentation and a failing-closed
 no-Core state; it is not install acceptance.
 
-**Current status:** `IN PROGRESS` — Phase 2 frontend wizard and component-management entry are
-implemented as `MOCK` UI. Real detection, install, upgrade and rollback are `PLANNED` and blocked on
-the Core setup API; no one-click installer exists today.
+**Current status:** `IN PROGRESS` — Phase 2 wizard/component UI and Phase 3 read-only Core detection
+are implemented (`OFFLINE` evidence, no writes). Real installation, upgrade, rollback, TTS
+credentials and clean-machine acceptance remain `PLANNED`; no one-click installer exists today. The
+live DSH host route requires a DSH/page reload to activate.
 
 ---
 

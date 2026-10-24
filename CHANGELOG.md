@@ -14,6 +14,8 @@ not invent earlier releases or imply production maturity.
   missing-dependency UX contract.
 - First-run setup wizard and component-management entry (frontend/Mock only).
 - Setup capability review and Core Setup API contract; no real installer or detection.
+- Read-only Core/host bridge with WeChatAgent, Voice Sender and Qwen detection.
+- Token/Origin/loopback protection, timeouts, stale-result handling and contract tests.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

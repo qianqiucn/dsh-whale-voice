@@ -7,6 +7,10 @@
 This is the Phase 1 review required by the first-run setup task. It records what actually exists in
 this repository and what does not. It is not a claim that installation is implemented.
 
+> **Phase 3 update:** the table below is the Phase 1 snapshot. A minimal read-only Core and host
+> bridge now exist; see [PHASE3_READONLY.md](PHASE3_READONLY.md). The installer, write operations and
+> full Adapter remain missing.
+
 ---
 
 ## 1. Current repository reality
@@ -76,10 +80,10 @@ would violate the architecture and safety rules.
 |---|---|
 | Phase 1 — source/interface review | **complete** (this document) |
 | Phase 2 — frontend wizard | **complete** as frontend/Mock only; see status |
-| Phase 3 — read-only detection | **blocked** on Core/Adapter API |
+| Phase 3 — read-only detection | **complete** for installation/version/process/health evidence; no writes |
 | Phase 4 — Sender installer | **blocked** on Core Installer + packaging/signing |
 | Phase 5 — TTS configuration/preview | **blocked** on Provider Manager/credentials |
 | Phase 6 — clean-machine integration | **not started**; requires isolated environment and authorization |
 
-The next safe implementation is the Core setup contract (P1/P2/P4), not a shell-based installer in
-the browser.
+The next safe implementation is the **write/install contract** and a full WeChatAgent Adapter, not a
+shell-based installer in the browser.

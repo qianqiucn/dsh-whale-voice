@@ -4,17 +4,19 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 frontend/Mock complete; Phase 3 blocked on Core
-**Latest associated commit:** `474359f66bfb35912eafd1c5cd150f60c9cfde36` — `feat: add first-run setup wizard UI`
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI + Phase 3 read-only detection complete
+**Latest associated commit:** `8dc05708933e96581fd62d91dbfb38c87a34c236` — `fix: harden setup status and add contract tests`
 **Latest PR:** [#3 — feat: first-run setup wizard (frontend/Mock phase 2)](https://github.com/qianqiucn/dsh-whale-voice/pull/3) — **open**
+**Dependent work:** Phase 3 Core/read-only branch, PR pending; depends on PR #3
 
 ---
 
 ## Current scope
 
-This repository contains the **DSH frontend plugin and Mock UI** only. It does not contain:
+This repository contains the **DSH frontend plugin plus a minimal read-only Core detector**. It does
+not contain:
 
-- Voice Sender Windows service;
+- Voice Sender Windows service (or its installer);
 - WeChatAgent, WeChat Hook/Bridge;
 - Qwen3-TTS runtime or `whale-v1` reference audio;
 - real voice task database, logs, device snapshots or chat history.
@@ -37,16 +39,16 @@ not be described as an independent WeChat bot.
 | DSH shell observed | 0.2.1-rc.2 | local executable version; formal SDK compatibility not re-tested |
 | Windows WeChat | 4.1.10.27 | verified local client path |
 | Voice Sender | 0.1.0 | external local prototype; not in this repository |
-| WeChatAgent Adapter | not implemented | `packages/adapter-wechatagent` is planned |
+| WeChatAgent Adapter | read-only detection only | install/event/identity/send adapter remains planned |
 
 The existing private voice pipeline (outside this repository) previously completed a native voice
 bubble in the configured private chat; that evidence does not constitute an Adapter test or a
 reproducible repository integration. See
 [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
 
-The current UI is **Mock only**. Its demo WeChatAgent status is not a real connection check and must
-not be treated as an online status. The required missing/incompatible state and version checks are
-not implemented yet.
+The current UI is **Mock by default** and can display real read-only Core results when the host bridge
+is active. A demo or a successful detection is not installation completion. The live DSH process
+must be reloaded to load the new Host row; no DSH restart was performed.
 
 ## Completed
 
@@ -65,16 +67,19 @@ not implemented yet.
 - [x] WeChatAgent dependency documentation merged to `main` via PR #1.
 - [x] P7 Phase 2 frontend: first-run four-step wizard and component-management entry point.
 - [x] Explicit no-Core and demo states; no fabricated completion/online state.
+- [x] P7 Phase 3: minimal read-only Core, token-protected host bridge, real component detection.
+- [x] Contract tests for no-Core, missing/partial components, 401, timeout, stale results, auth and
+      demo isolation; local read-only smoke recorded in `docs/PHASE3_READONLY.md`.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
 - [ ] Review PR #3 (first-run setup wizard frontend/Mock).
+- [ ] Review dependent Phase 3 PR (read-only Core); merge after PR #3.
 - [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
 - [ ] Establish PR-first feature workflow for all non-trivial changes.
 - [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
-- [ ] P7 Phase 3: real read-only detection (blocked on Core/Adapter API).
 
 ## Pending
 
@@ -93,14 +98,15 @@ not implemented yet.
 ## Current technical blockers
 
 1. The real backend services are external and not represented by source in this repository.
-2. The WeChatAgent Adapter is not implemented; the frontend cannot detect a missing installation or
-   prove a real Bridge/version connection.
-3. No Whale Voice Core setup API exists, so real installer/detection/TTS credential operations cannot
-   be added safely to the frontend.
-4. No automated browser/DOM test harness exists yet; current checks are build + syntax only.
-5. Real WeChat UI/window tests require separate explicit authorization.
-6. Group identity cannot be proven from the current UI by display name alone, so group voice is not
-   enabled.
+2. The WeChatAgent Adapter currently provides read-only evidence only; event/identity/send contracts
+   remain unimplemented.
+3. The Core write/installer API does not exist, so installation, upgrade, repair and credential
+   operations remain blocked.
+4. A token-protected WeChatAgent/Sender health endpoint cannot be verified without reading their
+   tokens; those states are deliberately `auth_required`/unknown.
+5. No automated browser/DOM test harness exists yet; Core and static UI contract tests exist.
+6. Real WeChat UI/window tests require separate explicit authorization.
+7. Group identity cannot be proven from display name alone, so group voice is not enabled.
 
 ## Verification evidence
 
@@ -115,10 +121,12 @@ not implemented yet.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | no-Core state, demo step 1–4, component-manager entry reviewed in live DSH |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| Automated test suite | none in this repository yet |
-| WeChatAgent Adapter | not implemented; documented dependency only |
-| Missing-WeChatAgent UI state | frontend wizard exists; real detection not implemented |
-| Core setup API | not implemented; frontend fails closed |
+| `node --test` | 15 tests passed: missing/partial, 401, version, timeout, stale, auth, bridge, demo, safe side effects |
+| Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 auth_required; Qwen 200; completed=false; voiceEnabled=unknown |
+| WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
+| Missing-WeChatAgent state | wizard/UI implemented; real detection requires host reload |
+| Core setup API | read-only host route implemented; write/installer API absent |
+| Live DSH host bridge | source + fake-host test pass; actual DSH returns 404 until reload |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
@@ -127,9 +135,10 @@ not implemented yet.
 
 ## Next highest-priority task
 
-**P1/P4: define and implement the Core setup API and WeChatAgent Adapter read-only contract**, then
-wire Phase 3 detection to it. Do not add shell commands to the browser or start real installation
-without an isolated test environment and explicit authorization.
+**Phase 4: define the Core write/installer contract and a full WeChatAgent Adapter** (events,
+identity, missing-dependency UI wiring after host reload). Do not add shell commands to the browser,
+install drivers, or start real installation without an isolated test environment and explicit
+authorization.
 
 ## Update rule
 
