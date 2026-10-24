@@ -57,7 +57,7 @@ jobs:
           node-version: '22'
 
       - name: Install locked UI test dependencies
-        run: npm install --prefix tests/ui --no-audit --no-fund
+        run: npm ci --prefix tests/ui --no-audit --no-fund
 
       - name: Install Chromium for the pinned Playwright
         run: node tests/ui/node_modules/playwright/cli.js install --with-deps chromium
