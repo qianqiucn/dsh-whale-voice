@@ -220,6 +220,7 @@ repository; it does not pretend to verify the real WeChat pipeline.
 - [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
   authorization gates.
 - [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
+- [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
 - [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
 - [Agent rules](AGENTS.md) — long-term development contract.
 - [Changelog](CHANGELOG.md) — recorded changes, not invented releases.
