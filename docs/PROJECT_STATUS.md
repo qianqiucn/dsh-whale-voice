@@ -139,7 +139,7 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 ## In progress
 
 - [ ] Phase R1 repository audit: docs/status reconciliation, historical-doc marking, resource and
-      `.gitignore` audit; docs-only independent PR, no runtime refactor.
+      `.gitignore` audit; docs + non-runtime hygiene independent PR, no runtime refactor.
 - [ ] Phase 4B-2A: controlled production write/apply API, multi-file transaction/journal, cross-process
       locking/CAS and runtime effect confirmation (not started; requires a separate authorization).
 - [ ] Keep the post-integration `main` as the clean development baseline; new work must branch from it.

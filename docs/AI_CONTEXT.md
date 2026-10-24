@@ -35,7 +35,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
   `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `chore/phase-r1-repository-audit` (Phase R1 repository audit),
   branched from `main` at `97e96b5`.
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; R1 is docs/audit-only and does not
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; R1 is docs/non-runtime hygiene and does not
   pin a future commit SHA.
 - **Worktree:** clean at the R1 audit baseline
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
@@ -102,7 +102,7 @@ R1 scope:
 - classify current and historical docs; fix confirmed stale statements and links;
 - review `.gitignore`, CI/test commands, module boundaries, fixed paths and license risks;
 - no runtime refactor, module move, branch/tag deletion, production config write or service restart;
-- commit docs-only changes to an independent branch and open an R1 PR without merging.
+- commit docs and non-runtime hygiene changes to an independent branch and open an R1 PR without merging.
 
 No production configuration, service restart, DSH reload or real send is involved.
 
@@ -243,5 +243,5 @@ Do not trust this summary alone. Verify:
 ## 13. Last update
 
 **2026-10-25**, after Phase R1 audit: PR #9 merged into `main` as `97e96b5`; docs/status reconciled,
-historical records marked, and 98 Node / 12 UI checks remain green. R1 is docs-only; no production
+historical records marked, and 98 Node / 12 UI checks remain green. R1 is docs/non-runtime hygiene; no production
 configuration or runtime behavior change.
