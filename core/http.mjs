@@ -41,11 +41,8 @@ export async function fetchJson(fetchImpl, url, options = {}) {
 
   async function readBody() {
     if (!response.body || typeof response.body.getReader !== 'function') {
-      const text = await response.text()
-      if (Buffer.byteLength(text, 'utf8') > maxBytes) return { state: 'oversize', status: response.status, body: null, error: 'body_too_large' }
-      const parsed = parseJson(text)
-      if (!parsed.ok) return { state: 'invalid_json', status: response.status, body: null, error: 'invalid_json' }
-      return { state: 'ok', status: response.status, body: parsed.value, error: null }
+      await cancelResponse(response)
+      return { state: 'unsupported', status: response.status, body: null, error: 'body_stream_unsupported' }
     }
     const reader = response.body.getReader()
     const chunks = []

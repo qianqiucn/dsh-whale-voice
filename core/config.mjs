@@ -7,10 +7,13 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 
 export const CONFIG_SCHEMA_VERSION = 1
 const MAX_JSON_BYTES = 512 * 1024
+// Process-local HMAC key: the revision remains opaque and stable for the lifetime of this Host.
+// A restart invalidates old revisions, which is correct: the frontend must re-read before writing.
+const REVISION_KEY = randomBytes(32)
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null
@@ -35,6 +38,14 @@ function countArray(value) {
 function countKeys(value) {
   const object = asObject(value)
   return object ? Object.keys(object).length : null
+}
+
+function sortedList(value) {
+  if (!Array.isArray(value)) return value == null ? null : canonicalize(value)
+  return value
+    .map((item) => JSON.stringify(canonicalize(item)))
+    .sort()
+    .map((item) => JSON.parse(item))
 }
 
 function readJsonFile(file) {
@@ -69,8 +80,21 @@ function compareFields(left, right, fields) {
   return compared > 0 ? 'match' : 'unknown'
 }
 
-function hashSafe(value) {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 16)
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === 'object') {
+    const result = {}
+    for (const key of Object.keys(value).sort()) result[key] = canonicalize(value[key])
+    return result
+  }
+  return value === undefined ? null : value
+}
+
+function revisionFingerprint(value) {
+  return createHmac('sha256', REVISION_KEY)
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex')
+    .slice(0, 32)
 }
 
 function source(id, label, location, result, options = {}) {
@@ -260,34 +284,50 @@ export function readConfigSnapshot(options = {}) {
   if (tts.model && tts.runtime.model && tts.model !== tts.runtime.model) tts.mismatch = 'model'
   if (tts.voice && tts.runtime.voice && tts.voice !== tts.runtime.voice) tts.mismatch = tts.mismatch ? tts.mismatch + '+voice' : 'voice'
 
-  const safeSnapshot = {
+  const revisionMaterial = {
     voice: {
-      enabled: voice.enabled,
-      mode: voice.mode,
-      triggerMode: voice.triggerMode,
-      forGroup: voice.forGroup,
-      autoProbability: voice.autoProbability,
-      defaultVoice: voice.defaultVoice,
-      workerEnabled: voice.worker ? voice.worker.enabled : null,
+      enabled: savedVoice.enabled,
+      mode: savedVoice.mode,
+      triggerMode: text(waWechat.wake_mode),
+      forGroup: savedVoice.forGroup,
+      autoProbability: savedVoice.autoProbability,
+      defaultVoice: savedVoice.defaultVoice || text(serviceTts.voiceId),
+      allowedTargetIds: Object.keys(asObject(voiceSettings.allowed_targets) || {}).sort(),
+      worker: workerResult.ok ? {
+        enabled: workerVoice.enabled,
+        mode: workerVoice.mode,
+        forGroup: workerVoice.forGroup,
+        autoFindWindow: workerVoice.autoFindWindow,
+        autoOpenChat: workerVoice.autoOpenChat,
+        autoRestoreMinimized: workerVoice.autoRestoreMinimized,
+        pauseWhenFullscreen: workerVoice.pauseWhenFullscreen,
+      } : null,
     },
     tts: {
-      provider: tts.provider,
-      model: tts.model,
-      voice: tts.voice,
-      configured: tts.configured,
+      provider: text(serviceTts.provider),
+      model: text(serviceTts.model),
+      voice: text(serviceTts.voiceId),
+      baseUrl: text(serviceTts.baseUrl),
+      configured: Boolean(text(serviceTts.provider) && text(serviceTts.voiceId) && text(serviceTts.baseUrl)),
     },
     permissions: {
-      privateCount: permissions.privateCount,
-      groupCount: permissions.groupCount,
-      senderAllowedCount: permissions.senderAllowedCount,
+      privateIds: sortedList(waWechat.whitelist && waWechat.whitelist.private),
+      groupIds: sortedList(waWechat.whitelist && waWechat.whitelist.groups),
+      senderAllowedIds: sortedList(service.allowedChats),
+      voiceSettingsAllowedIds: Object.keys(asObject(voiceSettings.allowed_targets) || {}).sort(),
     },
     sender: {
-      serviceVersion: sender.serviceVersion,
-      workerVersion: sender.workerVersion,
-      recoveryPending: sender.recoveryPending,
+      serviceVersion: servicePackage.ok && text(servicePackage.data.version) ? text(servicePackage.data.version) : null,
+      automation: canonicalize(automation),
     },
+    sources: sourceRows.map((row) => ({
+      id: row.id,
+      available: row.available,
+      readable: row.readable,
+      error: row.error,
+    })).sort((a, b) => a.id.localeCompare(b.id)),
   }
-  const savedRevision = hashSafe(safeSnapshot)
+  const savedRevision = revisionFingerprint(revisionMaterial)
   const hasReadableSource = coreResult.ok || waResult.ok || voiceSettingsResult.ok || serviceResult.ok || workerResult.ok
   const applicationState = sender.serviceWorkerConsistency === 'mismatch' ? 'MISMATCH' : 'UNKNOWN'
 
@@ -302,6 +342,7 @@ export function readConfigSnapshot(options = {}) {
       state: applicationState,
       saved: hasReadableSource,
       activeConfirmed: false,
+      revisionScope: ['voice', 'tts', 'permissions', 'sender', 'sources'],
       note: '未提供受支持的运行时配置版本接口；保存值不等于已生效。',
     },
     voice,
