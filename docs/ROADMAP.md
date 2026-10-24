@@ -1,0 +1,216 @@
+# Whale Voice Roadmap
+
+Status legend:
+
+| Label | Meaning |
+|---|---|
+| `DONE` | Implemented and verified with evidence in this repository/runtime |
+| `OFFLINE` | Implemented and covered by offline checks, not a real integration test |
+| `MOCK` | Demonstration only; no production effect |
+| `IN PROGRESS` | Actively being built |
+| `PLANNED` | Not started |
+| `BLOCKED` | Cannot proceed without a decision or an external dependency |
+
+This roadmap is intentionally conservative. A roadmap item is not complete merely because a
+prototype exists outside this repository.
+
+---
+
+## P0 — Existing baseline, backup and safety isolation
+
+**Goal:** Preserve the already-working frontend and separate development from the live voice chain.
+
+**Core tasks:**
+- Record the current UI baseline (screens, build output, host compatibility).
+- Keep all real Voice Sender / WeChatAgent / Qwen / `whale-v1` assets outside this repository.
+- Define read-only boundaries for frontend development.
+- Establish Git history and a reviewable initial commit.
+
+**Dependencies:** DSH client plugin runtime; existing local installation; user approval for the
+private GitHub repository.
+
+**Acceptance:** The plugin still builds and loads; no production service is modified; the repository
+contains no secrets, private chat data, audio, runtime state or screenshots.
+
+**Current status:** `DONE` for the local baseline and repository initialization. The live backend is
+still external and was not changed by this repository work.
+
+---
+
+## P1 — Modular architecture and unified protocol
+
+**Goal:** Define modules and a versioned protocol before adding real integrations.
+
+**Core tasks:**
+- Define `WhaleVoiceCore` boundaries: config, permissions, routing, task state.
+- Define provider and sender adapter interfaces.
+- Define request/response/error schemas and idempotency rules.
+- Define how the frontend discovers capability and connection state.
+- Add contract tests with fakes only.
+
+**Dependencies:** P0; agreement on runtime packaging.
+
+**Acceptance:** A document plus TypeScript/JS modules and contract tests; no production service
+connection required; no secret values.
+
+**Current status:** `PLANNED`.
+
+---
+
+## P2 — Core configuration, permissions and task management
+
+**Goal:** Make one Core own configuration and task lifecycle instead of UI-only Mock state.
+
+**Core tasks:**
+- Typed configuration with schema validation and migration.
+- Private/group allow-lists with explicit identity evidence.
+- Task states, cancellation, retries prohibition for unknown outcomes.
+- Config/status APIs and UI capability negotiation.
+- Audit-safe diagnostics with redaction.
+
+**Dependencies:** P1; DSH client connection APIs; explicit permission model.
+
+**Acceptance:** Config round-trips, invalid config fails closed, task state transitions are tested,
+and no secret or private mapping is logged.
+
+**Current status:** `PLANNED`.
+
+---
+
+## P3 — Voice Sender independent component
+
+**Goal:** Treat the Windows Voice Sender as a separately versioned, testable component.
+
+**Core tasks:**
+- Stable local HTTP contract and health/status schema.
+- Request idempotency, queue serialization, cancellation and device restore diagnostics.
+- Explicit preflight states for locked screen, missing devices and foreground denial.
+- Offline/fake mode with no UI automation.
+- Version handshake with Core.
+
+**Dependencies:** Existing Windows Voice Sender prototype; user authorization for any UI automation
+tests.
+
+**Acceptance:** Sender contract tests pass; no real message is sent in CI; failure/cancel states are
+distinguishable.
+
+**Current status:** `OFFLINE` prototype exists outside this repository; integration into this
+repository is `PLANNED`.
+
+---
+
+## P4 — WeChatAgent stable adapter
+
+**Goal:** Integrate through WeChatAgent rather than coupling the UI to WeChat internals.
+
+**Core tasks:**
+- Define adapter capabilities, version checks and health states.
+- Map trusted targets via stable IDs, not display names alone.
+- Handle bridge disconnects, stale sessions and message dedupe.
+- Document Windows/WeChat version constraints.
+
+**Dependencies:** P1/P3; WeChatAgent API availability; authorized test environment.
+
+**Acceptance:** Adapter contract tests pass; unavailable bridge fails closed; no message replay.
+
+**Current status:** `PLANNED` in this repository. The existing local deployment is external.
+
+---
+
+## P5 — Whale Voice frontend real connection
+
+**Goal:** Replace Mock data with Core APIs while retaining the current design.
+
+**Core tasks:**
+- Connection state, capability discovery and typed API client.
+- Real service status, target verification and task activity.
+- Permission changes with confirmation and audit feedback.
+- Error states for disconnected/locked/blocked conditions.
+- Keep Mock provider available for development and screenshots.
+
+**Dependencies:** P1–P4; real backend available for authorized integration tests.
+
+**Acceptance:** UI accurately distinguishes Mock, offline, connected, degraded and blocked states;
+no optimistic claim of sent status; no direct UI automation from frontend.
+
+**Current status:** `MOCK` frontend is done; real connection is `PLANNED`.
+
+---
+
+## P6 — Cloud TTS and GPU-free mode
+
+**Goal:** Allow an explicitly configured cloud provider without silent fallback.
+
+**Core tasks:**
+- Provider registry with capability and cost/privacy metadata.
+- User-selected provider and credential storage outside the repository.
+- Audio validation, timeout and cancellation behavior.
+- Clear local/cloud disclosure and no automatic provider switch.
+
+**Dependencies:** P1/P2; user decision on providers and credentials policy.
+
+**Acceptance:** Provider selection is explicit; missing credentials fail closed; no key is logged or
+committed.
+
+**Current status:** `PLANNED`.
+
+---
+
+## P7 — Installation wizard and one-click install
+
+**Goal:** Provide a supported installation path without hand-editing DSH profiles.
+
+**Core tasks:**
+- Supported DSH plugin install flow and version checks.
+- Windows dependency checks and guided setup for external Voice Sender/WeChatAgent/Qwen.
+- Upgrade/rollback and uninstall.
+- Clear separation of plugin files and local runtime data.
+
+**Dependencies:** P2–P6; release packaging and signing decisions.
+
+**Acceptance:** Clean-machine install test, upgrade test, rollback test; no destructive default.
+
+**Current status:** `PLANNED`; no one-click installer exists today.
+
+---
+
+## P8 — Group voice, emergency stop and WeChat auto-location
+
+**Goal:** Add the highest-risk automation features only after identity and cancellation guarantees.
+
+**Core tasks:**
+- Stable real group identity mapping; no name-only matching.
+- Automatic WeChat window discovery/restore/activation with explicit failure states.
+- Global emergency stop and exact cancel states.
+- Fullscreen/game protection and secure-desktop refusal.
+- Authorized UI operation test plan before any real send.
+
+**Dependencies:** P4/P5; Windows window-operation authorization; real group identity evidence.
+
+**Acceptance:** Wrong-target and cancellation scenarios are proven in an authorized test; no resend
+after UNKNOWN; no group is enabled without verified identity.
+
+**Current status:** Backend prototype work exists outside this repository; frontend and repository
+integration are `PLANNED`. Group voice is deliberately not enabled.
+
+---
+
+## P9 — Performance, release validation and GitHub open-source readiness
+
+**Goal:** Make the project maintainable and releasable without overstating maturity.
+
+**Core tasks:**
+- Automated unit/contract/UI checks with real coverage.
+- Private repository baseline and branch/PR workflow.
+- Release notes, versioning and license review.
+- Performance and accessibility checks.
+- Documentation and issue templates.
+- Only then consider public release, with explicit owner approval.
+
+**Dependencies:** P0–P8; CI reliability; license/asset review.
+
+**Acceptance:** CI is meaningful; release artifact is reproducible; private data is excluded; owner
+approves any visibility change or release.
+
+**Current status:** `IN PROGRESS`: private repository initialization, documentation and initial
+checks. No release, no public visibility, no meaningful UI/backend CI yet.

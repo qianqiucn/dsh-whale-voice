@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to Whale Voice are recorded here. The project is pre-release; this file does
+not invent earlier releases or imply production maturity.
+
+## [Unreleased]
+
+### Added
+
+- Private GitHub repository baseline and long-term agent workflow documentation.
+- Roadmap P0–P9, project status, architecture, changelog and license.
+- `.gitignore` and a real build/syntax CI workflow.
+- Privacy sanitization of demo contacts/targets to fictional placeholders.
+
+## [0.1.0] — 2026-10-24
+
+### Added
+
+- Native DSH client plugin `dsh-whale-voice`.
+- Seven Mock views: Overview, Voice Settings, Access, Voice Studio, Emotions, Activity, Advanced.
+- Dark/light glass visual system, responsive layout, custom whale glyph and SVG icon.
+- Scoped plugin CSS, accessible controls, reduced-motion behavior.
+- Build pipeline from `client.template.js`, `pages.js` and `client.css` to `client.js`.
+- Local visual validation across large, medium and narrow windows.
+
+### Notes
+
+- This is a frontend + Mock baseline. It does not connect to a real voice backend, Qwen, Voice
+  Sender or WeChatAgent, and it does not send WeChat messages.
+- No earlier tagged releases are claimed. The repository history begins with this baseline.

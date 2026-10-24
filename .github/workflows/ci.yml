@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Rebuild client bundle
+        run: node build.mjs
+
+      - name: Syntax checks
+        run: |
+          node --check client.js
+          node --check client.template.js
+          node --check pages.js
+          node --check build.mjs
+          node --check index.js
+
+      - name: Generated client is in sync
+        run: git diff --exit-code -- client.js

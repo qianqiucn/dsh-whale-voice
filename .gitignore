@@ -1,0 +1,62 @@
+# Dependencies and build caches
+node_modules/
+.pnpm-store/
+.npm/
+.cache/
+dist/
+coverage/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+credentials.json
+secrets.json
+
+# Runtime state and logs
+runtime/
+run/
+logs/
+*.log
+*.pid
+*.snapshot
+*.bak
+*.bak-*
+*.tmp
+tmp/
+temp/
+
+# Generated audio and model assets
+*.wav
+*.mp3
+*.ogg
+*.opus
+*.flac
+*.pcm
+*.onnx
+*.safetensors
+*.pt
+*.ckpt
+*.bin
+
+# Local evidence: desktop screenshots contain private chat/desktop context
+screenshots/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Archives
+*.zip
+*.7z
+*.rar
