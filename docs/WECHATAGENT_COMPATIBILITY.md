@@ -71,6 +71,14 @@ Planned (not implemented): supported events, private/group identity, send capabi
 a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must be
 pinned, documented and covered by a compatibility test.
 
+### Account-verification semantics
+
+`accountVerified` is only an explicit boolean supplied by a supported health contract. A generic
+`account` object, a logged-in process, a reachable Bridge or a 401/403 response is **not** proof of
+account verification. If the upstream health response has no explicit verified field, Whale Voice
+keeps the value `null` and the UI shows `未知`. It must not be reused as target-identity or
+send-permission evidence.
+
 ### Native outbound capability
 
 The installed 0.3.9 and public 0.4.0 OneBot adapters implement **text and sticker** outbound messages

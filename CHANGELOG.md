@@ -31,6 +31,7 @@ not invent earlier releases or imply production maturity.
 - Voice delivery backend research: WeChatAgent 0.3.9/0.4.0 native voice is `UNSUPPORTED` (text/sticker only); UI Automation remains supported; WeChatPYAPI and PadChat-SDK are documented `RESEARCH_CANDIDATE`s with version/license/coexistence caveats.
 - Send & Safety capability/status API contract documented; no backend implementation or real system operation.
 - Real DSH GUI visual acceptance for the Send & Safety MOCK page; disabled controls and migration verified with UIA/screenshots, with Console/CSS limits documented.
+- Phase 4A-H safety contract fixes: full-origin validation, bounded streaming HTTP only, explicit-only account verification, and an opaque complete-config revision covering Worker/TTS/allowlists/source state.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

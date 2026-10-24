@@ -105,6 +105,10 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       disabled shortcut, discovery, focus and game switches; no duplicate settings; visual/resize
       checks pass. Console/CSS DOM remains unreadable without unsupported debugging. See
       [GUI_ACCEPTANCE_SEND_SAFETY.md](GUI_ACCEPTANCE_SEND_SAFETY.md).
+- [x] Phase 4A-H pre-merge safety: full scheme/host/port Origin check shared by Host and Core,
+      bounded streaming-only HTTP bodies, explicit-only `accountVerified`, and an opaque
+      process-keyed full-config revision covering Worker/TTS/allowlist/source changes. 64 behavior
+      tests and 12 UI checks pass; PR #4–#8 branches synchronized without force push.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -165,14 +169,14 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 52 tests passed: config sources/safety, sender contract, tri-state unknown, Qwen negatives, HTTP body/timeouts, host lifecycle, status loader, demo, stale |
+| `node --test` | 64 tests passed: config sources/safety/revision, schemas/tri-state, Qwen negatives, bounded HTTP/auth/origin, Host lifecycle, status loader, demo, stale |
 | Real read-only detection | WeChatAgent 0.3.9 auth_required; Sender 0.1.0 connection_failed/processRunning=false/healthy=null; Qwen 200 provider saved/configured=true, preview=false; completed=false; voiceEnabled=unknown |
 | Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
 | Core setup API | status/detect and config routes are live (401 without token); trusted bridge reads real config; write/installer API absent |
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
-| Phase 4A config read | `INTEGRATED`; 52 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
+| Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | `npm.cmd run test:ui` | 12/12 isolated Playwright checks: real-config readout, navigation including Send & Safety, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
@@ -189,7 +193,7 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | PR #4 read-only Core | open; CI passed; depends on PR #3 |
 | PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
 | PR #6 UI inspector | open; CI SUCCESS `40128127566` (build + ui jobs); stacked on PR #5; 10/10 isolated UI checks; not merged |
-| PR #8 Send & Safety / delivery research | open; stacked on PR #6; 52 unit + 12 UI checks; docs only for native backend; not merged |
+| PR #8 Send & Safety / delivery research | open; stacked on PR #6; 64 unit + 12 UI checks; docs only for native backend; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
