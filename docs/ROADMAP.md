@@ -114,7 +114,9 @@ tests.
 distinguishable.
 
 **Current status:** `OFFLINE` prototype exists outside this repository; integration into this
-repository is `PLANNED`.
+repository is `PLANNED`. The current voice path is the UI Automation Sender. A WeChatAgent-native
+voice backend is **UNSUPPORTED** in upstream 0.3.9; see
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md). No native prototype is authorized.
 
 ---
 
@@ -144,7 +146,8 @@ closed; no fake online state; no message replay; no private fork/unsynchronized 
 **Current status:** `OFFLINE` — read-only installation/version/process/health evidence exists in
 `core/detect.mjs` and `packages/adapter-wechatagent`; isolated tests pass. Event subscription,
 account/group identity, send-result feedback and the full version-pinned Adapter remain `PLANNED`.
-Live host integration is not verified.
+Live host integration is not verified. Native outbound voice is absent: the 0.3.9 adapter supports
+text/sticker only; see [VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
 
 ---
 
@@ -165,7 +168,9 @@ authorized integration tests.
 **Acceptance:** UI accurately distinguishes Mock, offline, connected, degraded and blocked states;
 no optimistic claim of sent status; no direct UI automation from frontend.
 
-**Current status:** `MOCK` frontend is done; real connection is `PLANNED`.
+**Current status:** `MOCK` frontend is done; real connection is `PLANNED`. The new `发送与安全` page
+is front-end structure/disabled capability UI (`MOCK`); its Core contract is designed but not
+implemented. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
 
 ---
 
@@ -227,6 +232,8 @@ started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, s
 - Stable real group identity mapping; no name-only matching.
 - Automatic WeChat window discovery/restore/activation with explicit failure states.
 - Global emergency stop and exact cancel states.
+- Unified `发送与安全` page with emergency-stop, window/focus and game sections; unsupported
+  capabilities remain disabled and cannot be represented as effective.
 - Fullscreen/game protection and secure-desktop refusal.
 - Authorized UI operation test plan before any real send.
 
@@ -236,7 +243,9 @@ started. Live No-Core/timeout/invalid-schema/stale GUI tests remain `OFFLINE`, s
 after UNKNOWN; no group is enabled without verified identity.
 
 **Current status:** Backend prototype work exists outside this repository; frontend and repository
-integration are `PLANNED`. Group voice is deliberately not enabled.
+integration are `PLANNED`. Group voice is deliberately not enabled. The unified `发送与安全` page now
+has the planned sections with unsupported controls disabled; no global hotkey, window automation,
+game detection or cancellation backend exists. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
 
 ---
 

@@ -88,9 +88,16 @@ must be reloaded to load the new Host row; no DSH restart was performed.
       routes, real `window.__WHALE_SETUP__` readout, component manager, and refresh all verified.
       Status `INTEGRATED`; live No-Core/timeout/invalid-schema/stale remain `OFFLINE` tests.
 - [x] Development-only UI inspector: interactive `@playwright/cli` `0.1.22`; automation uses pinned
-      `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 10/10 checks, CI `ui`
+      `playwright@1.64.1` under `tests/ui`, isolated harness with fake bridge, 12/12 checks, CI `ui`
       job, Console/request/layout/narrow/dialog checks; see `docs/UI_TESTING.md`. This does not attach
       to the production DSH Electron window or use production data.
+- [x] Voice delivery backend research: WeChatAgent 0.3.9 adapter has text/sticker only; native voice
+      is `UNSUPPORTED`, no source-level `SendVoice`/record path. UI Automation remains the supported
+      backend; dual-backend contract documented in `docs/VOICE_DELIVERY_BACKENDS.md`. No send, Hook,
+      DLL, version or production config change.
+- [x] Send & Safety frontend: new independent page for emergency stop, window/focus and game mode;
+      unsupported controls disabled; failure fallback moved to Settings; Qwen auto-start moved to
+      Components; UI tests cover Core-unavailable, disabled states, moved settings and narrow layout.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -159,9 +166,11 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
 | Phase 4A config read | `INTEGRATED`; 52 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
-| `npm.cmd run test:ui` | 10/10 isolated Playwright checks: real-config readout, six surfaces, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
+| `npm.cmd run test:ui` | 12/12 isolated Playwright checks: real-config readout, navigation including Send & Safety, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
+| Voice delivery backends | UI Automation `SUPPORTED`; WeChatAgent 0.3.9 native voice `UNSUPPORTED`; no source SendVoice/record; no prototype |
+| Send & Safety UI | `MOCK`/disabled safety controls; moved game mode, failure fallback and Qwen auto-start; 12/12 isolated UI checks |
 | Phase 3B activation | `INTEGRATED` live; not `VERIFIED` because live No-Core/timeout/stale GUI tests remain `OFFLINE` |
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |

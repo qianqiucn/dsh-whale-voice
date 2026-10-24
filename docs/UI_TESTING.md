@@ -52,8 +52,10 @@ The job does not connect to DSH, WeChatAgent, Voice Sender or Qwen and requires 
 ## What the UI harness checks
 
 - Actual generated client bundle is loaded; no source-string assertions.
-- Overview and primary navigation: voice settings, permissions, studio, emotions, activity, advanced.
-- 10 checks total; every check has a clear PASS/FAIL name.
+- Overview and primary navigation: voice settings, permissions, send & safety, studio, emotions, activity, advanced.
+- 12 checks total; every check has a clear PASS/FAIL name.
+- Send & Safety page: emergency-stop/window/game capability states, disabled unsupported controls,
+  moved failure fallback, Qwen auto-start in Components, Core-unavailable state, narrow layout.
 - Real-config readout: Bridge saved value, Worker safety permit, Provider/voice/model, permission
   counts, Sender offline, saved/active separation.
 - Component-manager dialog opens/closes and includes the read-only config panel.

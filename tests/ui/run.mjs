@@ -124,6 +124,7 @@ await check('all primary navigation surfaces render', async () => {
     for (const [name, marker] of [
       ['语音设置', /WHALE VOICE \/ SETTINGS/],
       ['权限管理', /WHALE VOICE \/ PERMISSIONS/],
+      ['发送与安全', /WHALE VOICE \/ SAFETY/],
       ['音色中心', /WHALE VOICE \/ STUDIO/],
       ['情绪系统', /WHALE VOICE \/ EMOTION/],
       ['任务与日志', /WHALE VOICE \/ ACTIVITY/],
@@ -158,6 +159,70 @@ await check('components dialog opens with config and closes', async () => {
     await page.screenshot({ path: path.join(artifactDir, 'components-1440.png') })
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await assert.rejects(dialog.waitFor({ state: 'visible', timeout: 700 }))
+  })
+})
+
+await check('send & safety groups capabilities and keeps unsupported controls disabled', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '发送与安全', exact: true }).click()
+    const text = await page.locator('body').innerText()
+    assert.match(text, /紧急停止/)
+    assert.match(text, /微信窗口管理/)
+    assert.match(text, /游戏模式/)
+    assert.match(text, /Ctrl \+ Shift \+ F12/)
+    assert.match(text, /未注册|未执行|未知|未验证/)
+    assert.match(text, /发现微信窗口 ≠ 已验证目标聊天/)
+    assert.match(text, /游戏时暂停语音任务/)
+    assert.match(text, /游戏时不抢微信焦点/)
+    assert.doesNotMatch(text, /自动启动 Qwen/)
+    assert.doesNotMatch(text, /Qwen 离线时改为文字/)
+    assert.equal(await page.getByRole('button', { name: '注册快捷键', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '录制快捷键', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('switch', { name: '自动发现微信窗口', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('switch', { name: '允许自动聚焦微信窗口', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('switch', { name: '游戏时暂停语音任务', exact: true }).isDisabled(), true)
+    await page.waitForTimeout(450)
+    await page.screenshot({ path: path.join(artifactDir, 'safety-1440.png') })
+
+    await page.setViewportSize({ width: 780, height: 900 })
+    await page.waitForTimeout(250)
+    const narrow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }))
+    assert.ok(narrow.scrollWidth <= narrow.clientWidth + 1, 'safety narrow overflow')
+    await page.screenshot({ path: path.join(artifactDir, 'safety-780.png') })
+
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.waitForTimeout(250)
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const settingsText = await page.locator('body').innerText()
+    assert.match(settingsText, /故障降级/)
+    assert.match(settingsText, /语音服务不可用时使用文字回复/)
+    assert.doesNotMatch(settingsText, /游戏模式/)
+    assert.doesNotMatch(settingsText, /Qwen 离线时/)
+    assert.doesNotMatch(settingsText, /自动启动 Qwen/)
+    await page.waitForTimeout(350)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-1440.png') })
+
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    const componentText = await dialog.innerText()
+    assert.match(componentText, /自动启动本地 TTS 服务/)
+    assert.equal(await dialog.getByRole('switch', { name: '自动启动本地 TTS 服务', exact: true }).isDisabled(), true)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('safety page stays disabled when Core is unavailable', async () => {
+  await withPage('?bridge=none', async (page) => {
+    await page.getByRole('button', { name: '发送与安全', exact: true }).click()
+    const text = await page.locator('body').innerText()
+    assert.match(text, /Core 未连接/)
+    assert.match(text, /未支持/)
+    assert.equal(await page.getByRole('button', { name: '注册快捷键', exact: true }).isDisabled(), true)
   })
 })
 

@@ -18,6 +18,7 @@ account/group identity and send-result feedback remain planned; installation and
 |---|---|---|
 | Whale Voice `dsh-whale-voice` | **0.1.0** | repository `package.json` |
 | WeChatAgent local runtime | **0.3.9** | local `app/resources/project/package.json` |
+| WeChatAgent native voice send | **UNSUPPORTED** | outbound adapter exposes text/sticker only; no source `SendVoice`/record path |
 | WeChatAgent upstream latest observed | **0.4.0** | upstream README on 2026-10-24; **not installed or verified locally** |
 | DSH plugin SDK baseline | **0.2.0-rc.2** | supplied development baseline |
 | DSH desktop shell observed | **0.2.1-rc.2** | local executable version; plugin UI loads, but SDK-level compatibility was not re-tested |
@@ -64,6 +65,17 @@ Planned (not implemented): supported events, private/group identity, send capabi
 `resolveTarget()`, `submitVoiceResult()` and write/config operations. No Core/UI component may import
 a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must be
 pinned, documented and covered by a compatibility test.
+
+### Native outbound capability
+
+The installed 0.3.9 OneBot adapter implements **text and sticker** outbound messages only. It does not
+expose a `SendVoice`, `sendVoice`, `record` or audio message action. The `VOICE` social decision in the
+current Bridge is delivered through the independent Voice Sender UI Automation service, not a
+WeChatAgent native voice bubble. See
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
+
+A generic OneBot `record` segment is not evidence that this adapter implements it. Native voice is
+**UNSUPPORTED** until an upstream method/action, format, server receipt and version contract exist.
 
 ## 4. Missing or incompatible WeChatAgent
 
