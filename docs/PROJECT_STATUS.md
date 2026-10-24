@@ -4,8 +4,8 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-24
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4B not started
-**Latest associated commit:** `06ef6c192f994d6bf3f586a571d1f4498a42f0b4` — `docs: expand native voice delivery research`
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; Phase 4B not started
+**Latest associated commit:** `077dbe6d23b06f018ccee699babf2cb531d9058b` — `docs: record Phase 4A-H safety contracts`
 **Latest PR:** [#8 — feat: unified send & safety page and delivery research](https://github.com/qianqiucn/dsh-whale-voice/pull/8) — **open, stacked on PR #6**
 **PR #6:** [#6 — chore: isolated Playwright UI inspector](https://github.com/qianqiucn/dsh-whale-voice/pull/6) — **open, stacked on PR #5**
 **PR #5:** [#5 — feat: phase 4A read-only unified config](https://github.com/qianqiucn/dsh-whale-voice/pull/5) — **open, stacked on PR #4**
@@ -190,10 +190,11 @@ must be reloaded to load the new Host row; no DSH restart was performed.
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
 | PR #3 setup wizard | open; CI passed; not merged |
-| PR #4 read-only Core | open; CI passed; depends on PR #3 |
-| PR #5 Phase 4A config | open; CI SUCCESS `40083281589`; stacked on PR #4; live Phase 4A `INTEGRATED`; not merged |
-| PR #6 UI inspector | open; CI SUCCESS `40128127566` (build + ui jobs); stacked on PR #5; 10/10 isolated UI checks; not merged |
-| PR #8 Send & Safety / delivery research | open; stacked on PR #6; 64 unit + 12 UI checks; docs only for native backend; not merged |
+| PR #4 read-only Core | open; head `347acf31`; CI SUCCESS `40134976335`; depends on PR #3; includes shared Origin guard, bounded HTTP and explicit account verification |
+| PR #5 Phase 4A config | open; head `a4475071`; CI SUCCESS `40134993884`; stacked on PR #4; includes full-config HMAC revision; not merged |
+| PR #6 UI inspector | open; head `f576f61a`; CI SUCCESS `40135037332`; includes 64 behavior + 10 UI checks; not merged |
+| PR #7 Electron feasibility | open; head `d7e89097`; CI SUCCESS `40135131044`; docs only; not merged |
+| PR #8 Send & Safety / delivery research | open; head `077dbe64`; CI SUCCESS `40135354326`; 64 unit + 12 UI checks; not merged |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Next highest-priority task
