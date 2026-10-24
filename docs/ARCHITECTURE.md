@@ -53,6 +53,44 @@ The following are real, separately deployed systems and are **not included**:
 
 This repository must not imply that cloning it installs a working voice pipeline.
 
+### WeChatAgent dependency boundary
+
+Whale Voice's WeChat capability is built on
+[**sourcepro5/WeChatAgent**](https://github.com/sourcepro5/WeChatAgent), an independent upstream
+project. WeChatAgent is the required platform layer for:
+
+- WeChat client connection;
+- message read/receive and DSH message bridging;
+- contact/group context and account/session identity;
+- existing chat authorization and scope control;
+- the platform's existing send capability.
+
+Whale Voice must **not** implement a second full WeChat reader, account manager or standalone bot.
+The planned `packages/adapter-wechatagent` module is an isolation layer around the supported
+WeChatAgent interfaces, not a replacement for them. Interface/version assumptions belong in the
+adapter, never hard-coded throughout Core.
+
+The adapter must eventually expose:
+
+- installation/compatibility detection;
+- running-instance and version discovery;
+- Bridge/session health;
+- supported message/event subscriptions;
+- private/group target identity evidence;
+- voice-result feedback to the bridge;
+- effective-config verification and version/connection error states.
+
+If WeChatAgent is absent or incompatible, the plugin still opens and TTS provider settings/preview
+remain available, but WeChat voice must show the installation message and stay disabled. The UI must
+not display a fabricated online WeChat state.
+
+Upstream patches are a last resort: use documented/stable interfaces first, isolate any internal
+compatibility code by exact version, and prefer an upstream contribution over a permanent private
+fork. WeChatAgent's MIT license and its separate third-party terms must be respected; its Hook,
+WeChat client, binaries and restricted third-party components are not bundled here.
+
+See [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
+
 ---
 
 ## 2. Target architecture (planned)
@@ -72,8 +110,8 @@ Whale Voice Core
        │    └─ explicit cloud provider adapter(s)
        ├─ Sender Plugin Adapter
        │    └─ Windows Voice Sender
-       └─ WeChatAgent Adapter
-            └─ platform/version-specific bridge
+       └─ WeChatAgent Adapter (REQUIRED for WeChat)
+            └─ sourcepro5/WeChatAgent (external platform)
 ```
 
 ### Responsibilities
@@ -90,8 +128,10 @@ fallback, no credential leakage, no committed API keys.
 **Voice Sender:** independent Windows component for audio device handling, UI automation and native
 voice bubbles. It must expose a versioned contract and retain its own safety checks.
 
-**WeChatAgent:** platform adapter responsible for identity, bridge/session health and message
-delivery constraints. Display names are not sufficient for group identity.
+**WeChatAgent adapter:** required bridge to the independent sourcepro5/WeChatAgent platform. It
+owns version/compatibility discovery, connection health, target identity evidence and result
+feedback. It is not an optional TTS feature and must not be replaced by a second WeChat bot inside
+Whale Voice. Display names are not sufficient for group identity.
 
 ### Planned protocol principles
 
@@ -110,7 +150,8 @@ delivery constraints. Display names are not sufficient for group identity.
 
 1. **P1:** define protocols, fake providers and module boundaries.
 2. **P2:** move configuration/permissions/task ownership into Core.
-3. **P3/P4:** formalize Sender and WeChatAgent contracts as separate adapters.
+3. **P3/P4:** formalize Sender and WeChatAgent contracts as separate adapters; create
+   `packages/adapter-wechatagent` and version/compatibility checks.
 4. **P5:** connect the existing UI, keeping Mock as a selectable development provider.
 5. **P6–P8:** add providers and high-risk automation only after contract and cancellation tests.
 6. **P9:** release/CI/public-visibility decisions with explicit owner approval.
@@ -126,6 +167,7 @@ No step in this migration permits bypassing the existing production safety bound
 | UI → Core | authenticated, typed API; no direct worker-state mutation |
 | Core → Provider | explicit selection; no silent fallback |
 | Core → Sender | requested target verified before device/UI mutation |
+| Core → WeChatAgent Adapter | version/compatibility and connection evidence before WeChat voice |
 | Sender → WeChat | only trusted target; identity re-checked before recording |
 | Repository → GitHub | no secrets, private chat data, audio, runtime state or screenshots |
 | Agent → production | high-risk operations require explicit user authorization |
@@ -137,5 +179,6 @@ No step in this migration permits bypassing the existing production safety bound
 - Reimplementing the voice pipeline.
 - Bundling Qwen model weights or `whale-v1` audio.
 - Bundling WeChatAgent or WeChat Hook binaries.
+- Maintaining an unsynchronized private full fork of WeChatAgent.
 - Providing an unaudited one-click production installer.
 - Claiming group voice support before real group identity verification exists.
