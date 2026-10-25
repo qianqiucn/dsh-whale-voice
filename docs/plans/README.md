@@ -10,18 +10,18 @@
 **用户要换新会话时，下一位 ChatGPT 首先读取 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)，再执行 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md) 的实时核验步骤。**
 
 - 交接卡记录最新计划/Git/PR 快照和重要安全边界。
-- 下一步行动书是 **C1 · 新会话恢复与 Plan 03-A 实时核验**（`READY_FOR_NEXT_CHAT`），不是新的 Plan 15，也不是已经给 DeepSeek 分配开发。过去的 H0 14 对计划去重**已经完成**，见 [H0 结果](H0_PLAN_RECONCILIATION.md)，不得重做。
+- [C1 · 新会话恢复与 Plan 03-A 实时核验](NEXT_CHATGPT_ACTION_PLAN.md) 已于 2026-10-25 依实时 GitHub 核验执行完毕（`DONE`），不是新 Plan 15；今后新会话读其结果和最新交接卡即可，不再重复做 C1/H0。已有的 Plan 03-A 才是下一项工程进度跟进对象。
 - 目前存在 **PR #17 和 PR #18 两套重叠的计划文件**（均独立基于 main、未合并），不能未经比对与用户批准就合并两套。
 - 任何 SHA、测试数量和 PR 状态都须重新查询；执行标准/记忆文档仍以最新可用仓库分支为准。
 
-## 当前下一次 ChatGPT 唯一首要任务（C1 · 2026-10-25）
+## C1 已完成记录与现在的唯一跟进任务（2026-10-25）
 
-- **先读 [新会话交接卡](NEXT_CHATGPT_HANDOFF.md)，再执行 [C1 行动计划](NEXT_CHATGPT_ACTION_PLAN.md)。** C1 是 ChatGPT 自己的计划/GitHub 证据核验，不给 DeepSeek 增加计划维护负担，也不改变 Plan 01–14 的固定序号。
-- 本轮核验：`main bf9cf66`；PR #16 OPEN `3ad32bc`（run `40163881122` SUCCESS）；PR #17 OPEN `4b700bc`（交接提交前 run `40164634185` SUCCESS，**当前 HEAD 已改变，需重新查**）；PR #18 OPEN/DRAFT `42cec57`（run `40159114676` SUCCESS）。
+- **先读 [新会话交接卡](NEXT_CHATGPT_HANDOFF.md) 与 [已完成的 C1 核验记录](NEXT_CHATGPT_ACTION_PLAN.md)**，随后只需重新核验新变化。C1 自身 DONE，不是工程任务，不改变原 Plan 01–14 编号。
+- C1 本轮核验：main `bf9cf66`；PR #16 OPEN `3ad32bc`（run `40163881122` SUCCESS）；PR #17 本次 C1 文档写入前 OPEN `8864e4c`（run `40165005768` SUCCESS，后续文档提交的新 HEAD/CI 必须重查）；PR #18 OPEN/DRAFT `42cec57`（run `40159114676` SUCCESS）。
 - **Plan 02 DONE、Plan 03-A SENT、03-B WAIT_USER_AUTHORIZATION、Plan 01 SENT。** 最新 PR #16 工程 HEAD 的 `docs/PROJECT_STATUS.md`、`docs/AI_CONTEXT.md` 尚不含最新 `197` 计数（含旧 `192`），所以 03-A 尚无完成证据；不得冒充其已完成或重做 F01–F05。
 - 新 ChatGPT 先核实 03-A 的新增工程 HEAD/文档/CI；若无新进展，保留 SENT，用户要继续时只发原 ID 的续行版；若有报告则验收并自动回**一份完整** Level 2 DeepSeek 计划书。任何 PR 合并须用户单独授权。
 
-## H0 整理结果（2026-10-25）
+## H0 整理结果（2026-10-25，历史快照，勿覆盖最新状态）
 
 已完成 [14 对计划与台账比对](H0_PLAN_RECONCILIATION.md)：本总表及 #17 原有正文为唯一当前入口，吸收 #18 的具体测试/验收补充，后者保留作历史来源。PR #18 尚未关闭，#17 尚未合并；不得同时派发两套任务。01–14 顺序、01 SENT、02 IN PROGRESS / REVIEW_REQUIRED 不变。本轮没有派发新工程任务。
 
