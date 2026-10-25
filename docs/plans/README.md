@@ -5,6 +5,18 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 最新核验（2026-10-25）· Plan 05-A REVIEW_REQUIRED，F01 已派发
+
+**当前唯一工程任务：[Plan 05-A-F01 · 输入边界与错误脱敏修订](05-A-F01-contract-boundary-hardening.md) = SENT。** 继续原 PR #21 / `feature/plan05a-whale-audio-core-contracts`，不创建重复 PR、不推进下一模块；父任务 05-A 尚未 DONE，等级 OFFLINE / NOT_INTEGRATED。
+
+已核验 [PR #21](https://github.com/qianqiucn/dsh-whale-voice/pull/21) OPEN，HEAD `0e05061476a97826e7b2bbc2886847d1dbc92fd8`，base main `bf9cf66807e12d0b25872a0fa3869962dde04818`，仅五份新增文件 +2979/-0，0 reviews；[CI 40236154425](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40236154425) build/ui SUCCESS。ChatGPT 独立重跑新文件测试 **65/65 PASS**（Node v24.22.0；CI Node22）；全量 241/240/1、UI24/24 是 DS 报告值，ChatGPT 核对远端 jobs 成功但未本地重跑全仓库/UI。
+
+**独立额外输入复现三项缺口**：F01-01 Relay 接受缺少必填字段/配对错误/嵌套 token 的记录；F01-02 Object.keys 漏检不可枚举及 Symbol 键；F01-03 errors.path 回显任意短 ASCII 键（虚构邮箱标记复现）。候选仍不可发送，不宣称真实泄露或发送。B05/B13 FAIL；B04/B06/B12/B15 PARTIAL；完整 B01–B18 与修复规格见 F01 第16节。
+
+已批准保留：tts-selected REQUIRED；独立 SEED_VC_STATUS；本阶段 deliveryRequired 恒列未实现投递组件。只修原五文件，新增统一 validateAudioTaskRecord、完整自有属性检查、未知键固定占位及 N01–N16 回归。原65项和原52项安全意图保留；报告T组实际36而非35，合计65。
+
+**03-B 仍 WAIT_USER_AUTHORIZATION，#16 OPEN @954a01a；#17 唯一规划分支，#18 Draft，#19/#20 OPEN，04-A 与07-A研究 DONE 不重做。** 不 merge、改生产、装依赖/模型、升级服务或发微信。DeepSeek 继续当前对话做原PR小修；ChatGPT 收新报告后复核新 HEAD/CI 和全部验收，不凭旧绿灯标 DONE。以下旧 SENT/等待首次报告/C1 03-A 待办仅属历史。
+
 ## 最新正式验收和下一份执行任务：Plan 04-A DONE → Plan 05-A SENT（2026-10-25）
 
 **Plan 04-A = DONE（RESEARCH / OFFLINE ONLY），不代表功能集成。** GitHub [PR #20](https://github.com/qianqiucn/dsh-whale-voice/pull/20) 研究 HEAD `6007fecd351d0cdb492a4ec5962ac2abe1962242`、`docs/WECHATAGENT_EXTENSION_INTEGRATION.md` 仅 1 file / +361，CI `40233344202` build/ui SUCCESS。ChatGPT 已核查 E01–E25 固定源码证据、v0.3.9/v0.4.0/v0.4.1 插件生命周期、身份/聊天权限、S1/S2/S3、17 Fake 种子与 A01–A15；接受结论 `RECOMMEND_DSH_ADAPTER_AND_OPTIONAL_V041_PLUGIN_AUDIT`。默认继续 **S1 DSH Plugin + 只读 Adapter**，v0.4.1 ZIP Plugin **S2 仅未来选配研究**（格式与 DSH 不兼容、没有原生音频发送 API），S3 Hook/DLL 禁止。本地安装未升级，#20 PR 未合并；报告 PASS 不代表微信能新发送或用户 GUI 可操作。
