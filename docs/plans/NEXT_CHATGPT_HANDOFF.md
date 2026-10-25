@@ -4,6 +4,10 @@
 > **维护者：** ChatGPT（仅负责计划、排序、记忆、GitHub 计划跟踪和完成审查）。DeepSeek 不承担这份文档的维护。  
 > **本次核验：2026-10-25（UTC 以 GitHub 实时记录为准）。** 本文件里的 SHA、CI、状态是有时点的快照，启动新会话必须重新查询。
 
+## 用户新交接偏好（2026-10-25）
+
+收到每份 DeepSeek 开发报告时，除验收及立即返回一份完整可复制的下一步执行计划书外，ChatGPT 还须主动判断是否要让 DSH/DeepSeek 执行端换新对话。按继续使用、阶段完成后交接、建议立即交接三档判断，依据报告中的上下文漂移、忘记约束、重复实现、长审计和阶段边界，不能假称直接看到执行端 token。若需要交接，给出包含分支/PR/HEAD/CI、未完成事项、安全边界、未提交工作及唯一下一动作的非敏感 handoff。只换 AI 对话，不重启任何生产服务。权威规则见 [长期记忆](CHATGPT_LONG_TERM_MEMORY.md) §1.1–1.2 和 [执行标准](../../EXECUTION_STANDARD.md) §2.1。
+
 ## 新会话 Plan 02 静态审查结果（2026-10-25；尚未终审）
 
 本轮已读取真实 GitHub 计划分支、TTS-A PR #16 核心契约/Registry/测试；没有代替 DeepSeek 修改工程源码。PR #16 head 仍为 `1fd2cca`，该版本 CI `40160267636` SUCCESS。发现 5 项**静态代码审查待复现**问题：Manifest 未知顶层键、TTS 请求隐藏投递字段、SVC 请求额外目标字段被原样回传、Cloud 凭据 UNKNOWN 可能被判 AVAILABLE、TTS 结果 `target` 被静默接受。具体行级核验方向、唯一修复建议和 N01–N05 负向测试已写入 [Plan 02 §2.1](02-tts-a-complete-review.md)，变更登记见 [CHANGELOG](CHANGELOG.md)。这不是新运行过的测试失败结论，不是 Provider 已投入生产。
