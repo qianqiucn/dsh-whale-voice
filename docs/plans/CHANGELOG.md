@@ -2,6 +2,19 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · GitHub 作为 ChatGPT 长期规划记忆库；任务书升级为可直接执行规格
+
+- 触发：用户要求 GitHub 持久保存重要协作记忆；**“计划书尽可能详细，留给 DS 思考的空间越少越好，它只需要执行。”**
+- 新增 [CHATGPT_LONG_TERM_MEMORY.md](CHATGPT_LONG_TERM_MEMORY.md)，集中记录用户长期偏好、ChatGPT/DeepSeek 分工、Whale Voice/Relay/WeChatAgent 定位、任务与 Git 状态区分、安全边界及每次计划任务的读取顺序。
+- 新增 [TASK_SPEC_STANDARD.md](TASK_SPEC_STANDARD.md)：每份发给 DeepSeek 的工程计划必须达到 `EXECUTION-READY Level 2`，写全目标、实时 Git/源码证据、唯一技术路线、改动文件、接口/状态与错误语义、按序步骤、失败决策树、安全、测试矩阵、DoD、PR/CI、交付报告；派发前自评至少 90/100，虚构接口或越权一票否决。
+- 新增 [TASK_SPEC_TEMPLATE.md](TASK_SPEC_TEMPLATE.md) 供 ChatGPT 编写可复制的任务书；已有 01–14 部分是 Level 1 路线条目，今后每次派发前**先扩写完整规格**，不直接把简略路线条目给 DeepSeek。
+- 更新 `EXECUTION_STANDARD.md`、`AGENTS.md` 的 **ChatGPT-only** 前置阅读规则；DeepSeek 的日常编码、测试和工程 PR 仍只需遵循通用 `AGENTS.md` 安全规则，不承担计划管理。
+- 更新 `docs/README.md`、计划总表和 Plan 02 的证据与任务内容，使新会话能找回本套规范。
+- 核验 GitHub PR #16 **已更新**到 `1fd2cca`，run `40160267636` SUCCESS：IndexTTS / Gemini / OpenAI 候选、Whale Relay 三层职责、独立 Seed-VC/RVC 的 SVC 合同已存在。**因此 Plan 02 不再让 DS 重复实现，而改为精确终审/负向测试；在验收前保持 IN PROGRESS / REVIEW_REQUIRED，Git PR_OPEN。**
+- 排序变化：**无，01–14 顺序保持**；仅增加派发前的质量门禁和现有 Plan 02 的“开发→复核”处理。
+- 生产影响：无；本轮仅编辑计划/规范文档及 PR 描述，不写生产配置、不启动模型、不发微信、不合并任何 PR。
+- 仍需授权：PR #17 的合并、PR #16 的合并均需用户单独决定。
+
 ## 2026-10-25 · TTS-A 交付报告核验与计划 02 继续执行
 
 - 触发：DeepSeek 提交 TTS-A Provider-neutral 审计、契约、v2 迁移提案与隔离测试完成报告，用户要求继续开发。
