@@ -8,6 +8,16 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新交接（2026-10-25）· Plan 04-A 验收 DONE、05-A 已派发
+
+**用户提供 DeepSeek《Plan 04-A · WeChatAgent 扩展能力与权限审计报告》后，ChatGPT 独立核验**：PR #20 OPEN、HEAD `6007fecd351d0cdb492a4ec5962ac2abe1962242`、唯一 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md` +361、CI `40233344202` SUCCESS；25 条 E01–E25 固定源码证据、0.3.9/0.4.0/0.4.1 版本权限矩阵、DSH Plugin≠WeChatAgent ZIP、17 Fake、A01–A15 均符合静态审计验收。**Plan 04-A = DONE（RESEARCH/OFFLINE），PR #20 未合并，真实 Tool、ZIP、身份/微信/音频投递仍未实现**。S1 当前 DSH + 只读 Adapter 默认；S2 v0.4.1 ZIP 后续可选；S3 Hook/DLL 禁止，不能自动升级 0.3.9。
+
+**唯一刚派发下一份任务：Plan 05-A = SENT（OFFLINE PURE CODE）**，完整文件 [05-A-whale-audio-core-offline-contract-implementation.md](05-A-whale-audio-core-offline-contract-implementation.md)。这次要求 DS 在**新独立 PR** 做三个 `core/audio` 纯模块（Task、Feature Manifest、Relay 不可提交候选）、一个 ≥40 Node 自动化测试、一个接口文档，绝不挂入 Host、改现有八页/Setup、安装模型/WeChat、生成真实音频或发送。源码只能在最新 main 尚无 `core/audio` 的前提下隔离开发。PR #16 未合并，**不能导入其 SVC/TTS 纯合同到 main**，05-A 需明文设计未来映射。**05-A 的 Fake PASS 不是新版用户功能可用**，后续计划会处理 05-B/06/07-B/08/09/13/14。
+
+**03-B 仍 WAIT_USER_AUTHORIZATION**，PR #16 OPEN @ `954a01a`、0 reviews、CI `40165832178` SUCCESS；PR #17 为规划分支，#18 旧 Draft，#19 RVC 研究 OPEN。当前 main `bf9cf66`。任何 Merge、部署/升级/启动 WeChatAgent、真实 Tool/微信/付费/模型、生产写入均没有新的用户授权。**原 01–14 编号与“AI 写详细计划、DeepSeek 只执行、小白易用第一”约束不变。**
+
+收到 DS 05-A 工程交付报告时，先实时查新 PR/HEAD/diff/CI，逐项验证 B01–B18、纯模块导出、无外部副作用与 52 Case、已有 Node/build/UI 结果；通过才考虑 05-B 或提醒用户单独决定 Plan 03-B，不应无条件启动 07-B。历史“04-A SENT 等初报/05 PLANNED”此后属于旧记录。
+
 ## 2026-10-25 · 最新交接：07-A/F01 已验收 DONE；04-A 正式派发
 
 本轮收到 DeepSeek 的《Plan 07-A-F01 · 原研究报告验收差距修复报告》后，ChatGPT 使用 GitHub 真实核对：[PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) OPEN、HEAD `e21dee8a8192f24a3465f169c761e62d30611e59`、仅 1 个 Markdown +489 行、CI `40231587503` SUCCESS。完整 `docs/SVC_PROVIDER_RESEARCH.md` 已含 C01–C17 pinned 源码证据、SVC v1 三层映射、8 个文档判断、逐组件新手安装 Manifest、原编号 A01–A14 与 R01–R10。**07-A/F01 = DONE（RESEARCH/OFFLINE）**，但不代表模型、音频、Provider、微信实际可用，#19 不合并。直接复制 AstrBot/RVCSVC-API 和直接 API 集成仍 BLOCKED。
