@@ -2,11 +2,19 @@
 
 > **首读级别：最高。维护者：ChatGPT（规划与 GitHub 协调），不要求 DeepSeek 维护。**
 >
-> **更新时间：2026-10-25，Europe/Amsterdam。** 本文是核验时点的快照，不保证下一次会话的 PR/CI/Commit 仍相同。
+> **更新时间：2026-10-26，Europe/Amsterdam。** 本文是核验时点的快照，不保证下一次会话的 PR/CI/Commit 仍相同。
 >
 > **唯一推荐接续任务书：[NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md)。** 该计划属于下一位 ChatGPT，不是新的 DeepSeek 工程任务，不代表授权自动合并。
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
+
+
+## 最新验收与唯一派发（2026-10-26）· 07-B DONE，06-A SENT
+**07-B = DONE / OFFLINE / NOT_INTEGRATED，PR #23 OPEN。** HEAD a570430e9d5be24aa0f2415b6699cdfa957583f6、base main@bf9cf66807e12d0b25872a0fa3869962dde04818、0 reviews；精确三added +1892/-0。[CI40242597119](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40242597119) 当前HEAD build/ui SUCCESS。ChatGPT独立40/40与271额外边界断言PASS；DS全量216/215/1、UI24/24和本机build为报告值，未独立本地重跑全仓库/UI。完整K01–K16与非阻断错误路径/嵌套类型规格澄清见[07-B最新验收](07-B-rvc-fake-gateway-offline-protocol.md)；无阻断返修。
+**唯一下一任务：[06-A · 现有Provider复用与集成前置核验](06-A-provider-reuse-integration-readiness-audit.md) = SENT。** 只读跨PR盘点、三层字段/状态映射、文件交集与依赖，直接对话报告，不新增代码/Registry/Fake、分支、提交或PR，也不写报告入仓库。Plan06实现仍PLANNED，集成仍未开展。理由：已有实现散在未合并#16/#21/#22/#23，先核实复用和合并决策材料，避免继续叠加孤立契约或绕过03-B。
+当前main仍bf9cf66807e12d0b25872a0fa3869962dde04818；#16 OPEN@954a01a、#19@e21dee8、#20@6007fec、#21@da3d0f7、#22@9d71658、#23@a570430均未合并；#22 base为#21分支。#17是唯一规划入口，#18保留历史Draft。03-B仍WAIT_USER_AUTHORIZATION；05-A/F01与05-B/F01 DONE/OFFLINE。原01–14不重编号。
+现在适合新开DeepSeek/DSH对话，06-A只需只读分析/规划和文件/Git读取；模式名称以实际执行端为准。保留并核实未提交内容，不重启DSH/微信/模型。新手易用性、RVC首发/Seed-VC后续、BLOCKED_CODE_REUSE/BLOCKED_DIRECT_API_INTEGRATION、Worker NEVER_WRITE、UNKNOWN不自动重发不变。
+**以下07-B SENT、06未派发、旧任务SENT等段落均为历史快照；以本节为当前唯一指令。**
 
 ## 最新验收与唯一派发（2026-10-25）· 05-B/F01 DONE，07-B SENT
 

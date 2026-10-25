@@ -1,7 +1,34 @@
 # Plan 07-B · 原创 RVC Fake Gateway 纯协议与离线适配验证
-**版本：v1.0 · 2026-10-25 · EXECUTION-READY Level 2 / SENT。**
+**版本：v1.1验收澄清 · 2026-10-26 · DONE / OFFLINE / PR_OPEN。原v1.0实施任务保留历史。**
 **执行：DeepSeek；计划与验收：ChatGPT。原Plan07子阶段，不新增主Plan编号。**
 **等级：OFFLINE / ORIGINAL-FAKE-PROTOCOL。唯一方案：从最新main独立新增三个文件，无代码依赖、无真实网络或模型。**
+
+
+## 2026-10-26 · ChatGPT正式验收：DONE / OFFLINE / PR_OPEN
+[PR #23](https://github.com/qianqiucn/dsh-whale-voice/pull/23) OPEN、非Draft、0 reviews；HEAD a570430e9d5be24aa0f2415b6699cdfa957583f6，base main@bf9cf66807e12d0b25872a0fa3869962dde04818；精确三added +1892/-0（663/965/264）。
+[CI40242597119](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40242597119) head_sha已核对，build/ui SUCCESS。ChatGPT独立读三文件并在隔离源码副本运行G01–G40：40/40 PASS；独立交叉14个模型/场景结果、逐字段必填/flags篡改、getter零调用及虚构marker脱敏，共271个断言PASS。DS全量216/215/1、UI24/24、本机build是报告值，ChatGPT未本地重跑全仓库/UI。
+**验收澄清v1.1（不改实现）：** errors.path接受相对域的固定字段路径（如targetModelId、inputAudio.durationMs）；非法根对象用$。嵌套对象字段类型错误使用TYPE_MISMATCH；根对象结构/键数错误使用所属域INVALID_*。原第9节request.*前缀/嵌套错误描述与实现存在表示差异，已独立探针确认，不影响拒绝、隐私或权限，作为非阻断规格澄清；未来调用方按此约定，不解析错误reason。并非无差异逐字符合。simulate与结果校验共用buildResult权威规则，不要求递归再调用公共validator。
+| 验收 | 结论与证据 |
+|---|---|
+| K01 | PASS：前置已验收，03-B仍待授权 |
+| K02 | PASS：main独立分支，精确三新增，无父代码复制 |
+| K03 | PASS：零import纯协议，源码无I/O/第三方依赖 |
+| K04 | PASS：A/B八字段，全selectable=false，G01/02 |
+| K05 | PASS：严格必填/属性/数字/权利，G03–18；路径表示采用上方澄清 |
+| K06 | PASS：固定标签非URL，G17/39/40 |
+| K07 | PASS：七场景与B优先，G19–27；独立14组合 |
+| K08 | PASS：十五字段与全关联，G28–35；独立篡改均拒绝 |
+| K09 | PASS：取消请求/确认分离，超时未知不重试，G24–26 |
+| K10 | PASS：固定禁运行/禁提交，G35/39 |
+| K11 | PASS：冻结/脱敏/确定性，G14–16/36–38；独立getter/marker |
+| K12 | PASS：实际40/40，不是文档计数 |
+| K13 | PASS：当前HEAD CI成功；全量/本机UI等证据层级如上，不冒称独立重跑 |
+| K14 | PASS：三层映射、许可/真实API仍BLOCKED，文档§8/11 |
+| K15 | PASS于OFFLINE范围：中文六状态与未来路径；无真实终端用户能力 |
+| K16 | PASS：远端差异仅纯源码/测试/说明，无生产接线；真实环境未操作 |
+**无阻断返修，不派07-B-F01。** 07-B DONE不等于Plan07整体DONE或RVC可用，不合并#23。
+下一唯一任务：[06-A只读复用与集成前置核验](06-A-provider-reuse-integration-readiness-audit.md)，报告不写仓库、不建新PR；运行调度实现等待明确集成基线与授权。
+
 
 ## 1. 唯一目标与前置决定
 实现一个原创、可确定测试的RVC演示网关协议：列出演示模型、验证合法Fixture音频引用与资源上限、模拟转换/取消/未知结果、严格验证返回Artifact描述。
