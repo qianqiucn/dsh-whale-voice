@@ -5,6 +5,14 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 最新正式验收和下一份执行任务：Plan 04-A DONE → Plan 05-A SENT（2026-10-25）
+
+**Plan 04-A = DONE（RESEARCH / OFFLINE ONLY），不代表功能集成。** GitHub [PR #20](https://github.com/qianqiucn/dsh-whale-voice/pull/20) 研究 HEAD `6007fecd351d0cdb492a4ec5962ac2abe1962242`、`docs/WECHATAGENT_EXTENSION_INTEGRATION.md` 仅 1 file / +361，CI `40233344202` build/ui SUCCESS。ChatGPT 已核查 E01–E25 固定源码证据、v0.3.9/v0.4.0/v0.4.1 插件生命周期、身份/聊天权限、S1/S2/S3、17 Fake 种子与 A01–A15；接受结论 `RECOMMEND_DSH_ADAPTER_AND_OPTIONAL_V041_PLUGIN_AUDIT`。默认继续 **S1 DSH Plugin + 只读 Adapter**，v0.4.1 ZIP Plugin **S2 仅未来选配研究**（格式与 DSH 不兼容、没有原生音频发送 API），S3 Hook/DLL 禁止。本地安装未升级，#20 PR 未合并；报告 PASS 不代表微信能新发送或用户 GUI 可操作。
+
+**正式派发唯一下一份 Plan 05-A = SENT（OFFLINE 纯代码工程，待 DS 执行）**，权威完整 Level 2：[05-A-whale-audio-core-offline-contract-implementation.md](05-A-whale-audio-core-offline-contract-implementation.md)。与以前研究不同，本轮 DeepSeek 在独立 `feature/plan05a-whale-audio-core-contracts` 分支**仅新增三份原创纯模块**（CoreTask、双功能 Manifest、不可提交 Relay 候选）+ ≥40 个自动离线 Node 测试 + 1 份文档，计划 ≥52 个安全场景，建立单独 PR。`main` 当前没有 `core/audio/`，PR #16 的 SVC/TTS 合同仍**未合并且不得复制或导入**；三模块不能注册 Host、读生产文件、运行模型、安装 ZIP 或发微信。**OFFLINE 模块不等于用户可用 GUI**；Novice First 中文流程与不误报 READY 强制验收。
+
+**最新状态**：Plan 01 SENT、02 DONE、03-A DONE、**03-B WAIT_USER_AUTHORIZATION**（#16 仍 OPEN / 0 reviews）、07-A/F01 DONE（研究，#19 OPEN）、**04-A DONE（研究，#20 OPEN）**、**05-A SENT（纯离线工程）**、05-B/06/07-B/08/09/13/14 仍 PLANNED。原 Plan 01–14 序号保持不变。此段优先于后面的历史快照“04-A SENT/05 PLANNED/07-A SENT”；不得把旧段落当成最新派发指令。
+
 ## 最新权威验收及任务派发：07-A DONE → 04-A SENT（2026-10-25）
 
 **Plan 07-A 静态审计 = DONE（RESEARCH/OFFLINE，不是 RVC 已接入）**：DS 完成初报 #19 与同编号 F01 修订，PR #19 OPEN / HEAD `e21dee8a8192f24a3465f169c761e62d30611e59` / 仅 `docs/SVC_PROVIDER_RESEARCH.md` +489 行；CI `40231587503` build/ui SUCCESS。ChatGPT 核对 C01–C17 固定源码行、三层 SVC v1/任务/后续 Fake Gateway 映射、A01–A14 与 R01–R10、组件级 Windows 安装 Manifest。结论仅 `APPROVE_FAKE_ADAPTER_DESIGN`（原创、隔离、离线），**直接复制上游代码 `BLOCKED_CODE_REUSE`、直接接入现有 RVCSVC-API `BLOCKED_DIRECT_API_INTEGRATION`**。PR #19 **未合并**，研究 DONE 与 PR MERGED 是不同状态。
