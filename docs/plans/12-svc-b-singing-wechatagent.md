@@ -2,6 +2,26 @@
 
 **状态：PLANNED；前置：SVC-A、Shared Core-C、WeChatAgent 扩展审计。**
 
+## 2026-10-25 · 用户确认 astrbot_plugin_rvc_svc 功能路线（原 Plan 12）
+
+**状态：PLANNED / NOT_SENT。** 方向确立但工程实现未启动。详细接口、法律门禁和排序见 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。
+
+### 12-A · 合法素材 + 离线翻唱 MVP
+前置 Plan 07-A 许可/API 审计、07-B Fake Gateway、Plan 05/06/08 Core 契约、Plan 13-A Fake Delivery。仅使用用户有权使用的本地音源或 Fake fixture；真实 RVC/SoVITS-SVC、UVR/MSST 与模型运行须单独授权。
+- 校验输入权利/目标音色同意 → 按需分离人声伴奏 → RVC/SVC 声线转换 → 混音/响度/时长与格式验证 → 受限 Artifact 保存/预览。任一阶段失败不触发 Relay。
+- Fake E2E 包括坏媒体、无权音源、缺失伴奏、非法声线、上游失联、取消竞态、资源冲突、缓存隔离、未经授权发送；精准返回错误而非假成功。
+- 不直接复制 AGPL 插件或许可状态不明的 RVCSVC-API 源码；适配原创且独立的兼容协议，不能强制所有用户安装 AstrBot。
+
+### 12-B · DeepSeek 点歌与授权搜索
+在 12-A、04、13-B 就绪后，以 DSH Tools 做 searchSongs（合法目录元数据）、createCoverTask（仅授权源）、getCoverTaskStatus、cancelCoverTask、previewCoverArtifact。DeepSeek 只决定交互和参数，不能直连音乐下载器、任意 URL 或微信投递。
+- 曲名歧义返回最多五个候选待确认；搜索到歌曲不代表有音频使用权。若无法依法取得原曲，要求用户提供授权音频，不能绕过 VIP、地域或 DRM。
+- 明确 SEARCHING、SEPARATING、CONVERTING、MIXING、SAVED 状态，不得把成品保存冒充发送成功。
+
+### 12-C · 实际交付准入
+经用户单独授权和 Whale Relay/WeChatAgent 已验证文件或语音能力后方可投递。长歌优先文件，后端不支持就仅保存；UNKNOWN 不自动重试。真实发送、配置更新、服务重启、设备权限另行授权。
+
+**DoD**：每子阶段独立 PR、Level2 任务书、正负案例、源码/素材权利、任务与 Artifact 数据契约、实际测试与 CI、Fake/真实级别、停止条件齐全才验收。不把 TTS-A 合同、AGPL/许可审计与微信身份所有权绕开。
+
 ## 引擎与流水线
 选经过许可审计的 Seed-VC/RVC，隔离进程进行已有歌声音色转换；原曲→（按需）人声分离→转换→校验→混音→试听→保存/可选发送。必须分别显示生成、预处理、转换、混音、交付的状态；不能声称 Seed-VC 直接从歌词作曲。
 
