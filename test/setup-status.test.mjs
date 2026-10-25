@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createSetupScanGate, readBridgeSetupStatus } from '../core/setup-status.mjs'
+import { createSetupScanGate, readBridgeSetupStatus, readBridgeCapabilitySnapshot } from '../core/setup-status.mjs'
 
 const valid = { schemaVersion: 1, completed: false, wechatAgent: {}, sender: {}, tts: {} }
+const validCapability = {
+  schemaVersion: 3, ok: true, mode: 'read-only', writeMode: 'READ_ONLY',
+  observedAt: '2026-10-25T00:00:00.000Z',
+  components: [{ id: 'core', status: 'AVAILABLE' }],
+  sources: [{ id: 'core', surfaces: [{ id: 'paths' }] }],
+  summary: { surfaceCount: 1 },
+}
 
 test('No-Core is a behavior, not a source-string claim', async () => {
   const result = await readBridgeSetupStatus(null)
@@ -49,4 +56,29 @@ test('scan gate marks an older request stale and keeps the newest current', () =
   const third = gate.begin()
   assert.equal(gate.isCurrent(second), false)
   assert.equal(gate.isCurrent(third), true)
+})
+
+test('capability snapshot requires schema v3 and fails closed on older data', async () => {
+  const ok = await readBridgeCapabilitySnapshot({ getCapabilities: async () => validCapability })
+  assert.equal(ok.available, true)
+  assert.equal(ok.data.schemaVersion, 3)
+
+  const old = await readBridgeCapabilitySnapshot({ getCapabilities: async () => ({ ...validCapability, schemaVersion: 2 }) })
+  assert.equal(old.available, false)
+  assert.equal(old.reason, 'core_invalid_response')
+
+  const missing = await readBridgeCapabilitySnapshot({})
+  assert.equal(missing.available, false)
+  assert.equal(missing.reason, 'core_not_connected')
+})
+
+test('capability snapshot times out and never accepts a late value', async () => {
+  let resolve
+  const pending = new Promise((r) => { resolve = r })
+  const result = await readBridgeCapabilitySnapshot({ getCapabilities: () => pending }, { timeoutMs: 25 })
+  assert.equal(result.available, false)
+  assert.equal(result.reason, 'core_timeout')
+  resolve(validCapability)
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(result.reason, 'core_timeout')
 })

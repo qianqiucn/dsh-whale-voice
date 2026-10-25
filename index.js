@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { createDetector, components } from './core/detect.mjs'
+import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilities.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -42,6 +43,8 @@ export function bridgeScript(token) {
     getConfig: () => call('/config'),
     getConfigSources: () => call('/config/sources'),
     getConfigStatus: () => call('/config/status'),
+    getCapabilities: () => call('/capabilities'),
+    getCapabilityStatus: () => call('/capabilities/status'),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -102,6 +105,14 @@ export function installHostBridge(scope, options = {}) {
   route(PREFIX + '/config', async (req, res) => send(res, 200, await detector.getConfigSnapshot()))
   route(PREFIX + '/config/sources', async (req, res) => send(res, 200, await detector.getConfigSources()))
   route(PREFIX + '/config/status', async (req, res) => send(res, 200, await detector.getConfigStatus()))
+  route(PREFIX + '/capabilities', async (req, res) => {
+    const detected = await detector.detectAll()
+    return send(res, 200, buildCapabilitySnapshot({ detected }))
+  })
+  route(PREFIX + '/capabilities/status', async (req, res) => {
+    const detected = await detector.detectAll()
+    return send(res, 200, buildCapabilityStatus(buildCapabilitySnapshot({ detected })))
+  })
   route(PREFIX + '/detect', async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const component = url.searchParams.get('component') || ''

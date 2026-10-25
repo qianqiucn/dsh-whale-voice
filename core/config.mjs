@@ -252,6 +252,15 @@ export function readConfigSnapshot(options = {}) {
       'mode', 'autoFindWindow', 'autoOpenChat', 'autoRestoreMinimized', 'pauseWhenFullscreen',
     ]),
     allowListSource: 'service.config.json allowedChats',
+    automation: serviceResult.ok ? {
+      mode: text(automation.mode),
+      autoFindWindow: bool(automation.autoFindWindow),
+      autoOpenChat: bool(automation.autoOpenChat),
+      autoRestoreMinimized: bool(automation.autoRestoreMinimized),
+      pauseWhenFullscreen: bool(automation.pauseWhenFullscreen),
+      focusFailure: text(automation.focusFailure),
+      source: 'service.config.json#automation',
+    } : null,
   }
 
   const permissions = {

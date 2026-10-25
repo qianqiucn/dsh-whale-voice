@@ -314,3 +314,31 @@ starting 4B-2B-2 with a write control before the capability/status contract exis
 **Related:** [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md),
 [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md), [CONFIG_SOURCES.md](CONFIG_SOURCES.md),
 [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-016 — Capability Schema v3 is Surface-level and strictly read-only
+
+**Status:** `ACCEPTED`
+**Date:** 2026-10-25
+**Decision:** Phase 4B-2B-2a projects the audited component capability as schema v3. `readTiming`,
+`hotReload` and `requiresRestart` are declared **per Surface**; a source cannot override them.
+Sender automation is `RUNTIME_API / FULL / NOT_REQUIRED` with `save.state: SUPPORTED` but
+`authorization: NOT_AUTHORIZED`; Sender TTS is `SERVICE_BOOT / NONE / REQUIRED` with
+`save.state: UNSUPPORTED`. The projection is GET-only, reuses the existing loopback/Origin/Host/
+token/connection guard, exposes no paths/tokens/whitelist names/target map and never enables a write
+control. A detected version different from the audited version downgrades that source's capability to
+`UNKNOWN`; unknown is never treated as unsupported or safe. `APPLIED` remains unreachable without an
+exact loaded revision.
+
+**Reason:** A source-level reload value would incorrectly tell the UI that Sender TTS can be updated
+like automation (or vice versa). Users need to see what supports saving, what is authorized, what is
+currently enabled, and what cannot be confirmed, as separate facts.
+
+**Rejected alternatives:** Keeping reload fields at source level; treating a supported save API as an
+authorization; treating a missing loaded revision as "no save support"; rendering `null` as off/safe;
+adding a write route in a read-only phase; assuming an audited capability for an unaudited version.
+
+**Related:** [CAPABILITY_API.md](CAPABILITY_API.md),
+[PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md),
+[CONFIG_SOURCES.md](CONFIG_SOURCES.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

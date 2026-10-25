@@ -43,6 +43,10 @@ Properties:
   interfaces (read timing, write APIs, revision/apply evidence). It adds no production adapter and
   no write route; it defines the minimal owner-API integration plan. See
   [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
+- Phase 4B-2B-2a adds `core/capabilities.mjs` (schema v3, Surface-level read/hot-reload/restart
+  semantics), `core/capability-view.mjs` (pure UI projection), two read-only Host routes
+  (`/whale-voice/setup/capabilities` and `/capabilities/status`) and frontend status panels. No
+  write route or component control is added. See [CAPABILITY_API.md](CAPABILITY_API.md).
 - No component start/stop, installation, update, driver change, WeChat send or audio generation.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.

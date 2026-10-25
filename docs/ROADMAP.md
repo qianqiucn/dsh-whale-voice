@@ -20,15 +20,16 @@ platform layer, not an optional TTS feature. TTS providers may be swapped freely
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
 **Next development gate:** the read-only PR stack (#3–#8), Phase 4B-1 (#9), Phase R1 (#10/#11),
-Phase 4B-2A (#12) and the Phase 4B-2A handoff (#13) are integrated into `main` with merge commits;
-current `main` is `e0ce035`. Phase 4B-1 and Phase 4B-2A remain `OFFLINE` (isolated store/coordination;
-test-only APIs; no production route). Phase 4B-2B-1 completed the **read-only capability audit**:
-Bridge has no write API, Sender has an automation `PUT` but **no Core write authorization**, Sender
-TTS has no update API, WeChatAgent permissions are console-only, and no component exposes a loaded
-config revision. The next step is **Phase 4B-2B-2** (frontend capability/status projection;
-**NOT STARTED**), followed by a separately authorized production-write phase. Production config
-writes require separate authorization; Voice Sender final independent safety verification remains
-required before real sending. See [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
+Phase 4B-2A (#12), the 4B-2A handoff (#13) and the 4B-2B-1 audit (#14) are integrated into `main` with
+merge commits; current `main` is `9318686`. Phase 4B-1 and Phase 4B-2A remain `OFFLINE` (isolated
+store/coordination; test-only APIs; no production route). Phase 4B-2B-1 completed the read-only audit
+and Phase 4B-2B-2a now exposes the **read-only capability/status projection** (`OFFLINE`): schema v3
+surface-level reload semantics, Host GET routes and isolated frontend visualization. The next step is
+**Phase 4B-2B-2b** (Sender automation write; **NOT STARTED**) after separate production-write
+authorization. Production config writes require separate authorization; Voice Sender final
+independent safety verification remains required before real sending. See
+[CAPABILITY_API.md](CAPABILITY_API.md) and
+[PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
 
 ---
 
@@ -105,10 +106,12 @@ remains **`OFFLINE`**: trusted sandbox capability, strict schema, v0→v1 migrat
 test-only API. Phase 4B-2A is **`OFFLINE`** and merged via PR #12: isolated source adapters, change
 plan, journal/recovery, save/apply split and Fake Runtime; no production adapter. Phase 4B-2B-1 is
 **AUDIT COMPLETE / `OFFLINE`**: real read timing, write interfaces, revision/apply evidence and
-blockers are documented in [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md). Phase R1
-is **COMPLETE** (PR #10/#11, `main` `8abf031`). Production write, multi-file transaction, cross-process
-CAS and runtime apply remain `PLANNED`; no production write exists. Phase 4B-2B-2 is **NOT STARTED**.
-Live No-Core/timeout/invalid-schema/stale injections remain `OFFLINE` tests.
+blockers are documented in [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md). Phase
+4B-2B-2a is **`OFFLINE`**: schema v3 surface-level capability/status projection, Host GET routes and
+isolated frontend visualization; live Host reload pending. Phase R1 is **COMPLETE** (PR #10/#11,
+`main` `8abf031`). Production write, multi-file transaction, cross-process CAS and runtime apply remain
+`PLANNED`; no production write exists. Phase 4B-2B-2b is **NOT STARTED**. Live No-Core/timeout/
+invalid-schema/stale injections remain `OFFLINE` tests.
 
 ---
 
@@ -323,8 +326,8 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 161 Node tests. PR #3–#13 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 171 Node tests. PR #3–#14 are integrated into `main`; Phase 4B-1
 is merged but remains `OFFLINE`; Phase 4B-2A coordination is merged and `OFFLINE`; Phase 4B-2B-1
-capability audit is complete and `OFFLINE`; Phase R1 is **COMPLETE**. The clean development baseline
-is post-integration `main` (`e0ce035`, then the 4B-2B-1 PR). No release, no public visibility and no
-release artifact yet.
+capability audit is complete and `OFFLINE`; Phase 4B-2B-2a read-only capability/status projection is
+`OFFLINE`; Phase R1 is **COMPLETE**. The clean development baseline is post-integration `main`
+(`9318686`, then the 4B-2B-2a PR). No release, no public visibility and no release artifact yet.

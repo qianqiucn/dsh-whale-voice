@@ -375,7 +375,7 @@ function SetupWizard({ open, status, onClose, onRefresh, onNotify, onGoPermissio
     data && demo ? h('div', { className: 'wv-setup-demo-strip' }, h(Icon, { name: 'info', size: 13 }), h('span', null, '当前为演示数据，不会读取真实环境、安装组件或调用微信 / TTS。')) : null)
 }
 
-function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvanced, onNotify }) {
+function ComponentsDialog({ open, status, capability, onClose, onRefresh, onSetup, onAdvanced, onNotify }) {
   if (!open) return null
   const data = status && status.available && status.data && status.data.demo !== true ? status.data : null
   const view = data ? deriveSetupView(data) : null
@@ -394,6 +394,7 @@ function ComponentsDialog({ open, status, onClose, onRefresh, onSetup, onAdvance
   },
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, 'Whale Voice Core 未连接'), h('p', null, '无法读取真实组件状态。当前不会把 Mock 显示成在线。'))) : null,
     data ? h(ConfigReadout, { setup: status }) : null,
+    h(CapabilityPanel, { capability, detailed: false, title: '能力、授权与阻塞原因', desc: '来自只读能力接口；显示每个配置面是否有接口、是否授权、是否可确认生效。' }),
     h('div', { className: 'wv-component-list' }, rows.map((r) => h('div', { className: 'wv-component-row', key: r.name },
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),
       h('span', { className: 'wv-component-detail' }, r.detail),

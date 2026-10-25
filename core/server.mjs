@@ -12,6 +12,7 @@
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { createDetector, components } from './detect.mjs'
+import { buildCapabilitySnapshot, buildCapabilityStatus } from './capabilities.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './request-guards.mjs'
 
 function send(res, status, body) {
@@ -54,6 +55,14 @@ export function createCoreServer(options = {}) {
       }
       if (url.pathname === '/setup/config/status') {
         return send(res, 200, await detector.getConfigStatus())
+      }
+      if (url.pathname === '/setup/capabilities') {
+        const detected = await detector.detectAll()
+        return send(res, 200, buildCapabilitySnapshot({ detected }))
+      }
+      if (url.pathname === '/setup/capabilities/status') {
+        const detected = await detector.detectAll()
+        return send(res, 200, buildCapabilityStatus(buildCapabilitySnapshot({ detected })))
       }
       if (url.pathname === '/setup/detect') {
         const component = url.searchParams.get('component') || ''

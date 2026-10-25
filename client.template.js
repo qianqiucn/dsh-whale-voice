@@ -456,6 +456,7 @@ window.__ModuleLoader__.load({
       const [confirmReset, setConfirmReset] = React.useState(false)
       const [toast, setToast] = React.useState(null)
       const [setup, setSetup] = React.useState({ checking: true, available: false, reason: '', data: null })
+      const [capability, setCapability] = React.useState({ checking: true, available: false, reason: '', data: null })
       const [setupOpen, setSetupOpen] = React.useState(false)
       const [componentsOpen, setComponentsOpen] = React.useState(false)
       const autoSetupOpened = React.useRef(false)
@@ -466,9 +467,11 @@ window.__ModuleLoader__.load({
       const refreshSetup = async () => {
         const seq = setupScanGate.current.begin()
         setSetup((s) => ({ ...s, checking: true }))
-        const next = await readSetupStatus()
+        setCapability((c) => ({ ...c, checking: true }))
+        const [next, nextCapability] = await Promise.all([readSetupStatus(), readSetupCapabilities()])
         if (!setupScanGate.current.isCurrent(seq)) return next
         setSetup(next)
+        setCapability(nextCapability)
         if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
           autoSetupOpened.current = true
           setSetupOpen(true)
@@ -479,9 +482,10 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         let alive = true
         const seq = setupScanGate.current.begin()
-        readSetupStatus().then((next) => {
+        Promise.all([readSetupStatus(), readSetupCapabilities()]).then(([next, nextCapability]) => {
           if (!alive || !setupScanGate.current.isCurrent(seq)) return
           setSetup(next)
+          setCapability(nextCapability)
           if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
             autoSetupOpened.current = true
             setSetupOpen(true)
@@ -526,15 +530,15 @@ window.__ModuleLoader__.load({
       }
 
       let body = null
-      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
-      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup })
-      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup })
-      else if (page === 'safety') body = h(SafetyPage, { settings, setup })
-      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup })
+      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup, capability })
+      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup, capability })
+      else if (page === 'safety') body = h(SafetyPage, { settings, setup, capability })
+      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup, capability })
       else if (page === 'emotions') body = h(EmotionsPage, { emotion, setEmotion, notify })
       else if (page === 'activity') body = h(ActivityPage, { notify, openActivity: setActivityDetail })
-      else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
-      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
 
       return h('div', { ref: rootRef, className: 'wv-root', 'data-layout': layout },
         h('div', { className: 'wv-aurora', 'aria-hidden': true }),
@@ -558,7 +562,7 @@ window.__ModuleLoader__.load({
           onGoPermissions: () => { setSetupOpen(false); setPage('permissions') },
         }) : null,
         componentsOpen ? h(ComponentsDialog, {
-          open: true, status: setup, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
+          open: true, status: setup, capability, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
           onSetup: () => { setComponentsOpen(false); setSetupOpen(true) },
           onAdvanced: () => { setComponentsOpen(false); setPage('advanced') }, onNotify: notify,
         }) : null,

@@ -4,14 +4,15 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-25
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#13 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`** (isolated source adapters, journal and Fake Runtime; no production write); **Phase 4B-2B-1 component capability audit is `AUDIT COMPLETE` / `OFFLINE`** (read-only; no production write, no loaded-revision interface found); **Phase R1 `COMPLETE`**; 161 Node (160 pass, 1 skip) + 12 UI checks green; **Phase 4B-2B-2 NOT STARTED**
-**Latest associated commit:** `main` `e0ce03502d79e57ec1caacd45c9fdc9ad244f265` (merge of PR #13); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#14 — docs(core): Phase 4B-2B-1 component capability audit](https://github.com/qianqiucn/dsh-whale-voice/pull/14) — **OPEN**, not merged. Latest merged PR: #13 (Phase 4B-2A handoff).
-**Acceptance caveat:** 160/161 Node (1 platform skip) and 12/12 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A and 4B-2B-1 remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`.
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#14 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `OFFLINE`** (schema v3, Host GET routes and frontend visualization; no write route); **Phase R1 `COMPLETE`**; 171 Node (170 pass, 1 skip) + 19 UI checks green; **Phase 4B-2B-2b NOT STARTED**
+**Latest associated commit:** `main` `9318686141942427cf54dc6daf404fe611869228` (merge of PR #14); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
+**Latest PR:** [#14 — docs(core): Phase 4B-2B-1 component capability audit](https://github.com/qianqiucn/dsh-whale-voice/pull/14) — **merged with a Merge Commit**. Phase 4B-2B-2a PR pending.
+**Acceptance caveat:** 170/171 Node (1 platform skip) and 19/19 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`. The new capability routes are registered in source but the running DSH Host has not been reloaded.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
-**Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **PR #14 open**, not merged.
-**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13, all merged with merge commits; #10/#11 completed R1 audit/status; #12 added the Phase 4B-2A coordination protocol; #13 recorded the Phase 4B-2A handoff baseline.
+**Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **merged via PR #14**, not deleted.
+**Phase 4B-2B-2a branch:** `feature/phase4b2b2a-capability-status` — schema v3 capability projection, Host GET routes and frontend read-only visualization; independent PR pending.
+**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13 → #14, all merged with merge commits; #10/#11 completed R1 audit/status; #12 added the Phase 4B-2A coordination protocol; #13 recorded the handoff; #14 added the capability audit and schema v2 fixtures.
 
 ---
 
@@ -157,22 +158,32 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       proven atomicity), minimal owner-API architecture and Phase 4B-2B-2 interface. See
       [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md). Adds 12 fixture-only tests
       (5 capability + 7 schema); no production write, service operation or audio change.
+- [x] Phase 4B-2B-2a read-only capability/status projection **OFFLINE**: schema v3 moves
+      `readTiming`/`hotReload`/`requiresRestart` to each Surface; `core/capabilities.mjs` joins the
+      audited contract with `core/detect.mjs` + `core/config.mjs`; `core/capability-view.mjs` derives
+      natural-language UI states; Host/Core gain GET `/capabilities` and `/capabilities/status` with
+      the existing token/origin/loopback/connection guard; Overview, Voice Settings, Permissions,
+      Studio, Send & Safety, Components and Advanced show real support/authorization/apply limits.
+      No write route, no service control, no private targets. See
+      [CAPABILITY_API.md](CAPABILITY_API.md). Adds 8 capability tests, 2 reader tests and 7 UI checks;
+      171 Node / 19 UI checks pass locally.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] No active production implementation. Phase 4B-1, 4B-2A and 4B-2B-1 are `OFFLINE`; Phase 4B-2B-2
-      is **NOT STARTED**.
+- [ ] No active production implementation. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a are `OFFLINE`;
+      Phase 4B-2B-2b (write) is **NOT STARTED**.
 
 ## Next highest-priority task
 
-**Next: Phase 4B-2B-2 — read-only capability/status projection** (**NOT STARTED**; requires a
-separate authorization). Start with the read-only capability/status contract and isolated frontend
-view; do not add a write control until the owning component exposes a supported API and a loaded
-revision. The audit found no such interface today, so production writes remain blocked. Do not write
-production configuration, restart services or send real messages before explicit authorization.
-Voice Sender's final independent safety verification remains mandatory before real sending.
+**Next: Phase 4B-2B-2b — Sender automation write** (**NOT STARTED**; requires separate production
+write authorization). It may use only the audited `PUT /v1/automation/config`, must keep
+`save.enabled=false` until authorization is explicit, must not claim `APPLIED` without a loaded
+revision, and must never write Worker `voice_enabled`, Bridge settings or WeChatAgent permissions.
+Do not write production configuration, restart services or send real messages before that
+authorization. Voice Sender's final independent safety verification remains mandatory before real
+sending.
 
 ## Pending
 
@@ -219,6 +230,9 @@ Voice Sender's final independent safety verification remains mandatory before re
     production writes remain blocked.
 11. WeChatAgent has three config writers (console CAS, CLI prepare, account switch) with no shared
     lock, and mixed hot/boot readers; Core must not write its config. See the capability audit.
+12. Phase 4B-2B-2a code, Host routes and isolated UI are implemented, but the running DSH Host has
+    not been reloaded; live Electron GUI integration is pending separate authorization. Isolated
+    Playwright passing is not real Host acceptance.
 
 ## Verification evidence
 
@@ -233,7 +247,7 @@ Voice Sender's final independent safety verification remains mandatory before re
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 161 tests: 160 pass, 1 platform skip, including 49 Phase 4B-2A coordination, 5 capability and 7 capability-schema tests |
+| `node --test` | 171 tests: 170 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 8 capability projection and 2 capability-reader tests |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -246,18 +260,21 @@ Voice Sender's final independent safety verification remains mandatory before re
 | Config snapshot | Bridge voice false; Worker safety permit true (separate layers, not MISMATCH); TTS qwen-local/whale-v1 saved; permissions 2 private/1 group, details false; sender config 0.1.0 offline; active revision null |
 | WeChatAgent Adapter | read-only evidence implemented; event/identity adapter remains planned |
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
-| Core setup API | read-only status/detect/config routes are live (401 without token); Phase 4B-1 adds an isolated test-only write store/API; no production write/apply route |
+| Core setup API | read-only status/detect/config routes are live (401 without token); Phase 4B-2B-2a adds read-only `/capabilities` and `/capabilities/status` in source; Phase 4B-1 adds an isolated test-only write store/API; no production write/apply route |
 | Phase 4B-1 isolated write | merged via PR #9 (`97e96b5`); `OFFLINE`; trusted sandbox capability, strict v1 schema, v0 migration, HMAC revision, expectedRevision conflict, single-file atomic save/rollback, read/write state separation; no WeChatAgent/Sender/Qwen/core.json write |
 | Phase 4B-2A coordination | `OFFLINE`; isolated in-memory source adapters, change plan, journal/recovery, save/apply split and Fake Runtime; no production adapter/route/reload/send |
 | Phase 4B-2A test suite | 49 behavior tests: plan/schema/revision/concurrency, partial save/rollback, journal failure/recovery, PENDING/APPLIED/PARTIAL/UNKNOWN, sensitive output, Worker/permission and Host isolation |
 | Phase 4B-2B-1 capability audit | read-only; verified Bridge per-call hot-read/no writer/no revision; Sender boot-read + automation owner PUT (no Core write authorization, plain full-file write, no revision); WeChatAgent console revision vs CLI/account-switch writers, mixed hot/boot readers, no loaded revision; owner API / authorization / enablement / save / apply kept separate; see [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md) |
 | Phase 4B-2B-1 capability tests | 5 fixture-only tests: no loaded revision → PENDING_APPLY; mismatch → UNKNOWN; exact revision after restart → APPLIED; revision-guarded save is CAS; no secret/target echo |
 | Phase 4B-2B-1 schema tests | 7 fixture-only tests: Sender automation save supported but unauthorized; Sender TTS unsupported; read timing vs hot reload vs human console; UNKNOWN≠null/UNSUPPORTED/NOT_AUTHORIZED; null status rejected; writeEnabled derivation; summary separation |
+| Phase 4B-2B-2a capability projection | `core/capabilities.mjs` v3: surface-level readTiming/hotReload/requiresRestart; automation RUNTIME_API/FULL/NOT_REQUIRED vs TTS SERVICE_BOOT/NONE/REQUIRED; version gating CHANGED/UNKNOWN downgrades to unknown; no I/O |
+| Phase 4B-2B-2a Host API | GET `/whale-voice/setup/capabilities` and `/capabilities/status`; existing token/origin/loopback/connection guard; 401/405/cross-site tests; no write route |
+| Phase 4B-2B-2a UI | Overview capability summary; Bridge/TTS/automation/Worker/WeChat surfaces on Settings/Studio/Safety/Permissions; Components dialog blockers; Advanced technical details; no enabled write control |
 | Windows lock probe (local) | `fs.open(...,'wx')` exclusive create, `EEXIST` on second create, `process.kill(pid,0)` live/`ESRCH`, `rename` replaces the name only; no atomicity or power-loss durability claim; advisory only, no production file touched |
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
-| `npm.cmd run test:ui` | 12/12 isolated Playwright checks: real-config readout, navigation including Send & Safety, wizard, No-Core/invalid/timeout, dialogs, glass/rounded, 780px, Console/requests |
+| `npm.cmd run test:ui` | 19/19 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
 | DSH Electron Inspector | native Inspector is slot/service metadata only; no DOM/a11y/CSS/Console/CDP; Level 2 `BLOCKED`; no debug port or production page read |

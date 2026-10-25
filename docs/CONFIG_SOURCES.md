@@ -192,3 +192,22 @@ interfaces behind these files:
   evidence.
 - **No component exposes a loaded config revision.** Field-equality observations (`/health`,
   `GET /v1/automation/config`) are not an apply proof; see the audit's confirmation matrix.
+
+## Phase 4B-2B-2a read-only capability projection
+
+`core/capabilities.mjs` joins this source inventory with the Phase 4B-2B-1 audit contract. It does not
+add a new configuration source and does not write any file:
+
+- versions come from the existing detector; a version different from the audited one (or unreadable)
+  downgrades that component's capability to `UNKNOWN`;
+- saved values remain allow-listed (`voice`, `tts`, `permissions` counts, Worker permit, sanitized
+  Sender automation fields); no path, Token, whitelist name or target map is exposed;
+- `sender.automation` (mode and boolean automation flags) is now included in the read-only config
+  snapshot so the automation Surface can show its saved value without reading `service.config.json`
+  independently;
+- `readTiming`, `hotReload` and `requiresRestart` are Surface-level; Sender automation
+  (`RUNTIME_API/FULL/NOT_REQUIRED`) and Sender TTS (`SERVICE_BOOT/NONE/REQUIRED`) are never collapsed;
+- no component loaded revision exists, so `apply` stays unsupported/unknown and no `APPLIED` state is
+  produced.
+
+See [CAPABILITY_API.md](CAPABILITY_API.md).
