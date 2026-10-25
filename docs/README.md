@@ -3,6 +3,14 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
+## Execution plans (new)
+
+- [plans/README.md](plans/README.md) — **Whale Voice / Whale Relay execution plan registry**, ordered task dispatch, status markers and change rules.
+- [plans/CHANGELOG.md](plans/CHANGELOG.md) — dated plan reordering and completion history.
+- [plans/01-gui-coverage-closeout.md](plans/01-gui-coverage-closeout.md) — first task, already sent; subsequent plans are linked from the registry.
+
+The plans are forward-looking, not proof that features are implemented. Read the current Git/PR and acceptance evidence first.
+
 ## Current authority and contracts
 
 Read these first when resuming work:
