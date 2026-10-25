@@ -6,6 +6,12 @@
 >
 > **建立：2026-10-25。** 禁止写入用户凭据、微信身份、私人聊天、联系人、参考音频、桌面截图和生产机器路径。
 
+## 1.7 最新获授权 Seed-VC 可选定位（2026-10-25）
+
+用户授权调整：**RVC 是 Whale Singing 首发唯一优先推进的标准歌声转换路线；Seed-VC 不删除，保留为后续“免训练/零样本试唱”选配。** 其技术卖点是经授权的短参考声无需为专属声线预训练，不意味着模型更小、省显存或 CPU 轻量。官方 44.1 kHz 歌声约 200M 参数，25M Tiny 主要普通语音转换；上游于 2025-11-21 归档，必须固定版本、调查许可、Windows 兼容和维护风险，不可提前承诺资源/音质。官方源：https://github.com/Plachtaa/seed-vc 。
+
+永久规划约束：原 Plan 07-A 优先 RVC + 分离/混音 + 外部 API 许可审计，Seed-VC 仅做最小静态档案；原 Plan 12-A RVC MVP 完成后，才可**另行授权**推进同一编号下的 Plan 12-D Seed-VC 可选试唱；Plan 12-B/C 搜歌与交付不被 12-D 阻塞。Plan 14 的 Singing 首次依赖清单默认 RVC，Seed-VC 不预装、不下载，未验收就显示 NOT_READY；共享 Whale Audio Core 和 Whale Relay 安全边界不变。原 01–14 不重编号；03-B 仍等待 PR #16 的合并授权。详见 Plan 07、12、14、[README](README.md) 和 [双入口首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。本次只允许规划更新，不意味着模型下载、训练、推理、生产配置写入或真实微信发送。
+
 ## 1.6 用户确定共享 Core 更名与两个独立首次使用页面（2026-10-25）
 
 用户明确要求：把语音 Whale Voice 与唱歌 Whale Singing 放进**一个 Core**，给共用 Core 重新命名；两种功能的前端界面单独分开，分别在**首次进入时弹出各自需要安装的依赖清单**。ChatGPT 按此确定对外共享名为 **Whale Audio Core（鲸音核心）**，Voice 与 Singing 是产品子功能/前端两页面而不是两个后端。鲸递 Whale Relay Core 和 WeChatAgent 的独立职责仍保持。
