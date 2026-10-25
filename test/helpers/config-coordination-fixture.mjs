@@ -155,7 +155,12 @@ export function createFixtureSource(id, options = {}) {
     },
     async save({ document: next, expectedRevision }) {
       saves += 1
-      if (saveFailure) throw Object.assign(new Error('fixture save failure'), { code: saveFailure })
+      if (saveFailure) {
+        throw Object.assign(new Error('fixture save failure'), {
+          code: saveFailure,
+          writeOutcome: options.saveFailureOutcome || 'NOT_WRITTEN',
+        })
+      }
       if (expectedRevision !== currentRevision) {
         return { ok: false, error: { code: 'CONFIG_COORDINATION_CONFLICT' } }
       }
@@ -198,16 +203,20 @@ export function createFixtureSource(id, options = {}) {
 
 export function createFakeRuntime(options = {}) {
   const mode = options.mode || 'confirm'
-  const activeRevision = options.activeRevision || 'b'.repeat(32)
+  const otherRevision = options.otherRevision || 'b'.repeat(32)
   let calls = 0
   let dispatchCalls = 0
   return {
-    async apply() {
+    async apply({ savedRevision } = {}) {
       calls += 1
       if (mode === 'throw') throw new Error('fake runtime unavailable')
       if (mode === 'reject') return { ok: false, code: 'RUNTIME_REJECTED' }
       if (mode === 'unknown') return { ok: false, code: 'RUNTIME_UNKNOWN' }
-      return { ok: true, activeRevision }
+      if (mode === 'mismatch') return { ok: true, loadedRevision: otherRevision, activeRevision: otherRevision }
+      if (mode === 'old') return { ok: true, loadedRevision: 'c'.repeat(32), activeRevision: 'c'.repeat(32) }
+      if (mode === 'empty') return { ok: true, loadedRevision: '', activeRevision: '' }
+      if (mode === 'forged') return { ok: true, loadedRevision: 'not-a-revision', activeRevision: 'not-a-revision' }
+      return { ok: true, loadedRevision: savedRevision, activeRevision: savedRevision }
     },
     dispatchVoice() {
       dispatchCalls += 1

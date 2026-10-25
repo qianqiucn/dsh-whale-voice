@@ -348,6 +348,12 @@ Key limits:
 - only isolated in-memory fixture adapters are implemented; production adapters are future work;
 - `bridgeVoice` and `senderService` are the only simulated writable sources;
 - `workerSafety` and `wechatPermissions` are read-only and cannot be expanded by a Bridge plan;
+- plan IDs are random and bound to immutable private snapshots; different values cannot share an
+  executable plan; high-risk confirmation must name the exact plan; plans expire and are consumed;
 - a successful save is `SAVED`/`PENDING_APPLY`, not `APPLIED`;
-- `APPLIED` requires a trusted loaded-revision response from each source's runtime;
-- no PID, file mtime, health 200 or equal content is accepted as apply proof.
+- `APPLIED` requires a trusted loaded revision exactly matching the saved revision; different
+  algorithms need a component-provided verified link, which is not implemented;
+- journal reads revalidate sandbox/directory/file type, size and strict schema; corrupt or oversized
+  journals fail closed;
+- no PID, file mtime, health 200 or equal content is accepted as apply proof;
+- a failed save without a `NOT_WRITTEN` write outcome remains `UNKNOWN`.

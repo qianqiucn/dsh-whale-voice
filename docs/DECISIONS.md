@@ -255,8 +255,12 @@ per-transaction journal and a two-stage save/apply state model. Only `bridgeVoic
 `senderService` are simulated writable sources. `core`, `workerSafety`, `wechatPermissions` and the
 target map are read-only or never read. The coordinator serializes mutations in one instance,
 never writes a production file, never starts/stops/reloads a service and never sends a WeChat task.
-`APPLIED` requires a trusted loaded-revision response from each source runtime; file writes, PID
-liveness, mtime and HTTP 200 are not apply proof.
+Plans use unpredictable IDs bound to an immutable private snapshot; high-risk confirmation names the
+exact plan; plans expire and are consumed after journal creation. `APPLIED` requires each runtime to
+return a loaded revision exactly matching the saved revision; file writes, PID liveness, mtime and
+HTTP 200 are not apply proof. Journals are size-bounded, strict-schema and symlink-checked on read;
+same-path temp+fsync+rename is best-effort, not a Windows power-loss atomicity claim. A failed save
+without a `NOT_WRITTEN` outcome remains `UNKNOWN`, even if earlier steps were rolled back.
 
 **Reason:** The Bridge user switch and Worker final-safety permit are independent safety layers.
 Multi-file configuration cannot be made transactionally safe by pretending independent renames are
@@ -266,8 +270,9 @@ configuration or private target data.
 
 **Rejected alternatives:** Treating Bridge `voice.enabled` and Worker `voice_enabled` as one setting;
 accepting arbitrary paths/URLs/commands from the frontend; writing production files from this phase;
-inferring applied state from process/health evidence; automatic retry of uncertain apply/send;
-putting tokens, full whitelists or private recovery documents into the journal.
+reusing a plan ID for different values; accepting any well-formed runtime revision; inferring applied
+state from process/health evidence; automatic retry of uncertain apply/send; putting tokens, full
+whitelists or private recovery documents into the journal.
 
 **Related:** [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md),
 [CONFIG_SOURCES.md](CONFIG_SOURCES.md), [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md),

@@ -35,7 +35,23 @@ export const COORDINATION_LIMITS = Object.freeze({
   maxPlans: 32,
   maxExpectedRevisionLength: 32,
   maxTransactionIdLength: 64,
+  planTtlMs: 10 * 60 * 1000,
+  maxJournalBytes: 256 * 1024,
 })
+
+const JOURNAL_PHASES = new Set([
+  'SAVING', 'SAVED', 'PENDING_APPLY', 'APPLYING', 'APPLIED', 'PARTIALLY_APPLIED',
+  'FAILED', 'UNKNOWN',
+])
+const STEP_STATUSES = new Set(['PENDING', 'SAVING', 'SAVED', 'FAILED', 'UNKNOWN', 'ROLLED_BACK'])
+const APPLY_STATUSES = new Set(['NOT_REQUESTED', 'NO_RUNTIME_CONFIRMATION', 'APPLIED', 'REJECTED', 'UNKNOWN', 'REVISION_MISMATCH'])
+const JOURNAL_KEYS = new Set([
+  'journalVersion', 'transactionId', 'planId', 'phase', 'committed', 'requiresUserConfirmation',
+  'createdAt', 'updatedAt', 'version', 'errorCode', 'steps',
+])
+const JOURNAL_STEP_KEYS = new Set([
+  'source', 'status', 'expectedRevision', 'savedRevision', 'applyStatus', 'activeRevision', 'errorCode',
+])
 
 const REVISION_PATTERN = /^[a-f0-9]{32}$/
 const TRANSACTION_PATTERN = /^[a-f0-9]{32}$/
@@ -206,9 +222,24 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+function deepFreeze(value) {
+  if (Array.isArray(value)) {
+    value.forEach(deepFreeze)
+    return Object.freeze(value)
+  }
+  if (value && typeof value === 'object') {
+    for (const key of Object.keys(value)) deepFreeze(value[key])
+    return Object.freeze(value)
+  }
+  return value
+}
+
 function nowIso(now) {
   if (now instanceof Date) return now.toISOString()
-  if (typeof now === 'function') return new Date(now()).toISOString()
+  if (typeof now === 'function') {
+    const value = now()
+    return new Date(value instanceof Date ? value.getTime() : value).toISOString()
+  }
   return new Date().toISOString()
 }
 
@@ -216,16 +247,18 @@ function digest(value) {
   return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex')
 }
 
-function planIdFor(entries) {
+function planIntegrity(planId, prepared) {
   return digest({
-    schemaVersion: COORDINATION_SCHEMA_VERSION,
-    sources: entries.map((entry) => ({
-      source: entry.source,
-      expectedRevision: entry.expectedRevision,
-      currentRevision: entry.currentRevision,
-      fields: entry.fields,
+    planId,
+    sources: prepared.map((item) => ({
+      source: item.source,
+      expectedRevision: item.expectedRevision,
+      currentRevision: item.currentRevision,
+      fields: item.fields,
+      document: item.document,
+      previousDocument: item.previousDocument,
     })),
-  }).slice(0, 32)
+  })
 }
 
 function publicSourceDefinition(definition) {
@@ -288,6 +321,35 @@ function journalPublic(record) {
   }
 }
 
+function validJournalRecord(record, transactionId) {
+  if (!isObject(record)) return false
+  if (Object.keys(record).some((key) => !JOURNAL_KEYS.has(key))) return false
+  if (record.journalVersion !== COORDINATION_JOURNAL_VERSION) return false
+  if (record.transactionId !== transactionId) return false
+  if (typeof record.planId !== 'string' || !REVISION_PATTERN.test(record.planId)) return false
+  if (!JOURNAL_PHASES.has(record.phase)) return false
+  if (typeof record.committed !== 'boolean') return false
+  if (typeof record.requiresUserConfirmation !== 'boolean') return false
+  if (typeof record.createdAt !== 'string' || typeof record.updatedAt !== 'string') return false
+  if (!Number.isInteger(record.version) || record.version < 1) return false
+  if (record.errorCode !== null && record.errorCode !== undefined && typeof record.errorCode !== 'string') return false
+  if (!Array.isArray(record.steps) || record.steps.length < 1 || record.steps.length > 3) return false
+  const sources = new Set()
+  for (const step of record.steps) {
+    if (!isObject(step)) return false
+    if (Object.keys(step).some((key) => !JOURNAL_STEP_KEYS.has(key))) return false
+    if (!['bridgeVoice', 'senderService'].includes(step.source) || sources.has(step.source)) return false
+    sources.add(step.source)
+    if (!STEP_STATUSES.has(step.status)) return false
+    if (typeof step.expectedRevision !== 'string' || !REVISION_PATTERN.test(step.expectedRevision)) return false
+    if (step.savedRevision !== null && step.savedRevision !== undefined && (typeof step.savedRevision !== 'string' || !REVISION_PATTERN.test(step.savedRevision))) return false
+    if (!APPLY_STATUSES.has(step.applyStatus || 'NOT_REQUESTED')) return false
+    if (step.activeRevision !== null && step.activeRevision !== undefined && (typeof step.activeRevision !== 'string' || !REVISION_PATTERN.test(step.activeRevision))) return false
+    if (step.errorCode !== null && step.errorCode !== undefined && typeof step.errorCode !== 'string') return false
+  }
+  return true
+}
+
 export function getConfigAuthorityMatrix() {
   return Object.values(SOURCE_DEFINITIONS)
     .sort((a, b) => a.order - b.order)
@@ -316,6 +378,7 @@ export class ConfigCoordinator {
     this._queue = Promise.resolve()
     this._plans = new Map()
     this._plansLimit = options.maxPlans || COORDINATION_LIMITS.maxPlans
+    this.planTtlMs = options.planTtlMs === undefined ? COORDINATION_LIMITS.planTtlMs : Math.max(0, Number(options.planTtlMs) || 0)
     this.journalDir = path.join(this.sandbox.root, JOURNAL_DIR)
     // Reuse ConfigStore's reviewed sandbox/marker/root checks; the anchor is never written.
     this._guard = createConfigStore({ sandbox: this.sandbox, fileName: ANCHOR_FILE })
@@ -339,6 +402,23 @@ export class ConfigCoordinator {
     const run = this._queue.then(work, work)
     this._queue = run.then(() => undefined, () => undefined)
     return run
+  }
+
+  _nowMs() {
+    const value = this.now()
+    const date = value instanceof Date ? value : new Date(value)
+    const ms = date.getTime()
+    return Number.isFinite(ms) ? ms : Date.now()
+  }
+
+  _planState(entry, planId) {
+    if (!entry || entry.planId !== planId) return invalid('CONFIG_COORDINATION_PLAN_UNKNOWN', COORDINATION_STATES.FAILED, 'plan is unknown or expired')
+    if (entry.status !== 'PREPARED') return invalid('CONFIG_COORDINATION_PLAN_CONSUMED', COORDINATION_STATES.CONFLICT, 'plan has already been consumed')
+    if (this._nowMs() > entry.expiresAtMs) return invalid('CONFIG_COORDINATION_PLAN_EXPIRED', COORDINATION_STATES.CONFLICT, 'plan has expired')
+    if (planIntegrity(planId, entry.prepared) !== entry.integrity) {
+      return invalid('CONFIG_COORDINATION_PLAN_INTEGRITY', COORDINATION_STATES.FAILED, 'plan snapshot integrity check failed')
+    }
+    return { ok: true }
   }
 
   _assertSandbox() {
@@ -495,7 +575,11 @@ export class ConfigCoordinator {
         }
       }
 
-      const planId = planIdFor(prepared)
+      const planId = (() => {
+        let candidate
+        do { candidate = randomBytes(16).toString('hex') } while (this._plans.has(candidate))
+        return candidate
+      })()
       const riskOrder = { MEDIUM: 1, HIGH: 2, CRITICAL: 3 }
       const riskLevel = prepared.reduce((highest, item) => (
         (riskOrder[item.definition.risk] || 0) > (riskOrder[highest] || 0) ? item.definition.risk : highest
@@ -503,6 +587,7 @@ export class ConfigCoordinator {
       const requiresUserConfirmation = prepared.some((item) => item.definition.risk === 'HIGH' || item.definition.risk === 'CRITICAL')
       const runtimeConfirmation = prepared.every((item) => item.supportsRuntimeConfirmation)
       const simulationOnly = prepared.every((item) => item.simulatedOnly)
+      const expiresAtMs = this._nowMs() + this.planTtlMs
       const sources = prepared.map((item) => ({
         source: item.source,
         authority: item.definition.authority,
@@ -531,23 +616,42 @@ export class ConfigCoordinator {
         activeConfirmed: false,
         riskLevel,
         requiresUserConfirmation,
+        confirmationPlanId: planId,
+        expiresAt: new Date(expiresAtMs).toISOString(),
         runtimeConfirmation,
         simulationOnly,
         canExecute: simulationOnly,
         sources,
         note: 'Preview is not a save, not runtime application and not permission to enable voice sending.',
       }
-      this._plans.set(planId, { plan, prepared, createdAt: nowIso(this.now) })
+      const frozenPrepared = prepared.map((item) => Object.freeze({
+        ...item,
+        document: deepFreeze(clone(item.document)),
+        previousDocument: deepFreeze(clone(item.previousDocument)),
+        fields: Object.freeze([...item.fields]),
+      }))
+      const frozenPlan = deepFreeze(plan)
+      const integrity = planIntegrity(planId, frozenPrepared)
+      this._plans.set(planId, {
+        planId,
+        plan: frozenPlan,
+        prepared: frozenPrepared,
+        integrity,
+        createdAt: nowIso(this.now),
+        expiresAtMs,
+        status: 'PREPARED',
+      })
       while (this._plans.size > this._plansLimit) {
         this._plans.delete(this._plans.keys().next().value)
       }
-      return { ok: true, plan }
+      return { ok: true, plan: frozenPlan }
     })
   }
 
   async validatePlan(planId) {
     const entry = this._plans.get(planId)
-    if (!entry) return invalid('CONFIG_COORDINATION_PLAN_UNKNOWN', COORDINATION_STATES.FAILED, 'plan is unknown or expired')
+    const state = this._planState(entry, planId)
+    if (!state.ok) return state
     for (const item of entry.prepared) {
       const snapshot = await this._readSource(item.source)
       if (!snapshot.ok) return invalid('CONFIG_COORDINATION_SOURCE_UNAVAILABLE', COORDINATION_STATES.UNKNOWN, 'source is unavailable', { source: item.source })
@@ -569,6 +673,24 @@ export class ConfigCoordinator {
     return path.join(this.journalDir, transactionId + '.json')
   }
 
+  _syncBestEffort(file, directory = false) {
+    try {
+      const fd = this.fs.openSync(file, 'r')
+      try { this.fs.fsyncSync(fd) } finally { this.fs.closeSync(fd) }
+    } catch {
+      // Windows/filesystems may not support fsync on this handle. The journal never claims
+      // power-loss atomicity; this is a best-effort durability boundary.
+    }
+    if (directory) {
+      try {
+        const fd = this.fs.openSync(this.journalDir, 'r')
+        try { this.fs.fsyncSync(fd) } finally { this.fs.closeSync(fd) }
+      } catch {
+        // Directory fsync is not portable, especially on Windows.
+      }
+    }
+  }
+
   _writeJournal(record) {
     this._assertSandbox()
     this.fs.mkdirSync(this.journalDir, { recursive: true, mode: 0o700 })
@@ -586,10 +708,16 @@ export class ConfigCoordinator {
     record.updatedAt = nowIso(this.now)
     record.version = (record.version || 0) + 1
     const target = this._journalPath(record.transactionId)
+    const serialized = JSON.stringify(record)
+    if (Buffer.byteLength(serialized, 'utf8') > COORDINATION_LIMITS.maxJournalBytes) {
+      throw new ConfigCoordinatorError('CONFIG_COORDINATION_JOURNAL_FAILED', 'journal is too large')
+    }
     const temp = target + '.' + randomBytes(8).toString('hex') + '.tmp'
     try {
-      this.fs.writeFileSync(temp, JSON.stringify(record), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      this.fs.writeFileSync(temp, serialized, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      this._syncBestEffort(temp)
       this.fs.renameSync(temp, target)
+      this._syncBestEffort(target, true)
     } catch {
       try { this.fs.rmSync(temp, { force: true }) } catch { /* best effort */ }
       throw new ConfigCoordinatorError('CONFIG_COORDINATION_JOURNAL_FAILED', 'journal write failed')
@@ -598,15 +726,52 @@ export class ConfigCoordinator {
   }
 
   _readJournal(transactionId) {
-    const file = this._journalPath(transactionId)
+    let file
+    try {
+      file = this._journalPath(transactionId)
+    } catch {
+      return { ok: false, code: 'CONFIG_COORDINATION_TRANSACTION_INVALID' }
+    }
+    try {
+      this._assertSandbox()
+    } catch {
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
+    }
+    let dirStat
+    let dirReal
+    try {
+      dirStat = this.fs.lstatSync(this.journalDir)
+      dirReal = this.fs.realpathSync(this.journalDir)
+    } catch {
+      return { ok: false, code: 'CONFIG_COORDINATION_TRANSACTION_UNKNOWN' }
+    }
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory() || !isInside(this.sandbox.root, dirReal)) {
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
+    }
+    let fileStat
+    let fileReal
+    try {
+      fileStat = this.fs.lstatSync(file)
+      fileReal = this.fs.realpathSync(file)
+    } catch {
+      return { ok: false, code: 'CONFIG_COORDINATION_TRANSACTION_UNKNOWN' }
+    }
+    if (fileStat.isSymbolicLink() || !fileStat.isFile() || fileStat.size > COORDINATION_LIMITS.maxJournalBytes) {
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
+    }
+    if (!isInside(dirReal, fileReal)) {
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
+    }
     let record
     try {
       record = JSON.parse(this.fs.readFileSync(file, 'utf8'))
     } catch {
-      return null
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
     }
-    if (!record || record.transactionId !== transactionId || record.journalVersion !== COORDINATION_JOURNAL_VERSION) return null
-    return record
+    if (!validJournalRecord(record, transactionId)) {
+      return { ok: false, code: 'CONFIG_COORDINATION_JOURNAL_INVALID' }
+    }
+    return { ok: true, record }
   }
 
   _failureResult(record, code, message, extra = {}) {
@@ -652,9 +817,12 @@ export class ConfigCoordinator {
   async execute(planId, options = {}) {
     return this._runExclusive(async () => {
       const entry = this._plans.get(planId)
-      if (!entry) return invalid('CONFIG_COORDINATION_PLAN_UNKNOWN', COORDINATION_STATES.FAILED, 'plan is unknown or expired')
-      if (entry.plan.requiresUserConfirmation && options.userConfirmed !== true) {
-        return invalid('CONFIG_COORDINATION_CONFIRMATION_REQUIRED', COORDINATION_STATES.PREPARED, 'explicit user confirmation is required')
+      const state = this._planState(entry, planId)
+      if (!state.ok) return state
+      if (entry.plan.requiresUserConfirmation && (
+        options.userConfirmed !== true || options.confirmedPlanId !== planId
+      )) {
+        return invalid('CONFIG_COORDINATION_CONFIRMATION_REQUIRED', COORDINATION_STATES.PREPARED, 'explicit confirmation must name this exact plan', { planId })
       }
       if (entry.plan.simulationOnly !== true) {
         return invalid('CONFIG_COORDINATION_SIMULATION_ONLY', COORDINATION_STATES.FAILED, 'production execution is not implemented in Phase 4B-2A')
@@ -699,6 +867,7 @@ export class ConfigCoordinator {
       } catch {
         return invalid('CONFIG_COORDINATION_JOURNAL_FAILED', COORDINATION_STATES.FAILED, 'journal could not be created; no source was written')
       }
+      entry.status = 'CONSUMED'
 
       const saved = []
       try {
@@ -707,28 +876,36 @@ export class ConfigCoordinator {
           step.status = 'SAVING'
           this._writeJournal(record)
           let result
+          let saveError = null
           try {
             result = await item.adapter.save({
               document: item.document,
               expectedRevision: item.expectedRevision,
               transactionId,
             })
-          } catch {
+          } catch (error) {
+            saveError = error
             result = { ok: false }
           }
           if (!result || result.ok !== true) {
-            step.status = 'FAILED'
+            const writeOutcome = result?.writeOutcome
+              || result?.error?.writeOutcome
+              || saveError?.writeOutcome
+              || 'UNKNOWN'
+            const definiteNoWrite = writeOutcome === 'NOT_WRITTEN'
+            step.status = definiteNoWrite ? 'FAILED' : 'UNKNOWN'
             step.errorCode = 'CONFIG_COORDINATION_SAVE_FAILED'
-            record.phase = COORDINATION_STATES.FAILED
+            record.phase = definiteNoWrite ? COORDINATION_STATES.FAILED : COORDINATION_STATES.UNKNOWN
             record.errorCode = 'CONFIG_COORDINATION_SAVE_FAILED'
             this._writeJournal(record)
             const rolledBack = await this._rollback(record, saved, transactionId)
-            record.phase = rolledBack ? COORDINATION_STATES.FAILED : COORDINATION_STATES.UNKNOWN
+            record.phase = definiteNoWrite && rolledBack ? COORDINATION_STATES.FAILED : COORDINATION_STATES.UNKNOWN
             record.committed = false
             this._writeJournal(record)
             return this._failureResult(record, 'CONFIG_COORDINATION_SAVE_FAILED', 'a source save failed', {
-              rolledBack,
+              rolledBack: definiteNoWrite && rolledBack,
               source: item.source,
+              writeOutcome,
             })
           }
           step.status = 'SAVED'
@@ -776,8 +953,9 @@ export class ConfigCoordinator {
 
   async apply(transactionId, options = {}) {
     return this._runExclusive(async () => {
-      const record = this._readJournal(transactionId)
-      if (!record) return invalid('CONFIG_COORDINATION_TRANSACTION_UNKNOWN', COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or corrupt')
+      const journal = this._readJournal(transactionId)
+      if (!journal.ok) return invalid(journal.code, COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or invalid')
+      const record = journal.record
       if (options.observedVersion !== undefined && Number(options.observedVersion) !== record.version) {
         return invalid('CONFIG_COORDINATION_STALE_RESULT', COORDINATION_STATES.CONFLICT, 'stale result cannot overwrite the current state', {
           currentVersion: record.version,
@@ -807,6 +985,7 @@ export class ConfigCoordinator {
       this._writeJournal(record)
       const confirmed = []
       const rejected = []
+      const mismatch = []
       const unknown = []
       const noInterface = []
       for (const step of record.steps) {
@@ -834,10 +1013,17 @@ export class ConfigCoordinator {
         } catch {
           result = { ok: false, code: 'RUNTIME_UNKNOWN' }
         }
-        if (result && result.ok === true && REVISION_PATTERN.test(String(result.activeRevision || ''))) {
-          step.applyStatus = 'APPLIED'
-          step.activeRevision = String(result.activeRevision)
-          confirmed.push(step.source)
+        if (result && result.ok === true) {
+          const loadedRevision = result.loadedRevision ?? result.activeRevision
+          if (typeof loadedRevision === 'string' && loadedRevision === step.savedRevision) {
+            step.applyStatus = 'APPLIED'
+            step.activeRevision = loadedRevision
+            confirmed.push(step.source)
+          } else {
+            step.applyStatus = 'REVISION_MISMATCH'
+            step.activeRevision = null
+            mismatch.push(step.source)
+          }
         } else if (result && result.ok === false && result.code === 'RUNTIME_REJECTED') {
           step.applyStatus = 'REJECTED'
           rejected.push(step.source)
@@ -855,8 +1041,9 @@ export class ConfigCoordinator {
         record.errorCode = 'CONFIG_COORDINATION_PARTIAL_APPLY'
       } else if (noInterface.length === record.steps.length) {
         record.phase = COORDINATION_STATES.PENDING_APPLY
-      } else if (unknown.length > 0) {
+      } else if (mismatch.length > 0 || unknown.length > 0) {
         record.phase = COORDINATION_STATES.UNKNOWN
+        if (mismatch.length > 0) record.errorCode = 'CONFIG_COORDINATION_REVISION_MISMATCH'
       } else {
         record.phase = COORDINATION_STATES.FAILED
         record.errorCode = 'CONFIG_COORDINATION_APPLY_REJECTED'
@@ -875,6 +1062,7 @@ export class ConfigCoordinator {
         version: record.version,
         confirmed,
         rejected,
+        mismatch,
         unknown,
         noInterface,
         steps: journalPublic(record).steps,
@@ -886,8 +1074,9 @@ export class ConfigCoordinator {
   }
 
   async recover(transactionId) {
-    const record = this._readJournal(transactionId)
-    if (!record) return invalid('CONFIG_COORDINATION_TRANSACTION_UNKNOWN', COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or corrupt')
+    const journal = this._readJournal(transactionId)
+    if (!journal.ok) return invalid(journal.code, COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or invalid')
+    const record = journal.record
     let state = record.phase
     if (record.phase === COORDINATION_STATES.SAVING || record.phase === COORDINATION_STATES.APPLYING) {
       state = COORDINATION_STATES.UNKNOWN
@@ -909,8 +1098,9 @@ export class ConfigCoordinator {
   }
 
   async getStatus(transactionId, options = {}) {
-    const record = this._readJournal(transactionId)
-    if (!record) return invalid('CONFIG_COORDINATION_TRANSACTION_UNKNOWN', COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or corrupt')
+    const journal = this._readJournal(transactionId)
+    if (!journal.ok) return invalid(journal.code, COORDINATION_STATES.UNKNOWN, 'transaction journal is missing or invalid')
+    const record = journal.record
     if (options.observedVersion !== undefined && Number(options.observedVersion) < record.version) {
       return {
         ok: true,

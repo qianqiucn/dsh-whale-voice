@@ -89,6 +89,7 @@ async function setup(options = {}) {
     document: senderDocument(options.senderDocument),
     supportsRuntimeConfirmation: options.senderConfirm === true,
     saveFailure: options.senderSaveFailure,
+    saveFailureOutcome: options.senderSaveFailureOutcome,
     rollbackFailure: options.senderRollbackFailure,
   })
   const core = options.coreInvalid
@@ -112,6 +113,8 @@ async function setup(options = {}) {
     sources,
     runtime: options.runtime || {},
     fsImpl: options.fsImpl,
+    now: options.now,
+    planTtlMs: options.planTtlMs,
   })
   return { sandbox, bridge, sender, core, worker, permissions, coordinator }
 }
@@ -142,6 +145,7 @@ async function execute(bridge, sender, coordinator, sets, options = {}) {
   assert.equal(prepared.ok, true, JSON.stringify(prepared))
   const result = await coordinator.execute(prepared.plan.planId, {
     userConfirmed: options.userConfirmed === false ? false : true,
+    confirmedPlanId: prepared.plan.planId,
   })
   return { prepared, result }
 }
@@ -214,6 +218,78 @@ test('multi-source preview lists both sources without private values', async () 
   assert.equal(text.includes('fixture-private-target'), false)
 })
 
+test('different values from the same revision get different plan identities and execute their own content', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const planA = await coordinator.prepareChange(changeFor(bridge, sender, { senderService: { tts: { voice: 'voice-a' } } }))
+  const planB = await coordinator.prepareChange(changeFor(bridge, sender, { senderService: { tts: { voice: 'voice-b' } } }))
+  assert.equal(planA.ok, true)
+  assert.equal(planB.ok, true)
+  assert.notEqual(planA.plan.planId, planB.plan.planId)
+  const result = await coordinator.execute(planA.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: planA.plan.planId,
+  })
+  assert.equal(result.state, COORDINATION_STATES.SAVED)
+  assert.equal(sender.document.tts.voice, 'voice-a')
+  const stale = await coordinator.execute(planB.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: planB.plan.planId,
+  })
+  assert.equal(stale.state, COORDINATION_STATES.CONFLICT)
+  assert.equal(sender.document.tts.voice, 'voice-a')
+})
+
+test('user confirmation must name the exact high-risk plan', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
+  const wrong = await coordinator.execute(prepared.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: 'a'.repeat(32),
+  })
+  assert.equal(wrong.ok, false)
+  assert.equal(wrong.error.code, 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED')
+  assert.equal(bridge.saveCount, 0)
+  const correct = await coordinator.execute(prepared.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: prepared.plan.planId,
+  })
+  assert.equal(correct.state, COORDINATION_STATES.SAVED)
+})
+
+test('a consumed plan cannot be executed twice', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
+  const first = await coordinator.execute(prepared.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: prepared.plan.planId,
+  })
+  assert.equal(first.state, COORDINATION_STATES.SAVED)
+  const second = await coordinator.execute(prepared.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: prepared.plan.planId,
+  })
+  assert.equal(second.ok, false)
+  assert.equal(second.error.code, 'CONFIG_COORDINATION_PLAN_CONSUMED')
+  assert.equal(bridge.saveCount, 1)
+})
+
+test('an expired plan cannot be executed', async () => {
+  let clock = Date.UTC(2026, 9, 25, 0, 0, 0)
+  const { bridge, sender, coordinator } = await setup({
+    now: () => new Date(clock),
+    planTtlMs: 10,
+  })
+  const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
+  clock += 20
+  const result = await coordinator.execute(prepared.plan.planId, {
+    userConfirmed: true,
+    confirmedPlanId: prepared.plan.planId,
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.error.code, 'CONFIG_COORDINATION_PLAN_EXPIRED')
+  assert.equal(bridge.saveCount, 0)
+})
+
 test('schema-invalid draft and unknown fields are rejected', async () => {
   const { bridge, sender, coordinator } = await setup()
   const invalid = await coordinator.prepareChange({ schemaVersion: 1, changes: { bridgeVoice: { expectedRevision: bridge.revision, set: { bogus: true } } } })
@@ -240,7 +316,7 @@ test('revision mismatch returns CONFLICT and writes nothing', async () => {
   const { bridge, sender, coordinator } = await setup()
   const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
   bridge.externalWrite(bridgeDocument({ enabled: true }))
-  const result = await coordinator.execute(prepared.plan.planId, { userConfirmed: true })
+  const result = await coordinator.execute(prepared.plan.planId, { userConfirmed: true, confirmedPlanId: prepared.plan.planId })
   assert.equal(result.ok, false)
   assert.equal(result.state, COORDINATION_STATES.CONFLICT)
   assert.equal(result.error.code, 'CONFIG_COORDINATION_CONFLICT')
@@ -297,11 +373,13 @@ test('same-instance concurrent executes serialize to one save and one conflict',
   const { bridge, sender, coordinator } = await setup()
   const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
   const results = await Promise.all([
-    coordinator.execute(prepared.plan.planId, { userConfirmed: true }),
-    coordinator.execute(prepared.plan.planId, { userConfirmed: true }),
+    coordinator.execute(prepared.plan.planId, { userConfirmed: true, confirmedPlanId: prepared.plan.planId }),
+    coordinator.execute(prepared.plan.planId, { userConfirmed: true, confirmedPlanId: prepared.plan.planId }),
   ])
   const states = results.map((result) => result.state).sort()
   assert.deepEqual(states, [COORDINATION_STATES.CONFLICT, COORDINATION_STATES.SAVED])
+  const consumed = results.find((result) => result.state === COORDINATION_STATES.CONFLICT)
+  assert.equal(consumed.error.code, 'CONFIG_COORDINATION_PLAN_CONSUMED')
   assert.equal(bridge.saveCount, 1)
 })
 
@@ -309,7 +387,7 @@ test('external non-cooperating modification after prepare is detected', async ()
   const { bridge, sender, coordinator } = await setup()
   const prepared = await coordinator.prepareChange(changeFor(bridge, sender, { bridgeVoice: { enabled: true } }))
   bridge.externalWrite(bridgeDocument({ enabled: true, defaultVoice: 'external' }))
-  const result = await coordinator.execute(prepared.plan.planId, { userConfirmed: true })
+  const result = await coordinator.execute(prepared.plan.planId, { userConfirmed: true, confirmedPlanId: prepared.plan.planId })
   assert.equal(result.state, COORDINATION_STATES.CONFLICT)
   assert.equal(bridge.saveCount, 0)
 })
@@ -339,6 +417,81 @@ test('unconfirmed rollback is reported as UNKNOWN, never full rollback', async (
   assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
   assert.equal(result.error.rolledBack, false)
   assert.equal(bridge.document.enabled, true)
+})
+
+test('failure with an unconfirmed write outcome stays UNKNOWN even after prior rollback', async () => {
+  const { bridge, sender, coordinator } = await setup({
+    senderSaveFailure: 'EIO',
+    senderSaveFailureOutcome: 'UNKNOWN',
+  })
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
+  assert.equal(result.error.writeOutcome, 'UNKNOWN')
+  assert.equal(result.error.rolledBack, false)
+  assert.equal(bridge.document.enabled, false)
+  assert.equal(bridge.rollbackCount, 1)
+})
+
+test('journal schema tampering is rejected without writes', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+  const journalPath = path.join(coordinator.journalDir, result.transactionId + '.json')
+  const record = JSON.parse(fs.readFileSync(journalPath, 'utf8'))
+  record.extra = 'unexpected'
+  fs.writeFileSync(journalPath, JSON.stringify(record), 'utf8')
+  const status = await coordinator.getStatus(result.transactionId)
+  assert.equal(status.ok, false)
+  assert.equal(status.error.code, 'CONFIG_COORDINATION_JOURNAL_INVALID')
+  const recovered = await coordinator.recover(result.transactionId)
+  assert.equal(recovered.ok, false)
+  assert.equal(recovered.error.code, 'CONFIG_COORDINATION_JOURNAL_INVALID')
+  assert.equal(bridge.saveCount, 1)
+})
+
+test('truncated and oversized journals fail closed', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+  const journalPath = path.join(coordinator.journalDir, result.transactionId + '.json')
+  fs.writeFileSync(journalPath, '{"journalVersion":1', 'utf8')
+  let status = await coordinator.getStatus(result.transactionId)
+  assert.equal(status.error.code, 'CONFIG_COORDINATION_JOURNAL_INVALID')
+  fs.writeFileSync(journalPath, 'x'.repeat(300 * 1024), 'utf8')
+  status = await coordinator.getStatus(result.transactionId)
+  assert.equal(status.error.code, 'CONFIG_COORDINATION_JOURNAL_INVALID')
+  assert.equal(bridge.saveCount, 1)
+})
+
+test('recovery is read-only and repeatable after a saved transaction', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+  const first = await coordinator.recover(result.transactionId)
+  assert.equal(first.state, COORDINATION_STATES.PENDING_APPLY)
+  assert.equal(first.replayed, false)
+  const second = await coordinator.recover(result.transactionId)
+  assert.equal(second.state, COORDINATION_STATES.PENDING_APPLY)
+  assert.equal(bridge.saveCount, 1)
+})
+
+test('journal file symlink replacement is rejected when the host permits symlinks', async (t) => {
+  const { bridge, sender, coordinator, sandbox } = await setup()
+  const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+  const journalPath = path.join(coordinator.journalDir, result.transactionId + '.json')
+  const outside = path.join(sandbox.root, 'journal-outside.json')
+  fs.copyFileSync(journalPath, outside)
+  fs.rmSync(journalPath, { force: true })
+  try {
+    fs.symlinkSync(outside, journalPath)
+  } catch {
+    t.skip('symlink creation is not permitted on this platform')
+    return
+  }
+  const status = await coordinator.getStatus(result.transactionId)
+  assert.equal(status.ok, false)
+  assert.equal(status.error.code, 'CONFIG_COORDINATION_JOURNAL_INVALID')
+  assert.equal(bridge.saveCount, 1)
 })
 
 test('journal failure before any source write leaves both sources untouched', async () => {
@@ -410,8 +563,8 @@ test('manual save state applies as PENDING_APPLY when no runtime confirmation ex
 })
 
 test('Fake Runtime confirmation produces APPLIED only with trusted loaded revisions', async () => {
-  const bridgeRuntime = createFakeRuntime({ activeRevision: 'b'.repeat(32) })
-  const senderRuntime = createFakeRuntime({ activeRevision: 'c'.repeat(32) })
+  const bridgeRuntime = createFakeRuntime()
+  const senderRuntime = createFakeRuntime()
   const { bridge, sender, coordinator } = await setup({
     bridgeConfirm: true,
     senderConfirm: true,
@@ -433,8 +586,64 @@ test('Fake Runtime confirmation produces APPLIED only with trusted loaded revisi
   assert.equal(senderRuntime.dispatchCalls, 0)
 })
 
+test('single-source APPLIED requires the runtime revision to equal the saved revision', async () => {
+  const runtime = createFakeRuntime()
+  const { bridge, sender, coordinator } = await setup({
+    bridgeConfirm: true,
+    runtime: { bridgeVoice: runtime },
+  })
+  const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+  const savedRevision = result.steps[0].savedRevision
+  const applied = await coordinator.apply(result.transactionId, { userConfirmed: true })
+  assert.equal(applied.state, COORDINATION_STATES.APPLIED)
+  assert.equal(applied.activeRevision, savedRevision)
+  assert.equal(applied.activeConfirmed, true)
+  assert.equal(runtime.calls, 1)
+})
+
+test('runtime revision mismatch, old, empty and forged success are not APPLIED', async () => {
+  for (const mode of ['mismatch', 'old', 'empty', 'forged']) {
+    const runtime = createFakeRuntime({ mode })
+    const { bridge, sender, coordinator } = await setup({
+      bridgeConfirm: true,
+      runtime: { bridgeVoice: runtime },
+    })
+    const { result } = await execute(bridge, sender, coordinator, { bridgeVoice: { enabled: true } })
+    const applied = await coordinator.apply(result.transactionId, { userConfirmed: true })
+    assert.equal(applied.state, COORDINATION_STATES.UNKNOWN, mode)
+    assert.equal(applied.activeConfirmed, false, mode)
+    assert.equal(applied.activeRevision, null, mode)
+    assert.deepEqual(applied.mismatch, ['bridgeVoice'], mode)
+    assert.equal(applied.steps[0].applyStatus, 'REVISION_MISMATCH', mode)
+    assert.equal(applied.steps[0].activeRevision, null, mode)
+    const again = await coordinator.apply(result.transactionId, { userConfirmed: true })
+    assert.equal(again.state, COORDINATION_STATES.UNKNOWN, mode)
+    assert.equal(runtime.calls, 1, mode)
+  }
+})
+
+test('one exact confirmation and one mismatch is PARTIALLY_APPLIED, not APPLIED', async () => {
+  const bridgeRuntime = createFakeRuntime()
+  const senderRuntime = createFakeRuntime({ mode: 'mismatch' })
+  const { bridge, sender, coordinator } = await setup({
+    bridgeConfirm: true,
+    senderConfirm: true,
+    runtime: { bridgeVoice: bridgeRuntime, senderService: senderRuntime },
+  })
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  const applied = await coordinator.apply(result.transactionId, { userConfirmed: true })
+  assert.equal(applied.state, COORDINATION_STATES.PARTIALLY_APPLIED)
+  assert.equal(applied.activeConfirmed, false)
+  assert.deepEqual(applied.confirmed, ['bridgeVoice'])
+  assert.deepEqual(applied.mismatch, ['senderService'])
+  assert.equal(applied.activeRevision, null)
+})
+
 test('partial runtime confirmation is PARTIALLY_APPLIED and is not retried', async () => {
-  const bridgeRuntime = createFakeRuntime({ activeRevision: 'b'.repeat(32) })
+  const bridgeRuntime = createFakeRuntime()
   const senderRuntime = createFakeRuntime({ mode: 'reject' })
   const { bridge, sender, coordinator } = await setup({
     bridgeConfirm: true,
@@ -540,7 +749,7 @@ test('stale status observer and stale apply result cannot overwrite newer state'
 })
 
 test('terminal APPLIED apply is idempotent and does not retry runtime', async () => {
-  const bridgeRuntime = createFakeRuntime({ activeRevision: 'b'.repeat(32) })
+  const bridgeRuntime = createFakeRuntime()
   const { bridge, sender, coordinator } = await setup({
     bridgeConfirm: true,
     runtime: { bridgeVoice: bridgeRuntime },

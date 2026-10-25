@@ -52,7 +52,7 @@ entry point.
 | `getBaseline()` | Read allow-listed display fields and opaque revisions; no target IDs/tokens |
 | `prepareChange(draft)` | Validate sources and revisions, return a safe change plan |
 | `validatePlan(planId)` | Re-read revisions without writing |
-| `execute(planId, {userConfirmed})` | Save the prepared sources in order; journal each step |
+| `execute(planId, {userConfirmed, confirmedPlanId})` | Save the prepared sources in order; journal each step |
 | `apply(transactionId, {userConfirmed, observedVersion?})` | Call only trusted runtime confirmation interfaces |
 | `recover(transactionId)` | Read-only recovery classification; never repeats saves/applies |
 | `getStatus(transactionId, {observedVersion?})` | Read current state; stale observers are ignored |
@@ -97,7 +97,19 @@ names, opaque revisions, risk and dependencies, but no full config, target names
 - whether explicit user confirmation is required.
 
 A preview is **not** a save, **not** runtime application and **not** permission to enable voice.
-Execution requires `userConfirmed: true` when the plan is high risk.
+Execution requires `userConfirmed: true` **and** `confirmedPlanId` equal to the exact plan when the
+plan is high risk.
+
+Each `prepareChange()` gets an unpredictable, random plan ID. The ID is not derived from the new
+values and does not leak them; the server keeps an immutable private snapshot of the validated draft,
+the candidate documents and the source revisions. Two plans with the same current revision and field
+names but different values (for example `voice-a` and `voice-b`) therefore have different identities
+and cannot overwrite each other's executable snapshot. Plans expire after the configured TTL
+(default 10 minutes) and are marked consumed once a journal is created; consumed or expired plans
+cannot be executed again.
+
+A plan confirmation is scoped to one exact plan ID. A shared flag, generic "confirm" action or another
+plan's ID must not authorize a different high-risk change.
 
 ---
 
@@ -113,8 +125,8 @@ The coordinator distinguishes save and apply states:
 | `SAVED` | All source saves completed and the journal is committed |
 | `PENDING_APPLY` | Saved, but no trusted runtime confirmation yet |
 | `APPLYING` | Runtime confirmation calls are in progress |
-| `APPLIED` | Every source returned a trusted loaded revision |
-| `PARTIALLY_APPLIED` | Some sources confirmed; others rejected/unknown; no automatic retry |
+| `APPLIED` | Every source returned a loaded revision exactly matching its saved revision |
+| `PARTIALLY_APPLIED` | Some sources exactly confirmed; others rejected/mismatched/unknown; no automatic retry |
 | `CONFLICT` | Expected revision changed; no write |
 | `FAILED` | Validation/save failed; reversible steps may have been rolled back |
 | `UNKNOWN` | Result cannot be confirmed; do not infer success or retry blindly |
@@ -124,7 +136,19 @@ For multi-source apply, per-source `activeRevision` evidence is returned; there 
 revision. `activeConfirmed` is true only for `APPLIED`.
 
 No PID, process liveness, file mtime, HTTP 200, health check or equal file contents can establish
-`APPLIED`. Only an explicit trusted runtime confirmation carrying a loaded revision/version can.
+`APPLIED`. The runtime evidence contract is:
+
+```js
+{
+  ok: true,
+  loadedRevision: '<must equal the savedRevision supplied to apply>'
+}
+```
+
+A different algorithm is accepted only through a trusted component interface that proves the loaded
+revision corresponds to this saved revision; no such interface is implemented in Phase 4B-2A. A
+mismatched, older, empty or forged revision returns `UNKNOWN`/`REVISION_MISMATCH`, never `APPLIED`.
+A saved revision is never matched against an arbitrary well-formed 32-hex value.
 
 ---
 
@@ -148,6 +172,16 @@ It does **not** record source config documents, target IDs, tokens, allowed list
 If recovery needs previous documents, they must be kept in a separate restricted private recovery
 store; Phase 4B-2A deliberately does not put them in the journal.
 
+Reads revalidate the trusted sandbox, journal directory realpath/type and a bounded file size before
+parsing. The journal schema, phase, version, transaction ID, source IDs, step statuses and revisions
+are checked strictly. A symlink/junction, oversized file, truncated JSON, unknown field or inconsistent
+step is rejected as `CONFIG_COORDINATION_JOURNAL_INVALID`; the caller gets a safe failure, not an
+uncaught exception or unrelated file content.
+
+Writes use a same-directory temp file, best-effort `fsync`, rename and best-effort directory `fsync`.
+This is a durability boundary, **not** a claim of verified power-loss atomicity on Windows or any
+filesystem.
+
 Recovery is read-only:
 
 - `SAVED` → `PENDING_APPLY`;
@@ -160,13 +194,21 @@ Same-process rollback is attempted only for source saves the adapter marks as re
 confirmed. If rollback cannot be confirmed, the result is `UNKNOWN`, not a claimed full rollback.
 No journal means no recovery; no automatic process restart is attempted.
 
+### Save failure outcome
+
+A failed `save()` is not automatically treated as "nothing was written". The adapter must report
+`writeOutcome: "NOT_WRITTEN"` as explicit evidence of no side effect, or `"UNKNOWN"`/omit it. If the
+outcome is unknown, the transaction remains `UNKNOWN` even when earlier reversible steps were rolled
+back. Only an explicit `NOT_WRITTEN` plus confirmed rollback of all earlier steps may produce
+`FAILED`/`rolledBack:true`.
+
 ---
 
 ## 6. Single writer and concurrency
 
 - All coordinator mutations are serialized in one coordinator instance.
-- One plan can produce one save; a second concurrent execution sees changed revisions and returns
-  `CONFLICT`.
+- One plan can produce one save; consuming the plan prevents a second execution. A different plan
+  with stale revisions still returns `CONFLICT`.
 - An external non-cooperating writer can race between revision checks and the source adapter commit.
   Phase 4B-2A does **not** claim cross-process strong consistency.
 - No supported cross-process lock/CAS was found for these external files. A production adapter must
@@ -223,11 +265,15 @@ The test suite uses:
 - Fake Runtime confirmation;
 - injected save/journal failures and external revisions.
 
-Covered behavior includes single/multi-source plans, schema/unknown/revision errors, user
-confirmation, single-instance concurrency, external modification, partial save/rollback, journal
-failure, recovery idempotence, saved-vs-applied, runtime confirm/reject/partial/unknown, sensitive
-output, Worker/permission boundaries, Core read/schema errors, stale observers, Host non-import and
-journal containment.
+Covered behavior includes single/multi-source plans, schema/unknown/revision errors, distinct plan
+identity for different values, exact-plan confirmation, expiry/consumption, single-instance
+concurrency, external modification, partial save/rollback, save-failure write-outcome unknown,
+journal failure/recovery, journal schema/size/symlink tampering, exact runtime revision matching,
+mismatch/old/empty/forged confirmation, runtime reject/partial/unknown, sensitive output,
+Worker/permission boundaries, Core read/schema errors, stale observers, Host non-import and journal
+containment.
+
+The Phase 4B-2A suite currently has 44 tests (43 pass, 1 platform-conditional symlink skip).
 
 Production source adapters and real runtime confirmation remain **NOT IMPLEMENTED**. The fixture
 adapter intentionally does not claim atomic file writes; a production adapter must use the owning
