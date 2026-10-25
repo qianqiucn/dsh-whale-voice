@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · Plan 03-A 合并前检查正式通过；03-B 仍需用户授权
+
+- DeepSeek 提交《Plan 03 · PR #16 合并前准备与待授权报告》；GitHub 当前 main `bf9cf66`，PR #16 OPEN、mergeable/未合并 @ `954a01a08587bc8bd5b8caccf026298ca54d5215`，总 22 files +2490/-176，人工 Reviews 0。
+- ChatGPT 用 GitHub 实际 Commit、compare 与两份 blob 核实文档同步 Commit `954a01a` 是在工程修复 `3ad32bc` 之后的 1 个提交，只修改 `docs/AI_CONTEXT.md`（+43/-20）、`docs/PROJECT_STATUS.md`（+20/-8），合计 +63/-28。两文档保留旧 192 测试历史并新增现行 197（196 PASS、1 平台 SKIP），不误称生产集成。
+- HEAD `954a01a` 的 Actions run `40165832178` 以及 build 和 ui 两个 Job 均 SUCCESS。DeepSeek 本地报告 `node --test` 197/196/1、UI 24/24、build 217349 bytes、G01–G12 PASS，ChatGPT 没有在 Windows 本地重新运行。
+- **03-A = DONE / READY_FOR_USER_MERGE_DECISION**，**03-B = WAIT_USER_AUTHORIZATION / NOT_DISPATCHED**；整个 Plan 03 尚未 DONE，不能自动合并 PR #16；TTS-A 仍 DESIGN/OFFLINE。Plan 01 SENT、02 DONE、04–14 PLANNED；H0/C1 已完成，不重复派发。
+- 只更新 PR #17 规划分支的 Plan 03、计划索引、handoff 与 changelog；#18 OPEN/DRAFT 保留历史，不操作。当前仍待用户**针对 PR #16 是否以 Merge Commit 合并 main 的明确决定**，同时应让用户知道人工 Review 数为 0。
+- 这次没有工程代码、main、生产配置、服务、微信发送、Hook/模型/收费 API 的改动；未合并任何 PR。
 ## 2026-10-25 · 新聊天交接刷新：以 C1 替换已完成 H0
 
 - 触发：用户准备重新打开 ChatGPT 对话，要求在 GitHub 持久写入我自己的交接文档，并为下一位 ChatGPT 提供唯一首项行动计划。
