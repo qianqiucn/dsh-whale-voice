@@ -2,6 +2,17 @@
 
 **状态：PLANNED；前置：SVC-A、Shared Core-C、WeChatAgent 扩展审计。**
 
+## 最新已授权 SVC 引擎分层（2026-10-25；优先于旧文）
+
+**首发标准翻唱 = RVC。后续可选免训练试唱 = Seed-VC，明确 NOT_DEFAULT / NOT_IMPLEMENTED / NOT_READY。** 统一属于 Whale Audio Core（鲸音核心），Whale Singing 是独立页面；不为 Seed-VC 新建后端 Core、投递通路或任务 ID。
+
+- **12-A RVC 主线路**：合法歌曲 Artifact → 可选分离主唱/伴奏 → 已授权 RVC 音色模型转换 → 混音/校验/保存/预览（先 Fake，后获专门批准才可真实推理）。RVC 上线验收不以 Seed-VC 为依赖，也不要求先训练用户音色模型；已有合法 RVC 模型可用时才试唱。
+- **12-B/12-C**：DeepSeek 的合法元数据搜歌、选择、音频获取权限与 Whale Relay 安全交付规则不变；未获得授权不能真实下载/发送。
+- **12-D（同一 Plan 12 下新增后续可选子阶段，不是新计划编号）**：当 12-A 已验收且 Plan 07 Seed-VC 最小档案/许可证通过后，才评估免训练零样本试唱。用户提供有权使用的 1–30 秒参考音频（先按上游推荐区间，不确保所有素材效果）、授权歌曲、所选 Seed-VC SVC 模型；共享 Separation/Mixer/Artifact/VoiceProfile/TaskManager。先 Fake Gateway；真实模型/音频与推理需用户专项许可。
+- **资源与语义**：Seed-VC 是“免训练便捷”，**不是已证明的低显存或 CPU 轻量版**。歌声任务不得偷用 Tiny 语音模型冒充 44.1kHz 歌声模型。必须经过 Windows 运行、显存/内存/时长、长音频/质量/取消/恢复与权利测试后才标可用；仓库归档风险必须展示。
+- **UI/权限**：首发模式列表 RVC 为主；Seed-VC 可显示为可选说明或“待支持/未安装”并禁用启动，直到后续实际完成。选中 Seed-VC 不应自动安装或启动外部模型；不能降低 Whale Voice TTS、WeChatAgent、Whale Relay 与 Worker NEVER_WRITE 安全闸门。
+- **完成门禁**：未实测前保持规划/候选，不能把用户批准“调整计划”解释为批准下载、运行、改代码、微信发送或合并。
+
 ## 2026-10-25 · Whale Singing 独立前端与初始化流程（原 Plan 12，仍 PLANNED）
 
 - 前端称 **Whale Singing · 唱歌**，与 **Whale Voice · 语音气泡** 在 NAV/页面状态上明确分开，共用 **Whale Audio Core（鲸音核心）** 与音色/任务/Artifact/Provider，实际歌声转换仍由受审计的独立 RVC/SVC Gateway 完成。
@@ -31,7 +42,7 @@
 **DoD**：每子阶段独立 PR、Level2 任务书、正负案例、源码/素材权利、任务与 Artifact 数据契约、实际测试与 CI、Fake/真实级别、停止条件齐全才验收。不把 TTS-A 合同、AGPL/许可审计与微信身份所有权绕开。
 
 ## 引擎与流水线
-选经过许可审计的 Seed-VC/RVC，隔离进程进行已有歌声音色转换；原曲→（按需）人声分离→转换→校验→混音→试听→保存/可选发送。必须分别显示生成、预处理、转换、混音、交付的状态；不能声称 Seed-VC 直接从歌词作曲。
+首发选择经许可审计的 RVC，隔离进程进行已有歌声音色转换；Seed-VC 仅为后续零样本免训练选配（12-D），不阻塞首发；原曲→（按需）人声分离→转换→校验→混音→试听→保存/可选发送。必须分别显示生成、预处理、转换、混音、交付的状态；不能声称 Seed-VC 直接从歌词作曲。
 
 ## UI
 在 Whale Voice 内复用音色库、任务与日志、Provider 选择、组件管理；可增加唱歌专属工作区，不另造第二套 Core。展示来源素材、参考音色、引擎、进度、试听、输出格式、来源授权说明。
