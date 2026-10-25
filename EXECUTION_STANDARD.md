@@ -8,6 +8,14 @@
 >
 > **首次登记：2026-10-25。计划唯一索引：[docs/plans/README.md](docs/plans/README.md)。**
 
+## 新会话首读交接（ChatGPT 专用）
+
+用户新开 ChatGPT 对话时，除了此标准、AGENTS、长期记忆与 TASK_SPEC_STANDARD，还必须先读：
+- [NEXT_CHATGPT_HANDOFF.md](docs/plans/NEXT_CHATGPT_HANDOFF.md) — 最近状态、风险、未合并 PR 和进度证据；
+- [NEXT_CHATGPT_ACTION_PLAN.md](docs/plans/NEXT_CHATGPT_ACTION_PLAN.md) — 下一位 ChatGPT 要执行的第一项计划管理任务（不代表自动授权）。
+
+这两份文件属于 **ChatGPT 的计划管理职责**，不要求 DeepSeek 在日常编码时阅读，也不允许因“交接”自动合并 PR。
+
 ## 0. ChatGPT 计划管理 GitHub 任务的固定入口
 
 **仅对 ChatGPT 的计划书/排序/状态/GitHub 协调任务强制适用**，不作为 DeepSeek 工程编码的额外门禁。
