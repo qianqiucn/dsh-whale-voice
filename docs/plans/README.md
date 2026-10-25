@@ -16,6 +16,16 @@
 
 ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新，不是离线自动监控。
 
+## 0.1 GitHub 长期记忆 + 详细任务书质量门禁
+
+- **[CHATGPT_LONG_TERM_MEMORY.md](CHATGPT_LONG_TERM_MEMORY.md)**：ChatGPT 对用户长期要求、两 AI 分工、Whale Voice/Relay/WeChatAgent 边界的持久记忆；新会话和每次计划相关 GitHub 工作都必须先读。
+- **[TASK_SPEC_STANDARD.md](TASK_SPEC_STANDARD.md)**：严格的工程任务详细程度标准（Level 2 EXECUTION-READY 才能派发）。原则：**ChatGPT 预先解决需求、方案选择、文件/接口与测试设计，尽量减少 DeepSeek 再次决策的空间。**
+- **[TASK_SPEC_TEMPLATE.md](TASK_SPEC_TEMPLATE.md)**：每份完整任务书的可复制模板，含目标、最新事实、文件变更、契约、顺序、异常决策树、测试、DoD、报告和停止条件。
+
+**已有 01–14 部分文档是 Level 1 的路线条目，不代表都已达到可以直接交付实现的详细程度。** 每次用户要求“下一份”时，ChatGPT 必须先结合最新 GitHub 源码/PR 逐项填全 Level 2 规格并写回仓库，再发送一份给 DeepSeek。**已经通过 PR 实现的步骤只做复核，不重复派发。**
+
+这条额外质量要求**只约束 ChatGPT 计划书编写**，不要求 DeepSeek 维护这些记忆、重排计划或执行 DONE 打标；双方继续遵守共同的 AGENTS 安全边界。
+
 ## 一、严格区分发送状态与工程状态
 
 任务的 **流程状态**（只能有一个）：
@@ -37,7 +47,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 | 顺序 | 计划书 | 流程 | Git / 事实 | 前置 |
 |---:|---|---|---|---|
 | 01 | [GUI 自动化测试收尾](01-gui-coverage-closeout.md) | **SENT** | 旧本地 test 分支/Commit 506fe3b 待再次核实；尚无对应远端 PR | 真实八页 GUI 已 INTEGRATED |
-| 02 | [TTS-A 多引擎架构补充及 PR #16 复审](02-tts-a-complete-review.md) | **IN PROGRESS** | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN · `c851be7` · CI SUCCESS；设计初版已交付，待补 IndexTTS/Gemini/OpenAI 及 Whale Relay/SVC 契约 | 01 可独立收尾；02 现有 PR 继续补充 |
+| 02 | [TTS-A 多引擎架构补充及 PR #16 复审](02-tts-a-complete-review.md) | **IN PROGRESS**（补充已提交，待最终验收） | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN · `1fd2cca` · CI run `40160267636` SUCCESS；IndexTTS/Gemini/OpenAI 与 Whale Relay/SVC 契约已补齐，下一步只做复核 | 01 可独立收尾；02 不能再重复开发已完成项 |
 | 03 | [PR #16 合并与新基线](03-merge-tts-a-pr16.md) | PLANNED | 等待复审；明确合并授权 | 02 |
 | 04 | [WeChatAgent 扩展机制审计](04-wechatagent-extensions-audit.md) | PLANNED | 无新增 PR | 03，亦可独立只读研究 |
 | 05 | [Unified Core-A：TTS/SVC/Whale Relay 职责](05-unified-core-a.md) | PLANNED | 无新增 PR | 03–04 的契约 |
@@ -59,7 +69,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - 八页包含情绪系统和任务与日志；组件管理是另验的弹层，不是第九个导航页。
 - 情绪/任务互动的额外 2 项 Playwright 检查在本地测试分支曾显示 26/26 通过，但尚需纳入远端 Git CI（Plan 01）。
 - `main@bf9cf66` 已合并 PR #15；运行已加载只读 Capability Schema v3；仍没有生产配置写入路由。
-- PR #16 的 TTS-A 初版已经完成纯契约与隔离审计，设计等级为 `DESIGN / OFFLINE`（GitHub CI `40157763811` SUCCESS）；计划 02 因还需要补入 IndexTTS、Gemini、OpenAI、Whale Relay/SVC 边界，继续 `IN PROGRESS`。不能重新创建重复的 TTS-A 启动任务或宣称生产 TTS 已集成。
+- PR #16 的 TTS-A 与 TTS-A-H 纯契约设计已提交至 `1fd2cca`，包含 IndexTTS/Gemini/OpenAI 候选、Whale Relay 三层职责、独立 SVC 契约；最新 PR CI `40160267636` SUCCESS。**计划 02 保留 `IN PROGRESS`，因为完成审查/DONE 标记尚未执行**，不是因为这些开发工作仍未做；不要再次发出相同编码指令。功能等级仍为 `DESIGN / OFFLINE`，非生产 Provider 集成。
 - Voice Sender 的 UI Automation 路径已有外部组件；Native Hook 的代码/社区复现仍为研究候选，不能声称已正式集成。
 - WeChatAgent 为必需依赖，不自动安装/升级、不替换为自行实现的微信机器人。
 
