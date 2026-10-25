@@ -313,6 +313,17 @@ Pages consume `deriveCapabilityView`:
 No page renders a write control. `UNKNOWN` is never styled as off/safe/healthy. The existing demo
 controls remain explicitly labelled and disabled.
 
+Copy and refresh semantics:
+
+- The global status says **真实配置只读 · 生产写入禁用**. Demo metrics, contacts and tasks remain
+  explicitly labelled as demo; there is no blanket “the whole page is Mock” statement over the real
+  Core panels.
+- The topbar refresh only refreshes demo data and says so. Real Core status/capability re-detection
+  is the Components dialog action (“重新检测”), whose text states that it refreshes real Core
+  status and capability data and writes nothing.
+- `deriveCapabilityView` validates the nested shape before rendering; a malformed payload becomes an
+  unavailable capability notice, not a partial success or a crash.
+
 ---
 
 ## 8. Degradation
