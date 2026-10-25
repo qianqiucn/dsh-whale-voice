@@ -3,7 +3,7 @@
 **Purpose:** compact cross-session recovery note. This is a summary, not an authority. Re-verify
 against the repository, Git/GitHub, tests and the linked authoritative documents before acting.
 
-**Last updated:** 2026-10-25
+**Last updated:** 2026-10-26
 
 ---
 
@@ -57,6 +57,15 @@ production write route or real TTS provider exists.
 CI run `40163881122` build+ui **SUCCESS**; Node **197** (196 pass, 1 platform skip); UI **24/24**;
 F01–F05/N01–N05 complete. The earlier 192/191/1 count is a **historical pre-F01–F05 snapshot**. PR is
 **OPEN, not merged**; CI is not human approval. Merge requires separate explicit user authorization.
+
+**PR #16 pre-merge repair (Plan 03-A-F01, 2026-10-26):** SVC input boundary hardened (fixed-layer
+descriptor checks, no getter/Symbol/hidden bypass, strict result/delivery allowlists, redacted
+`<unknown-key>` paths, canonical UTC `createdAt`, fresh output objects). SVC tests **29/29** (original
+5 + R01–R24); full `node --test` **221 / 220 pass / 1 platform skip**; TTS provider **16/16**; UI
+**24/24**; `node build.mjs` passes and `client.js` is unchanged. PR #16 remains **OPEN, not merged**;
+merge recommendation is **`BLOCKED_PENDING_SVC_FIX`** until the repair HEAD is reviewed and its own
+build/ui CI is verified. No provider, SVC runtime, model, download, send or WeChat capability was
+added; the 197/196/1 numbers remain the historical checkpoint for the earlier HEAD.
 
 ---
 

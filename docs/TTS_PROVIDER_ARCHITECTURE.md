@@ -172,6 +172,31 @@ TTS and SVC are two task types with different inputs, even though they share inf
   conversionStrength, outputFormat`; unknown target/delivery fields are rejected. A successful
   validation returns only these allowed fields, with `outputFormat` retained only when supplied.
 - SVC results also end with `delivery: PENDING_ROUTER`; Relay owns delivery.
+- **Fixed input boundary (Plan 03-A-F01):** both SVC entry points accept only plain objects
+  (`Object.prototype` or `null` prototype). Every own property of each fixed schema layer must be
+  an enumerable string-keyed data property; Symbol keys, hidden/non-enumerable properties, getters
+  and setters are rejected **without being invoked**, and each layer is capped at 32 own keys.
+  Unknown fields are rejected, never silently dropped, and error paths use the fixed
+  `<unknown-key>` placeholder rather than the caller's key text.
+- **Result shape:** the root allowlist is `providerId, requestId, targetVoiceId, artifactRef, mime,
+  sampleRate, durationMs, createdAt, delivery`. `requestId, targetVoiceId, artifactRef, mime,
+  sampleRate, durationMs` are required; `providerId` and `delivery` are optional. An explicit
+  `delivery` must be exactly `{ state: 'PENDING_ROUTER' }` with no additional keys; `SENT` and
+  `NOT_REQUESTED` are not valid v1 inputs. The normalized result keeps exactly ten fields and never
+  shares the input object or its `delivery` object.
+- **`createdAt`:** absent, `undefined` or `null` normalize to `null`; otherwise only a canonical UTC
+  string `YYYY-MM-DDTHH:mm:ss.sssZ` is accepted, verified by parsing and a strict
+  `toISOString()` round-trip (invalid calendar dates are rejected). No clock or random value is read
+  and no default time is invented.
+- **Errors:** fixed reason phrases and fixed paths (`$`, known fields, `delivery.state`,
+  `<unknown-key>`, `delivery.<unknown-key>`); failure envelopes never echo caller keys, values,
+  exception text or stack text, and never carry the original request/result object.
+- `PENDING_ROUTER` is a normalized label only; it does not mean queued, deliverable or backed by a
+  real artifact.
+- Registry selection helpers return plain-string codes (`NOT_IMPLEMENTED`, `PROVIDER_UNKNOWN`,
+  `SVC_ENGINE_UNKNOWN`) that are **not** part of the `PROVIDER_ERRORS`/`SVC_ERRORS` contract
+  namespaces. Unifying those domains is a future adapter/documentation item; this repair does not
+  rename any public error value.
 - TTS-A-H only defines the SVC contract/candidate boundary. No SVC inference, model download,
   training, conversion, audio generation or consent workflow is implemented.
 
@@ -232,7 +257,9 @@ Rules:
 - Qwen offline does not change another provider's status.
 - Cloud/custom legacy values (no concrete adapter) migrate to `selectedProviderId: null` and
   `requiresUserSelection: true`; they are never guessed into Qwen.
-- No provider is enabled or selected by migration alone.
+- Migration preserves an **existing** Qwen legacy selection only: it emits `enabled: true` for that
+  preserved instance description, does not start, probe or verify a provider, and does not make the
+  provider selected or usable by itself. No provider becomes available merely because migration ran.
 
 ### Credentials and endpoints
 
