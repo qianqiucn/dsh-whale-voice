@@ -8,6 +8,7 @@
 **Latest associated commit:** `main` `bf9cf66807e12d0b25872a0fa3869962dde04818` (merge of PR #15); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
 **Latest PR:** [#16 — feat(tts): Phase TTS-A provider-neutral audit and contracts](https://github.com/qianqiucn/dsh-whale-voice/pull/16) — **OPEN**, not merged. Latest merged PR: #15 (Phase 4B-2B-2a).
 **Acceptance caveat:** Node/UI checks are offline/contract evidence unless explicitly marked real Host/GUI acceptance. Phase 4B-1/4B-2A/4B-2B-1 remain `OFFLINE`; Phase 4B-2B-2a is `INTEGRATED` after the authorized DSH Host/GUI acceptance. TTS-A adds no production provider, credential store, write route or audio path.
+**PR #16 pre-merge checkpoint (Plan 03-A):** engineering HEAD `3ad32bcb22b1a0346eed91f7236afb4f1cc8f773`; PR **OPEN, not merged**; CI run `40163881122` build+ui **SUCCESS**; `node --test` **197 tests / 196 pass / 1 platform skip**; `npm.cmd run test:ui` **24/24**; F01–F05 and N01–N05 complete. TTS-A remains **`DESIGN`/`OFFLINE`**. The earlier 192/191/1 snapshot is a **historical pre-F01–F05 checkpoint**, retained below. GitHub records **0 reviews**; CI is not human approval. Merge requires separate, explicit user authorization.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
 **Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **merged via PR #14**, not deleted.
@@ -167,7 +168,13 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       the existing token/origin/loopback/connection guard. Real DSH Host/GUI acceptance covered all
       eight navigation pages; Worker version is independent and `NEVER_WRITE` is preserved; no
       `APPLIED` without a loaded revision. Merged via PR #15 (`bf9cf66`). See
-      [CAPABILITY_API.md](CAPABILITY_API.md). 192 Node / 24 UI checks on the integrated baseline.
+      [CAPABILITY_API.md](CAPABILITY_API.md). 192 Node / 24 UI checks on the integrated baseline
+      (**historical pre-F01–F05 snapshot**).
+- [x] TTS-A Plan 02 / F01–F05 contract hardening **DESIGN/OFFLINE**: Provider Manifest, TTS request and
+      synthesis result top-level allowlists; SVC request allowlist and sanitized return; required cloud
+      credentials cannot become `AVAILABLE` from `unknown`. N01–N05 negative regressions added.
+      Engineering HEAD `3ad32bc`, PR #16 open, CI run `40163881122` build+ui SUCCESS, Node 197
+      (196 pass/1 skip), UI 24/24. No production/provider/SVC/Relay effect.
 - [x] TTS-A Provider-neutral audit and pure contracts **DESIGN/OFFLINE**: `docs/TTS_PROVIDER_AUDIT.md`
       inventories Qwen hardcodes by Qwen-specific / current-selection / generic category;
       `docs/TTS_PROVIDER_ARCHITECTURE.md` defines the provider interface, 10 TTS candidates, separate
@@ -190,11 +197,14 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 
 ## Next highest-priority task
 
-**Next: TTS-B — Provider service and neutral configuration** (design approved by TTS-A, implementation
-not started). It must implement provider-aware observations and TTS gating, v2 migration for
-`qwen-local`, neutral read-only GUI provider/voice selection and isolated tests. It must not connect
-a real provider, store cloud credentials, start Qwen, write production configuration, restart
-services or send WeChat messages. Phase 4B-2B-2b remains a separate future task and is not started.
+**Next gate: explicit user decision on merging PR #16 (Plan 03-B).** Plan 03-A has prepared the
+pre-merge audit package and status checkpoint; PR #16 remains **OPEN**. Do not merge, squash/rebase,
+delete the branch or change `main` without a new explicit authorization for this exact PR/HEAD.
+After a future authorized merge, the next implementation step is **TTS-B — Provider service and neutral
+configuration**: provider-aware observations and TTS gating, v2 migration for `qwen-local`, neutral
+read-only GUI provider/voice selection and isolated tests. It must not connect a real provider, store
+cloud credentials, start Qwen, write production configuration, restart services or send WeChat.
+Phase 4B-2B-2b remains a separate future task and is not started.
 
 ## Pending
 
@@ -261,7 +271,8 @@ services or send WeChat messages. Phase 4B-2B-2b remains a separate future task 
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 192 tests: 191 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection, 10 capability-reader/validation, 12 TTS provider contract/migration and 4 SVC contract/registry tests |
+| `node --test` | 192 tests: 191 pass, 1 platform skip — **historical pre-F01–F05 snapshot**; current PR #16 checkpoint is 197/196 below |
+| `node --test` (PR #16 current) | 197 tests: 196 pass, 1 platform skip; 5 new N01–N05 negative regressions; build output `client.js` 217349 bytes |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -291,7 +302,8 @@ services or send WeChat messages. Phase 4B-2B-2b remains a separate future task 
 | TTS-A registry | all ten TTS candidates (`qwen3-tts`, piper, kokoro, sherpa-onnx, indextts, azure-speech, elevenlabs, google-gemini-tts, openai-speech, custom-http) are `NOT_IMPLEMENTED`, `selectable:false`, no default; two SVC candidates (`seed-vc`, `rvc`) are in a separate registry; no provider/engine is connected |
 | TTS-A SVC boundary | `core/svc/svc-contract.mjs` accepts an opaque source-audio artifact + shared target voice + conversion parameters and returns `PENDING_ROUTER`; `core/svc/svc-registry.mjs` keeps Seed-VC/RVC out of the TTS registry; no real conversion or model/consent workflow |
 | TTS-A config migration | v2 proposal separates provider instances/models/voices/voice packs; qwen-local v1 preserved; cloud/custom legacy requires explicit selection; secrets/unsafe URLs/provider-voice mismatches rejected; no file write |
-| TTS-A tests | 16 isolated tests: 12 TTS (local/cloud status, Qwen-offline independence, unsupported voice/language/emotion/streaming, missing credentials, timeout/error, unknown version, migration/idempotency, Mock/real isolation, no-provider-send) and 4 SVC (request/result boundary, separate registry, no delivery/I/O) |
+| TTS-A tests | 21 isolated tests: 16 TTS (local/cloud status, Qwen-offline independence, unsupported voice/language/emotion/streaming, missing credentials, timeout/error, unknown version, migration/idempotency, hidden-field rejection, Mock/real isolation, no-provider-send) and 5 SVC (request/result boundary, allowlist/sanitization, separate registry, no delivery/I/O) |
+| PR #16 Plan 03-A checkpoint | engineering HEAD `3ad32bc`; PR **OPEN, not merged**; 22 files +2452/−173; CI run `40163881122` build+ui **SUCCESS**; Node 197 (196 pass/1 skip); UI 24/24; 0 GitHub reviews; F01–F05/N01–N05 complete; TTS-A `DESIGN`/`OFFLINE`; merge awaits explicit user authorization |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | `npm.cmd run test:ui` | 24/24 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, stale refresh race, Mock/real labels, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |

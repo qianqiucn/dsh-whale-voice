@@ -39,10 +39,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production
-  config change. **PR #16 open**, not merged.
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; TTS-A adds `core/tts/*` pure modules,
-  tests and docs, but no runtime/provider wiring.
-- **Worktree:** clean at the TTS-A design baseline
+  config change. **PR #16 open**, not merged; **0 GitHub reviews** recorded. Engineering HEAD is
+  `3ad32bcb22b1a0346eed91f7236afb4f1cc8f773` (Plan 02 F01–F05); a later documentation-sync commit is
+  recorded separately in the PR history.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; TTS-A adds `core/tts/*` and
+  `core/svc/*` pure modules, tests and docs, but no runtime/provider wiring.
+- **Worktree:** clean at the TTS-A Plan 03-A pre-merge checkpoint
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
 PRs #1/#2 and feature/docs PRs #3–#15 are merged. Phase 4B-1 and 4B-2A are merged but remain
@@ -50,6 +52,11 @@ PRs #1/#2 and feature/docs PRs #3–#15 are merged. Phase 4B-1 and 4B-2A are mer
 Host/GUI acceptance (full eight-page coverage, not `VERIFIED` for destructive edge cases); Phase R1
 is **COMPLETE**. TTS-A is `DESIGN`/`OFFLINE` with all provider candidates `NOT_IMPLEMENTED`. No
 production write route or real TTS provider exists.
+
+**PR #16 pre-merge checkpoint (Plan 03-A):** engineering HEAD `3ad32bcb22b1a0346eed91f7236afb4f1cc8f773`;
+CI run `40163881122` build+ui **SUCCESS**; Node **197** (196 pass, 1 platform skip); UI **24/24**;
+F01–F05/N01–N05 complete. The earlier 192/191/1 count is a **historical pre-F01–F05 snapshot**. PR is
+**OPEN, not merged**; CI is not human approval. Merge requires separate explicit user authorization.
 
 ---
 
@@ -193,9 +200,11 @@ STARTED.
   used as Worker evidence**; Worker keeps `NEVER_WRITE` and writes disabled while Sender
   automation/TTS stay governed by the Service version. Read-only only.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 192 Node tests (191 pass, 1 platform skip; including 49 coordination, 5 capability, 7
-  capability-schema, 9 capability projection, 10 capability-reader/validation, 12 TTS provider and
-  4 SVC contract/registry tests) and 24 UI checks pass. These are offline/contract evidence, not real
+- **Historical pre-F01–F05 snapshot:** 192 Node tests (191 pass, 1 platform skip; including 49
+  coordination, 5 capability, 7 capability-schema, 9 capability projection, 10
+  capability-reader/validation, 12 TTS provider and 4 SVC contract/registry tests) and 24 UI checks.
+- **Current PR #16 Plan 02/03-A checkpoint:** 197 Node tests (196 pass, 1 platform skip; 16 TTS +
+  5 SVC tests after N01–N05) and 24 UI checks. These remain offline/contract evidence, not real
   production write/apply or real provider/SVC acceptance.
 
 ---
@@ -260,7 +269,7 @@ node --test
 npm.cmd run test:ui
 ```
 
-Phase 4B-2B-2a result:
+Phase 4B-2B-2a result (historical pre-F01–F05):
 
 ```text
 build: PASS, client.js regenerated (in sync)
@@ -268,8 +277,17 @@ node --test: 191/192 PASS (1 platform skip; includes 49 coordination, 5 capabili
 UI: 24/24 PASS
 ```
 
+Current PR #16 checkpoint (Plan 02/03-A):
+
+```text
+build: PASS, client.js 217349 bytes (in sync)
+node --test: 196/197 PASS (1 platform skip; includes 16 TTS and 5 SVC tests)
+UI: 24/24 PASS
+CI: run 40163881122 build+ui SUCCESS at engineering HEAD 3ad32bc
+```
+
 These are offline/contract tests. They do not prove a production Bridge/Worker apply, real WeChat
-send or production configuration-write acceptance.
+send, real provider/SVC, or production configuration-write acceptance.
 
 CI:
 
@@ -286,23 +304,27 @@ CI:
 - `main` at `9318686` after PR #14: build + ui SUCCESS (run `40151464926`);
 - PR #15 head `972ad8d`: build + ui SUCCESS (run `40154441917`);
 - `main` at `bf9cf66` after PR #15: build + ui SUCCESS (run `40154748343`).
-- TTS-A PR #16: CI is reported from its actual PR run; do not merge automatically.
+- PR #16 engineering head `3ad32bc`: build + ui SUCCESS (run `40163881122`); the later docs-sync HEAD
+  must be checked separately and is the only valid CI for that commit.
+- TTS-A PR #16 remains **OPEN, not merged**; do not merge automatically.
 
 ---
 
 ## 11. Next priority
 
-1. TTS-B: implement Provider service and neutral configuration on top of the TTS-A contract;
+1. **PR #16 merge decision (Plan 03-B):** wait for explicit user authorization for this exact PR and
+   HEAD; re-verify main/base/HEAD/CI/reviews before any Merge Commit. Current task stops before merge.
+2. TTS-B: implement Provider service and neutral configuration on top of the TTS-A contract;
    provider-aware status, v2 migration and neutral read-only UI, with isolated tests. No real
    provider/credentials/production write. Then TTS-C real local/cloud/custom adapters after separate
    security review.
-2. Phase 4B-2B-2b: Sender automation write via the audited `PUT /v1/automation/config` only, after a
+3. Phase 4B-2B-2b: Sender automation write via the audited `PUT /v1/automation/config` only, after a
    separate production-write authorization; keep `save.enabled=false` until then and never claim
    `APPLIED` without a loaded revision. Bridge/TTS writes require owner revision endpoints first.
    It is **NOT STARTED**.
-3. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
+4. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
-4. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
+5. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
    baseline.
 
 ---
@@ -323,11 +345,12 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after TTS-A: `main` is `bf9cf66` (PR #15 merge); Phase R1 is **COMPLETE**, Phase
-4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**, Phase
+**2026-10-25**, after TTS-A Plan 03-A: `main` is `bf9cf66` (PR #15 merge); Phase R1 is **COMPLETE**,
+Phase 4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**, Phase
 4B-2B-2a is **`INTEGRATED`** after real Host/GUI acceptance (full eight-page coverage; not
 `VERIFIED` for destructive edge cases), Phase 3B/4A remain `INTEGRATED`, TTS-A is **`DESIGN` /
-`OFFLINE`** (pure provider contract/registry/v2 migration; no provider wired), and Phase 4B-2B-2b is
-**NOT STARTED**. 192 Node (191 pass, 1 skip) / 24 UI checks are offline/contract evidence, not
-production write/apply or real provider/SVC acceptance. No production configuration or runtime
-behavior change.
+`OFFLINE`** (pure provider contract/registry/SVC/v2 migration; no provider wired), and Phase
+4B-2B-2b is **NOT STARTED**. PR #16 is **OPEN, not merged**, at engineering HEAD `3ad32bc` then a
+docs-sync commit; CI `40163881122` passed. Current checkpoint: **197 Node (196 pass, 1 skip) / 24 UI
+checks**, offline/contract evidence only. Merge awaits explicit user authorization; no production
+configuration or runtime behavior change.
