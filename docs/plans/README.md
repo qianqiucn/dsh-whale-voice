@@ -37,7 +37,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 | 顺序 | 计划书 | 流程 | Git / 事实 | 前置 |
 |---:|---|---|---|---|
 | 01 | [GUI 自动化测试收尾](01-gui-coverage-closeout.md) | **SENT** | 旧本地 test 分支/Commit 506fe3b 待再次核实；尚无对应远端 PR | 真实八页 GUI 已 INTEGRATED |
-| 02 | [TTS-A 多引擎架构补充及 PR #16 复审](02-tts-a-complete-review.md) | **IN PROGRESS** | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN，c851be7（更新须核实） | 01 测试收尾或与 01 无冲突并行 |
+| 02 | [TTS-A 多引擎架构补充及 PR #16 复审](02-tts-a-complete-review.md) | **IN PROGRESS** | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN · `c851be7` · CI SUCCESS；设计初版已交付，待补 IndexTTS/Gemini/OpenAI 及 Whale Relay/SVC 契约 | 01 可独立收尾；02 现有 PR 继续补充 |
 | 03 | [PR #16 合并与新基线](03-merge-tts-a-pr16.md) | PLANNED | 等待复审；明确合并授权 | 02 |
 | 04 | [WeChatAgent 扩展机制审计](04-wechatagent-extensions-audit.md) | PLANNED | 无新增 PR | 03，亦可独立只读研究 |
 | 05 | [Unified Core-A：TTS/SVC/Whale Relay 职责](05-unified-core-a.md) | PLANNED | 无新增 PR | 03–04 的契约 |
@@ -59,7 +59,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - 八页包含情绪系统和任务与日志；组件管理是另验的弹层，不是第九个导航页。
 - 情绪/任务互动的额外 2 项 Playwright 检查在本地测试分支曾显示 26/26 通过，但尚需纳入远端 Git CI（Plan 01）。
 - `main@bf9cf66` 已合并 PR #15；运行已加载只读 Capability Schema v3；仍没有生产配置写入路由。
-- PR #16 是当前 TTS-A 契约工作，不能重新创建重复的 TTS-A 启动任务。
+- PR #16 的 TTS-A 初版已经完成纯契约与隔离审计，设计等级为 `DESIGN / OFFLINE`（GitHub CI `40157763811` SUCCESS）；计划 02 因还需要补入 IndexTTS、Gemini、OpenAI、Whale Relay/SVC 边界，继续 `IN PROGRESS`。不能重新创建重复的 TTS-A 启动任务或宣称生产 TTS 已集成。
 - Voice Sender 的 UI Automation 路径已有外部组件；Native Hook 的代码/社区复现仍为研究候选，不能声称已正式集成。
 - WeChatAgent 为必需依赖，不自动安装/升级、不替换为自行实现的微信机器人。
 
