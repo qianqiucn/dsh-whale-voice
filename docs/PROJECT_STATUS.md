@@ -6,13 +6,13 @@
 **Updated:** 2026-10-25
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#15 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `INTEGRATED`** (real Host/GUI, full eight-page coverage; no write route); **Phase R1 `COMPLETE`**; **TTS-A Provider-neutral audit + pure contracts are `DESIGN`/`OFFLINE`** (no provider connected); **Phase 4B-2B-2b NOT STARTED**
 **Latest associated commit:** `main` `bf9cf66807e12d0b25872a0fa3869962dde04818` (merge of PR #15); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#15 — feat(core): Phase 4B-2B-2a read-only capability/status projection](https://github.com/qianqiucn/dsh-whale-voice/pull/15) — **MERGED**. TTS-A branch `feature/tts-provider-neutral-contract` is the current design PR candidate.
+**Latest PR:** [#16 — feat(tts): Phase TTS-A provider-neutral audit and contracts](https://github.com/qianqiucn/dsh-whale-voice/pull/16) — **OPEN**, not merged. Latest merged PR: #15 (Phase 4B-2B-2a).
 **Acceptance caveat:** Node/UI checks are offline/contract evidence unless explicitly marked real Host/GUI acceptance. Phase 4B-1/4B-2A/4B-2B-1 remain `OFFLINE`; Phase 4B-2B-2a is `INTEGRATED` after the authorized DSH Host/GUI acceptance. TTS-A adds no production provider, credential store, write route or audio path.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
 **Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **merged via PR #14**, not deleted.
 **Phase 4B-2B-2a branch:** `feature/phase4b2b2a-capability-status` — schema v3 capability projection, Host GET routes and frontend read-only visualization; **merged via PR #15**, not deleted.
-**TTS-A branch:** `feature/tts-provider-neutral-contract` — provider-neutral audit, contract, registry, v2 migration design and isolated tests; pure/design only.
+**TTS-A branch:** `feature/tts-provider-neutral-contract` — provider-neutral audit, contract, registry, v2 migration design and isolated tests; pure/design only; **PR #16 open**, not merged.
 **Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13 → #14 → #15, all merged with merge commits; #15 delivered Phase 4B-2B-2a read-only capability/status projection.
 
 ---

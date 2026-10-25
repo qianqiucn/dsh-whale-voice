@@ -39,7 +39,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production
-  config change.
+  config change. **PR #16 open**, not merged.
 - **Current local HEAD:** verify live with `git rev-parse HEAD`; TTS-A adds `core/tts/*` pure modules,
   tests and docs, but no runtime/provider wiring.
 - **Worktree:** clean at the TTS-A design baseline
@@ -284,7 +284,7 @@ CI:
 - `main` at `9318686` after PR #14: build + ui SUCCESS (run `40151464926`);
 - PR #15 head `972ad8d`: build + ui SUCCESS (run `40154441917`);
 - `main` at `bf9cf66` after PR #15: build + ui SUCCESS (run `40154748343`).
-- TTS-A PR: CI is reported from its actual PR run; do not merge automatically.
+- TTS-A PR #16: CI is reported from its actual PR run; do not merge automatically.
 
 ---
 
