@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · Plan 04-A GitHub 终审通过；Plan 05-A 纯工程 Level 2 正式派发
+
+- 核查 PR #20 `research/plan04-wechatagent-extension-audit` OPEN、HEAD `6007fecd351d0cdb492a4ec5962ac2abe1962242`、仅 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md` +361、CI `40233344202` SUCCESS，E01–E25 证据、v0.3.9/v0.4.0/v0.4.1 功能矩阵、权限撤销/隔离、S1/S2/S3、17 个 Fake Seed、A01–A15 达成研究 DoD。**Plan 04-A = DONE（RESEARCH/OFFLINE，PR #20 未合并）**，不等于 ZIP、真实 WeChat Tool/文件音频发送已集成。
+- 决策：默认 **S1 DSH Plugin + WeChatAgent 只读 Adapter**，v0.4.1 ZIP v2 是不兼容 DSH Plugin 的**后续可选**，本轮未升级历史本地 0.3.9、未重启/安装/微信操作。
+- **唯一新派发 Plan 05-A = SENT（OFFLINE ENGINEERING）**：新增完整 `docs/plans/05-A-whale-audio-core-offline-contract-implementation.md`。DeepSeek 仅在单独功能分支/PR 新增三 `core/audio` 纯模块、≥40 个 Node 自动测试（计划 52 用例）和 `docs/WHALE_AUDIO_CORE_CONTRACT.md`，奠定 Whale Voice/Singing 同一 CoreTask、首访 FeatureManifest、Relay 候选不可提交的纯安全界限。不修改 Host、既有 GUI、Config、Sender 或生产。Fake 不是已实装功能。
+- 03-B 仍为 `WAIT_USER_AUTHORIZATION`，#16 TTS/SVC v1 OPEN 未合并；05-A 不能导入/复制该合同，亦不能靠 05-A 自动授权 05-B/06/07-B 或合并任何 PR。
+- 原 01–14 稳定编号、小白可视化简体中文/自动受控安装（未来另审）与安全门禁不变；本轮**仅 PR #17 规划分支**写入任务书/总表/交接/长期记忆及变更日志。#16/#19/#20/main 都未操作；新 CI 须随 #17 最终 HEAD 配对。
+
 ## 2026-10-25 · 07-A-F01 终审通过；派发 Plan 04-A / WeChatAgent v0.4.1 扩展静态审计
 
 - 实时核验 [PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) OPEN、HEAD `e21dee8`、1 file +489 行、CI `40231587503` SUCCESS；研究报告 C01–C17 固定源码行、SVC v1 三层映射、A01–A14 / R01–R10、Novice First Windows Manifest 和正负例均修复完毕。**Plan 07-A 及其 F01 修订均为 DONE（RESEARCH/OFFLINE）**，但 #19 未合并、RVC/Seed-VC 真实引擎/网关与微信均未执行。
