@@ -5,6 +5,15 @@
 >
 > 当前产品方向：一个 Whale Voice Core（TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Voice Core。**
 
+## 新对话的首要入口（ChatGPT）
+
+**用户要换新会话时，下一位 ChatGPT 首先读取 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)，再执行 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md) 的实时核验步骤。**
+
+- 交接卡记录最新计划/Git/PR 快照和重要安全边界。
+- 下一步行动书是 ChatGPT 的计划管理任务，不等于已经给 DeepSeek 分配开发。
+- 目前存在 **PR #17 和 PR #18 两套重叠的计划文件**（均独立基于 main、未合并），不能未经比对与用户批准就合并两套。
+- 任何 SHA、测试数量和 PR 状态都须重新查询；执行标准/记忆文档仍以最新可用仓库分支为准。
+
 ## 0. AI 协作职责与执行标准范围
 
 本项目由两位 AI 分工协作：
