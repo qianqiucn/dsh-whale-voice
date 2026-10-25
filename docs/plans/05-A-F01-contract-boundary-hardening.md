@@ -1,7 +1,38 @@
 # Plan 05-A-F01 · 纯契约输入边界与错误脱敏修订
-**版本：v1.0 · 2026-10-25 · Level 2 / SENT。**
-**父任务：Plan 05-A = REVIEW_REQUIRED；工程 PR #21 = OPEN；功能等级 OFFLINE / NOT_INTEGRATED。**
+**版本：v1.0 · 2026-10-25 · Level 2 / DONE（历史派发版本v1.0）。**
+**父任务：Plan 05-A = DONE / OFFLINE；工程 PR #21 = OPEN；功能等级 OFFLINE / NOT_INTEGRATED。**
 **执行者：DeepSeek；验收与计划管理：ChatGPT。继续原分支、原 PR，不新建重复任务。**
+
+## 最新独立验收（2026-10-25）· F01 DONE / OFFLINE
+
+本节替代本文件先前的REVIEW_REQUIRED作为当前结论；保留首轮发现与任务书作为历史。
+[PR #21](https://github.com/qianqiucn/dsh-whale-voice/pull/21) OPEN、未合并，HEAD `da3d0f7f34df99f11d21cf3a656adcfaa206ce25`，0 reviews、base main bf9cf66807e12d0b25872a0fa3869962dde04818，仅五个added +3382/-0；[最新CI](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40237933787) run40237933787 build/ui全成功。
+ChatGPT独立重跑81/81；原14组探针现在全部按约束拒绝（含换行ID额外健全检查）；另20个独立拒绝断言通过，嵌套setter计数0，合法候选仍submitAllowed=false。F01新增测试源码已复查，原65项意图保留。
+全量257/256/1、UI24/24和本机build/privacy为DS报告，ChatGPT核查对应CI步骤成功、代码差异及本地模块探针，没有冒称本地重跑全仓库/UI或验证用户机器全部行为。
+
+| ID | 复核结果与证据 |
+|---|---|
+| B01 | PASS：最新main/#16–#21状态重新查询，03-B无合并授权 |
+| B02 | PASS：原#21，精确五个added +3382/-0，无重复PR |
+| B03 | PASS（静态/离线）：源码及S01/S02无外部I/O |
+| B04 | PASS：Core/Relay共用validateAudioTaskRecord，T01–03/N01–03及独立探针 |
+| B05 | PASS：checkSurface/Manifest的Reflect.ownKeys+描述符，固定未知键路径；N06–12及独立断言 |
+| B06 | PASS：source/voiceProfile/时间完整验证，Relay不再省略；N02/N03 |
+| B07 | PASS：既有状态机未放宽，T15–26/N15 |
+| B08 | PASS：请求取消与确认分离，UNKNOWN终态无自动重试 |
+| B09 | PASS：SAVED/config APPLIED/Relay SENT命名空间分离 |
+| B10 | PASS：F01–03，RVC集合、Seed-VC OPTIONAL/NOT_READY保持 |
+| B11 | PASS：F05/F09/N14，Fake全VERIFIED仍realReady=false |
+| B12 | PASS：两功能首访/版本隔离；隐藏ack被拒绝，F11–15/N09/N14 |
+| B13 | PASS：Relay统一先验证只使用规范化副本；N01–08/N15、旧探针、20额外断言；候选十键禁提交 |
+| B14 | PASS（可见源代码/差异范围）：无#16导入和改动，映射仍docs-only；不把静态导入扫描夸成可机械证明全部原创来源 |
+| B15 | PASS：81/81独立重跑，N01–N16实际断言覆盖三缺口 |
+| B16 | PASS（来源限定）：新HEAD CI build/ui各步骤成功，DS本地全量/build/UI/privacy报告；本轮ChatGPT本地只复跑专项及探针，未装依赖 |
+| B17 | PASS（本阶段）：工程文档§7双首访/中文恢复/未实现事项保留，非最终GUI验收 |
+| B18 | PASS（可见代码/报告）：PR未合并，无Host/UI/模型/发送实现；用户机器无生产操作依DS声明，不从Git推导机器全部行为 |
+
+**决定：05-A/F01 DONE，PR_OPEN，OFFLINE。** 不代表PR已合并、真实授权已验证或功能集成。F01“不能接受被篡改记录”限定为Schema/跨字段规则，不证明持久事件历史。
+下一份仅[05-B纯组合视图](05-B-audio-core-readonly-view.md)；03-B仍WAIT_USER_AUTHORIZATION。原§16为首轮历史验收。
 
 ## 1. 唯一目标与替代关系
 修复三项已独立复现的输入校验缺口：Relay 完整记录校验缺失、隐藏自有字段被静默忽略、错误路径回显任意键名。
@@ -211,7 +242,7 @@ F01 必须全部满足：
 8. 未解决项与全部未执行的生产操作；结论 READY_FOR_PLAN05A_F01_REVIEW 或 REVIEW_REQUIRED。
 完成后停止，验收由 ChatGPT 执行。不得自动进入新阶段或合并。
 
-## 16. 本轮 ChatGPT 原 B01–B18 独立验收
+## 16. 首轮历史：ChatGPT 原 B01–B18 独立验收
 | ID | 结论 | 依据/限制 |
 |---|---|---|
 | B01 | PASS | main/#16–#21 状态实时核查，03-B 未授权 |
@@ -233,5 +264,5 @@ F01 必须全部满足：
 | B17 | PASS（阶段性） | 双故事板、中文恢复、Fake 标签与人工事项；不是最终 GUI 验收 |
 | B18 | PASS（代码/报告范围） | 未接 Host/UI/发送，无 merge；无法从 Git 独立证明机器全部行为，生产未操作依 DS 声明 |
 
-**最终：Plan 05-A REVIEW_REQUIRED；Plan 05-A-F01 SENT；PR #21 OPEN；不进入下一模块。**
+**首轮历史结论：Plan 05-A REVIEW_REQUIRED；Plan 05-A-F01 SENT；PR #21 OPEN；不进入下一模块。**
 DSH 对话建议：继续当前 DeepSeek 对话完成同一 PR 的小型修订，无需重新交接；若上下文已明显失真再保全工作后换对话。
