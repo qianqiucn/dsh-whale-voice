@@ -3,6 +3,11 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
+## Mandatory execution standard
+
+- [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md) — **read first for every Git/GitHub task**, including PR review, writing plans, tracking ideas, and marking work complete.
+- [AGENTS.md](../AGENTS.md) — agent startup rules enforce that preflight.
+
 ## Execution plans (new)
 
 - [plans/README.md](plans/README.md) — **Whale Voice / Whale Relay execution plan registry**, ordered task dispatch, status markers and change rules.
