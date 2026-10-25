@@ -36,6 +36,7 @@ jobs:
           node --check core/config-sandbox.mjs
           node --check core/config-schema.mjs
           node --check core/config-store.mjs
+          node --check core/config-coordinator.mjs
           node --check core/isolated-write-server.mjs
           node --check core/http.mjs
           node --check core/request-guards.mjs

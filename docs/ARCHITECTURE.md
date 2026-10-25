@@ -35,6 +35,10 @@ Properties:
 - Phase 4B-1 adds a sandboxed single-file config store and test-only HTTP API. It is not registered on
   the production Host and does not write production configuration; see
   [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md).
+- Phase 4B-2A adds `core/config-coordinator.mjs`, an **isolated** multi-source coordination protocol
+  over injected source adapters and a trusted test sandbox. Plans/journal/recovery are tested with
+  in-memory fixture adapters and a Fake Runtime; no production adapter, Host route or service reload
+  exists. See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md).
 - No component start/stop, installation, update, driver change, WeChat send or audio generation.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.
@@ -54,6 +58,7 @@ client.template.js ──┘
 index.js ─→ core/detect.mjs ─→ core/server.mjs (isolated tests only)
 core/config-schema.mjs + core/config-store.mjs (isolated single-file store; no production Host route)
 core/isolated-write-server.mjs (test-only write API; not imported by index.js)
+core/config-coordinator.mjs (isolated multi-source plan/journal/recovery; fixture adapters only)
 ```
 
 `client.js` is committed because it is the runtime artifact referenced by the DSH bundle, and the

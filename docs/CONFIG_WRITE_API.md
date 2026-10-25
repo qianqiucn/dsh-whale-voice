@@ -17,6 +17,7 @@ and saved-vs-effective separation.
 | [`core/config-sandbox.mjs`](../core/config-sandbox.mjs) | trusted test-sandbox capability, marker and root/realpath checks |
 | [`core/config-schema.mjs`](../core/config-schema.mjs) | pure schema validation, v0→v1 migration and sanitized public projection |
 | [`core/config-store.mjs`](../core/config-store.mjs) | sandboxed target guard, revision, optimistic write, atomic replace and rollback |
+| [`core/config-coordinator.mjs`](../core/config-coordinator.mjs) | Phase 4B-2A isolated multi-source plan/journal/recovery and apply-state coordinator |
 | [`core/isolated-write-server.mjs`](../core/isolated-write-server.mjs) | test-only loopback HTTP API; **not imported by the production Host** |
 | [`test/config-store.test.mjs`](../test/config-store.test.mjs) | behavior tests for validation, revision, atomicity, recovery, isolation and API |
 
@@ -321,13 +322,32 @@ The existing read-only detector, No-Core, stale-response, UI and demo tests rema
 
 ## 10. Next stage
 
-Phase 4B-2A, only after separate authorization, should address:
+Phase 4B-2B, only after separate authorization, should address:
 
+- source adapters for the real authority owners, using their supported APIs;
 - a controlled production write API behind the trusted Host;
-- multi-file transaction/journal and partial-success recovery;
+- component-provided loaded-revision confirmation;
 - cross-process locking/CAS or an explicit single-writer service boundary;
-- actual apply/effect confirmation and rollback;
+- restricted private recovery storage and real multi-file journal persistence;
 - frontend draft/conflict/pending-apply UX.
 
 This phase does not modify production configuration, restart services, start Voice Sender, touch
 WeChatAgent/Qwen or send messages.
+
+---
+
+## 11. Phase 4B-2A coordination (OFFLINE)
+
+`core/config-coordinator.mjs` adds an isolated coordination protocol for multiple logical sources.
+It does not write production files, does not register a production Host route and does not use a
+production runtime. See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md) for the authority matrix,
+plan/journal/recovery contract and Phase 4B-2B prerequisites.
+
+Key limits:
+
+- only isolated in-memory fixture adapters are implemented; production adapters are future work;
+- `bridgeVoice` and `senderService` are the only simulated writable sources;
+- `workerSafety` and `wechatPermissions` are read-only and cannot be expanded by a Bridge plan;
+- a successful save is `SAVED`/`PENDING_APPLY`, not `APPLIED`;
+- `APPLIED` requires a trusted loaded-revision response from each source's runtime;
+- no PID, file mtime, health 200 or equal content is accepted as apply proof.

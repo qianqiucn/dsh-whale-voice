@@ -1,8 +1,9 @@
 # Whale Voice — Configuration Sources (Phase 4A)
 
-**Scope:** read-only configuration discovery. No write endpoint exists in this phase.
-**Status:** `OFFLINE` until the live DSH GUI verifies the config snapshot; then Phase 4A can be
-accepted as `INTEGRATED` only for the fields actually read.
+**Scope:** configuration authority and read-only discovery, plus the isolated Phase 4B-1/4B-2A
+write/coordination contracts.
+**Status:** Phase 4A read-only source inventory is `INTEGRATED` in the live DSH Host; Phase 4B-1 and
+Phase 4B-2A are `OFFLINE` isolated implementations with no production write route.
 
 Path variables below are logical. The Core resolves them from its configured roots:
 
@@ -148,6 +149,25 @@ The isolated file is not one of the authoritative production files above. No pro
 WeChatAgent, Bridge, Sender, Qwen or `core.json` write is performed. Multi-file transaction, a
 production write route, cross-process CAS and runtime apply confirmation remain future work. See
 [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md).
+
+### Phase 4B-2A coordination protocol (OFFLINE)
+
+`core/config-coordinator.mjs` adds an isolated coordination protocol over source adapters:
+
+- `bridgeVoice` and `senderService` are the only simulated writable sources in this phase;
+- `core`, `workerSafety`, `wechatPermissions`, `ttsProvider` (mapped to `senderService`) and the
+  target map remain read-only or are never read;
+- Bridge `voice.enabled` and Worker `voice_enabled` stay separate; the Worker final-safety permit is
+  never a coordinator write target;
+- plans contain field names and opaque revisions, not full configs, target IDs or tokens;
+- saves are journaled and can be rolled back only when the source adapter confirms reversibility;
+- runtime application requires a trusted loaded-revision confirmation; there is no PID/mtime/HTTP-200
+  inference;
+- only an isolated in-memory fixture adapter and Fake Runtime are implemented. No production file
+  adapter or production Host route exists.
+
+See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md) for the authority matrix, state contract,
+journal/recovery model and Phase 4B-2B prerequisites.
 
 Missing/unreadable source behavior remains: affected fields `null`; source error is preserved; the
 revision changes because source state is part of the declared coverage.

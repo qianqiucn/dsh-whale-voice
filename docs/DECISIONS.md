@@ -243,3 +243,32 @@ permanent; registering a write route on the current Host.
 
 **Related:** [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md),
 [CONFIG_SOURCES.md](CONFIG_SOURCES.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-014 — Phase 4B-2A uses isolated source adapters, a save journal and split apply states
+
+**Status:** `ACCEPTED`
+**Date:** 2026-10-25
+**Decision:** The coordination prototype uses one trusted sandbox, injected source adapters, a
+per-transaction journal and a two-stage save/apply state model. Only `bridgeVoice` and
+`senderService` are simulated writable sources. `core`, `workerSafety`, `wechatPermissions` and the
+target map are read-only or never read. The coordinator serializes mutations in one instance,
+never writes a production file, never starts/stops/reloads a service and never sends a WeChat task.
+`APPLIED` requires a trusted loaded-revision response from each source runtime; file writes, PID
+liveness, mtime and HTTP 200 are not apply proof.
+
+**Reason:** The Bridge user switch and Worker final-safety permit are independent safety layers.
+Multi-file configuration cannot be made transactionally safe by pretending independent renames are
+one transaction. A journal plus explicit UNKNOWN/partial states is safer than a false claim of
+complete rollback. Isolated fixture adapters let the protocol be tested without touching production
+configuration or private target data.
+
+**Rejected alternatives:** Treating Bridge `voice.enabled` and Worker `voice_enabled` as one setting;
+accepting arbitrary paths/URLs/commands from the frontend; writing production files from this phase;
+inferring applied state from process/health evidence; automatic retry of uncertain apply/send;
+putting tokens, full whitelists or private recovery documents into the journal.
+
+**Related:** [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md),
+[CONFIG_SOURCES.md](CONFIG_SOURCES.md), [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md),
+[PROJECT_STATUS.md](PROJECT_STATUS.md).

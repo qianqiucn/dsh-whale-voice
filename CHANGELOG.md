@@ -39,6 +39,7 @@ not invent earlier releases or imply production maturity.
 - Phase 4B-1 isolated config store: trusted sandbox capability, strict v1 schema/migration, HMAC revision, `expectedRevision` conflicts, single-file atomic save/rollback, read/write state separation and a test-only loopback API; merged via PR #9, no production write route.
 - Eight-view navigation including Send & Safety; unsupported controls remain disabled.
 - Phase R1 repository audit: current/historical documentation index, historical-record banners, status reconciliation, `.gitignore` hardening and CI artifact hidden-directory fix; no runtime code change.
+- Phase 4B-2A isolated configuration coordination: source authority matrix, change plan, journal/recovery, save-vs-apply state contract, Fake Runtime and 32 coordination tests; no production adapter or Host write route.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

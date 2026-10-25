@@ -15,10 +15,11 @@ Read these first when resuming work:
 6. [ARCHITECTURE.md](ARCHITECTURE.md) — current and target boundaries.
 7. [CONFIG_SOURCES.md](CONFIG_SOURCES.md) — authoritative/read-only config sources and precedence.
 8. [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md) — Phase 4B-1 isolated write contract, status `OFFLINE`.
-9. [SETUP_API.md](SETUP_API.md) — read-only setup/status/detect/config contract.
-10. [UI_TESTING.md](UI_TESTING.md) — isolated Playwright harness and commands.
-11. [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md) — required upstream compatibility.
-12. [REPOSITORY_INVENTORY.md](REPOSITORY_INVENTORY.md) — historical initial-commit inventory; see the
+9. [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md) — Phase 4B-2A authority matrix, plan/journal and apply states, status `OFFLINE`.
+10. [SETUP_API.md](SETUP_API.md) — read-only setup/status/detect/config contract.
+11. [UI_TESTING.md](UI_TESTING.md) — isolated Playwright harness and commands.
+12. [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md) — required upstream compatibility.
+13. [REPOSITORY_INVENTORY.md](REPOSITORY_INVENTORY.md) — historical initial-commit inventory; see the
     banner in that file.
 
 Current code, tests, Git/GitHub state and named contracts take precedence over every summary.
