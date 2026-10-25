@@ -2,6 +2,18 @@
 
 **状态：PLANNED。Phase 4B-2B-2a 已 INTEGRATED，非 VERIFIED。生产写入尚未获授权。**
 
+## 2026-10-25 · Whale Voice/Whale Singing 分离页面与首次弹窗（原 Plan 09，仍 PLANNED）
+
+前端**两个独立入口**：`Whale Voice · 语音气泡`（规划 route `voice-bubbles`）；`Whale Singing · 唱歌`（规划 route `singing`）。共享 **Whale Audio Core（鲸音核心）**；具体流程与字段见 [双前端及首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+
+当前 `client.template.js` 有 **八页** NAV（overview/settings/permissions/safety/studio/emotions/activity/advanced），`pages.js` 承载页面内容，`WhaleVoiceApp` 内有 `Modal`/SetupWizard/ComponentsDialog。真实八页既有 INTEGRATED，不可把新界面当作已经实现；建议先在离线 Fake 层规划加两条 route，保留原八页、音色中心、旧配置信息及组件管理。
+
+- **首次进入各功能都应单独显示依赖选择弹窗**；语音页列 TTS 本地/CPU/云端择一、音色与可选 Relay/WeChatAgent 投递依赖；唱歌页列合法曲源、RVC/SVC 可选 Worker、条件分离与混音工具、音色使用权、可选音频文件交付。不得以进入 Voice 后自动跳过 Singing 首次弹窗。
+- 弹窗显示已安装/未知、推荐/可选/仅发送需要的依赖、许可、来源、体积未知项、GPU/CPU 兼容、进度/取消/失败恢复；`仅浏览` 可以关闭进入功能页的只读/演示状态，不自动下载模型，也不默认为已装或可用。
+- **重用**现有 Modal、首次 SetupWizard、ComponentsDialog；先后顺序为全局 SetupWizard→目标 feature 的首次弹窗，不允许叠弹；同一 feature 第二次正常进入不再骚扰，依赖失效/新版本提示有手动重开入口。
+- 当前仅 Fake Installer + Fake Capability 演示，不改变生产开关、模型文件、API 凭据或真实 Host；严格保持 SAVED != APPLIED、UNKNOWN 防重发和已有八页布局无回归。
+- DoD：两新导航可访问、移动/窄屏布局、Esc/焦点恢复/按钮、首访/二访/跨功能/重新检测/无 GPU/离线/取消/仅预览的正负 Playwright 回归，真实八页 Host 验收另行授权。
+
 ## 2026-10-25 · AI 翻唱离线配置 UX 追加项（仍 PLANNED）
 
 参考 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)，在既有 OFFLINE 配置草稿新增源音频授权、RVC/SVC 模式、音色同意、已审计 Gateway 健康/模型、音高 -12..12、人声/伴奏增益、预览/保存、投递授权状态。Backend OFFLINE、无 GPU、下载无许可证时禁用真实运行。
