@@ -6,6 +6,14 @@
 >
 > **建立：2026-10-25。** 禁止写入用户凭据、微信身份、私人聊天、联系人、参考音频、桌面截图和生产机器路径。
 
+## 最新项目事实（2026-10-25）· 04-A DONE、05-A SENT，纯工程重启推进
+
+用户一贯要求：**收到每次 DS 报告后 ChatGPT 必须核验并自动返回一份尽可能详尽、闭合设计、可直接发 DS 的下一任务书**。最新经核验 `Plan 07-A/F01` 和 `Plan 04-A` 均为 **DONE/RESEARCH-OFFLINE**；PR #19/#20 仅 docs，均未 Merge。04-A 研究结论 `RECOMMEND_DSH_ADAPTER_AND_OPTIONAL_V041_PLUGIN_AUDIT`：**S1 DSH 插件 + WeChatAgent 只读 Adapter** 最稳、不升级现有记录 0.3.9；0.4.1 ZIP Plugin API v2 另属宿主、与 DSH 不兼容、无任意音频发送 API；S2 仅未来选配审计，S3 Hook/DLL 禁止。
+
+**唯一最新正式派发 05-A = SENT（纯原创工程，仍 OFFLINE）**，权威完整 Level 2 [05-A-whale-audio-core-offline-contract-implementation.md](05-A-whale-audio-core-offline-contract-implementation.md)：三个 `core/audio` 无 I/O 纯模块、52 条预定 Node Fake/状态/Manifest/Relay 候选测试、1 个中文契约报告文件，独立 PR；无 Host 注入、真实任务运行、UI 页面、模型下载/安装、微信发送。PR #16 的 TTS/SVC v1 仍在未合并 OPEN PR，不能 import/cherry-pick，TaskContract 与 SVC v1 未来对接必须待 #16 用户专项合并及版本化映射。Plan 03-B 保持 `WAIT_USER_AUTHORIZATION`。不要重新派发已完成的 04/07，也不因 05-A Fake 通过就宣称新手产品已完成。
+
+永久最高产品原则仍为**零编程基础用户易用**：正常正式支持的功能不让用户手动装 Git/Python/pip/CUDA/编辑 JSON；分 Voice/Singing 独立依赖弹窗、真正有据的可用状态、中文错误与可恢复的安全图形路径；无权下载或未知 GPU 不能假绿灯。小白易用性永远不绕过法律、隐私和双层发送安全。原 Plan 01–14 不变；用户同意项目设计推进并非授权 Merge/生产写入/模型/微信发送。
+
 ## 2026-10-25 · 07-A 验收完毕；新 WeChatAgent v0.4.1 与 Plan 04-A 派发
 
 计划状态真实区分：**Plan 07-A/F01 = DONE（RESEARCH/OFFLINE，PR #19 OPEN，未合并）；Plan 04-A = SENT**（权威完整任务书 [04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)）；Plan 03-B = WAIT_USER_AUTHORIZATION（PR #16 未合并）；Plan 05 与 07-B 仍 PLANNED。绝不能把上游静态审计 DONE 冒充 RVC 可用、PR MERGED 或批准 07-B 工程。
