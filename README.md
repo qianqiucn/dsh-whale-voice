@@ -9,9 +9,9 @@ protocol**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeCha
 VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
 is **not included here**.
 
-> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 is merged and `OFFLINE`;
-> Phase 4B-2A is `OFFLINE` on its review branch (isolated store/coordination + test-only APIs; no
-> production write route). Remaining UI statistics/demo content is Mock.**
+> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 and Phase 4B-2A are merged
+> and `OFFLINE` (isolated store/coordination + test-only APIs; no production write route).
+> Remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
 > not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
 > was activated and visually accepted in the earlier DSH runtime; no production config write/apply
