@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wv-navlabel' }, item.label),
           item.id === 'activity' ? h('span', { className: 'wv-navbadge' }, '9') : null))),
         h('div', { className: 'wv-sidefoot' },
-          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '演示模式'), h('strong', null, 'Mock')),
+          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '真实配置只读'), h('strong', null, '生产写入禁用')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, 'Qwen3-TTS'), h('strong', null, 'whale-v1')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, '前端版本'), h('strong', null, 'v0.1.0'))))
     }
@@ -361,9 +361,9 @@ window.__ModuleLoader__.load({
           layout === 'narrow' ? h('span', { className: 'wv-brandmark', style: { width: 26, height: 26, borderRadius: 8 } }, h(WhaleMark, { size: 16 })) : null,
           h('div', { className: 'wv-crumb' }, h('b', null, 'Whale Voice'), h('span', null, '/'), h('span', null, item.label), h('span', null, '·'), h('span', null, item.en))),
         h('div', { className: 'wv-topbar-actions' },
-          h('span', { className: 'wv-demo', title: '所有服务状态、任务与参数均为前端演示数据，不代表真实生产状态。' }, '演示数据'),
-          h('span', { className: 'wv-topmeta' }, '不读取/不写入生产配置'),
-          h(IconButton, { icon: 'refresh', label: '刷新演示状态', onClick: () => notify('演示状态已刷新；未请求真实服务。', 'success') })))
+          h('span', { className: 'wv-demo', title: '标记为演示的服务指标、联系人与任务为前端演示数据；真实 Core 面板来自只读接口，不写入生产配置。' }, '部分演示'),
+          h('span', { className: 'wv-topmeta' }, '真实配置只读 · 生产写入禁用'),
+          h(IconButton, { icon: 'refresh', label: '刷新演示数据', onClick: () => notify('演示数据已刷新；真实 Core 状态与能力请在组件管理中重新检测。', 'success') })))
     }
 
     function ServiceDialog({ service, onClose }) {

@@ -331,6 +331,11 @@ function downgradeSurface(surface, versionMatch) {
     savedRevision: { state: 'UNKNOWN', kind: null },
     loadedRevision: { state: 'UNKNOWN', kind: null },
     apply: { state: 'UNKNOWN', reason: versionMatch === 'CHANGED' ? 'VERSION_NOT_AUDITED' : 'VERSION_UNKNOWN' },
+    // Read/hot-reload/restart conclusions are version-specific: never present an audited
+    // conclusion for an unaudited (or unknown) component version.
+    readTiming: 'UNKNOWN',
+    hotReload: 'UNKNOWN',
+    requiresRestart: 'UNKNOWN',
   }
 }
 
@@ -489,9 +494,9 @@ export function buildCapabilitySnapshot(options = {}) {
         id: base.surface,
         label: base.label,
         risk: base.risk,
-        readTiming: base.readTiming,
-        hotReload: base.hotReload,
-        requiresRestart: base.requiresRestart,
+        readTiming: surface.readTiming,
+        hotReload: surface.hotReload,
+        requiresRestart: surface.requiresRestart,
         ...(base.policy ? { policy: base.policy } : {}),
         ownerApi: { ...surface.ownerApi },
         save: {

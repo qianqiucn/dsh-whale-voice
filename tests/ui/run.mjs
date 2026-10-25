@@ -145,6 +145,68 @@ await check('all primary navigation surfaces render', async () => {
   })
 })
 
+await check('real Core panels and demo data are labeled separately', async () => {
+  await withPage(normal, async (page) => {
+    const text = await page.locator('body').innerText()
+    assert.match(text, /真实配置只读 · 生产写入禁用/)
+    assert.match(text, /部分演示/)
+    assert.match(text, /真实配置 · 只读/)
+    assert.match(text, /能力与授权摘要/)
+    assert.match(text, /演示联系人/)
+    assert.doesNotMatch(text, /所有服务状态、任务与参数均为前端演示数据/)
+    assert.doesNotMatch(text, /不读取\/不写入生产配置/)
+    const capabilityText = await page.locator('[data-testid="capability-summary"]').innerText()
+    assert.doesNotMatch(capabilityText, /演示数据|Mock/)
+  })
+})
+
+await check('refresh copy matches demo-vs-real behavior', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '刷新演示数据', exact: true }).click()
+    await page.getByText(/演示数据已刷新/).waitFor({ timeout: 3000 })
+    const toast = await page.getByText(/演示数据已刷新/).innerText()
+    assert.match(toast, /真实 Core 状态与能力请在组件管理中重新检测/)
+
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    const dialogText = await dialog.innerText()
+    assert.match(dialogText, /重新检测会刷新真实 Core 状态与能力数据/)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('an older capability response cannot overwrite a newer refresh', async () => {
+  await withPage('?bridge=capability-race', async (page) => {
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    await dialog.getByRole('button', { name: '重新检测', exact: true }).click()
+    await page.waitForTimeout(400)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.waitForTimeout(2200)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /Fresh Capability/)
+    assert.doesNotMatch(text, /Stale Capability/)
+  })
+})
+
+await check('changed version hides unverified reload conclusions and keeps writes disabled', async () => {
+  await withPage('?bridge=capability-changed', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForTimeout(300)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /是否需要重启未知/)
+    assert.match(text, /组件版本与审计版本不同/)
+    assert.doesNotMatch(text, /每次调用读取/)
+    assert.doesNotMatch(text, /无需重启即可看到更新/)
+    const panel = page.locator('[data-testid="capability-panel"]').first()
+    assert.equal(await panel.getByRole('button', { name: /保存/ }).count(), 0)
+  })
+})
+
 await check('capability summary separates support, authorization and write enablement', async () => {
   await withPage(normal, async (page) => {
     const summary = page.locator('[data-testid="capability-summary"]')

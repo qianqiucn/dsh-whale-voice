@@ -420,6 +420,11 @@ Key corrections:
   list; they no longer carry reload values that could override a surface.
 - `save.enabled` is derived (owner API + component scope + save support + authorization + write
   mode); `APPLIED` still requires an exact loaded revision and is never inferred.
+- **Version gate:** if the component version is `CHANGED` or `UNKNOWN`, the Surface's
+  `ownerApi`/`save`/`savedRevision`/`loadedRevision`/`apply` **and** its
+  `readTiming`/`hotReload`/`requiresRestart` become `UNKNOWN`; a version-specific reload
+  conclusion is never shown for an unverified version. Worker `policy: NEVER_WRITE` is retained and
+  no save control opens.
 
 The schema-v2 fixture has been superseded; the browser reader rejects any schema other than 3 and
 degrades to an unavailable capability state.
@@ -462,10 +467,12 @@ Phase 4B-2B-2a added the production read-only projection and its tests:
 - `core/capability-view.mjs` — pure browser/test view derivation.
 - `test/capability.test.mjs` — 8 tests: surface-level reload semantics, Sender automation vs TTS,
   version gating, static/dynamic separation, privacy, view derivation, invalid/older schema, no I/O.
-- `test/setup-status.test.mjs` — schema v3 reader, timeout, older-schema fail-closed.
+- `test/setup-status.test.mjs` — schema v3 reader, timeout, older-schema fail-closed, malformed
+  nested payloads and stale refresh competition.
 - `test/core.test.mjs` — Host/Core routes, 401/405/cross-site, bridge methods, schema v3.
-- `tests/ui/run.mjs` — 19 checks: capability summary, per-page surfaces, components dialog,
-  invalid/missing/timeout capability, 780 px, Console/requests, no secrets.
+- `tests/ui/run.mjs` — 23 checks: capability summary, per-page surfaces, components dialog,
+  invalid/missing/timeout capability, stale refresh race, changed-version reload downgrade,
+  Mock/real labels, 780 px, Console/requests, no secrets.
 
 The previous fixture-only schema v2 tests remain as regression coverage for the Phase 4B-2B-1
 contract; the implementation contract is schema v3 (see §10 and
@@ -474,10 +481,10 @@ contract; the implementation contract is schema v3 (see §10 and
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 171 tests / 170 pass / 0 fail / 1 platform skip
+node --test        -> 174 tests / 173 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
-npm.cmd run test:ui -> 19/19 isolated Playwright checks
+npm.cmd run test:ui -> 23/23 isolated Playwright checks
 ```
 
 **Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **OFFLINE**:

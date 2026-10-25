@@ -386,7 +386,7 @@ function ComponentsDialog({ open, status, capability, onClose, onRefresh, onSetu
     { name: 'TTS Provider', desc: '本地 / 云端 / 自定义', state: 'not_installed', detail: '未配置' },
   ]
   return h(Modal, {
-    title: '组件管理', subtitle: '查看安装状态、重新检测或回到安装向导。不会直接执行系统命令。', size: 'lg', onClose,
+    title: '组件管理', subtitle: '查看安装状态、重新检测或回到安装向导。重新检测会刷新真实 Core 状态与能力数据；不会写入配置或执行系统命令。', size: 'lg', onClose,
     footer: h(React.Fragment, null,
       h(Button, { variant: 'ghost', onClick: onAdvanced }, '高级设置'),
       h(Button, { onClick: onRefresh, disabled: status.checking }, h(Icon, { name: 'refresh', size: 14 }), '重新检测'),

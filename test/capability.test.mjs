@@ -113,8 +113,22 @@ test('changed or unknown component versions downgrade capabilities safely', () =
   assert.equal(changed.sources.find((item) => item.id === 'bridgeVoice').versionMatch, 'CHANGED')
   assert.equal(bridge.ownerApi.state, 'UNKNOWN')
   assert.equal(bridge.save.state, 'UNKNOWN')
+  assert.equal(bridge.save.enabled, false)
   assert.equal(bridge.apply.state, 'UNKNOWN')
+  assert.equal(bridge.readTiming, 'UNKNOWN')
+  assert.equal(bridge.hotReload, 'UNKNOWN')
+  assert.equal(bridge.requiresRestart, 'UNKNOWN')
   assert.ok(bridge.blockers.some((blocker) => blocker.code === 'VERSION_NOT_AUDITED'))
+  const bridgeView = deriveCapabilityView(changed).groups.bridge
+  assert.equal(bridgeView.readTiming, 'UNKNOWN')
+  assert.equal(bridgeView.hotReload, 'UNKNOWN')
+  assert.equal(bridgeView.requiresRestart, 'UNKNOWN')
+  assert.match(bridgeView.readText, /读取时机未知/)
+  assert.match(bridgeView.hotText, /热更新未知/)
+  assert.match(bridgeView.restartText, /是否需要重启未知/)
+  assert.equal(bridgeView.saveState, 'UNKNOWN')
+  assert.equal(bridgeView.enabled, false)
+
   // Sender is a different audited component and must keep its own verdict.
   assert.equal(changed.sources.find((item) => item.id === 'senderService').versionMatch, 'AUDITED')
 
@@ -125,7 +139,30 @@ test('changed or unknown component versions downgrade capabilities safely', () =
   const automation = surfaceOf(unknown, 'senderService', 'automation')
   assert.equal(unknown.sources.find((item) => item.id === 'senderService').versionMatch, 'UNKNOWN')
   assert.equal(automation.ownerApi.state, 'UNKNOWN')
+  assert.equal(automation.save.state, 'UNKNOWN')
+  assert.equal(automation.save.enabled, false)
+  assert.equal(automation.readTiming, 'UNKNOWN')
+  assert.equal(automation.hotReload, 'UNKNOWN')
+  assert.equal(automation.requiresRestart, 'UNKNOWN')
   assert.ok(automation.blockers.some((blocker) => blocker.code === 'VERSION_UNKNOWN'))
+
+  // A sender version change also downgrades Worker reload semantics, but NEVER_WRITE policy
+  // must survive so the application can never enable a write control for the safety permit.
+  const workerChanged = buildCapabilitySnapshot({ detected: detected({
+    sender: { ...detected().sender, version: '0.2.0' },
+    config: { ...detected().config, sender: { ...detected().config.sender, serviceVersion: '0.2.0' } },
+  }) })
+  const worker = surfaceOf(workerChanged, 'workerSafety', 'voicePermit')
+  assert.equal(workerChanged.sources.find((item) => item.id === 'workerSafety').versionMatch, 'CHANGED')
+  assert.equal(worker.policy, 'NEVER_WRITE')
+  assert.equal(worker.readTiming, 'UNKNOWN')
+  assert.equal(worker.hotReload, 'UNKNOWN')
+  assert.equal(worker.requiresRestart, 'UNKNOWN')
+  assert.equal(worker.save.state, 'UNKNOWN')
+  assert.equal(worker.save.enabled, false)
+  const workerView = deriveCapabilityView(workerChanged)
+  assert.equal(workerView.groups.worker.enabled, false)
+  assert.equal(workerView.summary.writeEnabled, 0)
 })
 
 test('static capability and dynamic runtime status stay separate', () => {
@@ -178,9 +215,27 @@ test('capability view renders readable states and surface-specific reload text',
 })
 
 test('invalid or older capability schema is rejected by the view', () => {
+  const good = buildCapabilitySnapshot({ detected: detected() })
   assert.equal(deriveCapabilityView(null).available, false)
   assert.equal(deriveCapabilityView({ schemaVersion: 2, ok: true, sources: [] }).available, false)
   assert.equal(deriveCapabilityView({ schemaVersion: 3, ok: false, sources: [] }).available, false)
+
+  const mutations = [
+    (data) => { delete data.sources[0].surfaces[0].save },
+    (data) => { delete data.sources[0].surfaces[0].ownerApi },
+    (data) => { data.sources[0].surfaces[0].status = 'ok' },
+    (data) => { delete data.sources[0].surfaces[0].status.saved },
+    (data) => { data.sources = [null] },
+    (data) => { data.components = [null] },
+    (data) => { data.sources[0].surfaces[0].blockers = null },
+  ]
+  for (const mutate of mutations) {
+    const data = JSON.parse(JSON.stringify(good))
+    mutate(data)
+    const view = deriveCapabilityView(data)
+    assert.equal(view.available, false)
+    assert.match(view.headline, /能力数据不可用/)
+  }
 })
 
 test('capability projection source has no I/O, shell or write path', () => {

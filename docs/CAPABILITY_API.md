@@ -261,9 +261,11 @@ WeChatAgent 0.3.9 / Hook 4.1.10.27 / Voice Sender Service 0.1.0
 
 - Matching version → `versionMatch: AUDITED`, audited capability retained.
 - Different version → `versionMatch: CHANGED`; the source's surfaces downgrade
-  `ownerApi`/`save`/`savedRevision`/`loadedRevision`/`apply` to `UNKNOWN` and add
-  `VERSION_NOT_AUDITED`. The old conclusion is not applied blindly.
+  `ownerApi`/`save`/`savedRevision`/`loadedRevision`/`apply` **and `readTiming`/`hotReload`/
+  `requiresRestart`** to `UNKNOWN`, and add `VERSION_NOT_AUDITED`. Unverified reload conclusions are
+  never displayed for that version. The old conclusion is not applied blindly.
 - Version unreadable → `versionMatch: UNKNOWN`, same downgrade with `VERSION_UNKNOWN`.
+- Worker `policy: NEVER_WRITE` is retained even when its version is downgraded; no save control opens.
 - Qwen/Core → `NOT_APPLICABLE`.
 
 Component health/version is read from the existing read-only detector. A missing component yields
@@ -329,11 +331,14 @@ Behavior coverage added in this phase:
 
 - `test/capability.test.mjs`: schema v3, surface-level reload semantics, automation vs TTS, version
   gating, static/dynamic separation, privacy, view derivation, no I/O.
-- `test/setup-status.test.mjs`: schema v3 validation, timeout, older schema rejection.
+- `test/setup-status.test.mjs`: schema v3 validation, timeout, older schema rejection, malformed
+  nested payloads (missing save/ownerApi/status fields, null sources, invalid components), stale
+  refresh competition.
 - `test/core.test.mjs`: Core/Host routes, 401/405/cross-site, capability schema, bridge methods.
-- `tests/ui/run.mjs`: summary, settings/studio/safety surface semantics, components dialog,
-  invalid/missing/timeout capability, 780 px layout, Console/requests, no secrets.
+- `tests/ui/run.mjs`: summary, settings/studio/safety surface semantics, changed-version reload
+  downgrade, components dialog, invalid/missing/timeout capability, stale refresh race,
+  Mock/real labels, 780 px layout, Console/requests, no secrets.
 
-Local result: `node --test` **171 tests / 170 pass / 1 platform skip**; UI **19/19**; build and
+Local result: `node --test` **174 tests / 173 pass / 1 platform skip**; UI **23/23**; build and
 Markdown integrity pass. This is OFFLINE/contract evidence; the live DSH Electron Host has not been
 reloaded for this phase.

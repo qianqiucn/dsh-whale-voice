@@ -329,6 +329,45 @@
         getCapabilityStatus: () => new Promise(() => {}),
       }
     }
+    if (mode === 'capability-race') {
+      let calls = 0
+      const stale = JSON.parse(JSON.stringify(capability))
+      stale.observedAt = '2026-10-24T00:00:00.000Z'
+      stale.components[0].label = 'Stale Capability'
+      const fresh = JSON.parse(JSON.stringify(capability))
+      fresh.observedAt = '2026-10-25T01:00:00.000Z'
+      fresh.components[0].label = 'Fresh Capability'
+      return {
+        getStatus: async () => status,
+        getCapabilities: () => {
+          calls += 1
+          if (calls === 1) return new Promise((resolve) => setTimeout(() => resolve(stale), 2000))
+          return Promise.resolve(fresh)
+        },
+        getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: fresh.components, surfaces: [], summary: {} }),
+      }
+    }
+    if (mode === 'capability-changed') {
+      const changed = JSON.parse(JSON.stringify(capability))
+      changed.sources.forEach((source) => {
+        source.versionMatch = 'CHANGED'
+        source.surfaces.forEach((surface) => {
+          surface.readTiming = 'UNKNOWN'
+          surface.hotReload = 'UNKNOWN'
+          surface.requiresRestart = 'UNKNOWN'
+          surface.save = { state: 'UNKNOWN', authorization: 'NOT_AUTHORIZED', enabled: false, gate: 'UNKNOWN' }
+          surface.ownerApi = { state: 'UNKNOWN', kind: null, scope: null, endpoint: null }
+          surface.apply = { state: 'UNKNOWN', reason: 'VERSION_NOT_AUDITED' }
+          surface.blockers = [{ code: 'VERSION_NOT_AUDITED', message: '组件版本与审计版本不同，能力结论已降级为未知。', severity: 'blocked' }]
+        })
+      })
+      changed.components.forEach((component) => { component.versionMatch = 'CHANGED' })
+      return {
+        getStatus: async () => status,
+        getCapabilities: async () => changed,
+        getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: changed.components, surfaces: [], summary: {} }),
+      }
+    }
     return {
       getStatus: async () => status,
       getConfig: async () => config,

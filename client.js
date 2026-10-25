@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wv-navlabel' }, item.label),
           item.id === 'activity' ? h('span', { className: 'wv-navbadge' }, '9') : null))),
         h('div', { className: 'wv-sidefoot' },
-          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '演示模式'), h('strong', null, 'Mock')),
+          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '真实配置只读'), h('strong', null, '生产写入禁用')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, 'Qwen3-TTS'), h('strong', null, 'whale-v1')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, '前端版本'), h('strong', null, 'v0.1.0'))))
     }
@@ -361,9 +361,9 @@ window.__ModuleLoader__.load({
           layout === 'narrow' ? h('span', { className: 'wv-brandmark', style: { width: 26, height: 26, borderRadius: 8 } }, h(WhaleMark, { size: 16 })) : null,
           h('div', { className: 'wv-crumb' }, h('b', null, 'Whale Voice'), h('span', null, '/'), h('span', null, item.label), h('span', null, '·'), h('span', null, item.en))),
         h('div', { className: 'wv-topbar-actions' },
-          h('span', { className: 'wv-demo', title: '所有服务状态、任务与参数均为前端演示数据，不代表真实生产状态。' }, '演示数据'),
-          h('span', { className: 'wv-topmeta' }, '不读取/不写入生产配置'),
-          h(IconButton, { icon: 'refresh', label: '刷新演示状态', onClick: () => notify('演示状态已刷新；未请求真实服务。', 'success') })))
+          h('span', { className: 'wv-demo', title: '标记为演示的服务指标、联系人与任务为前端演示数据；真实 Core 面板来自只读接口，不写入生产配置。' }, '部分演示'),
+          h('span', { className: 'wv-topmeta' }, '真实配置只读 · 生产写入禁用'),
+          h(IconButton, { icon: 'refresh', label: '刷新演示数据', onClick: () => notify('演示数据已刷新；真实 Core 状态与能力请在组件管理中重新检测。', 'success') })))
     }
 
     function ServiceDialog({ service, onClose }) {
@@ -454,6 +454,87 @@ function createSetupScanGate() {
   }
 }
 
+const CAPABILITY_OWNER_STATES = new Set(['AVAILABLE', 'UNSUPPORTED', 'UNKNOWN'])
+const CAPABILITY_SAVE_STATES = new Set(['SUPPORTED', 'UNSUPPORTED', 'UNKNOWN'])
+const CAPABILITY_AUTHORIZATION_STATES = new Set(['AUTHORIZED', 'NOT_AUTHORIZED', 'UNKNOWN'])
+const CAPABILITY_APPLY_STATES = new Set(['SUPPORTED', 'UNSUPPORTED', 'UNKNOWN'])
+const CAPABILITY_COMPONENT_STATES = new Set(['AVAILABLE', 'DEGRADED', 'UNAVAILABLE', 'UNKNOWN'])
+const CAPABILITY_VERSION_MATCH = new Set(['AUDITED', 'CHANGED', 'UNKNOWN', 'NOT_APPLICABLE'])
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isValidRevision(value) {
+  return isObject(value) && typeof value.state === 'string' && (value.kind === null || typeof value.kind === 'string')
+}
+
+function isValidStatusBlock(value) {
+  return isObject(value) && typeof value.state === 'string'
+}
+
+function isValidSurface(surface) {
+  if (!isObject(surface)) return false
+  if (typeof surface.id !== 'string' || typeof surface.label !== 'string') return false
+  if (!isValidRevision(surface.savedRevision) || !isValidRevision(surface.loadedRevision)) return false
+  if (!isObject(surface.ownerApi) || !CAPABILITY_OWNER_STATES.has(surface.ownerApi.state)) return false
+  if (!isObject(surface.save) || !CAPABILITY_SAVE_STATES.has(surface.save.state)) return false
+  if (!CAPABILITY_AUTHORIZATION_STATES.has(surface.save.authorization)) return false
+  if (!isObject(surface.apply) || !CAPABILITY_APPLY_STATES.has(surface.apply.state)) return false
+  if (typeof surface.readTiming !== 'string' || typeof surface.hotReload !== 'string' || typeof surface.requiresRestart !== 'string') return false
+  if (!isObject(surface.status)) return false
+  if (!isValidStatusBlock(surface.status.saved) || !isValidStatusBlock(surface.status.runtime) || !isValidStatusBlock(surface.status.apply)) return false
+  if (surface.status.saved.values !== null && surface.status.saved.values !== undefined && !isObject(surface.status.saved.values)) return false
+  if (typeof surface.status.apply.activeConfirmed !== 'boolean') return false
+  if (!Array.isArray(surface.blockers)) return false
+  return surface.blockers.every((blocker) => isObject(blocker) && typeof blocker.code === 'string')
+}
+
+function isValidSource(source) {
+  return isObject(source) &&
+    typeof source.id === 'string' &&
+    Array.isArray(source.surfaces) &&
+    source.surfaces.length > 0 &&
+    source.surfaces.every(isValidSurface)
+}
+
+function isValidComponent(component) {
+  return isObject(component) &&
+    typeof component.id === 'string' &&
+    typeof component.label === 'string' &&
+    CAPABILITY_COMPONENT_STATES.has(component.status) &&
+    CAPABILITY_VERSION_MATCH.has(component.versionMatch)
+}
+
+/**
+ * Strict schema-v3 validation for the capability payload. A malformed payload must become
+ * `core_invalid_response` and never reach the view as a partially trusted snapshot.
+ */
+function isValidCapabilitySnapshot(data) {
+  if (!isObject(data)) return false
+  if (data.schemaVersion !== 3 || data.ok !== true || data.writeMode !== 'READ_ONLY') return false
+  if (!Array.isArray(data.sources) || data.sources.length === 0) return false
+  if (!data.sources.every(isValidSource)) return false
+  if (!Array.isArray(data.components) || data.components.length === 0) return false
+  if (!data.components.every(isValidComponent)) return false
+  if (!isObject(data.summary)) return false
+  return true
+}
+
+function isValidCapabilityStatus(data) {
+  if (!isObject(data)) return false
+  if (data.schemaVersion !== 3 || data.ok !== true || data.writeMode !== 'READ_ONLY') return false
+  if (!Array.isArray(data.components) || data.components.length === 0) return false
+  if (!data.components.every(isValidComponent)) return false
+  if (!Array.isArray(data.surfaces)) return false
+  for (const surface of data.surfaces) {
+    if (!isObject(surface) || typeof surface.source !== 'string' || typeof surface.surface !== 'string') return false
+    if (!isValidStatusBlock(surface.saved) || !isValidStatusBlock(surface.runtime) || !isValidStatusBlock(surface.apply)) return false
+    if (!Array.isArray(surface.blockers)) return false
+  }
+  return isObject(data.summary)
+}
+
 function readBridgeSetupStatus(bridge, options = {}) {
   const timeoutMs = options.timeoutMs || 5000
   const now = options.now || (() => new Date().toISOString())
@@ -526,22 +607,11 @@ function readBridgePayload(bridge, method, options, validate) {
 }
 
 function readBridgeCapabilitySnapshot(bridge, options = {}) {
-  return readBridgePayload(bridge, 'getCapabilities', options, (data) => (
-    data.schemaVersion === 3 &&
-    data.ok === true &&
-    Array.isArray(data.sources) &&
-    Array.isArray(data.components) &&
-    data.summary && typeof data.summary === 'object'
-  ))
+  return readBridgePayload(bridge, 'getCapabilities', options, isValidCapabilitySnapshot)
 }
 
 function readBridgeCapabilityStatus(bridge, options = {}) {
-  return readBridgePayload(bridge, 'getCapabilityStatus', options, (data) => (
-    data.schemaVersion === 3 &&
-    data.ok === true &&
-    Array.isArray(data.components) &&
-    Array.isArray(data.surfaces)
-  ))
+  return readBridgePayload(bridge, 'getCapabilityStatus', options, isValidCapabilityStatus)
 }
 
 function readSetupCapabilities() {
@@ -911,6 +981,37 @@ const TONE = Object.freeze({
   unknown: 'unknown',
 })
 
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isViewableSurface(surface) {
+  if (!isObject(surface)) return false
+  if (typeof surface.id !== 'string' || typeof surface.label !== 'string') return false
+  if (!isObject(surface.ownerApi) || typeof surface.ownerApi.state !== 'string') return false
+  if (!isObject(surface.save) || typeof surface.save.state !== 'string' || typeof surface.save.authorization !== 'string') return false
+  if (!isObject(surface.apply) || typeof surface.apply.state !== 'string') return false
+  if (typeof surface.readTiming !== 'string' || typeof surface.hotReload !== 'string' || typeof surface.requiresRestart !== 'string') return false
+  if (!isObject(surface.status)) return false
+  if (!isObject(surface.status.saved) || typeof surface.status.saved.state !== 'string') return false
+  if (!isObject(surface.status.runtime) || typeof surface.status.runtime.state !== 'string') return false
+  if (!isObject(surface.status.apply) || typeof surface.status.apply.state !== 'string') return false
+  if (!Array.isArray(surface.blockers) || surface.blockers.some((blocker) => !isObject(blocker) || typeof blocker.code !== 'string')) return false
+  return true
+}
+
+function isViewableSnapshot(snapshot) {
+  if (!isObject(snapshot) || snapshot.schemaVersion !== 3 || snapshot.ok !== true) return false
+  if (!Array.isArray(snapshot.sources) || snapshot.sources.length === 0) return false
+  for (const source of snapshot.sources) {
+    if (!isObject(source) || typeof source.id !== 'string' || !Array.isArray(source.surfaces) || source.surfaces.length === 0) return false
+    if (!source.surfaces.every(isViewableSurface)) return false
+  }
+  if (!Array.isArray(snapshot.components) || snapshot.components.length === 0) return false
+  if (snapshot.components.some((component) => !isObject(component) || typeof component.id !== 'string' || typeof component.status !== 'string')) return false
+  return isObject(snapshot.summary)
+}
+
 function capabilityStateText(state) {
   return STATE_ZH[state] || (state ? String(state) : '未知')
 }
@@ -1038,7 +1139,7 @@ function componentItem(component) {
  * @returns {object} view model used by pages and tests
  */
 function deriveCapabilityView(snapshot) {
-  if (!snapshot || snapshot.schemaVersion !== 3 || snapshot.ok !== true || !Array.isArray(snapshot.sources)) {
+  if (!isViewableSnapshot(snapshot)) {
     return {
       available: false,
       reason: 'capability_invalid',
@@ -1308,7 +1409,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       h('div', { className: 'wv-hero-copy' },
         h('div', { className: 'wv-eyebrow' }, 'WHALE VOICE · 小鲸鱼语音中心'),
         h('h1', null, '小鲸鱼的声音，', h('span', null, '已经准备好了。')),
-        h('p', null, 'Qwen3-TTS · whale-v1 · 私聊演示联系人。当前是前端演示环境，服务状态与参数均为 Mock，不写入生产配置。'),
+        h('p', null, 'Qwen3-TTS · whale-v1 · 私聊演示联系人。真实 Core 配置面板为只读；服务指标、联系人与任务仍为前端演示数据，不写入生产配置，也不代表真实任务状态。'),
         h('div', { className: 'wv-hero-chips' },
           h('span', { className: 'wv-chip accent' }, h('strong', null, 'whale-v1'), '专属音色'),
           h('span', { className: 'wv-chip' }, h('strong', null, '2 / 3'), '服务在线'),
@@ -1331,7 +1432,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       h('div', null,
         h('span', { className: 'wv-section-kicker' }, 'SERVICE STATUS'),
         h('h2', null, '服务状态', h(Badge, { tone: 'demo' }, 'Mock'))),
-      h('span', { className: 'wv-section-note' }, '只读演示，不请求真实服务')),
+      h('span', { className: 'wv-section-note' }, '本区域为演示指标，不请求真实服务；真实 Core 状态见上方能力摘要')),
     h('div', { className: 'wv-grid three' }, MOCK_SERVICES.map((service) => h(ServiceCard, { key: service.id, service, onOpen: openService }))),
     h('div', { style: { height: 14 } }),
     h('div', { className: 'wv-grid two' },
@@ -2328,7 +2429,7 @@ function ComponentsDialog({ open, status, capability, onClose, onRefresh, onSetu
     { name: 'TTS Provider', desc: '本地 / 云端 / 自定义', state: 'not_installed', detail: '未配置' },
   ]
   return h(Modal, {
-    title: '组件管理', subtitle: '查看安装状态、重新检测或回到安装向导。不会直接执行系统命令。', size: 'lg', onClose,
+    title: '组件管理', subtitle: '查看安装状态、重新检测或回到安装向导。重新检测会刷新真实 Core 状态与能力数据；不会写入配置或执行系统命令。', size: 'lg', onClose,
     footer: h(React.Fragment, null,
       h(Button, { variant: 'ghost', onClick: onAdvanced }, '高级设置'),
       h(Button, { onClick: onRefresh, disabled: status.checking }, h(Icon, { name: 'refresh', size: 14 }), '重新检测'),

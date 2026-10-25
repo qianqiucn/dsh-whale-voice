@@ -327,9 +327,11 @@ Sender automation is `RUNTIME_API / FULL / NOT_REQUIRED` with `save.state: SUPPO
 `authorization: NOT_AUTHORIZED`; Sender TTS is `SERVICE_BOOT / NONE / REQUIRED` with
 `save.state: UNSUPPORTED`. The projection is GET-only, reuses the existing loopback/Origin/Host/
 token/connection guard, exposes no paths/tokens/whitelist names/target map and never enables a write
-control. A detected version different from the audited version downgrades that source's capability to
-`UNKNOWN`; unknown is never treated as unsupported or safe. `APPLIED` remains unreachable without an
-exact loaded revision.
+control. A detected version different from the audited version (or an unreadable version) downgrades
+that source's capability **and its `readTiming`/`hotReload`/`requiresRestart` conclusions** to
+`UNKNOWN`; unverified reload behavior is never shown. Unknown is never treated as unsupported, safe
+or writable, and Worker `NEVER_WRITE` is preserved. `APPLIED` remains unreachable without an exact
+loaded revision.
 
 **Reason:** A source-level reload value would incorrectly tell the UI that Sender TTS can be updated
 like automation (or vice versa). Users need to see what supports saving, what is authorized, what is

@@ -80,6 +80,37 @@ const TONE = Object.freeze({
   unknown: 'unknown',
 })
 
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isViewableSurface(surface) {
+  if (!isObject(surface)) return false
+  if (typeof surface.id !== 'string' || typeof surface.label !== 'string') return false
+  if (!isObject(surface.ownerApi) || typeof surface.ownerApi.state !== 'string') return false
+  if (!isObject(surface.save) || typeof surface.save.state !== 'string' || typeof surface.save.authorization !== 'string') return false
+  if (!isObject(surface.apply) || typeof surface.apply.state !== 'string') return false
+  if (typeof surface.readTiming !== 'string' || typeof surface.hotReload !== 'string' || typeof surface.requiresRestart !== 'string') return false
+  if (!isObject(surface.status)) return false
+  if (!isObject(surface.status.saved) || typeof surface.status.saved.state !== 'string') return false
+  if (!isObject(surface.status.runtime) || typeof surface.status.runtime.state !== 'string') return false
+  if (!isObject(surface.status.apply) || typeof surface.status.apply.state !== 'string') return false
+  if (!Array.isArray(surface.blockers) || surface.blockers.some((blocker) => !isObject(blocker) || typeof blocker.code !== 'string')) return false
+  return true
+}
+
+function isViewableSnapshot(snapshot) {
+  if (!isObject(snapshot) || snapshot.schemaVersion !== 3 || snapshot.ok !== true) return false
+  if (!Array.isArray(snapshot.sources) || snapshot.sources.length === 0) return false
+  for (const source of snapshot.sources) {
+    if (!isObject(source) || typeof source.id !== 'string' || !Array.isArray(source.surfaces) || source.surfaces.length === 0) return false
+    if (!source.surfaces.every(isViewableSurface)) return false
+  }
+  if (!Array.isArray(snapshot.components) || snapshot.components.length === 0) return false
+  if (snapshot.components.some((component) => !isObject(component) || typeof component.id !== 'string' || typeof component.status !== 'string')) return false
+  return isObject(snapshot.summary)
+}
+
 export function capabilityStateText(state) {
   return STATE_ZH[state] || (state ? String(state) : '未知')
 }
@@ -207,7 +238,7 @@ function componentItem(component) {
  * @returns {object} view model used by pages and tests
  */
 export function deriveCapabilityView(snapshot) {
-  if (!snapshot || snapshot.schemaVersion !== 3 || snapshot.ok !== true || !Array.isArray(snapshot.sources)) {
+  if (!isViewableSnapshot(snapshot)) {
     return {
       available: false,
       reason: 'capability_invalid',
