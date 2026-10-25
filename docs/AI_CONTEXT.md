@@ -103,7 +103,7 @@ production write route exists.
 | Phase 4B-2B-1 component capability audit | **`AUDIT COMPLETE` / `OFFLINE`** — real read timing, write interfaces, revision/apply evidence and blockers; no production write |
 | Phase 4B-2B-2a capability/status projection | **`INTEGRATED`** — real DSH Host/GUI, schema v3, eight-page coverage; read-only, no write route; not `VERIFIED` for destructive edge cases |
 | Phase 4B-2B-2b Sender automation write | **NOT STARTED** |
-| TTS-A Provider-neutral audit/contracts | **`DESIGN` / `OFFLINE`** — audit + pure contract/registry/v2 migration + isolated tests; all provider candidates `NOT_IMPLEMENTED`, no Host wiring |
+| TTS-A Provider-neutral audit/contracts | **`DESIGN` / `OFFLINE`** — audit + pure contract/registry/v2 migration + isolated TTS/SVC tests; 10 TTS candidates and 2 separate SVC candidates, all `NOT_IMPLEMENTED`, no Host wiring |
 
 Real GUI evidence exists for the Send & Safety page; it does **not** mean the Windows safety backend
 exists.
@@ -118,10 +118,12 @@ Scope:
 
 - audit Qwen hardcodes in the detector/config/capabilities/coordinator/UI into Qwen-specific,
   current-selection and generic-TTS categories ([TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md));
-- define a provider-neutral interface, candidate registry, unified synthesis result and delivery
-  boundary ([TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md));
-- add pure `core/tts/provider-contract.mjs`, `provider-registry.mjs` and `provider-config.mjs` with
-  v2 schema/migration design; no I/O, no provider network, no Host route, no production config;
+- define a provider-neutral interface, 10 TTS candidates (including IndexTTS, Gemini TTS and OpenAI
+  Speech), a separate SVC candidate registry (Seed-VC/RVC), unified synthesis result and delivery
+  boundary, and three-layer Core/Relay/WeChatAgent responsibilities;
+- add pure `core/tts/provider-contract.mjs`, `provider-registry.mjs`, `provider-config.mjs` and
+  `core/svc/svc-contract.mjs`/`svc-registry.mjs`; no I/O, no provider network, no Host route, no
+  production config;
 - add isolated tests for local/cloud fake status, Qwen-offline independence, unsupported
   voice/emotion, missing credentials, timeout/error, unknown version, migration, Mock/real isolation
   and the no-WeChat-send result boundary.
@@ -191,10 +193,10 @@ STARTED.
   used as Worker evidence**; Worker keeps `NEVER_WRITE` and writes disabled while Sender
   automation/TTS stay governed by the Service version. Read-only only.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 188 Node tests (187 pass, 1 platform skip; including 49 coordination, 5 capability, 7
-  capability-schema, 9 capability projection, 10 capability-reader/validation and 12 TTS provider
-  contract/migration tests) and 24 UI checks pass. These are offline/contract evidence, not real
-  production write/apply or real provider acceptance.
+- 192 Node tests (191 pass, 1 platform skip; including 49 coordination, 5 capability, 7
+  capability-schema, 9 capability projection, 10 capability-reader/validation, 12 TTS provider and
+  4 SVC contract/registry tests) and 24 UI checks pass. These are offline/contract evidence, not real
+  production write/apply or real provider/SVC acceptance.
 
 ---
 
@@ -262,7 +264,7 @@ Phase 4B-2B-2a result:
 
 ```text
 build: PASS, client.js regenerated (in sync)
-node --test: 187/188 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 9 projection, 10 reader/validation and 12 TTS provider contract/migration tests)
+node --test: 191/192 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 9 projection, 10 reader/validation, 12 TTS provider and 4 SVC tests)
 UI: 24/24 PASS
 ```
 
@@ -326,6 +328,6 @@ Do not trust this summary alone. Verify:
 4B-2B-2a is **`INTEGRATED`** after real Host/GUI acceptance (full eight-page coverage; not
 `VERIFIED` for destructive edge cases), Phase 3B/4A remain `INTEGRATED`, TTS-A is **`DESIGN` /
 `OFFLINE`** (pure provider contract/registry/v2 migration; no provider wired), and Phase 4B-2B-2b is
-**NOT STARTED**. 188 Node (187 pass, 1 skip) / 24 UI checks are offline/contract evidence, not
-production write/apply or real provider acceptance. No production configuration or runtime behavior
-change.
+**NOT STARTED**. 192 Node (191 pass, 1 skip) / 24 UI checks are offline/contract evidence, not
+production write/apply or real provider/SVC acceptance. No production configuration or runtime
+behavior change.

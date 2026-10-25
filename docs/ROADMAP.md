@@ -197,28 +197,35 @@ implemented. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
 
 ---
 
-## P6 — Multi-engine TTS (local / cloud / custom)
+## P6 — Multi-engine TTS / SVC (local / cloud / custom)
 
-**Goal:** Allow an explicitly selected local, cloud or custom TTS provider without silent fallback.
+**Goal:** Allow an explicitly selected local, cloud or custom TTS provider and a separate SVC task
+type without silent fallback.
 
 **Core tasks:**
 - Provider registry with capability, health, version, cost/privacy and resource metadata (TTS-A
-  design: `core/tts/provider-registry.mjs`).
+  design: `core/tts/provider-registry.mjs`; 10 TTS candidates, none implemented).
+- Separate SVC engine registry/contract for Seed-VC/RVC; no SVC inference yet.
 - Provider-neutral configuration with separate provider instances/models/voices/voice packs and
   protected credential references (TTS-A proposal: `core/tts/provider-config.mjs`).
 - TTS-B: provider service, provider-aware status, remove Qwen-only TTS gating, neutral read-only UI.
 - TTS-C: real local adapter, real cloud adapter after credentials/cost/privacy review, and custom
   HTTP adapter with endpoint validation and request limits.
+- Shared voice library/audio pipeline/task system for TTS and SVC; Whale Relay Core（鲸递） owns safe
+  delivery/UI Automation/dedup/target verification (target component, not implemented).
 - Audio validation, timeout, cancellation and no automatic provider switch.
 
-**Dependencies:** P1/P2; TTS-A design; user decision on providers and credentials policy.
+**Dependencies:** P1/P2; TTS-A design; user decision on providers, SVC, credentials and Relay Core.
 
-**Acceptance:** Provider selection is explicit; missing credentials fail closed; no key is logged or
-committed; Qwen offline does not make another provider unavailable; a provider never sends WeChat.
+**Acceptance:** Provider/SVC selection is explicit; missing credentials fail closed; no key is logged
+or committed; Qwen offline does not make another provider unavailable; no Provider/SVC engine sends
+WeChat directly.
 
-**Current status:** TTS-A **`DESIGN`/`OFFLINE`**: audit, contract, candidate registry, v2 migration
-proposal and 12 isolated tests. No candidate is implemented; Qwen3-TTS is the current reference,
-`whale-v1` is the current personal voice, not a product default. TTS-B/TTS-C are **NOT STARTED**.
+**Current status:** TTS-A **`DESIGN`/`OFFLINE`**: audit, contract, 10 TTS candidates (incl. IndexTTS,
+Google Gemini TTS, OpenAI Speech), 2 separate SVC candidates (Seed-VC/RVC), three-layer
+Core/Relay/WeChatAgent design, v2 migration proposal and 16 isolated TTS/SVC tests. No candidate is
+implemented; Qwen3-TTS is the current reference, `whale-v1` is the current personal voice, not a
+product default. TTS-B/TTS-C are **NOT STARTED**.
 
 ---
 
@@ -336,7 +343,7 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 188 Node tests. PR #3–#15 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 192 Node tests. PR #3–#15 are integrated into `main`; Phase 4B-1
 is merged but remains `OFFLINE`; Phase 4B-2A coordination is merged and `OFFLINE`; Phase 4B-2B-1
 capability audit is complete and `OFFLINE`; Phase 4B-2B-2a read-only capability/status projection is
 `INTEGRATED` after real Host/GUI acceptance; TTS-A Provider-neutral design is `DESIGN`/`OFFLINE`;

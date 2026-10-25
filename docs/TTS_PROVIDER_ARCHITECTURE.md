@@ -1,37 +1,53 @@
-# Provider-Neutral TTS Architecture (TTS-A)
+# Provider-Neutral TTS / SVC Architecture (TTS-A / TTS-A-H)
 
 **Status:** design and pure contracts only. No provider adapter, Host route, credential store or
 production configuration is connected in this phase.
 **Related:** [TTS Provider Audit](TTS_PROVIDER_AUDIT.md),
 [Capability API](CAPABILITY_API.md), [Architecture](ARCHITECTURE.md).
 
-## 1. Product boundary
+## 1. Product boundary and three layers
 
-Whale Voice is a multi-engine voice plugin. WeChatAgent provides WeChat access; Voice Sender owns
-the existing Windows UI Automation send path; Whale Voice Core owns task coordination, provider
-selection, synthesis and delivery routing. A TTS provider only turns text into an audio artifact.
-It never sends WeChat messages and never controls the Worker safety permit.
+Whale Voice is a multi-engine voice plugin. The target responsibilities are deliberately separated:
+
+| Layer | Owns | Does not own |
+|---|---|---|
+| **Whale Voice Core** | TTS/SVC task coordination, provider management, unified voice library, audio artifact management | WeChat access, UI Automation, final WeChat delivery |
+| **Whale Relay Core（鲸递）** | Safe delivery, UI Automation adapter, future optional Native Hook, delivery status, deduplication and target verification | Provider synthesis, voice library, WeChat account identity |
+| **WeChatAgent** | WeChat access, account/session identity, existing chat authorization | TTS/SVC synthesis, provider selection, Relay deduplication |
+
+**Whale Relay Core is a target component and is not implemented in this phase.** The current
+repository still reaches the existing Voice Sender Windows UI Automation path; Relay Core is the
+future boundary that will own that delivery adapter. WeChatAgent remains the required WeChat platform
+layer and is not replaced by Relay or by Whale Voice.
 
 ```text
 DSH UI / Bridge
       |
       v
 Whale Voice Core
-  Provider Registry + Selection + Task Coordinator
+  TTS/SVC task coordination + Provider management
+  Unified voice library + audio artifact management
       |
-      +--> Provider Adapter (LOCAL / CLOUD / CUSTOM)
+      +--> TTS Provider Adapter (LOCAL / CLOUD / CUSTOM)
       |        |
       |        +--> audio artifact + metadata
       |
+      +--> SVC Engine Adapter (Seed-VC / RVC candidates)
+      |        |
+      |        +--> converted audio artifact
+      |
       +--> Shared Audio Pipeline (validate/normalize/cache)
       |
-      +--> Delivery Router
+      +--> Whale Relay Core（鲸递）
+               Safe delivery + UI Automation adapter
+               Optional Native Hook + delivery status/dedup/target verification
                |
-               +--> WeChatAgent / existing Voice Sender UI Automation path
+               +--> WeChatAgent access/identity + existing Voice Sender UI Automation path
 ```
 
-Forbidden provider outputs: a WeChat send, a target chat mutation, a Worker permit change, a
-credential value or a direct file path.
+Provider/SVC outputs never include a WeChat send, target chat mutation, Worker permit change,
+credential value or direct filesystem path. All audio goes through the shared pipeline and Relay;
+**no Provider may directly send WeChat messages**.
 
 ## 2. Provider interface
 
@@ -99,7 +115,7 @@ streaming or format, missing credentials, provider unavailable, text outside lim
 
 The result contains an opaque `artifactRef`, not a raw filesystem path or an embedded credential.
 `normalizeSynthesisResult()` rejects `delivery.state != PENDING_ROUTER`, `wechat`, `send`, `target`
-and secret-looking fields. The shared delivery router is the only component allowed to hand audio
+and secret-looking fields. Whale Relay Core（鲸递）is the only future component allowed to hand audio
 to the existing Voice Sender flow.
 
 ## 3. Registry
@@ -112,14 +128,39 @@ to the existing Voice Sender flow.
 | Piper | LOCAL | candidate only |
 | Kokoro | LOCAL | candidate only |
 | sherpa-onnx | LOCAL | candidate only |
+| IndexTTS | LOCAL | candidate only; model variants/license/clone/emotion/CPU-GPU unverified |
 | Azure Speech | CLOUD | candidate only |
 | ElevenLabs | CLOUD | candidate only |
+| Google Gemini TTS | CLOUD | candidate only; API/voices/languages/retention/cost unverified |
+| OpenAI Speech API | CLOUD | candidate only; endpoint/model/voice/format/cost unverified; no default voice |
 | Custom HTTP TTS | CUSTOM | candidate only |
 
 All entries have `integrationStatus: NOT_IMPLEMENTED`, `selectable: false`; the registry exposes no
 default provider and `selectProviderCandidate()` always returns `NOT_IMPLEMENTED` in TTS-A. A future
 adapter must add an audited manifest and explicit selection; it cannot appear merely because a
-process, model file or URL exists.
+process, model file or URL exists. The three new entries add no model name, default voice, endpoint,
+credential or claimed capability.
+
+### TTS / SVC boundary
+
+TTS and SVC are two task types with different inputs, even though they share infrastructure:
+
+| | TTS | SVC |
+|---|---|---|
+| Input | Text + synthesis parameters | Existing speech/singing audio + conversion parameters |
+| Output | Synthesized audio artifact | Converted audio artifact |
+| Example engines | Qwen3-TTS, Piper, Kokoro, cloud TTS | Seed-VC, RVC |
+| Registry | `core/tts/provider-registry.mjs` | `core/svc/svc-registry.mjs` (separate) |
+| Contract | `core/tts/provider-contract.mjs` | `core/svc/svc-contract.mjs` |
+
+- Seed-VC and RVC are **SVC candidates only** and are not inserted into the TTS Provider Registry.
+- Both task types use the **shared voice library**, **shared audio pipeline** and **shared task
+  system** owned by Whale Voice Core.
+- SVC source audio is an opaque artifact reference, never a raw file path; the target voice comes
+  from the shared library, not an engine default.
+- SVC results also end with `delivery: PENDING_ROUTER`; Relay owns delivery.
+- TTS-A-H only defines the SVC contract/candidate boundary. No SVC inference, model download,
+  training, conversion, audio generation or consent workflow is implemented.
 
 ## 4. Configuration schema v2 proposal
 
@@ -224,16 +265,21 @@ unimplemented provider.
 
 ## 7. Security invariants
 
-- WeChatAgent remains the WeChat access authority.
-- Whale Voice Core owns task coordination; providers only synthesize.
-- The existing Voice Sender UI Automation path is unchanged.
+- WeChatAgent remains the WeChat access/identity/authorization authority.
+- Whale Voice Core owns TTS/SVC task coordination, provider management, the shared voice library and
+  audio artifact management.
+- Whale Relay Core（鲸递）owns safe delivery, the UI Automation adapter, optional future Native Hook,
+  delivery status/dedup and target verification. It is a target component, not implemented here; the
+  current Voice Sender UI Automation path is unchanged.
+- Providers and SVC engines only produce audio artifacts; they never send WeChat and never write the
+  target chat.
 - Worker `NEVER_WRITE` remains independent.
 - `UNKNOWN` is not retried automatically and is never displayed as success.
 - Saved configuration is not runtime-applied evidence.
 - Text is not uploaded to a cloud provider without explicit user knowledge/confirmation.
 - No paid request is made without explicit authorization.
 - Qwen need not be running to configure another provider.
-- Provider manifests cannot contain credential values or delivery behavior.
+- Provider/SVC manifests cannot contain credential values or delivery behavior.
 
 ## 8. TTS-B / TTS-C split
 
@@ -244,6 +290,7 @@ unimplemented provider.
 - Add v2 migration and isolated tests; keep production write disabled.
 - Add neutral read-only GUI provider/voice model; no real provider network calls.
 - Update coordinator sources from `qwenRuntime` to per-provider observations.
+- Keep the SVC contract/candidate registry separate; SVC inference remains unimplemented.
 
 ### TTS-C — Real adapters and secure credentials
 
@@ -252,9 +299,11 @@ unimplemented provider.
   retention review.
 - Implement custom HTTP adapter with endpoint validation, auth references, request limits and
   response-format verification.
-- Add real synthesis/preview tests with no production sends; then a separate Voice Sender integration
-  acceptance.
-- No provider sends WeChat; all audio goes through the shared pipeline and delivery router.
+- Add real synthesis/preview tests with no production sends; then a separate Voice Sender/Relay
+  integration acceptance.
+- No provider or SVC engine sends WeChat; all audio goes through the shared pipeline and Relay
+  (`PENDING_ROUTER`). Real SVC (Seed-VC/RVC) requires a separate model/license/consent review and is
+  not part of TTS-C's ordinary TTS adapter scope.
 
 ## 9. Open questions
 

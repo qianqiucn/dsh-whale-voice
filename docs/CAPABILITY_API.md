@@ -362,7 +362,7 @@ Behavior coverage added in this phase:
   invalid/missing/timeout capability, stale refresh race, Mock/real labels, demo-data explanation,
   780 px layout, Console/requests, no secrets.
 
-Local/isolated result: `node --test` **188 tests / 187 pass / 1 platform skip**; UI **24/24**; build and
+Local/isolated result: `node --test` **192 tests / 191 pass / 1 platform skip**; UI **24/24**; build and
 Markdown integrity pass. The real DSH Host/GUI acceptance passed for schema v3 and all eight pages;
 destructive No-Core/timeout/invalid-schema injections and Console/Network reading remain unverified,
 so the phase is `INTEGRATED`, not `VERIFIED`.

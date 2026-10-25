@@ -286,10 +286,13 @@ test('cloud credentials and emotion capability are explicit, not guessed', () =>
 
 test('registry candidates are explicitly not implemented', () => {
   const all = listProviderCandidates()
-  assert.equal(all.length, 7)
+  assert.equal(all.length, 10)
   assert.ok(all.every((candidate) => candidate.integrationStatus === 'NOT_IMPLEMENTED'))
   assert.ok(all.every((candidate) => candidate.selectable === false))
   assert.equal(getProviderCandidate('qwen-local').id, 'qwen3-tts')
+  assert.equal(getProviderCandidate('indextts').kind, PROVIDER_KINDS.LOCAL)
+  assert.equal(getProviderCandidate('google-gemini-tts').kind, PROVIDER_KINDS.CLOUD)
+  assert.equal(getProviderCandidate('openai-speech').kind, PROVIDER_KINDS.CLOUD)
   assert.equal(getProviderCandidate('azure-speech').kind, PROVIDER_KINDS.CLOUD)
   assert.equal(getProviderCandidate('custom-http').kind, PROVIDER_KINDS.CUSTOM)
   assert.equal(selectProviderCandidate('piper').ok, false)

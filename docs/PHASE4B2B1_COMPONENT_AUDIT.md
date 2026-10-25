@@ -487,7 +487,7 @@ contract; the implementation contract is schema v3 (see §10 and
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 188 tests / 187 pass / 0 fail / 1 platform skip
+node --test        -> 192 tests / 191 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
 npm.cmd run test:ui -> 24/24 isolated Playwright checks

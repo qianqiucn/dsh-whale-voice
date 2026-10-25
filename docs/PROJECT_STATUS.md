@@ -167,15 +167,17 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       the existing token/origin/loopback/connection guard. Real DSH Host/GUI acceptance covered all
       eight navigation pages; Worker version is independent and `NEVER_WRITE` is preserved; no
       `APPLIED` without a loaded revision. Merged via PR #15 (`bf9cf66`). See
-      [CAPABILITY_API.md](CAPABILITY_API.md). 188 Node / 24 UI checks on the integrated baseline.
+      [CAPABILITY_API.md](CAPABILITY_API.md). 192 Node / 24 UI checks on the integrated baseline.
 - [x] TTS-A Provider-neutral audit and pure contracts **DESIGN/OFFLINE**: `docs/TTS_PROVIDER_AUDIT.md`
       inventories Qwen hardcodes by Qwen-specific / current-selection / generic category;
-      `docs/TTS_PROVIDER_ARCHITECTURE.md` defines the provider interface, candidate registry,
-      v2 config/migration proposal, GUI plan and TTS-B/C split. `core/tts/provider-contract.mjs`,
-      `provider-registry.mjs` and `provider-config.mjs` are pure and isolated: no I/O, no Host route,
-      no production config, no provider network call, no credentials. All candidates are
-      `NOT_IMPLEMENTED`; `whale-v1` is preserved only as the current personal voice. 12 isolated
-      provider contract/migration tests added; no runtime or UI wiring.
+      `docs/TTS_PROVIDER_ARCHITECTURE.md` defines the provider interface, 10 TTS candidates, separate
+      SVC candidates, three-layer Core/Relay/WeChatAgent responsibilities, v2 config/migration
+      proposal, GUI plan and TTS-B/C split. `core/tts/provider-contract.mjs`,
+      `provider-registry.mjs` and `provider-config.mjs` are pure and isolated; `core/svc/` adds the
+      separate SVC contract/registry (Seed-VC, RVC). No I/O, no Host route, no production config, no
+      provider network call, no credentials. All candidates are `NOT_IMPLEMENTED`; `whale-v1` is
+      preserved only as the current personal voice. 12 TTS + 4 SVC isolated tests added; no runtime or
+      UI wiring, no real TTS/SVC.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -259,7 +261,7 @@ services or send WeChat messages. Phase 4B-2B-2b remains a separate future task 
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 188 tests: 187 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection, 10 capability-reader/validation and 12 TTS provider contract/migration tests |
+| `node --test` | 192 tests: 191 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection, 10 capability-reader/validation, 12 TTS provider contract/migration and 4 SVC contract/registry tests |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -286,9 +288,10 @@ services or send WeChat messages. Phase 4B-2B-2b remains a separate future task 
 | Windows lock probe (local) | `fs.open(...,'wx')` exclusive create, `EEXIST` on second create, `process.kill(pid,0)` live/`ESRCH`, `rename` replaces the name only; no atomicity or power-loss durability claim; advisory only, no production file touched |
 | Live DSH host bridge | current port 59194 (Host PID 23200, main window 30644); Host routes 401; trusted bridge injects; eight GUI pages show real config; Phase 4B-2B-2a accepted |
 | TTS-A provider contract | pure `core/tts/provider-contract.mjs`: manifest/version/status/request/result validation; no I/O, no network, no WeChat delivery; cloud/local fake-provider behavior tested |
-| TTS-A registry | all seven candidates (`qwen3-tts`, piper, kokoro, sherpa-onnx, azure-speech, elevenlabs, custom-http) are `NOT_IMPLEMENTED`, `selectable:false`, no default; no provider is connected |
+| TTS-A registry | all ten TTS candidates (`qwen3-tts`, piper, kokoro, sherpa-onnx, indextts, azure-speech, elevenlabs, google-gemini-tts, openai-speech, custom-http) are `NOT_IMPLEMENTED`, `selectable:false`, no default; two SVC candidates (`seed-vc`, `rvc`) are in a separate registry; no provider/engine is connected |
+| TTS-A SVC boundary | `core/svc/svc-contract.mjs` accepts an opaque source-audio artifact + shared target voice + conversion parameters and returns `PENDING_ROUTER`; `core/svc/svc-registry.mjs` keeps Seed-VC/RVC out of the TTS registry; no real conversion or model/consent workflow |
 | TTS-A config migration | v2 proposal separates provider instances/models/voices/voice packs; qwen-local v1 preserved; cloud/custom legacy requires explicit selection; secrets/unsafe URLs/provider-voice mismatches rejected; no file write |
-| TTS-A tests | 12 isolated tests: local/cloud status, Qwen-offline independence, unsupported voice/language/emotion/streaming, missing credentials, timeout/error, unknown version, migration/idempotency, Mock/real isolation and no-provider-send boundary |
+| TTS-A tests | 16 isolated tests: 12 TTS (local/cloud status, Qwen-offline independence, unsupported voice/language/emotion/streaming, missing credentials, timeout/error, unknown version, migration/idempotency, Mock/real isolation, no-provider-send) and 4 SVC (request/result boundary, separate registry, no delivery/I/O) |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | `npm.cmd run test:ui` | 24/24 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, stale refresh race, Mock/real labels, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |

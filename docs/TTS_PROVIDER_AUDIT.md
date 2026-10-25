@@ -133,3 +133,16 @@ Provider-neutral because status, config schema, default voice, detection and TTS
 gating all assume `qwen-local` or Qwen runtime. TTS-A delivers the contract, registry, migration
 proposal and tests; TTS-B must implement the provider service and neutral configuration; TTS-C
 may connect real local/cloud/custom adapters with separate security review.
+
+## 8. TTS-A-H supplements
+
+- The TTS candidate matrix now also includes **IndexTTS** (LOCAL), **Google Gemini TTS** (CLOUD) and
+  **OpenAI Speech API** (CLOUD). All remain `NOT_IMPLEMENTED`, unselectable, with no default voice,
+  endpoint, credential or claimed model capability.
+- **SVC is a separate task type**, not a TTS provider: Seed-VC and RVC are candidates in
+  `core/svc/svc-registry.mjs` and are absent from the TTS registry. TTS input is text; SVC input is
+  existing speech/singing audio. Both share the voice library, audio pipeline and task system.
+- The target three layers are **Whale Voice Core** (orchestration/provider/voice library/artifacts),
+  **Whale Relay Core（鲸递）** (safe delivery/UI Automation/Native Hook candidates/dedup/target
+  verification) and **WeChatAgent** (WeChat access/identity/authorization). Relay Core is not
+  implemented in this phase; no Provider or SVC engine may send WeChat directly.

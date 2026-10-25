@@ -45,7 +45,8 @@ These are retained as evidence. Their status lines describe the moment they were
 - **Current implementation:** `core/`, `index.js`, `client.js`, `client.template.js`, `pages.js`,
   `setup.js`, `packages/adapter-wechatagent/`.
 - **TTS-A design-only:** `core/tts/` pure Provider contract, candidate registry and v2 migration
-  proposal; not injected into `client.js`, not a Host route and not connected to any provider.
+  proposal; `core/svc/` separate SVC contract/registry (Seed-VC/RVC candidates). Not injected into
+  `client.js`, not a Host route and not connected to any provider.
 - **Current tests:** `test/` (Node behavior/contract tests) and `tests/ui/` (isolated Playwright).
 - **Generated artifact:** `client.js` is rebuilt from `client.template.js`, `pages.js`, `setup.js` and
   `client.css`; do not hand-edit it.

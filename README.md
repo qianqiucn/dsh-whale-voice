@@ -228,6 +228,8 @@ The target architecture keeps TTS providers pluggable:
   explicit credentials, cost and privacy disclosure.
 - Custom: self-hosted HTTP TTS requires endpoint validation, authentication references and response
   format verification.
+- SVC (Seed-VC/RVC candidates) is a separate future task type: it converts existing speech/singing
+  audio, shares the voice library/audio pipeline/task system, and is not part of the TTS registry.
 - `whale-v1` is the developer's current personal voice, not a new-user default.
 
 TTS-A provides the audit, Provider contract, candidate registry and v2 config/migration proposal:
