@@ -8,6 +8,14 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新交接：Plan 07-A 初报需同 ID 修订 F01（2026-10-25）
+
+**本条优先于下文任何“07-A = SENT 等待第一次报告”的历史段落。** 用户已提供《Plan 07-A · RVC 上游许可与依赖静态审计报告》。ChatGPT 已实时核查 PR #19 OPEN、HEAD `8276909`、仅 `docs/SVC_PROVIDER_RESEARCH.md` +348 行、CI `40230248341` SUCCESS；#16/#17/#18 仍 OPEN、main 未变。报告核心安全/许可证/原创 Fake 结论正确，但没有通过原 Level 2 A01–A14 完整验收：编号错位、源码缺 commit+行号级证据、提议 Fake 包装层未明确映射 PR #16 的 SVC v1 纯合同，未来首次安装 Manifest 缺逐组件证据。
+
+**已正式派发 Plan 07-A-F01 = SENT，07-A = REVIEW_REQUIRED，07-B = PLANNED/NOT_SENT**。唯一详细执行文档：[07-A-F01-research-acceptance-correction.md](07-A-F01-research-acceptance-correction.md)，只允许 DeepSeek 在**原 PR #19** 的 `docs/SVC_PROVIDER_RESEARCH.md` 内按 R01–R10 修复，报告 A01–A14 必须与原任务书一致；不能新建重复 PR、改 #16/#17/main/生产或开始 07-B。下一聊天收到 F01 报告先验收真实最新 PR #19 HEAD/CI 与事实；达到标准再标 Plan 07-A DONE，并选择真正有前置条件的下一计划（当前队列 04→05→07-B；03-B 的 #16 merge 必须用户明确授权）。
+
+**注意 PR #16**：当前仍 OPEN，0 reviews，合并门禁 03-B WAIT_USER_AUTHORIZATION；不能拿上游研究的成功来代替合并批准。Whale Audio Core / Voice/Singing 双页 / 小白优先 / Seed-VC 后续可选与 RVC 主线仍为永久产品决策。
+
 ## 最新阶段交接（2026-10-25）· Plan 07-A 已交付任务书
 
 ChatGPT 收到 DeepSeek 的 Plan 03-A G01–G12 最终合并前准备报告，经实时核对：main bf9cf66、PR #16 OPEN @ 954a01a、CI 40165832178 SUCCESS、0 reviews；PR #17 规划最新旧 HEAD 110a1b38 的 CI 40228467845 SUCCESS。**03-A DONE 不等于授权合并**；03-B 仍 WAIT_USER_AUTHORIZATION。
