@@ -8,6 +8,12 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新阶段交接（2026-10-25）· Plan 07-A 已交付任务书
+
+ChatGPT 收到 DeepSeek 的 Plan 03-A G01–G12 最终合并前准备报告，经实时核对：main bf9cf66、PR #16 OPEN @ 954a01a、CI 40165832178 SUCCESS、0 reviews；PR #17 规划最新旧 HEAD 110a1b38 的 CI 40228467845 SUCCESS。**03-A DONE 不等于授权合并**；03-B 仍 WAIT_USER_AUTHORIZATION。
+
+**唯一刚派发的下一份任务书：Plan 07-A，独立文件 [07-A-rvc-upstream-static-audit-execution.md](07-A-rvc-upstream-static-audit-execution.md)，任务状态 SENT/待 DS 报告。** 只研究 RVC 外部许可/API/Windows 依赖和零编程小白首次安装的证据，Seed-VC 仅最小静态档案。输出 docs/SVC_PROVIDER_RESEARCH.md 的 docs-only PR，不能开始真实模型/下载/生产/微信或改 PR #16。用户转发 DS 后，下一轮收到 DS 报告需依据 A01–A14 与新手 DoD 验收，再回下一份详细任务书。07-B 不得自动启动；03-B merge 需要用户独立授权。历史交接中“07-A PLANNED/NOT_SENT”是本次正式派发前的记录。
+
 ## 最新最高优先级原则：用户零编程基础（2026-10-25）
 
 用户明确要求：“请你始终记住，本项目是始终给不会代码的编程小白用的，保持易用性。” 此为永续架构与任务验收门禁，见 [NOVICE_FIRST_PRODUCT_STANDARD.md](NOVICE_FIRST_PRODUCT_STANDARD.md)。每次 ChatGPT 给 DeepSeek 的 Level 2 任务书与对应报告验收都要附 Novice First DoD，确保普通用户从简体中文 UI 完成声明支持的流程，不被迫通过终端、Git、Python/pip/npm、手动配置 JSON/ENV 才能使用；新手安装应当是经过审核和用户主动确认的图形化过程，带最小依赖、清晰进度和错误恢复，不牺牲隐私/版权/WeChatAgent/Worker/Relay 安全。不能把当前 Mock/只读页面宣称已满足产品标准。原 Plan 01–14 和 07-A PLANNED、03-B WAIT_USER_AUTHORIZATION 不变；用户本轮仅批准记忆与规划标准落地，不授权实际下载安装/工程重构或合并 PR。
