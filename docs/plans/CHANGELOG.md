@@ -2,6 +2,15 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 用户确定“不会代码的编程小白优先”为永久产品门禁
+
+- **用户原话**：“请你始终记住，本项目是始终给不会代码的编程小白用的，保持易用性”。此为**跨所有 Core/UI/Installer/Provider/Relay/Release 的永久产品目标**，不属于一次性 UI 改进建议；既有生产安全与许可证门禁仍优先遵守。
+- **权威新增**：`docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md`，规定“首访 GUI→按功能只读检测依赖→选择容易理解的模式→明确同意后受控安装→生成/试听/保存→授权发送”、简体中文提示、无显卡/云端替代、失败/取消恢复、共享组件、反复进入不骚扰和透明费用/许可。
+- **规则落地**：`AGENTS.md`、`EXECUTION_STANDARD.md`、`docs/plans/CHATGPT_LONG_TERM_MEMORY.md`、`TASK_SPEC_STANDARD.md`、`TASK_SPEC_TEMPLATE.md` 都要求未来所有相关 DeepSeek Level 2 任务书加入 **Novice First DoD**，报告须明确普通用户怎么用和仍需手动的步骤。
+- **已有计划对齐**：`docs/plans/README.md`、Plan 09 UI、Plan 14 安装器、`WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md`、`NEXT_CHATGPT_HANDOFF.md` 增加本标准，不强制一次提前完成全部后端。
+- **新门禁**：正式标称可用的普通用户路径不能要求 Git/Python/pip/npm、命令行、手动 JSON/ENV/端口；纯研发阶段可运行 CLI 测试但不冒充用户产品。第三方组件不能合法自动安装时必须显示限制/替代，不能执行未经审计的一键脚本；真实安装、下载、付费、配置写入和微信发送独立授权。
+- **状态与范围**：仅修改 PR #17 规划分支文档，无工程运行改动，不修改 main/PR #16、WeChatAgent、鲸递生产、安装服务、微信，不合并 PR、不删除分支。原 Plan 01–14 序号和 07-A PLANNED/NOT_SENT、03-B WAIT_USER_AUTHORIZATION 不变；未来须以 Git/CI 实时状态为准。
+
 ## 2026-10-25 · RVC 定为首发；Seed-VC 延后为零样本免训练试唱选配（用户已授权）
 
 - **用户明确授权**根据前一轮建议调整规划：RVC 是 Whale Singing 的首发主线路，Seed-VC 不取消但只作为后续免训练零样本试唱选项。
