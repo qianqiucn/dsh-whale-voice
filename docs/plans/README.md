@@ -5,6 +5,12 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 当前已交付 DeepSeek 的唯一下一份任务书（2026-10-25）
+
+**Plan 07-A = SENT / 等待 DeepSeek 研究报告**。可直接转发 [Plan 07-A · RVC 上游许可 / API / Windows 依赖静态审计 Level 2 任务书](07-A-rvc-upstream-static-audit-execution.md)。它依据最新用户决定：Whale Audio Core + Voice/Singing 两页、RVC 为首发、Seed-VC 仅后续免训练可选、零编程基础用户优先。ChatGPT 已核实 #16 仍 OPEN / 0 reviews / 最新 CI success、#17 规划分支最新旧 HEAD 110a1b38 对应 CI success、#18 仍 Draft。**“SENT”表示计划书已经交给用户转发，不等于 DeepSeek 已执行或完成。**
+
+07-A 研究只提交新 docs/SVC_PROVIDER_RESEARCH.md（研究分支 docs-only PR）；不修改核心源码或 #16/#17 规划资料。**03-B = WAIT_USER_AUTHORIZATION**，仍没有用户授权合并 PR #16；Plan 01 仍 SENT，02 DONE，03-A DONE；07-B 与后续工程仍 PLANNED。历史“07-A 尚未 SENT”的段落均早于本次正式派发，本段状态优先。
+
 ## 永久最高产品原则：为零编程基础用户设计（2026-10-25）
 
 **用户明确要求本项目始终面向不会编程的小白，优先保持易用性。** 权威规范：[NOVICE_FIRST_PRODUCT_STANDARD.md](NOVICE_FIRST_PRODUCT_STANDARD.md)。未来所有 Level 2 工程任务书与对应验收必须增加 Novice First DoD：已声称可用的普通用户流程应从图形界面完成，无需 Git/Python/pip/npm、命令行、手动 JSON/环境变量。界面提供清楚的中文指引、功能独立首次向导、只读自动检测、最小可选依赖、资源/收费说明、撤销与失败恢复。Fake/只读、OFFLINE 原型不得冒充完成用户端控制/安装。不能以易用为由擅自下载安装、收费、写入配置、真实发送或降低 WeChatAgent/Worker 安全门禁。此变更不重排 01–14 编号或改变 07-A / 03-B 权限状态。
