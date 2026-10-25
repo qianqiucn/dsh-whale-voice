@@ -10,6 +10,34 @@
 - **Plan 03-A = DONE / READY_FOR_USER_MERGE_DECISION**：工程 PR #16 已推进到 `954a01a08587bc8bd5b8caccf026298ca54d5215`，这个新提交只有 `docs/PROJECT_STATUS.md` 和 `docs/AI_CONTEXT.md`（+63/-28），保留 192 历史值，新增 197/196/1 和 UI 24/24；GitHub Actions run `40165832178` 的 build 与 ui 都 SUCCESS；main 仍 `bf9cf66`、PR #16 OPEN、0 reviews。Node/UI 的具体本地值是 DS 报告，ChatGPT 已核对实际文件/CI。
 - **Plan 03-B = WAIT_USER_AUTHORIZATION / NOT_SENT**：用户尚未就 PR #16 实际 Merge Commit 做出单独明确授权；严禁代替用户批准。整个 Plan 03 不得标 DONE，PR #16 不能自动合并。功能等级依旧 DESIGN/OFFLINE。
 - Plan 01=SENT，Plan 02=DONE，Plan 04–14=PLANNED；H0/C1 既有完成状态与原 01–14 序号不变。下一步是用户决定是否授权执行 03-B，而不是让 DeepSeek 重做 F01–F05、03-A 或提前写 TTS-B。
+## 已采纳的新产品方向与唯一派发排序（2026-10-25，最新权威规则）
+
+**用户已经选择：以 [CCYellowStar2/astrbot_plugin_rvc_svc](https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc) 的功能为参考，实现小鲸鱼自然语言点歌、受权音源获取/分离、RVC/SVC 翻唱、混音保存，并接入 Whale Relay（鲸递）安全交付。详见 [RVC/SVC 自动翻唱集成蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。** 这是规划批准，不是代码复制、外部软件安装、下载音频、生产投递、PR 合并的许可。
+
+**设计解释**：统一用户体验可以部署在“鲸递后端”中，但 Whale Voice Core 是唯一任务/音频/歌曲及 SVC 处理的拥有者，鲸递 Core 只做目标验证和一次投递。WeChatAgent 仍持有微信身份/授权；不安装 AstrBot；默认用原创 Fake/独立 API 适配器规避上游 AGPL 与独立 API 许可未明风险。
+
+### 唯一推荐的实际派发队列（与 Plan ID 数字顺序不同）
+
+| 队列 | 稳定 ID | 交付对象 | 状态 / 前置条件 |
+|---:|---|---|---|
+| 0 | Plan 01、Plan 02、Plan 03-A | 既有工作 | 01 SENT（GUI 独立待证据）；02 DONE；03-A DONE，均不得重做 |
+| **1：可先独立开展** | **Plan 07-A** | 第三方 AstrBot/独立 RVCSVC-API 许可/API/资源/版权与部署方式只读审计；无真实模型 | **PLANNED / NOT_SENT**；可与 03-B 等待期并行，只可先升级 Level 2 再由 ChatGPT 派发 |
+| **授权门禁（不排序成自动执行）** | **Plan 03-B** | 用户明确决定是否 Merge PR #16，获授权后另发安全合并任务书 | **WAIT_USER_AUTHORIZATION**；截至本轮无授权，PR #16 OPEN |
+| 2 | Plan 04 | WeChatAgent/DSH Tool 和聊天授权的公开能力审计 | PLANNED；可独立只读，支持歌曲交付的实际能力核验 |
+| 3 | Plan 05 | 定义 CoverTask、Whale Voice Core / Whale Relay 交付边界、上游 Worker 协议 | PLANNED；04 与已完成 TTS-A 契约为前置 |
+| 4 | Plan 07-B | 将上游 API 事实落实为 Fake Gradio/Gateway 安全适配规格 | PLANNED；07-A 与 05 |
+| 5 | Plan 06 | Fake TTS/SVC Provider Registry 与调度 | PLANNED；05 + 07-B |
+| 6 | Plan 08 | 声音/模型、源曲权益、分离与混音 Artifact、任务、缓存清理 | PLANNED；05/06/07 |
+| 7 | Plan 13-A | Fake Whale Relay 目标校验、固定后端、去重、未知结果保护 | PLANNED；05/08；独立小 PR |
+| 8 | Plan 09（只限 OFFLINE） | 音色/音源授权/后端健康/翻唱进度配置草稿 | PLANNED；06/08；生产写入另行授权 |
+| 9 | Plan 12-A | 使用授权本地音源或 Fake Artifact 完成分离 → RVC/SVC → 混音 → 保存离线 MVP | PLANNED；07/08/13-A；实际模型运行另行授权 |
+| 10 | Plan 13-B | 将 Voice Sender UI Automation 作为文件/语音投递 adapter（先 Fake）；确认长歌文件支持 | PLANNED；13-A；真实微信发送另行授权 |
+| 11 | Plan 12-B / 12-C | DeepSeek 自然语言点歌、合法元数据检索、候选选择及独立批准的交付 | PLANNED；04/12-A/13-B；12-C 真实投递单独授权 |
+| 12 | Plan 10、Plan 11 | 原本地与云端 TTS Provider 的分项开发，可与唱歌线并行 | PLANNED；06/08/09，收费和安装独立授权 |
+| 13 | Plan 13-C | Native Hook/SILK 仅作静态研究候选 | PLANNED；严格不提前执行 |
+| 14 | Plan 14 | 可选翻唱组件安装器、许可与发布验收 | PLANNED；必要组件验收；公开/Release 另行授权 |
+
+**派发说明**：队列 1（Plan 07-A）是当前最优的 *下一份安全工程研究任务*，不是本次已 SENT；本轮只批准计划内容与文档排序。Plan 03-B 仍阻塞，不能因为研究队列提前就认为已合并或可以安全开发依赖最新 main 的生产模块。Plan 01 GUI 收尾保持原 SENT 不受影响；Plan 01–14 的稳定 ID、文件名、H0 对照和既有 DONE/SENT 事实全部保留。后续每轮只真正派发一个完成 Level 2 的任务书，不把整个队列一次性发给 DeepSeek。
 ## 新对话的首要入口（ChatGPT）
 
 **用户要换新会话时，下一位 ChatGPT 首先读取 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)，再执行 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md) 的实时核验步骤。**
@@ -73,9 +101,9 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - 上一段 GPT 的 Plan 01=GUI 测试收尾、Plan 02=TTS-A/TTS-A-H 复核、Plan 03=PR #16 审查并在用户授权后合并，之后 Plan 04=WeChatAgent 扩展审计。今后这四个稳定任务 ID 不再因子步骤拆分或追加修复而整体重编号。
 - 此前把 Plan 03 临时改写为纯“合并前文档同步”导致范围误解；已更正为 **原 Plan 03 总任务，03-A 合并前检查（SENT），03-B 授权后合并（尚未授权/未派发）**。不能用完成 03-A 替代 03-B。
 - PR #17 / #18 的 14 项规划经 H0 对照为同序语义对应，主要文件名及部分历史状态不同；#17 为唯一权威计划入口，#18 保留历史来源，不发两套任务。
-## 二、当前推荐发送顺序
+## 二、原有 Plan 01–14 稳定编号目录（不是最新动态派发排序）
 
-**2026-10-25 最新记录：** 01 SENT、02 DONE、03-A DONE/READY_FOR_USER_MERGE_DECISION、03-B 待授权（Plan 03 尚未整体 DONE，不改编号）。下表其余计划仍受安全与先决条件约束。
+**2026-10-25 最新记录：** 01 SENT、02 DONE、03-A DONE/READY_FOR_USER_MERGE_DECISION、03-B 待授权（Plan 03 尚未整体 DONE，不改编号）。**下面的行顺序按稳定任务 ID 排列，实际派发优先级以本文件靠前的“唯一推荐队列”段落为准。**
 
 | 顺序 | 计划书 | 流程 | Git / 事实 | 前置 |
 |---:|---|---|---|---|
@@ -102,7 +130,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - 八页包含情绪系统和任务与日志；组件管理是另验的弹层，不是第九个导航页。
 - 情绪/任务互动的额外 2 项 Playwright 检查在本地测试分支曾显示 26/26 通过，但尚需纳入远端 Git CI（Plan 01）。
 - `main@bf9cf66` 已合并 PR #15；运行已加载只读 Capability Schema v3；仍没有生产配置写入路由。
-- PR #16 的 TTS-A / TTS-A-H 已经在 `3ad32bc` 关闭 F01–F05 纯契约安全缺口并补 N01–N05 测试，CI `40163881122` SUCCESS；**Plan 02 = DONE**，PR 仍 OPEN，功能仍为 `DESIGN / OFFLINE`。最新 DeepSeek 报告 Node 197（196 pass/1 skip）、UI 24/24，ChatGPT 未在本地重跑。**Plan 03 的 03-A = SENT**，只允许合并前审查和当前/历史状态文档同步；**03-B 尚未派发且待用户明确合并授权**，禁止重复 F01–F05 开发。
+- PR #16 的 TTS-A / TTS-A-H 已经在 `3ad32bc` 关闭 F01–F05 纯契约安全缺口并补 N01–N05 测试，CI `40163881122` SUCCESS；**Plan 02 = DONE**，PR 仍 OPEN，功能仍为 `DESIGN / OFFLINE`。最新 DeepSeek 报告 Node 197（196 pass/1 skip）、UI 24/24，ChatGPT 未在本地重跑。**Plan 03 的 03-A = DONE**，合并前审查和状态文档同步已按 PR #16 HEAD 954a01a/CI 40165832178 验收；**03-B 尚未派发且待用户明确合并授权**，禁止重复 F01–F05 开发。
 - Voice Sender 的 UI Automation 路径已有外部组件；Native Hook 的代码/社区复现仍为研究候选，不能声称已正式集成。
 - WeChatAgent 为必需依赖，不自动安装/升级、不替换为自行实现的微信机器人。
 
