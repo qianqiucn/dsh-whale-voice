@@ -43,6 +43,17 @@ DeepSeek 不必在每次工程 Git 操作前阅读 ChatGPT 计划管理标准，
 - 对微信发送，`SENT_LOCAL`、网络返回成功和真正服务器确认必须区分；`UNKNOWN` 不自动重试/切换后端；Worker 最终安全闸门 `NEVER_WRITE`、Bridge/Worker 双层权限独立保留。
 - 配置 `SAVED` 与 `APPLIED` 分离；没有可信 loaded revision 不得自称已经生效。演示数据必须与真实只读配置明确分隔。
 
+## 3.1 新会话交接长期机制
+
+**用户明确要求：** 每次准备更换 ChatGPT 对话时，在 GitHub 保存供“下一位自己”读取的交接和下一步行动计划。
+优先更新以下两个固定位置，不不断新增按日期命名的独立交接文件：
+
+- [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)：最新事实快照、项目定位、两 AI 分工、未合并 PR、待验证点和隐私/安全边界。
+- [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md)：下一对话第一项计划管理任务的可执行步骤、条件分支、DoD、停止条件。
+
+**每次新对话必须先读此二文件，随后核实 GitHub 实时状态；不能假装交接文档是永远最新事实。**
+交接内容不要暗示用户已经批准 PR 合并或生产操作；DeepSeek 无须管理这两份 ChatGPT 专用文档。
+
 ## 4. 每次开启 GitHub 计划工作时的阅读顺序（ChatGPT 必须执行）
 
 1. [EXECUTION_STANDARD.md](../../EXECUTION_STANDARD.md) — ChatGPT 的 GitHub 与计划执行标准。
