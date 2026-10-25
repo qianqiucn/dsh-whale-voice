@@ -1,7 +1,7 @@
 # Plan 02 · TTS-A / TTS-A-H 多引擎设计最终复核（EXECUTION-READY）
 
-**任务状态：IN PROGRESS；当前子状态：REVIEW_REQUIRED（功能补充已提交，待最终审查）**  
-**计划版本：v2 · 2026-10-25**  
+**任务状态：DONE（2026-10-25；已核验当前工程 PR HEAD/源码差异/CI；未合并）**  
+**计划版本：v3 · 2026-10-25（验收归档，下面的待复核段落属于历史）**  
 **工程执行者：DeepSeek；计划与 DONE 标记者：ChatGPT。**  
 **当前已知 Git 基线：** main `bf9cf66807e12d0b25872a0fa3869962dde04818`；目标 [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) head `1fd2ccaed3ee7e1c90c7caee1f22a7458ad1c184`（执行前必须重新核验）。  
 **最新已核实 CI：** run `40160267636` SUCCESS；PR 报告记录 Node 192（191 PASS / 1 平台 skip）、UI 24/24、build 217349 bytes。  
@@ -9,6 +9,14 @@
 
 > 此计划已根据 **PR #16 的最新实际代码**从“要求新增 3 个 Provider 候选与 Relay/SVC”改为“核对已提交的结果，仅修补发现的明确缺口”。**不要重复做已经完成的候选注册或新建第二个 TTS-A PR。**
 
+## 0. 最终验收结论（2026-10-25；优先于下文历史任务说明）
+
+- 工程 PR #16 仍 OPEN、mergeable、未合并；当前 HEAD 为 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773，base main bf9cf66807e12d0b25872a0fa3869962dde04818。
+- GitHub 最新 HEAD CI run 40163881122 SUCCESS；ChatGPT 已只读检查该 Commit 的五文件实际差异和 N01–N05 回归测试源码。
+- F01–F05 均有真实代码修复：Manifest/TTS 输入/SVC 输入/凭据未知/TTS 结果目标字段失败关闭；DeepSeek 报告 Node 197（196 PASS、1 平台 SKIP）、UI 24/24、build 217349 bytes。ChatGPT 未在本地重跑 Node 或 UI，CI 已独立核验。
+- 计划本身验收为 DONE，功能仍是 DESIGN/OFFLINE。**不等于 PR 已合并、引擎已可用或生产已验证**。
+- 旧 §2.1 的 REVIEW_REQUIRED 与静态缺口是 1fd2cca 版本的历史依据；禁止重复派发 F01–F05。下一步仅执行 Plan 03 合并前证据审查与最小状态文档同步，真正合并需用户另行明确授权。
+- PR #16 工程分支的 docs/PROJECT_STATUS.md 和 docs/AI_CONTEXT.md 保留旧的 TTS-A 192 项测试快照，Plan 03 负责区分历史数据与当前 197 项证据，不盲改历史。Plan 01 独立保持 SENT。
 ## 1. 唯一目标和可交付结果
 
 完成 PR #16 对本轮**纯契约设计**的终审：10 个 TTS 候选、2 个 SVC 候选、统一三层职责、TTS/SVC 独立请求及配置迁移提案相互一致；候选全为不可选择、无真实 I/O；安全负向用例和 CI 通过后，向 ChatGPT 返回一份逐条验收报告，由 ChatGPT 决定计划 02 是否可标 `DONE`。
