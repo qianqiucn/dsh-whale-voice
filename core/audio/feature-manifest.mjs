@@ -135,6 +135,14 @@ function readField(object, key) {
   return { present: true, accessor: false, value: descriptor.value }
 }
 
+// Never echo caller-supplied characters that could be a machine path, URL or control sequence.
+function safeKeyForPath(key) {
+  if (typeof key !== 'string' || key.length > 48) return '<unknown-key>'
+  if (!/^[\x20-\x7E]+$/.test(key)) return '<unknown-key>'
+  if (/[\\/:]/.test(key)) return '<unknown-key>'
+  return key
+}
+
 // Never echo the caller's value: a malformed feature argument must not become a log or UI leak.
 function unknownFeatureError() {
   return failOf([issue(FEATURE_MANIFEST_ERRORS.UNKNOWN_FEATURE, 'feature', 'unknown feature id')])
@@ -203,17 +211,17 @@ export function projectFeatureAvailability(feature, observations) {
     for (const key of Object.keys(input)) {
       if (!knownIds.has(key)) {
         errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION, 'observations.' + key, 'component is not registered for this feature'),
+          issue(FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION, 'observations.' + safeKeyForPath(key), 'component is not registered for this feature'),
         )
         continue
       }
       const field = readField(input, key)
       if (field.accessor) {
-        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + key, 'accessor property is not accepted'))
+        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + safeKeyForPath(key), 'accessor property is not accepted'))
         continue
       }
       if (typeof field.value !== 'string' || !DEPENDENCY_OBSERVATION_STATES.includes(field.value)) {
-        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + key, 'unsupported observation state'))
+        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + safeKeyForPath(key), 'unsupported observation state'))
         continue
       }
       observed.set(key, field.value)
@@ -291,7 +299,7 @@ export function evaluateFirstUse(feature, acknowledgedByFeature, manifestRevisio
         errors.push(
           issue(
             FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
-            'acknowledgedByFeature.' + key,
+            'acknowledgedByFeature.' + safeKeyForPath(key),
             'unknown feature acknowledgement key',
           ),
         )
@@ -302,7 +310,7 @@ export function evaluateFirstUse(feature, acknowledgedByFeature, manifestRevisio
         errors.push(
           issue(
             FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
-            'acknowledgedByFeature.' + key,
+            'acknowledgedByFeature.' + safeKeyForPath(key),
             'accessor property is not accepted',
           ),
         )
@@ -311,13 +319,13 @@ export function evaluateFirstUse(feature, acknowledgedByFeature, manifestRevisio
       if (field.value === null) continue
       if (typeof field.value !== 'string') {
         errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + key, 'expected revision string or null'),
+          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + safeKeyForPath(key), 'expected revision string or null'),
         )
         continue
       }
       if (!REVISION_PATTERN.test(field.value)) {
         errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + key, 'invalid revision marker'),
+          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + safeKeyForPath(key), 'invalid revision marker'),
         )
       }
     }

@@ -173,6 +173,15 @@ test('T04 未知顶层字段被拒绝且不会被静默丢弃', () => {
   assert.equal(errors[0].path, 'nickname')
 })
 
+test('T04b 错误对象不回显看似路径或 URL 的字段名', () => {
+  const result = validateAudioTaskDraft(ttsDraft({ 'C:\\Users\\fixture\\secret.txt': 'fixture' }))
+  expectError(result, AUDIO_ERRORS.UNKNOWN_FIELD, 'T04b')
+  const text = JSON.stringify(result)
+  assert.equal(text.includes('Users'), false)
+  assert.equal(text.includes('secret.txt'), false)
+  assert.ok(text.includes('<unknown-key>'))
+})
+
 test('T05 发送与凭据类字段全部被拒绝', () => {
   const forbidden = ['send', 'wechat', 'targetChatId', 'token', 'apiKey', 'recipient', 'providerId', 'params', 'songId']
   for (const key of forbidden) {
@@ -608,6 +617,12 @@ test('F04 Singing 不接受未登记的组件键', () => {
     FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION,
     'F04 cross feature',
   )
+  const pathLike = expectError(
+    projectFeatureAvailability('singing', { 'C:\\Users\\fixture\\id.txt': 'VERIFIED' }),
+    FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION,
+    'F04 path-like key',
+  )
+  assert.equal(JSON.stringify(pathLike).includes('Users'), false)
 })
 
 test('F05 缺 WeChatAgent 不阻塞本地生成、试听和保存', () => {
@@ -859,6 +874,15 @@ test('R07 候选不含目标、Token、URL 或发送后端字段', () => {
   assert.equal(text.includes('http://'), false)
   assert.equal(text.includes('https://'), false)
   assert.equal(/chat/i.test(text), false)
+  const forged = expectError(
+    buildRelayHandoffCandidate(
+      { ...savedRecord({ deliveryRequested: true }), 'C:\\Users\\fixture\\id.txt': 'fixture' },
+      'delivery:fixture-01',
+    ),
+    AUDIO_ERRORS.UNKNOWN_FIELD,
+    'R07 path-like key',
+  )
+  assert.equal(JSON.stringify(forged).includes('Users'), false)
 })
 
 test('R08 模块内没有队列、HTTP、定时器或自动重试实现', () => {

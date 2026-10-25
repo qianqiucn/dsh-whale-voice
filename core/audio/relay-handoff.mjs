@@ -124,6 +124,14 @@ function readField(object, key) {
   return { present: true, accessor: false, value: descriptor.value }
 }
 
+// Error paths may name a rejected field, but never echo path-like or control characters.
+function safeKeyForPath(key) {
+  if (typeof key !== 'string' || key.length > 48) return '<unknown-key>'
+  if (!/^[\x20-\x7E]+$/.test(key)) return '<unknown-key>'
+  if (/[\\/:]/.test(key)) return '<unknown-key>'
+  return key
+}
+
 function readBooleanField(object, key) {
   const field = readField(object, key)
   if (!field.present || field.accessor || typeof field.value !== 'boolean') return null
@@ -155,7 +163,7 @@ export function buildRelayHandoffCandidate(taskRecord, deliveryId) {
       return failOf([
         issue(
           deliveryShaped ? AUDIO_ERRORS.DELIVERY_FORBIDDEN : AUDIO_ERRORS.UNKNOWN_FIELD,
-          key,
+          safeKeyForPath(key),
           deliveryShaped
             ? 'delivery fields are not part of an audio task record'
             : 'unknown record field',

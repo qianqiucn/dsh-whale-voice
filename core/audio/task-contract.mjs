@@ -217,6 +217,17 @@ function joinPath(prefix, key) {
   return prefix ? prefix + '.' + key : key
 }
 
+/**
+ * Error paths may name a rejected field for debugging, but must never echo a value that looks
+ * like a machine path, URL or control sequence. Anything unexpected becomes a stable marker.
+ */
+function safeKeyForPath(key) {
+  if (typeof key !== 'string' || key.length > 48) return '<unknown-key>'
+  if (!/^[\x20-\x7E]+$/.test(key)) return '<unknown-key>'
+  if (/[\\/:]/.test(key)) return '<unknown-key>'
+  return key
+}
+
 function rejectUnknownKeys(object, allowed, prefix, errors) {
   for (const key of Object.keys(object)) {
     if (allowed.has(key)) continue
@@ -224,7 +235,7 @@ function rejectUnknownKeys(object, allowed, prefix, errors) {
     errors.push(
       issue(
         AUDIO_ERRORS.UNKNOWN_FIELD,
-        joinPath(prefix, key),
+        joinPath(prefix, safeKeyForPath(key)),
         forged ? 'sensitive or delivery field is not allowed here' : 'unknown field is not allowed',
       ),
     )
@@ -677,7 +688,7 @@ function readAction(input) {
   const allowed = new Set(['type', ...extraFields])
   for (const key of Object.keys(input)) {
     if (!allowed.has(key)) {
-      errors.push(issue(AUDIO_ERRORS.UNKNOWN_FIELD, 'action.' + key, 'unknown action field'))
+      errors.push(issue(AUDIO_ERRORS.UNKNOWN_FIELD, 'action.' + safeKeyForPath(key), 'unknown action field'))
     }
   }
   let artifactRef = null
@@ -712,7 +723,7 @@ function readRecord(input) {
     errors.push(
       issue(
         forged ? AUDIO_ERRORS.DELIVERY_FORBIDDEN : AUDIO_ERRORS.UNKNOWN_FIELD,
-        key,
+        safeKeyForPath(key),
         forged ? 'sent or delivery fields are not part of an audio task record' : 'unknown record field',
       ),
     )
