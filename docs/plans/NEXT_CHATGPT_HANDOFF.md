@@ -8,6 +8,14 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 2026-10-25 · 最新交接：07-A/F01 已验收 DONE；04-A 正式派发
+
+本轮收到 DeepSeek 的《Plan 07-A-F01 · 原研究报告验收差距修复报告》后，ChatGPT 使用 GitHub 真实核对：[PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) OPEN、HEAD `e21dee8a8192f24a3465f169c761e62d30611e59`、仅 1 个 Markdown +489 行、CI `40231587503` SUCCESS。完整 `docs/SVC_PROVIDER_RESEARCH.md` 已含 C01–C17 pinned 源码证据、SVC v1 三层映射、8 个文档判断、逐组件新手安装 Manifest、原编号 A01–A14 与 R01–R10。**07-A/F01 = DONE（RESEARCH/OFFLINE）**，但不代表模型、音频、Provider、微信实际可用，#19 不合并。直接复制 AstrBot/RVCSVC-API 和直接 API 集成仍 BLOCKED。
+
+**最新唯一已派发任务书：Plan 04-A = SENT**，[04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)。研究 WeChatAgent 扩展/插件、DSH Tool、会话授权，尤其今日新发布 **WeChatAgent v0.4.1** ZIP Plugin API v2 与 DSH 插件体系不兼容的边界。仅输出独立研究 PR 的 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md`，**禁止升级/安装 ZIP/操作真实会话/代码/合并**。未来的初学者产品依然必须图形化、中文、依赖按需授权。新会话收到 DS 的 04-A 报告先验 A01–A15；若通过再评估 03-B 合并门禁与 Plan 05 Core-A，07-B 在 Plan 05 契约之前绝不实施。此前 07-A REVIEW_REQUIRED / 04 PLANNED、0.4.0 最新的说法均是旧快照。
+
+**长期合并闸门不变：Plan 03-B WAIT_USER_AUTHORIZATION，PR #16 HEAD 954a01a、0 reviews、CI 40165832178 SUCCESS，但未合并；PR #17 是唯一规划 branch，#18 历史 Draft，#19 研究 OPEN**。任何旧完成状态、项目主干 Commit、CI 和本地版本，下次须实时重查。用户没有批准从此任务书自动升级 WeChatAgent 0.3.9 或发微信。
+
 ## 最新交接：Plan 07-A 初报需同 ID 修订 F01（2026-10-25）
 
 **本条优先于下文任何“07-A = SENT 等待第一次报告”的历史段落。** 用户已提供《Plan 07-A · RVC 上游许可与依赖静态审计报告》。ChatGPT 已实时核查 PR #19 OPEN、HEAD `8276909`、仅 `docs/SVC_PROVIDER_RESEARCH.md` +348 行、CI `40230248341` SUCCESS；#16/#17/#18 仍 OPEN、main 未变。报告核心安全/许可证/原创 Fake 结论正确，但没有通过原 Level 2 A01–A14 完整验收：编号错位、源码缺 commit+行号级证据、提议 Fake 包装层未明确映射 PR #16 的 SVC v1 纯合同，未来首次安装 Manifest 缺逐组件证据。
