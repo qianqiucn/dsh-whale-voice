@@ -2,6 +2,14 @@
 
 **状态：PLANNED；前置：核心、至少一种受支持 Provider 和 Relay 发送方案完成可靠集成。**
 
+## 2026-10-25 · RVC/SVC 翻唱可选安装与发布门禁（原 Plan 14）
+
+翻唱组件可选，详细参见 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。AstrBot 插件及 RVCSVC-API 均不是 Whale Voice/鲸递默认必装依赖；普通用户可继续 CPU/云端 TTS 无 GPU 路线。
+- 安装前显示合法来源的 RVC/SVC/分离软件和模型的版本、权利、独立进程、RAM/GPU/CUDA/磁盘及可停用选项。
+- 复制/重分发前审计上游 AGPL-3.0 和 API 仓库未明确 LICENSE 的状态。未取得授权前不包含上游源码、整合包、私有权重或商用歌曲。
+- 自动下载歌曲/模型、付费调用、真实微信交付、发布 Release 均是独立权限门禁；音频、Cookies、模型、个人音色、私人会话不能写进 Git/公开日志。
+- 验收 CPU/noGPU、API 缺失、非法源、取消清理、隐私删除、离线试听、未经授权渠道、版本升级/回滚与 Windows 启动失败。真实硬件未测就不标 VERIFIED。
+
 ## 安装选择
 - 云端 API 快速模式：无需本地大模型，但用户自行提供凭据并允许网络计费。
 - 轻量离线 CPU 模式：选择有稳定 Windows 发行路径的轻量 TTS。
