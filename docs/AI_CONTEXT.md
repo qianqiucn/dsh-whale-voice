@@ -176,11 +176,13 @@ The API contract is [CAPABILITY_API.md](CAPABILITY_API.md).
 - Phase 4B-2B-2a projection: schema v3 with surface-level `readTiming`/`hotReload`/`requiresRestart`
   (automation `RUNTIME_API/FULL/NOT_REQUIRED` vs TTS `SERVICE_BOOT/NONE/REQUIRED`); Host GET
   `/capabilities` and `/capabilities/status`; static audited contract + detector/config observation;
-  version mismatch/unknown downgrades capability to `UNKNOWN`; frontend shows support, authorization,
-  saved value, runtime and apply limits separately. Read-only only.
+  version mismatch/unknown downgrades reload fields and capability to `UNKNOWN`; **Worker version is
+  independent — no Worker version identifier means `UNKNOWN`, and the Sender Service version is never
+  used as Worker evidence**; Worker keeps `NEVER_WRITE` and writes disabled while Sender
+  automation/TTS stay governed by the Service version. Read-only only.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 174 Node tests (173 pass, 1 platform skip; including 49 coordination, 5 capability, 7
-  capability-schema, 8 capability projection and 10 capability-reader/validation tests) and 23 UI
+- 176 Node tests (175 pass, 1 platform skip; including 49 coordination, 5 capability, 7
+  capability-schema, 9 capability projection and 10 capability-reader/validation tests) and 24 UI
   checks pass. These are offline/contract evidence, not real production write/apply acceptance.
 
 ---
@@ -249,8 +251,8 @@ Phase 4B-2B-2a result:
 
 ```text
 build: PASS, client.js regenerated (in sync)
-node --test: 173/174 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 8 projection and 10 reader/validation tests)
-UI: 23/23 PASS
+node --test: 175/176 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 9 projection and 10 reader/validation tests)
+UI: 24/24 PASS
 ```
 
 These are offline/contract tests. They do not prove a production Bridge/Worker apply, real WeChat
@@ -307,6 +309,6 @@ Do not trust this summary alone. Verify:
 **2026-10-25**, after Phase 4B-2B-2a: `main` is `9318686` (PR #14 merge); Phase R1 is **COMPLETE**,
 Phase 4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**,
 Phase 4B-2B-2a is **`OFFLINE`** (schema v3 capability/status routes + isolated UI; live Host reload
-pending), Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B-2b is **NOT STARTED**. 174 Node (173 pass,
-1 skip) / 23 UI checks are offline evidence, not production write/apply acceptance. No production
+pending), Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B-2b is **NOT STARTED**. 176 Node (175 pass,
+1 skip) / 24 UI checks are offline evidence, not production write/apply acceptance. No production
 configuration or runtime behavior change.

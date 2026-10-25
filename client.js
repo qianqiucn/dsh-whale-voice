@@ -363,7 +363,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wv-topbar-actions' },
           h('span', { className: 'wv-demo', title: '标记为演示的服务指标、联系人与任务为前端演示数据；真实 Core 面板来自只读接口，不写入生产配置。' }, '部分演示'),
           h('span', { className: 'wv-topmeta' }, '真实配置只读 · 生产写入禁用'),
-          h(IconButton, { icon: 'refresh', label: '刷新演示数据', onClick: () => notify('演示数据已刷新；真实 Core 状态与能力请在组件管理中重新检测。', 'success') })))
+          h(IconButton, { icon: 'info', label: '演示数据说明', onClick: () => notify('标记为演示的服务指标、联系人与任务为静态示例，不会刷新真实数据；真实 Core 状态与能力请在组件管理中重新检测。', 'info') })))
     }
 
     function ServiceDialog({ service, onClose }) {

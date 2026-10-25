@@ -403,3 +403,18 @@ test('config revision is opaque and does not expose private values', async () =>
   assert.equal(snapshot.application.activeRevision, null)
   assert.equal(snapshot.application.activeConfirmed, false)
 })
+
+test('Worker version is independent from the Sender Service version', async () => {
+  const plain = await makeFixture()
+  const plainSnapshot = readConfigSnapshot({ config: plain.config, runtime: runtime() })
+  assert.equal(plainSnapshot.sender.serviceVersion, '0.1.0')
+  assert.equal(plainSnapshot.sender.workerVersion, null)
+  assert.equal(plainSnapshot.sender.workerVersionSource, null)
+  assert.equal(plainSnapshot.sender.workerVersionNote, 'no_independent_worker_version_identifier')
+
+  const declared = await makeFixture({ worker: workerConfig({ version: '9.9.9' }) })
+  const declaredSnapshot = readConfigSnapshot({ config: declared.config, runtime: runtime() })
+  assert.equal(declaredSnapshot.sender.serviceVersion, '0.1.0')
+  assert.equal(declaredSnapshot.sender.workerVersion, '9.9.9')
+  assert.equal(declaredSnapshot.sender.workerVersionSource, 'config.json#version')
+})

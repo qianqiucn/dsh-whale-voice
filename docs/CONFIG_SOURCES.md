@@ -208,6 +208,10 @@ add a new configuration source and does not write any file:
 - `readTiming`, `hotReload` and `requiresRestart` are Surface-level; Sender automation
   (`RUNTIME_API/FULL/NOT_REQUIRED`) and Sender TTS (`SERVICE_BOOT/NONE/REQUIRED`) are never collapsed;
 - no component loaded revision exists, so `apply` stays unsupported/unknown and no `APPLIED` state is
-  produced.
+  produced;
+- Worker version is independent: the standalone Worker config/script has no version identifier, and
+  `sender.workerVersion` remains `null`; the Sender Service `0.1.0` package version is never used as
+  Worker evidence. If the Worker config declares `version`/`worker_version`, that is used only as
+  Worker evidence and still remains `UNKNOWN` without an audited Worker baseline.
 
 See [CAPABILITY_API.md](CAPABILITY_API.md).

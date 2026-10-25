@@ -160,11 +160,12 @@ await check('real Core panels and demo data are labeled separately', async () =>
   })
 })
 
-await check('refresh copy matches demo-vs-real behavior', async () => {
+await check('demo-data explanation matches actual behavior', async () => {
   await withPage(normal, async (page) => {
-    await page.getByRole('button', { name: '刷新演示数据', exact: true }).click()
-    await page.getByText(/演示数据已刷新/).waitFor({ timeout: 3000 })
-    const toast = await page.getByText(/演示数据已刷新/).innerText()
+    await page.getByRole('button', { name: '演示数据说明', exact: true }).click()
+    await page.getByText(/标记为演示的服务指标/).waitFor({ timeout: 3000 })
+    const toast = await page.getByText(/标记为演示的服务指标/).innerText()
+    assert.match(toast, /不会刷新真实数据/)
     assert.match(toast, /真实 Core 状态与能力请在组件管理中重新检测/)
 
     await page.getByRole('button', { name: '组件管理', exact: true }).click()
@@ -254,8 +255,30 @@ await check('settings/studio/safety expose surface-specific reload semantics', a
     assert.match(text, /发送自动化设置/)
     assert.match(text, /运行时通过受支持接口更新/)
     assert.match(text, /Worker 最终安全许可/)
-    assert.match(text, /每个任务启动时读取/)
-    assert.match(text, /部分路径可热更新/)
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /本插件永不写入/)
+  })
+})
+
+await check('Worker version unknown is displayed without claiming Service version', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '发送与安全', exact: true }).click()
+    await page.waitForTimeout(300)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /Worker 最终安全许可/)
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /本插件永不写入/)
+    assert.doesNotMatch(text, /Worker 最终安全许可[^\n]*v0\.1\.0/)
+    const panel = page.locator('[data-testid="capability-panel"]').first()
+    assert.equal(await panel.getByRole('button', { name: /保存/ }).count(), 0)
+
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.waitForTimeout(300)
+    const workerComponent = await page.locator('[data-testid="capability-component-worker"]').innerText()
+    assert.match(workerComponent, /版本未知/)
+    assert.doesNotMatch(workerComponent, /v0\.1\.0/)
   })
 })
 

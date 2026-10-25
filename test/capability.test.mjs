@@ -146,14 +146,15 @@ test('changed or unknown component versions downgrade capabilities safely', () =
   assert.equal(automation.requiresRestart, 'UNKNOWN')
   assert.ok(automation.blockers.some((blocker) => blocker.code === 'VERSION_UNKNOWN'))
 
-  // A sender version change also downgrades Worker reload semantics, but NEVER_WRITE policy
-  // must survive so the application can never enable a write control for the safety permit.
+  // A sender version change downgrades Sender surfaces. Worker has no independent version,
+  // so it remains UNKNOWN and must still keep NEVER_WRITE with writes disabled.
   const workerChanged = buildCapabilitySnapshot({ detected: detected({
     sender: { ...detected().sender, version: '0.2.0' },
     config: { ...detected().config, sender: { ...detected().config.sender, serviceVersion: '0.2.0' } },
   }) })
+  assert.equal(workerChanged.sources.find((item) => item.id === 'senderService').versionMatch, 'CHANGED')
   const worker = surfaceOf(workerChanged, 'workerSafety', 'voicePermit')
-  assert.equal(workerChanged.sources.find((item) => item.id === 'workerSafety').versionMatch, 'CHANGED')
+  assert.equal(workerChanged.sources.find((item) => item.id === 'workerSafety').versionMatch, 'UNKNOWN')
   assert.equal(worker.policy, 'NEVER_WRITE')
   assert.equal(worker.readTiming, 'UNKNOWN')
   assert.equal(worker.hotReload, 'UNKNOWN')
@@ -163,6 +164,53 @@ test('changed or unknown component versions downgrade capabilities safely', () =
   const workerView = deriveCapabilityView(workerChanged)
   assert.equal(workerView.groups.worker.enabled, false)
   assert.equal(workerView.summary.writeEnabled, 0)
+})
+
+test('Worker version is never substituted from the Sender Service version', () => {
+  // Repro: Sender Service 0.1.0, Worker version unknown -> Sender stays audited, Worker is UNKNOWN.
+  const serviceAudited = buildCapabilitySnapshot({ detected: detected() })
+  const workerComponent = serviceAudited.components.find((item) => item.id === 'worker')
+  assert.equal(workerComponent.version, null)
+  assert.equal(workerComponent.versionMatch, 'UNKNOWN')
+  assert.equal(serviceAudited.sources.find((item) => item.id === 'senderService').versionMatch, 'AUDITED')
+  assert.equal(surfaceOf(serviceAudited, 'senderService', 'automation').save.state, 'SUPPORTED')
+  assert.equal(surfaceOf(serviceAudited, 'senderService', 'automation').readTiming, 'RUNTIME_API')
+  assert.equal(surfaceOf(serviceAudited, 'senderService', 'tts').readTiming, 'SERVICE_BOOT')
+  const unknownWorker = surfaceOf(serviceAudited, 'workerSafety', 'voicePermit')
+  assert.equal(unknownWorker.policy, 'NEVER_WRITE')
+  assert.equal(unknownWorker.readTiming, 'UNKNOWN')
+  assert.equal(unknownWorker.hotReload, 'UNKNOWN')
+  assert.equal(unknownWorker.requiresRestart, 'UNKNOWN')
+  assert.equal(unknownWorker.save.enabled, false)
+  assert.ok(unknownWorker.blockers.some((blocker) => blocker.code === 'VERSION_UNKNOWN'))
+
+  // A Worker-declared version is used as its own evidence, but with no audited Worker baseline
+  // it remains UNKNOWN rather than being compared to the Service version.
+  const workerDeclared = buildCapabilitySnapshot({ detected: detected({
+    config: {
+      ...detected().config,
+      sender: { ...detected().config.sender, workerVersion: '0.1.0' },
+    },
+  }) })
+  const declaredComponent = workerDeclared.components.find((item) => item.id === 'worker')
+  assert.equal(declaredComponent.version, '0.1.0')
+  assert.equal(declaredComponent.versionMatch, 'UNKNOWN')
+  assert.equal(workerDeclared.sources.find((item) => item.id === 'workerSafety').versionMatch, 'UNKNOWN')
+  assert.equal(workerDeclared.sources.find((item) => item.id === 'senderService').versionMatch, 'AUDITED')
+  assert.equal(surfaceOf(workerDeclared, 'workerSafety', 'voicePermit').save.enabled, false)
+
+  // Service version change and Worker version are independent: Sender changes, Worker stays UNKNOWN.
+  const mismatched = buildCapabilitySnapshot({ detected: detected({
+    sender: { ...detected().sender, version: '0.2.0' },
+    config: {
+      ...detected().config,
+      sender: { ...detected().config.sender, serviceVersion: '0.2.0', workerVersion: '0.1.0' },
+    },
+  }) })
+  assert.equal(mismatched.sources.find((item) => item.id === 'senderService').versionMatch, 'CHANGED')
+  assert.equal(mismatched.sources.find((item) => item.id === 'workerSafety').versionMatch, 'UNKNOWN')
+  assert.equal(mismatched.components.find((item) => item.id === 'worker').version, '0.1.0')
+  assert.equal(mismatched.components.find((item) => item.id === 'sender').version, '0.2.0')
 })
 
 test('static capability and dynamic runtime status stay separate', () => {
@@ -209,7 +257,10 @@ test('capability view renders readable states and surface-specific reload text',
   assert.match(view.groups.senderTts.hotText, /不会热更新/)
   assert.match(view.groups.senderTts.restartText, /需要重启/)
   assert.equal(view.groups.worker.authorization, 'NOT_AUTHORIZED')
-  assert.equal(view.groups.worker.saveState, 'UNSUPPORTED')
+  assert.equal(view.groups.worker.saveState, 'UNKNOWN')
+  assert.match(view.groups.worker.readText, /读取时机未知/)
+  assert.match(view.groups.worker.hotText, /热更新未知/)
+  assert.equal(view.groups.worker.enabled, false)
   assert.equal(view.groups.qwen.applyCapability, 'UNSUPPORTED')
   assert.ok(view.blockedReasons.length > 0)
 })

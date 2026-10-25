@@ -4,10 +4,10 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-25
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#14 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `OFFLINE`** (schema v3, Host GET routes and frontend visualization; no write route); **Phase R1 `COMPLETE`**; 174 Node (173 pass, 1 skip) + 23 UI checks green; **Phase 4B-2B-2b NOT STARTED**
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#14 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `OFFLINE`** (schema v3, Host GET routes and frontend visualization; no write route); **Phase R1 `COMPLETE`**; 176 Node (175 pass, 1 skip) + 24 UI checks green; **Phase 4B-2B-2b NOT STARTED**
 **Latest associated commit:** `main` `9318686141942427cf54dc6daf404fe611869228` (merge of PR #14); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
 **Latest PR:** [#15 — feat(core): Phase 4B-2B-2a read-only capability/status projection](https://github.com/qianqiucn/dsh-whale-voice/pull/15) — **OPEN**, not merged. Latest merged PR: #14 (Phase 4B-2B-1 audit).
-**Acceptance caveat:** 173/174 Node (1 platform skip) and 23/23 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`. The new capability routes are registered in source but the running DSH Host has not been reloaded.
+**Acceptance caveat:** 175/176 Node (1 platform skip) and 24/24 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`. The new capability routes are registered in source but the running DSH Host has not been reloaded.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
 **Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **merged via PR #14**, not deleted.
@@ -166,7 +166,7 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       Studio, Send & Safety, Components and Advanced show real support/authorization/apply limits.
       No write route, no service control, no private targets. See
       [CAPABILITY_API.md](CAPABILITY_API.md). Adds 8 capability tests, 2 reader tests and 7 UI checks;
-      174 Node / 23 UI checks pass locally.
+      176 Node / 24 UI checks pass locally.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
@@ -247,7 +247,7 @@ sending.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 174 tests: 173 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 8 capability projection and 10 capability-reader/validation tests |
+| `node --test` | 176 tests: 175 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection and 10 capability-reader/validation tests |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -268,13 +268,14 @@ sending.
 | Phase 4B-2B-1 capability tests | 5 fixture-only tests: no loaded revision → PENDING_APPLY; mismatch → UNKNOWN; exact revision after restart → APPLIED; revision-guarded save is CAS; no secret/target echo |
 | Phase 4B-2B-1 schema tests | 7 fixture-only tests: Sender automation save supported but unauthorized; Sender TTS unsupported; read timing vs hot reload vs human console; UNKNOWN≠null/UNSUPPORTED/NOT_AUTHORIZED; null status rejected; writeEnabled derivation; summary separation |
 | Phase 4B-2B-2a capability projection | `core/capabilities.mjs` v3: surface-level readTiming/hotReload/requiresRestart; automation RUNTIME_API/FULL/NOT_REQUIRED vs TTS SERVICE_BOOT/NONE/REQUIRED; version gating CHANGED/UNKNOWN downgrades to unknown; no I/O |
+| Phase 4B-2B-2a Worker version | Worker has no independent version identifier; Sender Service 0.1.0 is never used as Worker evidence. Worker is `UNKNOWN`, reload fields `UNKNOWN`, `NEVER_WRITE` retained, writes disabled; Sender automation/TTS remain governed by the Service version |
 | Phase 4B-2B-2a Host API | GET `/whale-voice/setup/capabilities` and `/capabilities/status`; existing token/origin/loopback/connection guard; 401/405/cross-site tests; no write route |
 | Phase 4B-2B-2a UI | Overview capability summary; Bridge/TTS/automation/Worker/WeChat surfaces on Settings/Studio/Safety/Permissions; Components dialog blockers; Advanced technical details; no enabled write control |
 | Windows lock probe (local) | `fs.open(...,'wx')` exclusive create, `EEXIST` on second create, `process.kill(pid,0)` live/`ESRCH`, `rename` replaces the name only; no atomicity or power-loss durability claim; advisory only, no production file touched |
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
-| `npm.cmd run test:ui` | 23/23 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, stale refresh race, Mock/real labels, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |
+| `npm.cmd run test:ui` | 24/24 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, stale refresh race, Mock/real labels, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |
 | GitHub Actions `ui` job | installs locked `playwright@1.64.1` + Chromium, runs the harness and fails on any check error |
 | UI harness artifacts | `tests/ui/.artifacts/` (gitignored); screenshots and report.json |
 | DSH Electron Inspector | native Inspector is slot/service metadata only; no DOM/a11y/CSS/Console/CDP; Level 2 `BLOCKED`; no debug port or production page read |

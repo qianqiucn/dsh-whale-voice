@@ -17,6 +17,9 @@ export const AUDITED_VERSIONS = Object.freeze({
   wechatAgent: '0.3.9',
   senderService: '0.1.0',
   wechatHook: '4.1.10.27',
+  // The standalone PowerShell Worker has no version identifier in its config or script. The
+  // Sender Service package version is NOT Worker evidence and must never be used as such.
+  worker: null,
 })
 
 export const CAPABILITY_STATES = Object.freeze({
@@ -120,7 +123,7 @@ const SURFACE_BLUEPRINTS = Object.freeze([
     label: 'Worker 安全许可',
     authority: 'Voice Sender Worker',
     component: 'worker',
-    versionFrom: 'sender',
+    versionFrom: 'worker',
     risk: 'CRITICAL',
     surfaces: [
       {
@@ -233,15 +236,21 @@ function unique(values) {
 function versionMatchOf(componentId, version) {
   if (componentId === 'qwen' || componentId === 'core') return 'NOT_APPLICABLE'
   if (!version) return 'UNKNOWN'
-  const expected = componentId === 'sender' || componentId === 'worker'
+  const expected = componentId === 'sender'
     ? AUDITED_VERSIONS.senderService
-    : AUDITED_VERSIONS.wechatAgent
+    : componentId === 'worker'
+      ? AUDITED_VERSIONS.worker
+      : AUDITED_VERSIONS.wechatAgent
+  // A Worker version is only AUDITED when an independent audited Worker version exists and
+  // matches. No audited version means UNKNOWN, never "assume the Service version".
+  if (!expected) return 'UNKNOWN'
   return version === expected ? 'AUDITED' : 'CHANGED'
 }
 
 function versionFor(versionFrom, components) {
   if (!versionFrom) return null
   if (versionFrom === 'sender') return components.sender.version || null
+  if (versionFrom === 'worker') return components.worker.version || null
   return components.wechatAgent.version || null
 }
 
@@ -259,6 +268,7 @@ function componentsFromDetected(detected) {
   const qwen = detected && detected.qwen && typeof detected.qwen === 'object' ? detected.qwen : {}
   const wechatVersion = text(wa.version) || null
   const senderVersion = text(sender.version) || (config && config.sender && text(config.sender.serviceVersion)) || null
+  const workerVersion = text(detected.workerVersion) || (config && config.sender && text(config.sender.workerVersion)) || null
   return {
     core: {
       id: 'core', label: 'Whale Voice Core', state: 'AVAILABLE', status: 'AVAILABLE',
@@ -289,7 +299,7 @@ function componentsFromDetected(detected) {
     },
     worker: {
       id: 'worker', label: 'Voice Sender Worker', state: 'UNKNOWN', status: 'UNKNOWN',
-      installed: null, version: senderVersion, versionMatch: versionMatchOf('worker', senderVersion),
+      installed: null, version: workerVersion, versionMatch: versionMatchOf('worker', workerVersion),
       processRunning: null, health: 'not_observable', healthy: null, connected: null,
       observedAt: detected && detected.observedAt, error: 'not_observable',
     },

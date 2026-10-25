@@ -196,7 +196,7 @@
         { id: 'wechatagent', label: 'WeChatAgent', state: 'auth_required', status: 'DEGRADED', version: '0.3.9', versionMatch: 'AUDITED', observedAt },
         { id: 'bridge', label: 'WeChatAgent Bridge', state: 'auth_required', status: 'DEGRADED', version: '0.3.9', versionMatch: 'AUDITED', observedAt },
         { id: 'sender', label: 'Voice Sender 服务', state: 'not_running', status: 'DEGRADED', version: '0.1.0', versionMatch: 'AUDITED', observedAt },
-        { id: 'worker', label: 'Voice Sender Worker', state: 'UNKNOWN', status: 'UNKNOWN', version: '0.1.0', versionMatch: 'AUDITED', observedAt },
+        { id: 'worker', label: 'Voice Sender Worker', state: 'UNKNOWN', status: 'UNKNOWN', version: null, versionMatch: 'UNKNOWN', observedAt },
         { id: 'qwen', label: 'Qwen3-TTS', state: 'ok', status: 'AVAILABLE', version: null, versionMatch: 'NOT_APPLICABLE', observedAt },
       ],
       sources: [
@@ -238,13 +238,13 @@
         {
           id: 'workerSafety', label: 'Worker 安全许可', authority: 'Voice Sender Worker', component: 'worker', version: '0.1.0', versionMatch: 'AUDITED', risk: 'CRITICAL',
           surfaces: [surface('voicePermit', 'Worker 最终安全许可', {
-            risk: 'CRITICAL', readTiming: 'PER_JOB', hotReload: 'PARTIAL', requiresRestart: 'NOT_REQUIRED',
-            ownerApi: { state: 'UNSUPPORTED', kind: null, scope: null, endpoint: null },
-            save: { state: 'UNSUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_OWNER_API' },
-            apply: { state: 'UNSUPPORTED', reason: 'NO_OWNER_API' },
+            risk: 'CRITICAL', readTiming: 'UNKNOWN', hotReload: 'UNKNOWN', requiresRestart: 'UNKNOWN',
+            ownerApi: { state: 'UNKNOWN', kind: null, scope: null, endpoint: null },
+            save: { state: 'UNKNOWN', authorization: 'NOT_AUTHORIZED', gate: 'UNKNOWN' },
+            apply: { state: 'UNKNOWN', reason: 'VERSION_UNKNOWN' },
             savedValues: { enabled: true, mode: 'manual', role: 'final_safety_gate' },
             runtime: runtime('UNKNOWN', 'no_worker_status_interface'),
-            blockers: [['NEVER_WRITE_BY_POLICY', 'Worker 最终安全许可必须保持独立，本插件永不写入。'], ['NO_OWNER_API', '组件没有受支持的写入接口。']],
+            blockers: [['NEVER_WRITE_BY_POLICY', 'Worker 最终安全许可必须保持独立，本插件永不写入。'], ['VERSION_UNKNOWN', '无法确认 Worker 版本，能力结论保持未知。']],
           })],
         },
         {

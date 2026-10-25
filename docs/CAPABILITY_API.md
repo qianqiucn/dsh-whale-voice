@@ -62,7 +62,7 @@ fields; a source never overrides them.
   "contract": {
     "auditedAt": "2026-10-25",
     "source": "docs/PHASE4B2B1_COMPONENT_AUDIT.md",
-    "auditedVersions": { "wechatAgent": "0.3.9", "senderService": "0.1.0", "wechatHook": "4.1.10.27" }
+    "auditedVersions": { "wechatAgent": "0.3.9", "senderService": "0.1.0", "wechatHook": "4.1.10.27", "worker": null }
   },
   "components": [
     {
@@ -267,6 +267,14 @@ WeChatAgent 0.3.9 / Hook 4.1.10.27 / Voice Sender Service 0.1.0
 - Version unreadable → `versionMatch: UNKNOWN`, same downgrade with `VERSION_UNKNOWN`.
 - Worker `policy: NEVER_WRITE` is retained even when its version is downgraded; no save control opens.
 - Qwen/Core → `NOT_APPLICABLE`.
+- **Worker version is separate from Sender Service.** The standalone PowerShell Worker has no version
+  identifier in its config or script, so `worker` is `null` in `auditedVersions` and the Worker
+  Surface is `UNKNOWN`; the Sender Service `0.1.0` version is **never** used as Worker evidence.
+  Worker `readTiming`/`hotReload`/`requiresRestart` are therefore `UNKNOWN`, `save.enabled` is false
+  and `policy: NEVER_WRITE` is retained. If a Worker config ever declares a version, it is used as
+  Worker evidence, but without an audited Worker baseline it still resolves to `UNKNOWN`.
+  Sender automation/TTS capability remains governed by the Sender Service version and is unaffected
+  by an unknown Worker version.
 
 Component health/version is read from the existing read-only detector. A missing component yields
 `COMPONENT_NOT_INSTALLED`; an unreachable/auth-protected component yields `COMPONENT_OFFLINE` /
@@ -318,9 +326,9 @@ Copy and refresh semantics:
 - The global status says **真实配置只读 · 生产写入禁用**. Demo metrics, contacts and tasks remain
   explicitly labelled as demo; there is no blanket “the whole page is Mock” statement over the real
   Core panels.
-- The topbar refresh only refreshes demo data and says so. Real Core status/capability re-detection
-  is the Components dialog action (“重新检测”), whose text states that it refreshes real Core
-  status and capability data and writes nothing.
+- The topbar provides a **demo-data explanation**; it does not refresh or fetch real data. Real Core
+  status/capability re-detection is the Components dialog action (“重新检测”), whose text states that
+  it refreshes real Core status and capability data and writes nothing.
 - `deriveCapabilityView` validates the nested shape before rendering; a malformed payload becomes an
   unavailable capability notice, not a partial success or a crash.
 
@@ -341,15 +349,19 @@ Copy and refresh semantics:
 Behavior coverage added in this phase:
 
 - `test/capability.test.mjs`: schema v3, surface-level reload semantics, automation vs TTS, version
-  gating, static/dynamic separation, privacy, view derivation, no I/O.
+  gating, **Worker version separation from Sender Service**, static/dynamic separation, privacy, view
+  derivation, no I/O.
 - `test/setup-status.test.mjs`: schema v3 validation, timeout, older schema rejection, malformed
   nested payloads (missing save/ownerApi/status fields, null sources, invalid components), stale
   refresh competition.
+- `test/config.test.mjs`: Worker-only declared version is used for Worker evidence; Service version
+  remains separate.
 - `test/core.test.mjs`: Core/Host routes, 401/405/cross-site, capability schema, bridge methods.
 - `tests/ui/run.mjs`: summary, settings/studio/safety surface semantics, changed-version reload
-  downgrade, components dialog, invalid/missing/timeout capability, stale refresh race,
-  Mock/real labels, 780 px layout, Console/requests, no secrets.
+  downgrade, **Worker unknown version without a Service-version claim**, components dialog,
+  invalid/missing/timeout capability, stale refresh race, Mock/real labels, demo-data explanation,
+  780 px layout, Console/requests, no secrets.
 
-Local result: `node --test` **174 tests / 173 pass / 1 platform skip**; UI **23/23**; build and
+Local result: `node --test` **176 tests / 175 pass / 1 platform skip**; UI **24/24**; build and
 Markdown integrity pass. This is OFFLINE/contract evidence; the live DSH Electron Host has not been
 reloaded for this phase.

@@ -414,7 +414,10 @@ Key corrections:
 - **Sender TTS:** `readTiming: SERVICE_BOOT`, `hotReload: NONE`, `requiresRestart: REQUIRED`;
   `save.state: UNSUPPORTED` (no update API).
 - **Bridge:** `PER_CALL / FULL / NOT_REQUIRED`, no owner write API.
-- **Worker permit:** `PER_JOB / PARTIAL / NOT_REQUIRED`, `policy: NEVER_WRITE`.
+- **Worker permit:** the static audit observed `PER_JOB / PARTIAL / NOT_REQUIRED`, but the PowerShell
+  Worker has no independent version identifier. The v3 projection therefore reports the Worker
+  Surface as `UNKNOWN` for version/reload fields (never borrowing the Sender Service version), keeps
+  `policy: NEVER_WRITE` and keeps writes disabled.
 - **WeChatAgent:** `MIXED / PARTIAL / REQUIRED`, human console only.
 - **Source objects** retain identity, authority, component, version/version match, risk and surface
   list; they no longer carry reload values that could override a surface.
@@ -465,14 +468,17 @@ Phase 4B-2B-2a added the production read-only projection and its tests:
 - `core/capabilities.mjs` — schema v3 surface-level projection over the existing detector/config
   snapshot; no I/O.
 - `core/capability-view.mjs` — pure browser/test view derivation.
-- `test/capability.test.mjs` — 8 tests: surface-level reload semantics, Sender automation vs TTS,
-  version gating, static/dynamic separation, privacy, view derivation, invalid/older schema, no I/O.
+- `test/capability.test.mjs` — 9 tests: surface-level reload semantics, Sender automation vs TTS,
+  version gating, Worker version separation, static/dynamic separation, privacy, view derivation,
+  invalid/older schema, no I/O.
+- `test/config.test.mjs` — Worker-only declared version is kept separate from the Service version.
 - `test/setup-status.test.mjs` — schema v3 reader, timeout, older-schema fail-closed, malformed
   nested payloads and stale refresh competition.
 - `test/core.test.mjs` — Host/Core routes, 401/405/cross-site, bridge methods, schema v3.
-- `tests/ui/run.mjs` — 23 checks: capability summary, per-page surfaces, components dialog,
-  invalid/missing/timeout capability, stale refresh race, changed-version reload downgrade,
-  Mock/real labels, 780 px, Console/requests, no secrets.
+- `tests/ui/run.mjs` — 24 checks: capability summary, per-page surfaces, components dialog,
+  invalid/missing/timeout capability, stale refresh race, changed-version reload downgrade, Worker
+  unknown version without a Service-version claim, Mock/real labels, demo-data explanation, 780 px,
+  Console/requests, no secrets.
 
 The previous fixture-only schema v2 tests remain as regression coverage for the Phase 4B-2B-1
 contract; the implementation contract is schema v3 (see §10 and
@@ -481,10 +487,10 @@ contract; the implementation contract is schema v3 (see §10 and
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 174 tests / 173 pass / 0 fail / 1 platform skip
+node --test        -> 176 tests / 175 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
-npm.cmd run test:ui -> 23/23 isolated Playwright checks
+npm.cmd run test:ui -> 24/24 isolated Playwright checks
 ```
 
 **Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **OFFLINE**:
