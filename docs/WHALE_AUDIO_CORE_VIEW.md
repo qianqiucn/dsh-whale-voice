@@ -2,6 +2,8 @@
 
 **状态：OFFLINE / PURE-COMPOSITION / FAKE-TEST。2026-10-25。**
 
+**05-B-F01 修订：** 组合层现在要求两个必填功能键各持有**真实普通观察对象**；显式 `undefined` 不再被底层可选参数默认值吞掉。父契约 `projectFeatureAvailability(feature, undefined)` 的“全部 UNKNOWN”语义保持不变，05-A/F01 模块一行未改。
+
 **一句话结论：** 这份视图把「音频任务的安全投影」「Voice/Singing 各自的依赖状态」「两个功能各自的首次使用提示」组合成一份确定性数据，供未来两个页面共同读取。它**不会**生成、安装、试听、保存、发送或改变任何真实状态；输出的 6 个动作开关**永远是 `false`**。
 
 - 本阶段**没有**新增页面、Host 路由、按钮或可点击功能。
@@ -77,7 +79,7 @@ projectAudioCoreView(input)     // 唯一函数
 | `schemaVersion` | 整数 `1`；这是**视图**版本，不改 Task v1，也不改 Capability v3 |
 | `activeFeature` | `voice-bubbles` 或 `singing` |
 | `taskRecord` | `null` 或完整 AudioTaskRecord；非 null 时其 `feature` 必须等于 `activeFeature` |
-| `observationsByFeature` | **恰好**两个功能键，各值为普通观察对象；组件与状态取值复用 05-A 规则 |
+| `observationsByFeature` | **恰好**两个功能键，各值必须是**普通对象**（含 null 原型）；缺键或显式 `undefined` 都是无效输入；`{}` 合法，表示“组件状态未知”；组件与状态取值复用 05-A 规则 |
 | `acknowledgedByFeature` | 复用首访契约；空对象或缺某功能记录表示未确认 |
 | `manifestRevision` | 复用首访函数的版本规则 |
 
@@ -97,6 +99,19 @@ projectAudioCoreView(input)     // 唯一函数
 | 单层自有键 > 32 | `INVALID_REQUEST`，`too many fields` |
 
 不先 spread、不先 JSON 克隆、不遍历未知字段的值。其余结构委托 05-A 的公开验证函数；异常统一返回固定安全错误（不宣称隔离任意恶意 Proxy）。
+
+### 3.2 观察容器的三种形态（05-B-F01）
+
+| 输入 | 结果 | 含义 |
+|---|---|---|
+| 缺少某功能键 | `INVALID_REQUEST` ／ `observationsByFeature.<feature>` ／ `required` | 请求本身不完整 |
+| 键存在，值为 `undefined`（或 `null`、数组、类实例等非普通对象） | `MANIFEST_INVALID` ／ `observationsByFeature.<feature>` ／ `feature observations could not be validated` | 状态数据无效，不能包装成一次“检查成功” |
+| `{}`（普通对象，无组件键） | 成功；该功能组件全部 `UNKNOWN` | 已提供观察容器，只是还没有任何结论 |
+| null 原型对象 / 冻结对象 | 成功 | 合法 |
+
+**父契约保持不变：** 直接调用 `projectFeatureAvailability(feature, undefined)` 仍按 05-A 文档表示“全部 UNKNOWN”。本组合层额外要求“两个必填功能键必须持有真实观察对象”，不改变父函数对外的可选参数语义。
+
+**为什么不用 JSON 序列化判断：** `JSON.stringify` 会删除值为 `undefined` 的键，使“显式 undefined”看起来像“缺键”，反而掩盖无效输入。本层直接读取自有数据属性的值并检查类型。
 
 ---
 
@@ -153,7 +168,7 @@ projectAudioCoreView(input)     // 唯一函数
 | `schemaVersion` 非整数 | `TYPE_MISMATCH` | `schemaVersion` | `expected integer schema version` |
 | 整数但非 1 | `SCHEMA_UNSUPPORTED` | `schemaVersion` | `unsupported schema version` |
 | 非法 `activeFeature` | `INVALID_REQUEST` | `activeFeature` | `unknown feature` |
-| 观察对象校验失败 | `MANIFEST_INVALID` | `observationsByFeature.<feature>` | `feature observations could not be validated` |
+| 观察对象校验失败（含显式 `undefined`、`null`、数组、类实例） | `MANIFEST_INVALID` | `observationsByFeature.<feature>` | `feature observations could not be validated` |
 | 首访对象校验失败 | `MANIFEST_INVALID` | `acknowledgedByFeature` | `first-use decision could not be validated` |
 | 任务校验或投影失败 | `TASK_INVALID` | `taskRecord` | `task record could not be validated` |
 | 任务与活动功能不符 | `FEATURE_MISMATCH` | `taskRecord.feature` | `task does not belong to the active feature` |
@@ -190,6 +205,7 @@ projectAudioCoreView(input)     // 唯一函数
 | 缺少需要的组件 | 「重新检查」／「以后再说」／换一个可用方案 |
 | 没有素材或音色的使用权 | 更换合法材料，或返回上一步 |
 | 发送权限或目标不明 | 只保存不发送，或取消发送 |
+| 状态数据不完整或无效（缺键 / `undefined`） | 提示“状态数据不完整，请重新检查”，提供「重新检查」／返回／「以后再说」 |
 
 ### 6.4 必须一直保持的边界
 
@@ -197,6 +213,7 @@ projectAudioCoreView(input)     // 唯一函数
 - 缺少微信相关组件只影响 `deliveryRequired`，**不阻断**仅生成/试听/保存的路径。
 - 硬件与模型状态探测不到时如实显示 `UNKNOWN`，不编造 CPU/GPU 结论。
 - 六个 `actions` 恒为 `false`，本阶段没有任何可点击的新真实功能。
+- `{}` 表示“已提供观察容器但组件状态未知”；`undefined` 或缺键表示输入无效，二者都**不能**显示成一次成功检查。
 - 演示取消不证明真实进程已停止；`hasOutput:true` 不证明真实音频可播放；`SAVED` 不等于配置 `APPLIED`，也不等于 Relay `SENT_LOCAL`。
 - 开发者的 `node --test` 命令不是普通用户的使用路径。
 
@@ -208,14 +225,16 @@ projectAudioCoreView(input)     // 唯一函数
 
 ```bash
 node --check core/audio/core-view.mjs
-node --test test/audio-core-view.test.mjs        # V01–V28
+node --test test/audio-core-view.test.mjs        # V01–V28 + U01–U08（36 项）
 node --test test/audio-core-contract.test.mjs    # 05-A 81 项回归
-node --test                                      # 全仓库
+node --test                                      # 全仓库 293 项（292 pass / 1 skip）
 node build.mjs && git diff --exit-code -- client.js
 git diff --check
 ```
 
-测试编号对照：V01–V05 组合形状与任务集成；V06–V10 输入边界；V11–V14 manifest 失败归因；V15–V18 任务校验与首访隔离；V19–V23 可用性行为与脱敏；V24–V28 冻结、兼容、鲁棒与纯净性。
+测试编号对照：V01–V05 组合形状与任务集成；V06–V10 输入边界；V11–V14 manifest 失败归因；V15–V18 任务校验与首访隔离；V19–V23 可用性行为与脱敏；V24–V28 冻结、兼容、鲁棒与纯净性；**U01–U08 必填观察对象（显式 `undefined`、非普通值、错误优先级、父语义不变）**。
+
+05-B-F01 修复前记录：新增 U 套件后 36 项中 **7 项失败**（U01–U04、U06–U08）；修复后 **36/36 通过**。父契约 81/81 未变。
 
 ---
 

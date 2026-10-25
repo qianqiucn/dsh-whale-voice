@@ -237,6 +237,18 @@ function buildFeatures(state) {
       return fail(AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID, 'features.' + feature, 'feature dependencies could not be validated')
     }
     const observations = readField(state.observationsByFeature, feature).value
+    // F01: a present feature key must hold a real observation object. An explicit `undefined`
+    // would otherwise be swallowed by the availability function's documented optional-parameter
+    // default (undefined ⇒ all UNKNOWN) and silently become a successful check. The parent's
+    // public behaviour for direct callers is intentionally unchanged; only this composition layer
+    // rejects the value.
+    if (!isPlainObject(observations)) {
+      return fail(
+        AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+        'observationsByFeature.' + feature,
+        'feature observations could not be validated',
+      )
+    }
     const availability = projectFeatureAvailability(feature, observations)
     if (!availability.ok) {
       return fail(

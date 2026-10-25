@@ -806,3 +806,251 @@ test('V28 模块只导入两个纯模块，无 I/O、时钟、随机、进程或
     assert.equal(pattern.test(source), false, 'V28 must not reference ' + label)
   }
 })
+
+// ---------------------------------------------------------------------------------------------
+// F01 · required observation-object regressions (U01–U08)
+//
+// A present feature key whose value is `undefined` is invalid input, not "all components unknown".
+// Only an actual plain object may reach the availability function, whose public optional-parameter
+// behaviour (`undefined` ⇒ all UNKNOWN) must stay unchanged for direct callers.
+// ---------------------------------------------------------------------------------------------
+
+function observationMap(brokenFeature, value) {
+  const map = { 'voice-bubbles': {}, singing: {} }
+  map[brokenFeature] = value
+  return map
+}
+
+test('U01 两个活动功能 × 两个受影响功能的显式 undefined 全部拒绝', () => {
+  const cases = [
+    ['voice-bubbles', 'singing'],
+    ['voice-bubbles', 'voice-bubbles'],
+    ['singing', 'singing'],
+    ['singing', 'voice-bubbles'],
+  ]
+  for (const [activeFeature, brokenFeature] of cases) {
+    const errors = failView(
+      baseInput({ activeFeature, observationsByFeature: observationMap(brokenFeature, undefined) }),
+      AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+      'observationsByFeature.' + brokenFeature,
+      'U01 ' + activeFeature + ' / ' + brokenFeature,
+    )
+    assert.equal(errors[0].code, 'CORE_VIEW_MANIFEST_INVALID')
+    assert.equal(errors[0].path, 'observationsByFeature.' + brokenFeature)
+    assert.equal(errors[0].reason, 'feature observations could not be validated')
+  }
+})
+
+test('U02 两个功能值同时 undefined 时首个错误固定为 voice-bubbles', () => {
+  const errors = failView(
+    baseInput({ observationsByFeature: { 'voice-bubbles': undefined, singing: undefined } }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.voice-bubbles',
+    'U02',
+  )
+  assert.equal(errors[0].path, 'observationsByFeature.voice-bubbles')
+  assert.equal(errors[0].code, 'CORE_VIEW_MANIFEST_INVALID')
+})
+
+test('U03 两个功能槽位的所有非普通对象值都固定拒绝且不回显输入', () => {
+  class FixtureObservations {}
+  const marker = 'fixture-undefined-marker'
+  const values = [
+    undefined,
+    null,
+    [],
+    marker,
+    42,
+    true,
+    () => {},
+    new Date(0),
+    new Map(),
+    new FixtureObservations(),
+    Object.create({ fixture: true }),
+  ]
+  for (const brokenFeature of FEATURES) {
+    for (const value of values) {
+      const errors = failView(
+        baseInput({ observationsByFeature: observationMap(brokenFeature, value) }),
+        AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+        'observationsByFeature.' + brokenFeature,
+        'U03 ' + brokenFeature + ' / ' + String(value),
+      )
+      assert.equal(errors[0].reason, 'feature observations could not be validated')
+      assert.equal(errText(errors).includes(marker), false, 'U03 must not echo the input value')
+    }
+  }
+})
+
+test('U04 缺键与显式 undefined 返回不同错误，两个空对象仍成功', () => {
+  const missing = baseInput()
+  delete missing.observationsByFeature.singing
+  const missingErrors = failView(
+    missing,
+    AUDIO_CORE_VIEW_ERRORS.INVALID_REQUEST,
+    'observationsByFeature.singing',
+    'U04 missing key',
+  )
+  assert.equal(missingErrors[0].reason, 'required')
+
+  const undefinedErrors = failView(
+    baseInput({ observationsByFeature: observationMap('singing', undefined) }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.singing',
+    'U04 explicit undefined',
+  )
+  assert.equal(undefinedErrors[0].reason, 'feature observations could not be validated')
+
+  const view = okView(baseInput(), 'U04 empty objects')
+  for (const feature of FEATURES) {
+    assert.deepEqual(view.features[feature].availability, projectFeatureAvailability(feature, {}).value)
+    assert.equal(view.features[feature].availability.realReady, false)
+    assert.equal(view.features[feature].firstUse.showDialog, true)
+  }
+  assert.equal(view.task, null)
+})
+
+test('U05 普通、null 原型与冻结的合法观察对象可用，VERIFIED 也不升级真实能力', () => {
+  const verified = {
+    'audio-core': 'VERIFIED',
+    'tts-selected': 'VERIFIED',
+    'voice-profile': 'VERIFIED',
+    'preview-save': 'VERIFIED',
+  }
+  const nullProto = Object.assign(Object.create(null), verified)
+  const frozen = Object.freeze({ ...verified })
+  for (const observations of [{}, nullProto, frozen]) {
+    const view = okView(
+      baseInput({ observationsByFeature: { 'voice-bubbles': observations, singing: {} } }),
+      'U05 plain/null/frozen',
+    )
+    assert.equal(view.mode, 'MOCK_ONLY')
+    assert.equal(view.features['voice-bubbles'].availability.realReady, false)
+    for (const key of ACTION_KEYS) assert.equal(view.actions[key], false, 'U05 action ' + key)
+  }
+  const verifiedView = okView(
+    baseInput({ observationsByFeature: { 'voice-bubbles': nullProto, singing: {} } }),
+    'U05 verified',
+  )
+  assert.deepEqual([...verifiedView.features['voice-bubbles'].availability.missingRequired], [])
+  assert.deepEqual([...verifiedView.features['voice-bubbles'].availability.unknownRequired], [])
+  assert.equal(verifiedView.features['voice-bubbles'].availability.realReady, false)
+})
+
+test('U06 错误优先级保持：版本 → 功能观察 → 任务', () => {
+  failView(
+    baseInput({
+      manifestRevision: '',
+      observationsByFeature: observationMap('singing', undefined),
+    }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'manifestRevision',
+    'U06 revision first',
+  )
+  failView(
+    baseInput({
+      taskRecord: ttsDraft(),
+      observationsByFeature: observationMap('singing', undefined),
+    }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.singing',
+    'U06 observations before task',
+  )
+  const bothBad = failView(
+    baseInput({ observationsByFeature: { 'voice-bubbles': null, singing: null } }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.voice-bubbles',
+    'U06 voice first',
+  )
+  assert.equal(bothBad[0].path, 'observationsByFeature.voice-bubbles')
+})
+
+test('U07 map 与观察对象内的属性攻击仍被拒绝且不执行访问器', () => {
+  let reads = 0
+  const getterMap = { 'voice-bubbles': {} }
+  Object.defineProperty(getterMap, 'singing', {
+    get() {
+      reads += 1
+      return {}
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  failView(
+    baseInput({ observationsByFeature: getterMap }),
+    AUDIO_CORE_VIEW_ERRORS.TYPE_MISMATCH,
+    'observationsByFeature.singing',
+    'U07 map getter',
+  )
+
+  failView(
+    baseInput({ observationsByFeature: withHidden({ 'voice-bubbles': {}, singing: {} }, 'token', 'fixture') }),
+    AUDIO_CORE_VIEW_ERRORS.UNKNOWN_FIELD,
+    'observationsByFeature.<unknown-key>',
+    'U07 map hidden',
+  )
+  failView(
+    baseInput({ observationsByFeature: withSymbol({ 'voice-bubbles': {}, singing: {} }, 'fixture-secret', 'x') }),
+    AUDIO_CORE_VIEW_ERRORS.UNKNOWN_FIELD,
+    'observationsByFeature.<unknown-key>',
+    'U07 map symbol',
+  )
+
+  const observationGetter = {}
+  Object.defineProperty(observationGetter, 'audio-core', {
+    get() {
+      reads += 1
+      throw new Error('fixture-observation-marker')
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  const errors = failView(
+    baseInput({ observationsByFeature: { 'voice-bubbles': observationGetter, singing: {} } }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.voice-bubbles',
+    'U07 observation getter',
+  )
+  assert.equal(reads, 0)
+  assert.equal(errText(errors).includes('fixture-observation-marker'), false)
+
+  const input = baseInput({ observationsByFeature: observationMap('singing', undefined) })
+  const snapshot = JSON.stringify(input)
+  failView(input, AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID, 'observationsByFeature.singing', 'U07 input unchanged')
+  assert.equal(JSON.stringify(input), snapshot)
+})
+
+test('U08 父函数 undefined 语义不变，组合层拒绝，合法空对象组合结果一致', () => {
+  const parent = projectFeatureAvailability('singing', undefined)
+  assert.equal(parent.ok, true, 'the parent contract keeps undefined ⇒ all UNKNOWN')
+  assert.equal(parent.value.realReady, false)
+  assert.deepEqual(
+    [...parent.value.unknownRequired],
+    ['audio-core', 'rvc-gateway', 'rvc-voice-model', 'source-rights', 'preview-save'],
+  )
+
+  failView(
+    baseInput({ activeFeature: 'singing', observationsByFeature: observationMap('singing', undefined) }),
+    AUDIO_CORE_VIEW_ERRORS.MANIFEST_INVALID,
+    'observationsByFeature.singing',
+    'U08 composition rejects undefined',
+  )
+
+  const input = baseInput({ acknowledgedByFeature: { 'voice-bubbles': FEATURE_MANIFEST_REVISION } })
+  const view = okView(input, 'U08 valid empty objects')
+  for (const feature of FEATURES) {
+    assert.deepEqual(
+      view.features[feature].availability,
+      projectFeatureAvailability(feature, input.observationsByFeature[feature]).value,
+      'U08 availability ' + feature,
+    )
+    assert.deepEqual(
+      view.features[feature].firstUse,
+      evaluateFirstUse(feature, input.acknowledgedByFeature, input.manifestRevision).value,
+      'U08 firstUse ' + feature,
+    )
+  }
+  for (const key of ACTION_KEYS) assert.equal(view.actions[key], false, 'U08 action ' + key)
+  assert.equal(view.mockOnly, true)
+  assert.equal(view.realOperationAllowed, false)
+})
