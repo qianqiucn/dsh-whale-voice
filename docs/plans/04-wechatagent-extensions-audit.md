@@ -2,6 +2,14 @@
 
 **任务状态：PLANNED（推荐在 TTS-A 合并后）**
 
+## 2026-10-25 · Plan 04-A 正式 Level 2 派发（最新权威状态）
+
+**Plan 04-A = SENT / 等待 DeepSeek 静态审计报告**，完整可直接执行的任务书：[04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)。唯一输出为 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md`，只限新独立研究 docs-only PR。不安装、不升级、不重启、不访问聊天数据库/Token、不调用真实微信、不动工程或计划分支、绝不合并。
+
+最新发现：上游 `sourcepro5/WeChatAgent` 2026-10-25 已发布 **v0.4.1**，其 ZIP 插件 API v2 有正式文档、按聊天授权与子进程执行，但**与 DSH 插件不兼容**；当前本项目仅报告历史 WeChatAgent 0.3.9 安装版，不能据此认定本机已有 0.4.1。04-A 需比较 v0.3.9/v0.4.0/v0.4.1 并且**默认保留 DSH 插件 + 只读 Adapter 的 S1 路线，ZIP 插件可选 S2 研究，不得自动迁移生产**。
+
+原 Plan 04–14 序号不变，07-A 静态研究 DONE、07-B/05 未派发、03-B 合并等待独立授权。本文件下方“Plan 04 PLANNED、推荐 TTS-A 合并后”的文字是旧初版；**研究 04-A 可独立在 03-B 等待期间进行，后续真实集成仍需其前置与专项许可**。
+
 ## 2026-10-25 · 自动点歌入口新增审计范围（仍 PLANNED）
 
 用户选择参考 astrbot_plugin_rvc_svc 实现自然语言点歌、RVC/SVC 翻唱和鲸递交付。跨阶段规格见 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。Plan 04 只读审计新增：
