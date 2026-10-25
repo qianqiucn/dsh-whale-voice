@@ -12,9 +12,13 @@ explicit permission; do not silently weaken a safety boundary.
 ## 1. Startup workflow (every session)
 
 1. Read this `AGENTS.md` before implementing a task or changing repository code.
-   **ChatGPT only**, when doing plan dispatch or GitHub plan management: also first read
-   [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md), the plan registry and relevant plan file.
-   DeepSeek is not required to perform that plan-administration preflight for ordinary engineering
+   **ChatGPT only**, when doing plan dispatch, task drafting or GitHub plan management: also read
+   [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md),
+   [docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+   [docs/plans/TASK_SPEC_STANDARD.md](docs/plans/TASK_SPEC_STANDARD.md),
+   the plan registry and the relevant plan file. When drafting or revising a task,
+   use [docs/plans/TASK_SPEC_TEMPLATE.md](docs/plans/TASK_SPEC_TEMPLATE.md).
+   DeepSeek is **not** required to perform this planning/memory preflight for ordinary engineering
    work; its Git/PR safety obligations remain governed by this file.
 2. Read [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) as a recovery summary, not an authority.
 3. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
@@ -52,11 +56,20 @@ actual source, tests or GitHub state, flag the discrepancy rather than silently 
 plan manager's records.
 
 **Instructions to ChatGPT only:** For plan selection, new ideas, sequence changes, status
-tagging or plan-document PRs, first read [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) and
-[docs/plans/README.md](docs/plans/README.md). Dispatch one requested plan per message; record
-new ideas and reordering in [docs/plans/CHANGELOG.md](docs/plans/CHANGELOG.md); mark `DONE`
-only with adequate evidence; track PR `MERGED` separately from task completion. Do these
-updates in the active chat using GitHub tools, never imply offline background editing.
+tagging or plan-document PRs, first read [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md),
+[docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+[docs/plans/TASK_SPEC_STANDARD.md](docs/plans/TASK_SPEC_STANDARD.md) and
+[docs/plans/README.md](docs/plans/README.md). **The user requires near implementation-ready
+task specifications: maximize concrete instructions and leave as few product/architecture choices as
+possible for DeepSeek.** Expand roadmap entries using
+[docs/plans/TASK_SPEC_TEMPLATE.md](docs/plans/TASK_SPEC_TEMPLATE.md), verify actual code and PRs
+before specifying changes, and give a single recommended implementation path with explicit
+input/output/error contracts, file lists, ordered steps, tests and acceptance. Dispatch one
+requested plan per message; record new ideas and reordering in
+[docs/plans/CHANGELOG.md](docs/plans/CHANGELOG.md), updating long-term memory when a durable
+user preference changes. Mark `DONE` only with adequate evidence; track PR `MERGED`
+separately from task completion. Do these updates in the active chat using GitHub tools,
+never imply offline background editing.
 
 Both agents must comply with safety/authorization boundaries; neither may treat a plan
 description or a CI pass as permission for production writes, service restart, real WeChat
