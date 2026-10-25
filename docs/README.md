@@ -3,10 +3,10 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
-## Mandatory execution standard
+## AI collaboration and role-specific plan standard
 
-- [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md) — **read first for every Git/GitHub task**, including PR review, writing plans, tracking ideas, and marking work complete.
-- [AGENTS.md](../AGENTS.md) — agent startup rules enforce that preflight.
+- [AGENTS.md](../AGENTS.md) — engineering/safety rules shared by DeepSeek (principal developer) and ChatGPT; explicitly describes their roles.
+- [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md) — **ChatGPT-only** plan dispatch, idea-driven reprioritization, DONE tagging, and GitHub plan-coordination standard. **Not a mandatory plan workflow for DeepSeek's ordinary code/PR work.**
 
 ## Execution plans (new)
 
