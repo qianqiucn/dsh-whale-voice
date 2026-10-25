@@ -2,6 +2,12 @@
 
 **状态：PLANNED；独立研究，不阻塞通用 Core 设计。**
 
+## 2026-10-25 · 07-A / F01 静态研究正式验收 DONE
+
+ChatGPT 已独立核实原研究 [PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) 最新 HEAD `e21dee8a8192f24a3465f169c761e62d30611e59`、唯一 `docs/SVC_PROVIDER_RESEARCH.md` +489 行、CI `40231587503` SUCCESS；旧 A01–A14 误编号、缺逐源码定位、Fake Envelope 不兼容 SVC v1、缺新手 Manifest 四项在 F01 修订里均已补齐。C01–C17 固定行号源链、14 项 A 与 10 项 R 全部达到研究验收范围，**Plan 07-A = DONE / F01 = DONE（RESEARCH/OFFLINE）**，不代表真实 RVC/Seed-VC 模型、网关、Windows 运行、UI 或微信已实现。源代码复用与直接 API 集成仍 BLOCKED，不是对开发的解禁。
+
+**下一步只读派发为 Plan 04-A**（[独立 Level 2 任务书](04-A-wechatagent-extension-readonly-audit-execution.md)）；Plan 07-B 仍 PLANNED/NOT_SENT，需 Plan 05 统一 Core/Fake 边界等前置。Seed-VC 始终是后续免训练候选，不列首发，PR #19 尚未合并，03-B 等授权。本文件后面 07-A/F01 REVIEW_REQUIRED/SENT 的内容是当时历史，不得按旧段落重新派发。
+
 ## 2026-10-25 · 07-A 初次审计已交付，但验收需 F01 修订
 
 **07-A 阶段状态：REVIEW_REQUIRED（尚未 DONE）；唯一派发续行：07-A-F01 = SENT。** GitHub [PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) 初次仅提交 `docs/SVC_PROVIDER_RESEARCH.md` +348 行，HEAD `8276909efac54e4e2dd00c905cbd67e32c5073f3`，CI `40230248341` SUCCESS（仅文档仓库检查，非 RVC 运行）。核心方向认可：禁止直接复制许可不明上游代码/将公网无认证 Gateway 当生产依赖，后续只考虑原创 Fake。
