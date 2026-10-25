@@ -2,6 +2,10 @@
 
 **状态：PLANNED。Phase 4B-2B-2a 已 INTEGRATED，非 VERIFIED。生产写入尚未获授权。**
 
+## 长期新增 · 不会代码的用户优先 UI 验收
+
+[Novice First 产品规范](NOVICE_FIRST_PRODUCT_STANDARD.md) 必须用于 Whale Voice 与 Whale Singing 两个页面。首次弹窗用简体中文说明“检查依赖→选可用方案→只安装所选项→开始试听/保存”，允许稍后再说、重新检测、取消与失败恢复；只显示普通人理解的“本机运行/云端服务/需要安装”，把版本/端口/CUDA 放在高级详情。不要求普通用户手动安装 Python、编辑 JSON 或使用终端。RVC 为 Singing 首发主线，Seed-VC 后续可选、不预装。当前阶段仅 Fake UI，真实安装/生成/微信发送仍禁用，不可虚报完成。Playwright 验收须覆盖初访/复访、无显卡、断网、安装失败/未知、窄屏、键盘和中文错误恢复。
+
 ## 2026-10-25 · Whale Voice/Whale Singing 分离页面与首次弹窗（原 Plan 09，仍 PLANNED）
 
 前端**两个独立入口**：`Whale Voice · 语音气泡`（规划 route `voice-bubbles`）；`Whale Singing · 唱歌`（规划 route `singing`）。共享 **Whale Audio Core（鲸音核心）**；具体流程与字段见 [双前端及首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
