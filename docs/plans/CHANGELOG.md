@@ -2,6 +2,12 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 原始 Plan 编号与 Plan 03 总范围恢复
+
+- 用户发现当前 Plan 编号与上一段 GPT 可能不一致。核对 PR #17 唯一索引、PR #18 历史目录和已完成的 H0_PLAN_RECONCILIATION：01–14 的语义顺序没有改变；差别主要是文档文件名、状态快照与技术阶段名称容易混用。
+- 明确稳定体系：TTS-A/TTS-A-H/Phase 4B-2B-2a 是技术阶段 ID；Plan 01–14 是派发任务序号；PR #16/#17/#18 是 GitHub 审查编号，彼此独立。
+- 纠正 ChatGPT 先前的范围漂移：原 Plan 03 始终包括 PR #16 审查及单独授权后合并；此前仅做合并前文档/CI 审核是 **03-A SENT**，真正 merge+合并后 main 验证是 **03-B WAIT_USER_AUTHORIZATION**，未派发也未执行。不会因 03-A 完成将整个 Plan 03 标 DONE。
+- 更新 Plan 03、唯一总表、长期记忆与新对话交接卡；Plan 01 SENT、Plan 02 DONE、Plan 04–14 未改变；未修改工程 PR #16 代码、main 或生产服务，未合并任何 PR。
 ## 2026-10-25 · Plan 02 终审通过；自动派发 Plan 03 合并前门禁
 
 - 用户提交 F01–F05 完成报告，报告 PR #16 HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773、CI run 40163881122；ChatGPT 核对 GitHub PR OPEN / mergeable、实际该 Commit 5 个文件 Diff、5 个负向测试断言以及当前 HEAD CI SUCCESS。
