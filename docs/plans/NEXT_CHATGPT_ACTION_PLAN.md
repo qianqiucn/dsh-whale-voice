@@ -2,7 +2,7 @@
 
 > **执行者：下一次 ChatGPT 会话。不是 DeepSeek 开发任务，不是新的 Plan 15。**
 >
-> **任务状态：READY_FOR_NEXT_CHAT（待下一位 ChatGPT 执行）。**
+> **任务状态：DONE（2026-10-25，已由本次 ChatGPT 对话执行 GitHub 恢复核验）。**
 >
 > **执行范围：只读核验与 GitHub 计划文档必要更新；不修改工程运行代码，不自动合并 PR。**
 >
@@ -10,6 +10,14 @@
 >
 > 前置交接：[NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)。先读该文件再执行本计划。
 
+## C1 执行实录（2026-10-25，恢复任务已完成）
+
+- 已读取 PR #17 计划分支的 EXECUTION_STANDARD.md、AGENTS.md、CHATGPT_LONG_TERM_MEMORY.md、NEXT_CHATGPT_HANDOFF.md、NEXT_CHATGPT_ACTION_PLAN.md，并补读 TASK_SPEC_STANDARD、任务模板、计划总表及 Plan 03。
+- GitHub main HEAD bf9cf66807e12d0b25872a0fa3869962dde04818；PR #16 OPEN/未合并/mergeable，HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773，当前 HEAD CI run 40163881122 SUCCESS；PR #18 OPEN/DRAFT，HEAD 42cec57ae7018735cb6c65a4ef8b0a1d80473810，CI run 40159114676 SUCCESS。
+- PR #17 在本次 C1 文档更新前核实 HEAD 8864e4c3ab0aec5a8dd177579497bd1f0960efdb，run 40165005768 SUCCESS；本次计划文档提交会改变 #17 HEAD，后续需另查其 CI，不能沿用旧 run。
+- PR #16 最新文档 docs/PROJECT_STATUS.md、docs/AI_CONTEXT.md 均有历史 192 Node 记录、没有当前 197 及 3ad32bc；工程 HEAD 未较 Plan 02 修复提交前进。因此没有可据此验收 Plan 03-A DONE 的新交付证据。
+- 03-A 保持 SENT；03-B 仍 WAIT_USER_AUTHORIZATION；Plan 01 SENT、02 DONE、04–14 PLANNED；H0 已完成且不重做。没有合并 PR、修改工程代码或生产环境，也没有本地重跑 Windows Node/UI 测试。
+- **下一会话不得重新执行 C1 作为新独立计划**。新会话仍先读本文件和交接卡作为恢复入口，再核实最新 Git/PR/CI；唯一工程进度跟进对象为 **Plan 03-A 已派发任务的实际交付/续行**，不得新建 Plan 15 或推进 03-B 合并。
 ## 1. 唯一目标和完成后应得到什么
 
 下次打开新 ChatGPT 对话时，**准确恢复 Whale Voice 的规划职责，核实 Plan 03-A 是否已由 DeepSeek 完成**，基于真实 PR/CI 证据决定：
