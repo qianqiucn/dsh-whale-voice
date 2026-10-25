@@ -34,7 +34,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
   `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/phase4b2b2a-capability-status` (read-only capability/status
-  projection), branched from `main` at `9318686`.
+  projection), branched from `main` at `9318686`; **PR #15 open**, not merged.
 - **Current local HEAD:** verify live with `git rev-parse HEAD`; the branch changes Core API, frontend
   and tests, but adds no write route.
 - **Worktree:** clean at the Phase 4B-2B-2a baseline
@@ -269,7 +269,7 @@ CI:
 - `main` at `e0ce035` after PR #13: build + ui SUCCESS (run `40149074319`);
 - PR #14 head `b6f86bf`: build + ui SUCCESS (run `40150989182`);
 - `main` at `9318686` after PR #14: build + ui SUCCESS (run `40151464926`);
-- Phase 4B-2B-2a PR: CI is reported from its actual PR run; do not merge.
+- Phase 4B-2B-2a PR #15: CI is reported from its actual PR run; do not merge.
 
 ---
 

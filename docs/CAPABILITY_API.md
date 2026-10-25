@@ -3,6 +3,7 @@
 **Status:** `OFFLINE` — read-only source, Host route and isolated UI are implemented and tested; the
 running DSH Host has **not** been reloaded/restarted, so live Electron GUI integration remains
 pending a separately authorized reload. No production write route exists.
+**Deliverable PR:** #15 (`feature/phase4b2b2a-capability-status`), open and not merged.
 
 **Scope:** expose the audited component capabilities and the current read-only runtime observation to
 the Whale Voice frontend. This is a projection only: it does not read private targets, tokens or chat

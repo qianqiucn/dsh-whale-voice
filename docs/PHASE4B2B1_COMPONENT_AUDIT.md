@@ -481,8 +481,8 @@ npm.cmd run test:ui -> 19/19 isolated Playwright checks
 ```
 
 **Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **OFFLINE**:
-source, Host route and isolated UI are implemented and tested, but the running DSH Host has not been
-reloaded, so live Electron GUI integration is pending. Phase 4B-2B-2b (write) remains **NOT
+source, Host route and isolated UI are implemented and tested (PR #15), but the running DSH Host has
+not been reloaded, so live Electron GUI integration is pending. Phase 4B-2B-2b (write) remains **NOT
 STARTED**. No production configuration, service, audio device or WeChat operation was touched.
 
 ---
