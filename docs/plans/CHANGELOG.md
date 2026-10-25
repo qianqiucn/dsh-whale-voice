@@ -4,6 +4,20 @@
 
 
 
+
+## 2026-10-26 · 永久交接规则：每次新开DS/DSH对话必须提醒模式
+用户实际界面提供「标准」「创造」。以后每次建议或协助新开DeepSeek/DSH对话，都在回复和计划书开头明确写：推荐模式、简短原因、读写/安装/生产边界和首项动作；不能等用户追问。
+官方中文模式定义已查证：标准用于代码/文件/资料工作，具备检索、编辑、终端等工具；创造用于通过对话定制DSH插件/界面、组合工具与提示词创建自定义模式。官方来源：
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-agent-preset/src/client/locales.ts
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-agent-preset/README.zh.md
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-09-16-creator-persistent-plugin-management.md
+模式是工具/提示词预设，不是模型强弱，也不是读写权限。标准也能修改代码与运行测试；创造不是普通开发必选，也不能把它描述成只在内存试验、不持久安装。当前官方架构说明标准与创造都可在权限门禁下使用plugin_manager；本项目任务授权仍独立限制。
+默认判定：仓库核验、修复、测试、普通工程代码→标准；明确需要创造/检查DSH插件、运行时能力或自定义预设→评估创造并写明原因。Whale Voice虽是DSH插件，纯离线模块/审计不自动需要创造。只有实际需求匹配时才推荐创造，不宣称两者能力互斥。
+Plan06-A明确选择「标准模式」，只读核验、不改文件/不安装/不合并来自任务书限制。禁止再用用户界面不存在的Plan/Build充当模式名称，也不能把标准误称为只读模式。旧06-A§16与旧交接中的Plan/Build措辞由本规则及06-A v1.1替代。
+选择模式最好在发送第一条消息前完成；官方说明已有会话保留开始时的预设。界面或版本变化时重新查证，不安装切换插件、不自动改默认模式、不重启DSH/微信/模型。
+本次只纠正交接说明：06-A仍SENT，未新派工程；原任务范围与DoD不变。
+
+
 ## 2026-10-26 · 用户最新交付偏好：本地Markdown文件按发送顺序归档
 用户要求：以后的计划书直接交付.md文件，在本地专用计划书目录按实际发送顺序编号。
 - ChatGPT交付完整Level2任务时，创建独立UTF-8 Markdown文件，命名为三位发送序号_Plan原编号_中文标题.md，并更新目录索引；回复提供可点击文件链接和简要说明，无须再粘贴全文。这是对旧条款“必须回复正文贴全文”的明确替代，完整规格仍须真实写入文件，不能用裸任务名称代替。

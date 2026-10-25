@@ -9,6 +9,20 @@
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
 
+
+## 2026-10-26 · 永久交接规则：每次新开DS/DSH对话必须提醒模式
+用户实际界面提供「标准」「创造」。以后每次建议或协助新开DeepSeek/DSH对话，都在回复和计划书开头明确写：推荐模式、简短原因、读写/安装/生产边界和首项动作；不能等用户追问。
+官方中文模式定义已查证：标准用于代码/文件/资料工作，具备检索、编辑、终端等工具；创造用于通过对话定制DSH插件/界面、组合工具与提示词创建自定义模式。官方来源：
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-agent-preset/src/client/locales.ts
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-agent-preset/README.zh.md
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-09-16-creator-persistent-plugin-management.md
+模式是工具/提示词预设，不是模型强弱，也不是读写权限。标准也能修改代码与运行测试；创造不是普通开发必选，也不能把它描述成只在内存试验、不持久安装。当前官方架构说明标准与创造都可在权限门禁下使用plugin_manager；本项目任务授权仍独立限制。
+默认判定：仓库核验、修复、测试、普通工程代码→标准；明确需要创造/检查DSH插件、运行时能力或自定义预设→评估创造并写明原因。Whale Voice虽是DSH插件，纯离线模块/审计不自动需要创造。只有实际需求匹配时才推荐创造，不宣称两者能力互斥。
+Plan06-A明确选择「标准模式」，只读核验、不改文件/不安装/不合并来自任务书限制。禁止再用用户界面不存在的Plan/Build充当模式名称，也不能把标准误称为只读模式。旧06-A§16与旧交接中的Plan/Build措辞由本规则及06-A v1.1替代。
+选择模式最好在发送第一条消息前完成；官方说明已有会话保留开始时的预设。界面或版本变化时重新查证，不安装切换插件、不自动改默认模式、不重启DSH/微信/模型。
+本次只纠正交接说明：06-A仍SENT，未新派工程；原任务范围与DoD不变。
+
+
 ## 最新验收与唯一派发（2026-10-26）· 07-B DONE，06-A SENT
 **07-B = DONE / OFFLINE / NOT_INTEGRATED，PR #23 OPEN。** HEAD a570430e9d5be24aa0f2415b6699cdfa957583f6、base main@bf9cf66807e12d0b25872a0fa3869962dde04818、0 reviews；精确三added +1892/-0。[CI40242597119](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40242597119) 当前HEAD build/ui SUCCESS。ChatGPT独立40/40与271额外边界断言PASS；DS全量216/215/1、UI24/24和本机build为报告值，未独立本地重跑全仓库/UI。完整K01–K16与非阻断错误路径/嵌套类型规格澄清见[07-B最新验收](07-B-rvc-fake-gateway-offline-protocol.md)；无阻断返修。
 **唯一下一任务：[06-A · 现有Provider复用与集成前置核验](06-A-provider-reuse-integration-readiness-audit.md) = SENT。** 只读跨PR盘点、三层字段/状态映射、文件交集与依赖，直接对话报告，不新增代码/Registry/Fake、分支、提交或PR，也不写报告入仓库。Plan06实现仍PLANNED，集成仍未开展。理由：已有实现散在未合并#16/#21/#22/#23，先核实复用和合并决策材料，避免继续叠加孤立契约或绕过03-B。
