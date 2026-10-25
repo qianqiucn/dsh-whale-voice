@@ -279,3 +279,34 @@ whitelists or private recovery documents into the journal.
 **Related:** [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md),
 [CONFIG_SOURCES.md](CONFIG_SOURCES.md), [CONFIG_WRITE_API.md](CONFIG_WRITE_API.md),
 [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-015 — Phase 4B-2B writes use owner APIs; no direct file writes and no inferred apply
+
+**Status:** `ACCEPTED`
+**Date:** 2026-10-25
+**Decision:** After auditing the installed Bridge, Voice Sender and WeChatAgent, the minimal safe
+integration is: (1) Core does not write component-owned configuration files directly; (2) a writable
+field is exposed only through the owning component's supported API; (3) `APPLIED` requires an exact
+loaded revision from the owner, and the absence of that interface keeps the state `PENDING_APPLY`;
+(4) file locks/CAS are a secondary measure for a file contract with no owner API, not a substitute
+for one; (5) WeChatAgent permission changes remain a human console action, and Worker
+`voice_enabled` is never a Core write target; (6) Phase 4B-2B-2 starts read-only (capability/status
+projection) before any write is authorized.
+
+**Reason:** The audit found that the Bridge reads `voice-settings.json` hot but has no writer or
+revision; the Sender service reads `service.config.json` at boot and supports only an automation
+`PUT` that rewrites the file non-atomically; WeChatAgent has a revision-guarded console but CLI and
+account-switch writers without a shared CAS, mixed hot/boot readers and no loaded-config evidence.
+Direct file writes would create lost updates and false "applied" claims. Using owner APIs keeps the
+single-writer boundary with the component that owns the safety layer.
+
+**Rejected alternatives:** Core writing JSON files directly; a generic lock protocol as the primary
+coordination mechanism; treating `/health`, mtime, PID or equal file bytes as apply proof; merging
+Bridge `enabled` with Worker `voice_enabled`; enabling WeChatAgent permission writes from Core;
+starting 4B-2B-2 with a write control before the capability/status contract exists.
+
+**Related:** [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md),
+[CONFIG_COORDINATION.md](CONFIG_COORDINATION.md), [CONFIG_SOURCES.md](CONFIG_SOURCES.md),
+[PROJECT_STATUS.md](PROJECT_STATUS.md).

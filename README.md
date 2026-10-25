@@ -11,6 +11,8 @@ is **not included here**.
 
 > **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 and Phase 4B-2A are merged
 > and `OFFLINE` (isolated store/coordination + test-only APIs; no production write route).
+> Phase 4B-2B-1 real-component capability audit is complete and `OFFLINE` (read-only; see
+> [the audit](docs/PHASE4B2B1_COMPONENT_AUDIT.md)); Phase 4B-2B-2 is **NOT STARTED**.
 > Remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
 > not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
@@ -61,6 +63,9 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
   HMAC revision, atomic save/rollback and a test-only API; no production write route.
 - Phase 4B-2A isolated coordination protocol (`OFFLINE`): source authority matrix, change plan,
   journal/recovery, save-vs-apply states and Fake Runtime tests; no production adapter or route.
+- Phase 4B-2B-1 capability audit (`OFFLINE`): verified Bridge/Sender/WeChatAgent read timing, write
+  interfaces, revision/apply evidence and blockers; no production write was added. See
+  [PHASE4B2B1_COMPONENT_AUDIT.md](docs/PHASE4B2B1_COMPONENT_AUDIT.md).
 - Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
   installation/runtime/health evidence, and local Qwen health/model/voice.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.

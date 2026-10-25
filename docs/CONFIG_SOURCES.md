@@ -171,3 +171,24 @@ journal/recovery model and Phase 4B-2B prerequisites.
 
 Missing/unreadable source behavior remains: affected fields `null`; source error is preserved; the
 revision changes because source state is part of the declared coverage.
+
+## Verified write interfaces (Phase 4B-2B-1 read-only audit)
+
+The audit in [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md) verified the real
+interfaces behind these files:
+
+- **Bridge `voice-settings.json`** — read on every voice call; **no writer and no revision API** exist
+  in the Bridge. A valid external change is hot-read; invalid JSON fails closed. Core treats it as
+  read-only until the Bridge owns a write endpoint.
+- **Sender `service.config.json`** — read once at service boot. Only `PUT /v1/automation/config` is a
+  supported update (automation/hotkey, rejected while a task is active); it rewrites the whole file
+  with plain `writeFileSync` and returns no revision. TTS/port/limit fields have no update API and
+  are not hot-reloaded.
+- **Sender Worker `config.json`** — read at each worker process start; `voice_enabled` is sampled
+  once per job and is an independent final-safety permit. Never a Core write target.
+- **WeChatAgent `wechatagent.json`** — console `POST /api/config` is revision-guarded (SHA-256 of the
+  raw file), loopback-only and CSRF-protected; CLI `prepare` and account switching also write the
+  file without a shared CAS. Readers are mixed hot/boot; `pendingApply` is a hint, not loaded
+  evidence.
+- **No component exposes a loaded config revision.** Field-equality observations (`/health`,
+  `GET /v1/automation/config`) are not an apply proof; see the audit's confirmation matrix.
