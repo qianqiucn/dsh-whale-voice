@@ -74,8 +74,13 @@ The authoritative pure validator is `core/tts/provider-contract.mjs`. Every prov
 | `resources` | Local/GPU/CPU requirements |
 
 `providerCapabilitySummary()` exposes only counts/declarations for UI; it never exposes secrets.
+The manifest top-level allowlist is `schemaVersion, id, name, kind, version, capabilities, health,
+credentials, network, privacy, cost, resources`; unknown top-level fields are rejected, including
+`targetChatId` and delivery-target fields.
 `evaluateProviderStatus()` maps an observation to `AVAILABLE` / `DEGRADED` / `UNAVAILABLE` /
-`CREDENTIALS_MISSING` / `UNKNOWN`. A timeout or provider error is `DEGRADED`, not healthy.
+`CREDENTIALS_MISSING` / `UNKNOWN`. A required credential that is `unknown`/missing cannot produce
+`AVAILABLE`; only an explicit `present` permits an `ok` observation to become `AVAILABLE`. A timeout
+or provider error is `DEGRADED`, not healthy.
 
 ### Synthesis request
 
@@ -92,7 +97,10 @@ The authoritative pure validator is `core/tts/provider-contract.mjs`. Every prov
 ```
 
 `checkSynthesisRequest()` fails closed with stable codes: unsupported voice, language, emotion,
-streaming or format, missing credentials, provider unavailable, text outside limits.
+streaming or format, missing credentials, provider unavailable, text outside limits. The request
+top-level allowlist is `requestId, text, voiceId, language, emotion, format, streaming`; unknown
+fields such as `wechat`, `targetChatId`, `recipient`, `send` or `deliveryTarget` return
+`INVALID_RESPONSE` before normal capability checks.
 
 ### Synthesis result
 
@@ -115,8 +123,10 @@ streaming or format, missing credentials, provider unavailable, text outside lim
 
 The result contains an opaque `artifactRef`, not a raw filesystem path or an embedded credential.
 `normalizeSynthesisResult()` rejects `delivery.state != PENDING_ROUTER`, `wechat`, `send`, `target`
-and secret-looking fields. Whale Relay Core（鲸递）is the only future component allowed to hand audio
-to the existing Voice Sender flow.
+and secret-looking fields. The result top-level allowlist is `requestId, voiceId, language, emotion,
+artifactRef, mime, sampleRate, channels, durationMs, createdAt, warnings, delivery`; unknown target
+fields are rejected rather than silently dropped. Whale Relay Core（鲸递）is the only future component
+allowed to hand audio to the existing Voice Sender flow.
 
 ## 3. Registry
 
@@ -158,6 +168,9 @@ TTS and SVC are two task types with different inputs, even though they share inf
   system** owned by Whale Voice Core.
 - SVC source audio is an opaque artifact reference, never a raw file path; the target voice comes
   from the shared library, not an engine default.
+- SVC request allowlist: `sourceAudioRef, targetVoiceId, pitchShift, formantShift,
+  conversionStrength, outputFormat`; unknown target/delivery fields are rejected. A successful
+  validation returns only these allowed fields, with `outputFormat` retained only when supplied.
 - SVC results also end with `delivery: PENDING_ROUTER`; Relay owns delivery.
 - TTS-A-H only defines the SVC contract/candidate boundary. No SVC inference, model download,
   training, conversion, audio generation or consent workflow is implemented.

@@ -51,6 +51,20 @@ test('SVC result is pending the shared delivery router, never WeChat delivery', 
   }).ok, false)
 })
 
+test('SVC request rejects unknown target fields and returns only allow-listed fields', () => {
+  for (const field of ['targetChatId', 'recipient', 'wechat', 'extraField']) {
+    const result = validateSvcRequest({ ...request, [field]: 'not-allowed' })
+    assert.equal(result.ok, false, field + ' must be rejected')
+    assert.equal(result.errors[0].code, SVC_ERRORS.INVALID_REQUEST)
+  }
+  const ok = validateSvcRequest(request)
+  assert.equal(ok.ok, true)
+  assert.deepEqual(Object.keys(ok.request).sort(), ['conversionStrength', 'formantShift', 'outputFormat', 'pitchShift', 'sourceAudioRef', 'targetVoiceId'])
+  const withFormat = validateSvcRequest({ ...request, outputFormat: 'audio/flac' })
+  assert.equal(withFormat.ok, true)
+  assert.equal(withFormat.request.outputFormat, 'audio/flac')
+})
+
 test('SVC candidates are separate from the TTS Provider Registry', () => {
   const svc = getSvcRegistryView()
   assert.equal(svc.status, 'DESIGN_ONLY')

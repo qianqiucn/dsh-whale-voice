@@ -284,6 +284,57 @@ test('cloud credentials and emotion capability are explicit, not guessed', () =>
   assert.equal(credentialStateForProvider(withRef, 'cloud-a').state, 'present')
 })
 
+test('manifest rejects unknown top-level target and delivery fields', () => {
+  for (const field of ['unexpectedField', 'targetChatId', 'deliveryTarget']) {
+    const result = validateProviderManifest({ ...localManifest(), [field]: 'not-allowed' })
+    assert.equal(result.ok, false, field + ' must be rejected')
+    assert.equal(result.manifest, undefined)
+    assert.ok(result.errors.some((error) => error.path === field), field + ' error path')
+  }
+  assert.equal(validateProviderManifest(localManifest()).ok, true)
+})
+
+test('TTS request rejects hidden delivery fields before normal validation', () => {
+  const manifest = normalizeProviderManifest(localManifest()).manifest
+  const request = { requestId: 'req-a', text: 'hello', voiceId: 'voice-local', language: 'zh-CN' }
+  assert.equal(checkSynthesisRequest(manifest, { state: 'ok' }, request).ok, true)
+  for (const field of ['wechat', 'targetChatId', 'recipient', 'send', 'deliveryTarget']) {
+    const result = checkSynthesisRequest(manifest, { state: 'ok' }, { ...request, [field]: 'not-allowed' })
+    assert.equal(result.ok, false, field + ' must be rejected')
+    assert.equal(result.code, PROVIDER_ERRORS.INVALID_RESPONSE, field + ' error code')
+  }
+})
+
+test('required cloud credentials must be explicitly present before AVAILABLE', () => {
+  const cloud = normalizeProviderManifest(cloudManifest()).manifest
+  const request = { text: 'hello', voiceId: 'voice-cloud', language: 'zh-CN' }
+  assert.equal(evaluateProviderStatus(cloud, { state: 'ok', credentials: 'unknown' }).state, PROVIDER_STATES.UNKNOWN)
+  assert.equal(checkSynthesisRequest(cloud, { state: 'ok', credentials: 'unknown' }, request).code, PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE)
+  assert.equal(evaluateProviderStatus(cloud, { state: 'ok', credentials: 'missing' }).state, PROVIDER_STATES.CREDENTIALS_MISSING)
+  assert.equal(checkSynthesisRequest(cloud, { state: 'ok', credentials: 'missing' }, request).code, PROVIDER_ERRORS.CREDENTIALS_MISSING)
+  assert.equal(evaluateProviderStatus(cloud, { state: 'ok', credentials: 'present' }).state, PROVIDER_STATES.AVAILABLE)
+  assert.equal(checkSynthesisRequest(cloud, { state: 'ok', credentials: 'present' }, request).ok, true)
+  assert.equal(evaluateProviderStatus(cloud, { state: 'offline', credentials: 'present' }).state, PROVIDER_STATES.UNAVAILABLE)
+  assert.equal(evaluateProviderStatus(cloud, { state: 'timeout', credentials: 'present' }).state, PROVIDER_STATES.DEGRADED)
+})
+
+test('synthesis result rejects unknown target fields instead of silently dropping them', () => {
+  const manifest = normalizeProviderManifest(localManifest()).manifest
+  const base = {
+    requestId: 'req-b', voiceId: 'voice-local', artifactRef: 'opaque-a', mime: 'audio/wav',
+    sampleRate: 24000, channels: 1, durationMs: 1200,
+  }
+  assert.equal(normalizeSynthesisResult(manifest, base).ok, true)
+  for (const field of ['target', 'targetChatId', 'recipient', 'unexpectedResultField']) {
+    const result = normalizeSynthesisResult(manifest, { ...base, [field]: 'not-allowed' })
+    assert.equal(result.ok, false, field + ' must be rejected')
+    assert.ok(result.errors.some((error) => error.code === PROVIDER_ERRORS.INVALID_RESPONSE), field + ' error code')
+  }
+  const sent = normalizeSynthesisResult(manifest, { ...base, delivery: { state: 'SENT' } })
+  assert.equal(sent.ok, false)
+  assert.equal(sent.errors[0].code, PROVIDER_ERRORS.DELIVERY_NOT_PROVIDER)
+})
+
 test('registry candidates are explicitly not implemented', () => {
   const all = listProviderCandidates()
   assert.equal(all.length, 10)

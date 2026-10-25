@@ -17,6 +17,7 @@ export const SVC_ERRORS = Object.freeze({
 })
 
 const FORBIDDEN_KEYS = new Set(['apiKey', 'api_key', 'token', 'accessToken', 'password', 'secret', 'authorization', 'clientSecret', 'send', 'wechat', 'sentToWechat'])
+const SVC_REQUEST_KEYS = new Set(['sourceAudioRef', 'targetVoiceId', 'pitchShift', 'formantShift', 'conversionStrength', 'outputFormat'])
 const REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@/-]{1,511}$/
 const VOICE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,127}$/
 
@@ -53,6 +54,9 @@ export function validateSvcRequest(input) {
   const errors = []
   if (!isObject(input)) return { ok: false, errors: [issue(SVC_ERRORS.INVALID_REQUEST, '$', 'expected object')] }
   rejectSecretKeys(input, '', errors)
+  for (const key of Object.keys(input)) {
+    if (!SVC_REQUEST_KEYS.has(key)) errors.push(issue(SVC_ERRORS.INVALID_REQUEST, key, 'unknown SVC request field'))
+  }
   if (typeof input.sourceAudioRef !== 'string' || !REF_PATTERN.test(input.sourceAudioRef)) {
     errors.push(issue(SVC_ERRORS.INVALID_REQUEST, 'sourceAudioRef', 'opaque source audio reference required'))
   }
@@ -71,7 +75,16 @@ export function validateSvcRequest(input) {
   if (input.outputFormat !== undefined && (typeof input.outputFormat !== 'string' || !/^audio\/[a-z0-9.+-]+$/.test(input.outputFormat))) {
     errors.push(issue(SVC_ERRORS.UNSUPPORTED_FORMAT, 'outputFormat', 'expected audio/* mime'))
   }
-  return errors.length ? { ok: false, errors } : { ok: true, errors: [], request: JSON.parse(JSON.stringify(input)) }
+  if (errors.length) return { ok: false, errors }
+  const request = {
+    sourceAudioRef: input.sourceAudioRef,
+    targetVoiceId: input.targetVoiceId,
+    pitchShift: input.pitchShift,
+    formantShift: input.formantShift,
+    conversionStrength: input.conversionStrength,
+  }
+  if (input.outputFormat !== undefined) request.outputFormat = input.outputFormat
+  return { ok: true, errors: [], request }
 }
 
 /**

@@ -56,6 +56,9 @@ const RETENTIONS = new Set(['none', 'provider', 'unknown'])
 const COST_MODELS = new Set(['free', 'per-request', 'per-character', 'unknown'])
 const RETRY_REASONS = new Set(['TIMEOUT', 'RATE_LIMITED', 'TRANSIENT'])
 const FORBIDDEN_KEYS = new Set(['apiKey', 'api_key', 'token', 'accessToken', 'password', 'secret', 'authorization', 'clientSecret', 'send', 'wechat', 'sentToWechat'])
+const MANIFEST_KEYS = new Set(['schemaVersion', 'id', 'name', 'kind', 'version', 'capabilities', 'health', 'credentials', 'network', 'privacy', 'cost', 'resources'])
+const SYNTHESIS_REQUEST_KEYS = new Set(['requestId', 'text', 'voiceId', 'language', 'emotion', 'format', 'streaming'])
+const SYNTHESIS_RESULT_KEYS = new Set(['requestId', 'voiceId', 'language', 'emotion', 'artifactRef', 'mime', 'sampleRate', 'channels', 'durationMs', 'createdAt', 'warnings', 'delivery'])
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,63}$/
 const REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@/-]{1,127}$/
 
@@ -103,18 +106,18 @@ function requireInteger(value, path, errors, min, max) {
   return true
 }
 
-function rejectSecretKeys(value, path, errors, seen = new Set()) {
+function rejectSecretKeys(value, path, errors, seen = new Set(), code = PROVIDER_ERRORS.INVALID_MANIFEST) {
   if (value === null || typeof value !== 'object' || seen.has(value)) return
   seen.add(value)
   if (Array.isArray(value)) {
-    value.forEach((child, index) => rejectSecretKeys(child, path ? path + '[' + index + ']' : '[' + index + ']', errors, seen))
+    value.forEach((child, index) => rejectSecretKeys(child, path ? path + '[' + index + ']' : '[' + index + ']', errors, seen, code))
     return
   }
   for (const [key, child] of Object.entries(value)) {
     if (FORBIDDEN_KEYS.has(key)) {
-      errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, path ? path + '.' + key : key, 'secret or delivery field is not allowed in a provider contract'))
+      errors.push(issue(code, path ? path + '.' + key : key, 'secret or delivery field is not allowed in a provider contract'))
     }
-    rejectSecretKeys(child, path ? path + '.' + key : key, errors, seen)
+    rejectSecretKeys(child, path ? path + '.' + key : key, errors, seen, code)
   }
 }
 
@@ -308,6 +311,9 @@ export function validateProviderManifest(input) {
   const errors = []
   if (!requireObject(input, '$', errors)) return { ok: false, errors }
   rejectSecretKeys(input, '', errors)
+  for (const key of Object.keys(input)) {
+    if (!MANIFEST_KEYS.has(key)) errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, key, 'unknown top-level manifest field'))
+  }
   if (input.schemaVersion !== PROVIDER_SCHEMA_VERSION) {
     errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, 'schemaVersion', 'expected provider schema version 1'))
   }
@@ -372,6 +378,9 @@ export function evaluateProviderStatus(manifest, observation = {}) {
   if (credentialsRequired && credentials === 'missing') {
     return { ...base, state: PROVIDER_STATES.CREDENTIALS_MISSING, reason: PROVIDER_ERRORS.CREDENTIALS_MISSING }
   }
+  if (credentialsRequired && credentials !== 'present' && observation.state === 'ok') {
+    return { ...base, state: PROVIDER_STATES.UNKNOWN, reason: null }
+  }
   if (observation.state === 'ok') return { ...base, state: PROVIDER_STATES.AVAILABLE, reason: null }
   if (observation.state === 'degraded') return { ...base, state: PROVIDER_STATES.DEGRADED, reason: observation.reason || null }
   if (observation.state === 'offline') return { ...base, state: PROVIDER_STATES.UNAVAILABLE, reason: observation.reason || null }
@@ -396,11 +405,14 @@ export function providerSupportsEmotion(manifest, mode) {
  * request; it returns a stable error code for UI/coordinator decisions.
  */
 export function checkSynthesisRequest(manifest, observation, request) {
+  if (!isObject(request)) return { ok: false, code: PROVIDER_ERRORS.INVALID_RESPONSE }
+  for (const key of Object.keys(request)) {
+    if (!SYNTHESIS_REQUEST_KEYS.has(key)) return { ok: false, code: PROVIDER_ERRORS.INVALID_RESPONSE }
+  }
   const status = evaluateProviderStatus(manifest, observation)
   if (status.state !== PROVIDER_STATES.AVAILABLE) {
     return { ok: false, code: status.state === PROVIDER_STATES.CREDENTIALS_MISSING ? PROVIDER_ERRORS.CREDENTIALS_MISSING : PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE, status }
   }
-  if (!isObject(request)) return { ok: false, code: PROVIDER_ERRORS.INVALID_RESPONSE, status }
   const text = request.text
   if (typeof text !== 'string' || text.length === 0 || text.length > manifest.capabilities.limits.maxChars) {
     return { ok: false, code: PROVIDER_ERRORS.INVALID_RESPONSE, status, detail: 'text length is outside provider limits' }
@@ -445,7 +457,10 @@ export function normalizeProviderError(error, manifest, attempt = 1) {
 export function normalizeSynthesisResult(manifest, input) {
   if (!isObject(input)) return { ok: false, errors: [issue(PROVIDER_ERRORS.INVALID_RESPONSE, '$', 'expected result object')] }
   const errors = []
-  rejectSecretKeys(input, '', errors)
+  for (const key of Object.keys(input)) {
+    if (!SYNTHESIS_RESULT_KEYS.has(key)) errors.push(issue(PROVIDER_ERRORS.INVALID_RESPONSE, key, 'unknown synthesis result field'))
+  }
+  rejectSecretKeys(input, '', errors, new Set(), PROVIDER_ERRORS.INVALID_RESPONSE)
   if (hasOwn(input, 'delivery')) {
     if (!isObject(input.delivery) || input.delivery.state !== 'PENDING_ROUTER') {
       return { ok: false, errors: [issue(PROVIDER_ERRORS.DELIVERY_NOT_PROVIDER, 'delivery', 'provider result must be pending the shared delivery router')] }
