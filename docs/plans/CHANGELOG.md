@@ -2,6 +2,16 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 明确 DeepSeek / ChatGPT 双 AI 分工
+
+- 触发：用户指出另一个 AI 仅参与计划书与 GitHub 协调，计划管理规则只要求 ChatGPT 遵守。
+- 旧规则：`AGENTS.md` 和执行标准把“所有 Git/GitHub 操作必须先读计划标准、发下一份、重排并打标”的要求错误地推广到所有开发 AI。
+- 新规则：**DeepSeek 负责代码、测试、技术实现和正常工程 Git/PR；ChatGPT 独占计划书发送、计划顺序维护、创意整合、状态记录与 DONE 核验。** 两个 AI 都遵守通用 Git 安全、质量与生产授权边界。
+- 已更新 `AGENTS.md`、`EXECUTION_STANDARD.md`、`docs/plans/README.md`、`docs/README.md` 和 PR 模板，确保 DeepSeek 不被迫承担 ChatGPT 的计划管理工作。
+- 顺序变化：无；01–14 任务保持不变，计划状态不变。
+- 状态/证据：通过当前计划管理 PR #17 的文档 Commit 修订；未合并到 main。
+- 生产影响：无；不修改 Core、微信、模型、Sender、Bridge 或生产配置。
+
 ## 2026-10-25 · GitHub 执行标准固定化
 
 - 触发：用户要求“给自己在 Git 上写执行标准，每次上 Git 先看一眼”；计划顺序无变化。
