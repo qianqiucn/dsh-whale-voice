@@ -1,12 +1,17 @@
 # AGENTS.md — Whale Voice Long-Term Development Rules
 
 This file is the operating contract for every coding agent working on Whale Voice. Read it before
-changing code. When a user request conflicts with these rules, stop and ask for explicit permission;
+changing code. **For EVERY Git/GitHub interaction or repository-status report, FIRST read
+[EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) and this file, before changing anything.**
+When a user request conflicts with these rules, stop and ask for explicit permission;
 do not silently weaken a safety boundary.
 
 ## 1. Startup workflow (every session)
 
-1. Read this `AGENTS.md`.
+1. **Mandatory Git preflight:** read [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md), then this
+   `AGENTS.md`. Do this at the start of every new repository task/session, including read-only
+   PR reviews and follow-up conversations. If the standard is not on main yet, inspect its active
+   plan branch and explicitly state that it is pending merge.
 2. Read [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) as a recovery summary, not an authority.
 3. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 4. Read [docs/ROADMAP.md](docs/ROADMAP.md); read [docs/DECISIONS.md](docs/DECISIONS.md) for accepted
@@ -26,6 +31,10 @@ do not silently weaken a safety boundary.
     restarts or production configuration changes, stop and obtain explicit authorization first.
 
 ## 1.0.1 Ordered execution-plan registry
+
+Follow [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) as the first-read GitHub execution
+checklist. Its steps govern one-plan-per-message dispatch, idea-driven reordering, evidence-based
+DONE marking, independent PR merge tracking, safety and progress reporting.
 
 Before proposing the next Whale Voice task, read [docs/plans/README.md](docs/plans/README.md)
 and the linked plan file; reconcile it with current Git/PR/CI and code evidence. The registry is
