@@ -2,6 +2,17 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 新聊天交接刷新：以 C1 替换已完成 H0
+
+- 触发：用户准备重新打开 ChatGPT 对话，要求在 GitHub 持久写入我自己的交接文档，并为下一位 ChatGPT 提供唯一首项行动计划。
+- 已发现 PR #17 的 `NEXT_CHATGPT_HANDOFF.md` 与 `NEXT_CHATGPT_ACTION_PLAN.md` 已存在，故**直接更新原文件，不制造第三套交接文档**；H0 14 对任务去重已完成，历史证据保留于 `H0_PLAN_RECONCILIATION.md`。
+- 更新 [交接卡](NEXT_CHATGPT_HANDOFF.md)：本轮真实 GitHub 状态、角色与产品边界、长期记忆读取顺序、计划状态、Plan 03-A 实测缺口、新会话粘贴入口，移除会误导的新旧快照冲突。
+- 将 [行动计划](NEXT_CHATGPT_ACTION_PLAN.md) 从“已完成的 H0”替换为 **C1：恢复上下文 + 核实 Plan 03-A 的新增工程/文档/CI 证据**。C1 是 ChatGPT 计划协调任务，**不是 Plan 15、不自动分配给 DeepSeek**。
+- GitHub 证据（提交交接前）：main `bf9cf66`；工程 #16 OPEN `3ad32bc`、run `40163881122` SUCCESS；计划 #17 OPEN `4b700bc`、run `40164634185` SUCCESS；历史 #18 OPEN / DRAFT `42cec57`、run `40159114676` SUCCESS。交接提交会改变 #17 HEAD，因此后续必须查新 CI。
+- 直接读取工程 PR #16 `docs/PROJECT_STATUS.md` 与 `docs/AI_CONTEXT.md`，它们尚含旧 `192` 而没有 `197` 最新验收记录，因此 **Plan 03-A 当前仍是 SENT，不能标完成**。Plan 02 DONE、Plan 03-B 等用户独立合并授权、Plan 01 SENT、Plan 04–14 PLANNED；**编号与顺序无变化**。
+- 用户核心偏好、自动回一份完整计划、换新 DSH 执行端聊天提醒和安全门禁均已写入长期记忆/执行标准；下一 ChatGPT 应先读这些而不是只读交接卡。
+- 本轮仅 PR #17 分支的规划文档正常 Commit/Push；不改代码、main、生产配置、模型、Hook、语音发送或音频设备，不合并/关闭任何 PR。
+
 ## 2026-10-25 · 原始 Plan 编号与 Plan 03 总范围恢复
 
 - 用户发现当前 Plan 编号与上一段 GPT 可能不一致。核对 PR #17 唯一索引、PR #18 历史目录和已完成的 H0_PLAN_RECONCILIATION：01–14 的语义顺序没有改变；差别主要是文档文件名、状态快照与技术阶段名称容易混用。
