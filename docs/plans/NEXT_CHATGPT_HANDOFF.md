@@ -4,6 +4,13 @@
 > **维护者：** ChatGPT（仅负责计划、排序、记忆、GitHub 计划跟踪和完成审查）。DeepSeek 不承担这份文档的维护。  
 > **本次核验：2026-10-25（UTC 以 GitHub 实时记录为准）。** 本文件里的 SHA、CI、状态是有时点的快照，启动新会话必须重新查询。
 
+## Plan 02 已验收完成、Plan 03 已派发（2026-10-25，最新状态）
+
+- **Plan 02 = DONE**：工程 PR #16 HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773，main/base bf9cf66，OPEN、mergeable、未合并。GitHub Actions run 40163881122 SUCCESS。已经阅读本次 Commit 的五文件代码和负向测试 Diff，F01–F05/N01–N05 纯契约修复符合目标。DeepSeek 报告 Node 197（196 PASS/1 SKIP），UI 24/24；ChatGPT 没有本地运行这些命令。功能始终 DESIGN/OFFLINE。
+- **Plan 03 = SENT**：下一份已升级 EXECUTION-READY v2，链接 [03-merge-tts-a-pr16.md](03-merge-tts-a-pr16.md)。仅审查 PR #16 全量 22 文件、同步工程分支 docs/PROJECT_STATUS.md 与 docs/AI_CONTEXT.md 的当前 197/旧 192 验收状态、跑隔离回归、检查最新新 HEAD CI，并输出 READY_FOR_USER_MERGE_DECISION 或 BLOCKED。**未经用户针对 PR #16 的额外明确授权，绝不能合并。**
+- Plan 01 = SENT（旧 GUI 测试分支仍待证据），Plan 04–14 = PLANNED；计划体系只有 #17，H0 已完成；#18 Draft 仍不得合并或关闭。继续按“报告 → 查重 → 验收 → 完整下一份任务书 → DSH 对话交接判断”的流程。
+- **DSH 对话交接建议：此刻适合换新执行端对话。** Plan 02 已结束，Plan 03 是独立只读/文档合并前门禁。先请旧 DS 保全 git status/未提交工作，再在新对话读取 AGENTS.md、PR #16 实时 HEAD/CI 和完整 Plan 03；换 AI 对话不等于重启任何服务。不能看到 DSH 的真实 token 使用量。
+- 此最新块覆盖下方早期 Plan 02 F01–F05 尚需修复、#17 旧 HEAD 和“尚未派发新工程任务”的历史快照。新会话一定重新查询 GitHub 动态状态。
 ## 用户新交接偏好（2026-10-25）
 
 收到每份 DeepSeek 开发报告时，除验收及立即返回一份完整可复制的下一步执行计划书外，ChatGPT 还须主动判断是否要让 DSH/DeepSeek 执行端换新对话。按继续使用、阶段完成后交接、建议立即交接三档判断，依据报告中的上下文漂移、忘记约束、重复实现、长审计和阶段边界，不能假称直接看到执行端 token。若需要交接，给出包含分支/PR/HEAD/CI、未完成事项、安全边界、未提交工作及唯一下一动作的非敏感 handoff。只换 AI 对话，不重启任何生产服务。权威规则见 [长期记忆](CHATGPT_LONG_TERM_MEMORY.md) §1.1–1.2 和 [执行标准](../../EXECUTION_STANDARD.md) §2.1。
