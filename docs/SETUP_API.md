@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests; the capability routes require a normal DSH Host reload to go live.
 **Scope:** first-run setup, read-only component status, and future controlled installation.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
@@ -17,6 +17,8 @@ GET /whale-voice/setup/detect?component=wechatagent|sender|qwen
 GET /whale-voice/setup/config
 GET /whale-voice/setup/config/sources
 GET /whale-voice/setup/config/status
+GET /whale-voice/setup/capabilities
+GET /whale-voice/setup/capabilities/status
 ```
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
@@ -49,9 +51,15 @@ window.__WHALE_SETUP__ = {
   getConfig(): Promise<ConfigSnapshot>,
   getConfigSources(): Promise<ConfigSources>,
   getConfigStatus(): Promise<ConfigStatus>,
+  getCapabilities(): Promise<CapabilitySnapshot>,
+  getCapabilityStatus(): Promise<CapabilityStatus>,
   detect(component): Promise<ComponentStatus>
 }
 ```
+
+`getCapabilities` / `getCapabilityStatus` are read-only schema-v3 projections; see
+[CAPABILITY_API.md](CAPABILITY_API.md). They never expose paths, Tokens, whitelist names or target
+maps and never enable a write control.
 
 The frontend uses `getStatus()`; `detect()` is available for the future per-component action. If the
 bridge is absent, invalid, slow or returns the wrong schema, the wizard shows a failure state and
@@ -239,7 +247,9 @@ Errors must not include secrets or raw private chat data.
 
 `index.js` + `core/detect.mjs` implement the read-only host route, token-protected bridge,
 WeChatAgent/Sender/Qwen detection, timeout, stale-generation marking and open-when-NotFound health
-semantics. `core/server.mjs` is an isolated test server with the same contract.
+semantics. `core/server.mjs` is an isolated test server with the same contract. `core/capabilities.mjs`
+adds the read-only capability projection behind `/capabilities`; see
+[CAPABILITY_API.md](CAPABILITY_API.md).
 
 Production write methods, installation, component control, TTS credentials and preview remain absent.
 Phase 3/4A therefore report `OFFLINE`/read-only evidence, not `INTEGRATED` installation or

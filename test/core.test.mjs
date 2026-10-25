@@ -237,6 +237,26 @@ test('core server requires its token and rejects writes / arbitrary components',
     res = await fetch(base + '/setup/config/status', { headers: { 'x-whale-core-token': 'test-token' } })
     assert.equal(res.status, 200)
     assert.equal((await res.json()).schemaVersion, 1)
+    res = await fetch(base + '/setup/capabilities', { headers: { 'x-whale-core-token': 'test-token' } })
+    assert.equal(res.status, 200)
+    const capabilities = await res.json()
+    assert.equal(capabilities.schemaVersion, 3)
+    assert.equal(capabilities.mode, 'read-only')
+    assert.equal(capabilities.writeMode, 'READ_ONLY')
+    assert.equal(Array.isArray(capabilities.sources), true)
+    assert.equal(capabilities.sources.some((source) => source.id === 'senderService'), true)
+    res = await fetch(base + '/setup/capabilities/status', { headers: { 'x-whale-core-token': 'test-token' } })
+    assert.equal(res.status, 200)
+    const capabilityStatus = await res.json()
+    assert.equal(capabilityStatus.schemaVersion, 3)
+    assert.equal(Array.isArray(capabilityStatus.surfaces), true)
+    assert.equal(capabilityStatus.surfaces.length, 7)
+    res = await fetch(base + '/setup/capabilities')
+    assert.equal(res.status, 401)
+    res = await fetch(base + '/setup/capabilities', { method: 'POST', headers: { 'x-whale-core-token': 'test-token' } })
+    assert.equal(res.status, 405)
+    res = await fetch(base + '/setup/capabilities', { headers: { 'x-whale-core-token': 'test-token', 'sec-fetch-site': 'cross-site' } })
+    assert.equal(res.status, 403)
     res = await fetch(base + '/setup/config')
     assert.equal(res.status, 401)
     res = await fetch(base + '/setup/detect?component=../../etc/passwd', { headers: { 'x-whale-core-token': 'test-token' } })
@@ -409,7 +429,7 @@ test('host bridge fails closed without connection and follows replacement', asyn
   connection = { requestRejection() { return null } }
   assert.equal(await call(), 200)
   host.dispose()
-  assert.equal(disposedRoutes, 6)
+  assert.equal(disposedRoutes, 8)
   assert.equal(disposedInject, 1)
 })
 
@@ -452,6 +472,8 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   assert.match(rows[0].text, /window\.__WHALE_SETUP__/)
   assert.match(rows[0].text, /prefix \+ path/)
   assert.match(rows[0].text, /getStatus: \(\) => call\('\/status'\)/)
+  assert.match(rows[0].text, /getCapabilities: \(\) => call\('\/capabilities'\)/)
+  assert.match(rows[0].text, /getCapabilityStatus: \(\) => call\('\/capabilities\/status'\)/)
   assert.equal(host.scripts.includes('host-token'), true)
 
   const route = routes.find((r) => r.path === '/whale-voice/setup/status')
@@ -462,6 +484,31 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   }, response)
   assert.equal(response.status, 200)
   assert.equal(JSON.parse(response.body).schemaVersion, 1)
+
+  const capabilityRoute = routes.find((r) => r.path === '/whale-voice/setup/capabilities')
+  const capabilityResponse = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+  await capabilityRoute.handler({
+    method: 'GET', url: '/whale-voice/setup/capabilities', socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:59575', 'x-whale-core-token': 'host-token' },
+  }, capabilityResponse)
+  assert.equal(capabilityResponse.status, 200)
+  const capabilityBody = JSON.parse(capabilityResponse.body)
+  assert.equal(capabilityBody.schemaVersion, 3)
+  assert.equal(capabilityBody.writeMode, 'READ_ONLY')
+  assert.equal(Array.isArray(capabilityBody.components), true)
+
+  const deniedCapability = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+  await capabilityRoute.handler({
+    method: 'GET', url: '/whale-voice/setup/capabilities', socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:59575' },
+  }, deniedCapability)
+  assert.equal(deniedCapability.status, 401)
+  const writeCapability = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
+  await capabilityRoute.handler({
+    method: 'POST', url: '/whale-voice/setup/capabilities', socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:59575', 'x-whale-core-token': 'host-token' },
+  }, writeCapability)
+  assert.equal(writeCapability.status, 405)
 
   const originOk = { status: null, body: '', writeHead(code) { this.status = code }, end(text) { this.body = text } }
   await route.handler({

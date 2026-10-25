@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wv-navlabel' }, item.label),
           item.id === 'activity' ? h('span', { className: 'wv-navbadge' }, '9') : null))),
         h('div', { className: 'wv-sidefoot' },
-          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '演示模式'), h('strong', null, 'Mock')),
+          h('div', { className: 'wv-sidefootrow' }, h('span', { className: 'wv-live' }, '真实配置只读'), h('strong', null, '生产写入禁用')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, 'Qwen3-TTS'), h('strong', null, 'whale-v1')),
           h('div', { className: 'wv-sidefootrow' }, h('span', null, '前端版本'), h('strong', null, 'v0.1.0'))))
     }
@@ -361,9 +361,9 @@ window.__ModuleLoader__.load({
           layout === 'narrow' ? h('span', { className: 'wv-brandmark', style: { width: 26, height: 26, borderRadius: 8 } }, h(WhaleMark, { size: 16 })) : null,
           h('div', { className: 'wv-crumb' }, h('b', null, 'Whale Voice'), h('span', null, '/'), h('span', null, item.label), h('span', null, '·'), h('span', null, item.en))),
         h('div', { className: 'wv-topbar-actions' },
-          h('span', { className: 'wv-demo', title: '所有服务状态、任务与参数均为前端演示数据，不代表真实生产状态。' }, '演示数据'),
-          h('span', { className: 'wv-topmeta' }, '不读取/不写入生产配置'),
-          h(IconButton, { icon: 'refresh', label: '刷新演示状态', onClick: () => notify('演示状态已刷新；未请求真实服务。', 'success') })))
+          h('span', { className: 'wv-demo', title: '标记为演示的服务指标、联系人与任务为前端演示数据；真实 Core 面板来自只读接口，不写入生产配置。' }, '部分演示'),
+          h('span', { className: 'wv-topmeta' }, '真实配置只读 · 生产写入禁用'),
+          h(IconButton, { icon: 'info', label: '演示数据说明', onClick: () => notify('标记为演示的服务指标、联系人与任务为静态示例，不会刷新真实数据；真实 Core 状态与能力请在组件管理中重新检测。', 'info') })))
     }
 
     function ServiceDialog({ service, onClose }) {
@@ -456,6 +456,7 @@ window.__ModuleLoader__.load({
       const [confirmReset, setConfirmReset] = React.useState(false)
       const [toast, setToast] = React.useState(null)
       const [setup, setSetup] = React.useState({ checking: true, available: false, reason: '', data: null })
+      const [capability, setCapability] = React.useState({ checking: true, available: false, reason: '', data: null })
       const [setupOpen, setSetupOpen] = React.useState(false)
       const [componentsOpen, setComponentsOpen] = React.useState(false)
       const autoSetupOpened = React.useRef(false)
@@ -466,9 +467,11 @@ window.__ModuleLoader__.load({
       const refreshSetup = async () => {
         const seq = setupScanGate.current.begin()
         setSetup((s) => ({ ...s, checking: true }))
-        const next = await readSetupStatus()
+        setCapability((c) => ({ ...c, checking: true }))
+        const [next, nextCapability] = await Promise.all([readSetupStatus(), readSetupCapabilities()])
         if (!setupScanGate.current.isCurrent(seq)) return next
         setSetup(next)
+        setCapability(nextCapability)
         if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
           autoSetupOpened.current = true
           setSetupOpen(true)
@@ -479,9 +482,10 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         let alive = true
         const seq = setupScanGate.current.begin()
-        readSetupStatus().then((next) => {
+        Promise.all([readSetupStatus(), readSetupCapabilities()]).then(([next, nextCapability]) => {
           if (!alive || !setupScanGate.current.isCurrent(seq)) return
           setSetup(next)
+          setCapability(nextCapability)
           if (next.available && next.data && next.data.completed === false && !autoSetupOpened.current) {
             autoSetupOpened.current = true
             setSetupOpen(true)
@@ -526,15 +530,15 @@ window.__ModuleLoader__.load({
       }
 
       let body = null
-      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
-      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup })
-      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup })
-      else if (page === 'safety') body = h(SafetyPage, { settings, setup })
-      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup })
+      if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup, capability })
+      else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup, capability })
+      else if (page === 'safety') body = h(SafetyPage, { settings, setup, capability })
+      else if (page === 'studio') body = h(StudioPage, { preview, setPreview, notify, setup, capability })
       else if (page === 'emotions') body = h(EmotionsPage, { emotion, setEmotion, notify })
       else if (page === 'activity') body = h(ActivityPage, { notify, openActivity: setActivityDetail })
-      else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
-      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
 
       return h('div', { ref: rootRef, className: 'wv-root', 'data-layout': layout },
         h('div', { className: 'wv-aurora', 'aria-hidden': true }),
@@ -558,7 +562,7 @@ window.__ModuleLoader__.load({
           onGoPermissions: () => { setSetupOpen(false); setPage('permissions') },
         }) : null,
         componentsOpen ? h(ComponentsDialog, {
-          open: true, status: setup, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
+          open: true, status: setup, capability, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
           onSetup: () => { setComponentsOpen(false); setSetupOpen(true) },
           onAdvanced: () => { setComponentsOpen(false); setPage('advanced') }, onNotify: notify,
         }) : null,

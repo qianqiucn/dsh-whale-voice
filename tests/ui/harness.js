@@ -107,7 +107,7 @@
       state: 'auth_required',
       installed: true,
       version: '0.3.9',
-      installPath: 'D:\\Fixture\\WechatAgent',
+      installPath: 'fixture-install-path',
       processRunning: true,
       connected: false,
       accountVerified: null,
@@ -126,7 +126,7 @@
       state: 'connection_failed',
       installed: true,
       version: '0.1.0',
-      installPath: 'D:\\Fixture\\voice-sender',
+      installPath: 'fixture-install-path',
       processRunning: false,
       health: 'connection_failed',
       healthState: 'connection_failed',
@@ -169,6 +169,126 @@
     evidence: 'isolated harness fixture',
   }
 
+  const capability = (() => {
+    const block = (code, message) => ({ code, message, severity: 'blocked' })
+    const saved = (values) => ({ state: 'AVAILABLE', values, source: 'isolated fixture' })
+    const runtime = (state, summary) => ({ state, summary, observedAt, error: state === 'AVAILABLE' ? null : summary })
+    const surface = (id, label, options) => ({
+      id, label, risk: options.risk || 'HIGH',
+      readTiming: options.readTiming, hotReload: options.hotReload, requiresRestart: options.requiresRestart,
+      ownerApi: options.ownerApi,
+      save: { ...options.save, enabled: false, gate: options.save.gate },
+      savedRevision: options.savedRevision || { state: 'UNSUPPORTED', kind: null },
+      loadedRevision: options.loadedRevision || { state: 'UNSUPPORTED', kind: null },
+      apply: options.apply,
+      status: {
+        saved: options.savedValues ? saved(options.savedValues) : { state: 'UNAVAILABLE', values: null, source: 'isolated fixture' },
+        runtime: options.runtime,
+        apply: { state: 'UNKNOWN', activeRevision: null, activeConfirmed: false, reason: 'NO_LOADED_REVISION' },
+        observedAt,
+      },
+      blockers: (options.blockers || []).map(([code, message]) => block(code, message)),
+    })
+    return {
+      schemaVersion: 3, ok: true, mode: 'read-only', writeMode: 'READ_ONLY', observedAt,
+      components: [
+        { id: 'core', label: 'Whale Voice Core', state: 'AVAILABLE', status: 'AVAILABLE', version: '0.1.0', versionMatch: 'NOT_APPLICABLE', observedAt },
+        { id: 'wechatagent', label: 'WeChatAgent', state: 'auth_required', status: 'DEGRADED', version: '0.3.9', versionMatch: 'AUDITED', observedAt },
+        { id: 'bridge', label: 'WeChatAgent Bridge', state: 'auth_required', status: 'DEGRADED', version: '0.3.9', versionMatch: 'AUDITED', observedAt },
+        { id: 'sender', label: 'Voice Sender 服务', state: 'not_running', status: 'DEGRADED', version: '0.1.0', versionMatch: 'AUDITED', observedAt },
+        { id: 'worker', label: 'Voice Sender Worker', state: 'UNKNOWN', status: 'UNKNOWN', version: null, versionMatch: 'UNKNOWN', observedAt },
+        { id: 'qwen', label: 'Qwen3-TTS', state: 'ok', status: 'AVAILABLE', version: null, versionMatch: 'NOT_APPLICABLE', observedAt },
+      ],
+      sources: [
+        {
+          id: 'bridgeVoice', label: 'Bridge 语音开关', authority: 'WeChatAgent Bridge', component: 'bridge', version: '0.3.9', versionMatch: 'AUDITED', risk: 'CRITICAL',
+          surfaces: [surface('voiceSettings', 'Bridge 用户语音开关', {
+            risk: 'CRITICAL', readTiming: 'PER_CALL', hotReload: 'FULL', requiresRestart: 'NOT_REQUIRED',
+            ownerApi: { state: 'UNSUPPORTED', kind: null, scope: null, endpoint: null },
+            save: { state: 'UNSUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_OWNER_API' },
+            apply: { state: 'UNSUPPORTED', reason: 'NO_OWNER_API' },
+            savedValues: { enabled: false, mode: 'explicit', forGroup: false, defaultVoice: 'whale-v1' },
+            runtime: runtime('DEGRADED', 'auth_required'),
+            blockers: [['NO_OWNER_API', '组件没有受支持的写入接口；直接改 JSON 不算受支持接口。'], ['NO_LOADED_REVISION', '组件不返回已加载配置版本，无法确认保存值是否生效。'], ['READ_ONLY_PHASE', '只读阶段，不提供写入入口。']],
+          })],
+        },
+        {
+          id: 'senderService', label: 'Voice Sender 服务', authority: 'Voice Sender Service', component: 'sender', version: '0.1.0', versionMatch: 'AUDITED', risk: 'HIGH',
+          surfaces: [
+            surface('automation', '发送自动化设置', {
+              readTiming: 'RUNTIME_API', hotReload: 'FULL', requiresRestart: 'NOT_REQUIRED',
+              ownerApi: { state: 'AVAILABLE', kind: 'HTTP', scope: 'COMPONENT', endpoint: 'PUT /v1/automation/config' },
+              save: { state: 'SUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_WRITE_AUTHORIZATION' },
+              apply: { state: 'UNSUPPORTED', reason: 'NO_LOADED_REVISION' },
+              savedValues: { mode: 'manual', autoFindWindow: true, autoOpenChat: false, autoRestoreMinimized: true, pauseWhenFullscreen: true },
+              runtime: runtime('DEGRADED', 'not_running'),
+              blockers: [['NO_WRITE_AUTHORIZATION', '当前阶段仅只读，尚未获得生产写入授权。'], ['NO_LOADED_REVISION', '组件不返回已加载配置版本，无法确认保存值是否生效。']],
+            }),
+            surface('tts', 'TTS 音色与提供方', {
+              readTiming: 'SERVICE_BOOT', hotReload: 'NONE', requiresRestart: 'REQUIRED',
+              ownerApi: { state: 'UNSUPPORTED', kind: null, scope: null, endpoint: null },
+              save: { state: 'UNSUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_OWNER_API' },
+              apply: { state: 'UNSUPPORTED', reason: 'NO_OWNER_API' },
+              savedValues: { provider: 'qwen-local', voice: 'whale-v1', configured: true },
+              runtime: runtime('DEGRADED', 'not_running'),
+              blockers: [['NO_OWNER_API', '组件没有受支持的写入接口；直接改 JSON 不算受支持接口。'], ['REQUIRES_RESTART', '修改后需要重新加载或重启对应组件才能生效。']],
+            }),
+          ],
+        },
+        {
+          id: 'workerSafety', label: 'Worker 安全许可', authority: 'Voice Sender Worker', component: 'worker', version: '0.1.0', versionMatch: 'AUDITED', risk: 'CRITICAL',
+          surfaces: [surface('voicePermit', 'Worker 最终安全许可', {
+            risk: 'CRITICAL', readTiming: 'UNKNOWN', hotReload: 'UNKNOWN', requiresRestart: 'UNKNOWN',
+            ownerApi: { state: 'UNKNOWN', kind: null, scope: null, endpoint: null },
+            save: { state: 'UNKNOWN', authorization: 'NOT_AUTHORIZED', gate: 'UNKNOWN' },
+            apply: { state: 'UNKNOWN', reason: 'VERSION_UNKNOWN' },
+            savedValues: { enabled: true, mode: 'manual', role: 'final_safety_gate' },
+            runtime: runtime('UNKNOWN', 'no_worker_status_interface'),
+            blockers: [['NEVER_WRITE_BY_POLICY', 'Worker 最终安全许可必须保持独立，本插件永不写入。'], ['VERSION_UNKNOWN', '无法确认 Worker 版本，能力结论保持未知。']],
+          })],
+        },
+        {
+          id: 'wechatPermissions', label: '微信权限范围', authority: 'WeChatAgent', component: 'wechatagent', version: '0.3.9', versionMatch: 'AUDITED', risk: 'CRITICAL',
+          surfaces: [surface('config', '微信私聊 / 群聊权限', {
+            risk: 'CRITICAL', readTiming: 'MIXED', hotReload: 'PARTIAL', requiresRestart: 'REQUIRED',
+            ownerApi: { state: 'AVAILABLE', kind: 'HTTP_CONSOLE', scope: 'HUMAN_CONSOLE', endpoint: 'POST /api/config' },
+            save: { state: 'SUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'HUMAN_CONSOLE_ONLY' },
+            savedRevision: { state: 'SUPPORTED', kind: 'file-sha256' },
+            apply: { state: 'UNSUPPORTED', reason: 'NO_LOADED_REVISION' },
+            savedValues: { privateCount: 2, groupCount: 1, senderAllowedCount: 1, detailAvailable: false },
+            runtime: runtime('DEGRADED', 'auth_required'),
+            blockers: [['HUMAN_CONSOLE_ONLY', '只能在微信助手控制台中由人工修改，本插件不代写。'], ['NO_WRITE_AUTHORIZATION', '当前阶段仅只读，尚未获得生产写入授权。'], ['MIXED_WRITERS', '存在多个写入者且没有共享锁，自动写入可能丢失更新。']],
+          })],
+        },
+        {
+          id: 'core', label: 'Core 路径配置', authority: 'Whale Voice Core', component: 'core', version: '0.1.0', versionMatch: 'NOT_APPLICABLE', risk: 'HIGH',
+          surfaces: [surface('paths', '组件根目录与 Qwen 地址', {
+            readTiming: 'HOST_BOOT', hotReload: 'NONE', requiresRestart: 'REQUIRED',
+            ownerApi: { state: 'UNSUPPORTED', kind: null, scope: null, endpoint: null },
+            save: { state: 'UNSUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_OWNER_API' },
+            apply: { state: 'UNSUPPORTED', reason: 'NO_OWNER_API' },
+            savedValues: { configured: true },
+            runtime: runtime('AVAILABLE', 'host_read_only'),
+            blockers: [['NO_OWNER_API', '组件没有受支持的写入接口。'], ['REQUIRES_RESTART', '修改后需要重启 Host。']],
+          })],
+        },
+        {
+          id: 'qwen', label: 'Qwen 运行状态', authority: 'Qwen3-TTS', component: 'qwen', version: null, versionMatch: 'NOT_APPLICABLE', risk: 'MEDIUM',
+          surfaces: [surface('health', 'Qwen 健康与模型观察', {
+            risk: 'MEDIUM', readTiming: 'ON_DEMAND', hotReload: 'NOT_APPLICABLE', requiresRestart: 'NOT_APPLICABLE',
+            ownerApi: { state: 'UNSUPPORTED', kind: null, scope: null, endpoint: null },
+            save: { state: 'UNSUPPORTED', authorization: 'NOT_AUTHORIZED', gate: 'NO_OWNER_API' },
+            apply: { state: 'UNSUPPORTED', reason: 'NO_OWNER_API' },
+            savedValues: { model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1' },
+            runtime: runtime('AVAILABLE', 'ok'),
+            blockers: [['OBSERVATION_ONLY', '只做健康观察，不构成配置写入或生效证明。']],
+          })],
+        },
+      ],
+      summary: { surfaceCount: 7, saveSupported: 2, notAuthorized: 7, writeEnabled: 0, unknown: 0 },
+    }
+  })()
+
   function bridge(mode) {
     if (mode === 'none') return undefined
     if (mode === 'invalid') {
@@ -177,14 +297,75 @@
         getConfig: async () => ({ schemaVersion: 2 }),
         getConfigSources: async () => ({ sources: [] }),
         getConfigStatus: async () => ({ state: 'UNKNOWN' }),
+        getCapabilities: async () => ({ schemaVersion: 2 }),
+        getCapabilityStatus: async () => ({ schemaVersion: 2 }),
       }
     }
-    if (mode === 'timeout') {
+    if (mode === 'capability-invalid') {
       return {
-        getStatus: () => new Promise(() => {}),
-        getConfig: () => new Promise(() => {}),
-        getConfigSources: () => new Promise(() => {}),
-        getConfigStatus: () => new Promise(() => {}),
+        getStatus: async () => status,
+        getCapabilities: async () => ({ schemaVersion: 2, ok: true, sources: [] }),
+        getCapabilityStatus: async () => ({ schemaVersion: 2 }),
+      }
+    }
+    if (mode === 'capability-missing') {
+      return { getStatus: async () => status }
+    }
+    if (mode === 'timeout') {
+      const pending = () => new Promise(() => {})
+      return {
+        getStatus: pending,
+        getConfig: pending,
+        getConfigSources: pending,
+        getConfigStatus: pending,
+        getCapabilities: pending,
+        getCapabilityStatus: pending,
+      }
+    }
+    if (mode === 'capability-timeout') {
+      return {
+        getStatus: async () => status,
+        getCapabilities: () => new Promise(() => {}),
+        getCapabilityStatus: () => new Promise(() => {}),
+      }
+    }
+    if (mode === 'capability-race') {
+      let calls = 0
+      const stale = JSON.parse(JSON.stringify(capability))
+      stale.observedAt = '2026-10-24T00:00:00.000Z'
+      stale.components[0].label = 'Stale Capability'
+      const fresh = JSON.parse(JSON.stringify(capability))
+      fresh.observedAt = '2026-10-25T01:00:00.000Z'
+      fresh.components[0].label = 'Fresh Capability'
+      return {
+        getStatus: async () => status,
+        getCapabilities: () => {
+          calls += 1
+          if (calls === 1) return new Promise((resolve) => setTimeout(() => resolve(stale), 2000))
+          return Promise.resolve(fresh)
+        },
+        getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: fresh.components, surfaces: [], summary: {} }),
+      }
+    }
+    if (mode === 'capability-changed') {
+      const changed = JSON.parse(JSON.stringify(capability))
+      changed.sources.forEach((source) => {
+        source.versionMatch = 'CHANGED'
+        source.surfaces.forEach((surface) => {
+          surface.readTiming = 'UNKNOWN'
+          surface.hotReload = 'UNKNOWN'
+          surface.requiresRestart = 'UNKNOWN'
+          surface.save = { state: 'UNKNOWN', authorization: 'NOT_AUTHORIZED', enabled: false, gate: 'UNKNOWN' }
+          surface.ownerApi = { state: 'UNKNOWN', kind: null, scope: null, endpoint: null }
+          surface.apply = { state: 'UNKNOWN', reason: 'VERSION_NOT_AUDITED' }
+          surface.blockers = [{ code: 'VERSION_NOT_AUDITED', message: '组件版本与审计版本不同，能力结论已降级为未知。', severity: 'blocked' }]
+        })
+      })
+      changed.components.forEach((component) => { component.versionMatch = 'CHANGED' })
+      return {
+        getStatus: async () => status,
+        getCapabilities: async () => changed,
+        getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: changed.components, surfaces: [], summary: {} }),
       }
     }
     return {
@@ -192,6 +373,8 @@
       getConfig: async () => config,
       getConfigSources: async () => ({ sources }),
       getConfigStatus: async () => status.configStatus,
+      getCapabilities: async () => capability,
+      getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: capability.components, surfaces: [], summary: {} }),
     }
   }
 

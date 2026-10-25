@@ -239,10 +239,16 @@ export function readConfigSnapshot(options = {}) {
   }
 
   const senderRuntime = asObject(runtime.sender) || {}
+  // The Worker is a standalone PowerShell script. If its own config ever declares a version,
+  // use that; never substitute the Sender Service package version.
+  const workerVersionField = text(worker.version) ? 'version' : (text(worker.worker_version) ? 'worker_version' : null)
+  const workerVersion = workerVersionField ? text(worker[workerVersionField]) : null
   const sender = {
     configAvailable: serviceResult.ok || workerResult.ok,
     serviceVersion: servicePackage.ok && text(servicePackage.data.version) ? text(servicePackage.data.version) : null,
-    workerVersion: null,
+    workerVersion,
+    workerVersionSource: workerVersionField ? 'config.json#' + workerVersionField : null,
+    workerVersionNote: workerVersion ? 'worker_declared_version' : 'no_independent_worker_version_identifier',
     serviceRunning: senderRuntime.processRunning === true,
     configProcessMismatch: senderRuntime.processRunning === false && (serviceResult.ok || workerResult.ok) ? true : null,
     healthReachable: senderRuntime.healthReachable === true,
@@ -252,6 +258,15 @@ export function readConfigSnapshot(options = {}) {
       'mode', 'autoFindWindow', 'autoOpenChat', 'autoRestoreMinimized', 'pauseWhenFullscreen',
     ]),
     allowListSource: 'service.config.json allowedChats',
+    automation: serviceResult.ok ? {
+      mode: text(automation.mode),
+      autoFindWindow: bool(automation.autoFindWindow),
+      autoOpenChat: bool(automation.autoOpenChat),
+      autoRestoreMinimized: bool(automation.autoRestoreMinimized),
+      pauseWhenFullscreen: bool(automation.pauseWhenFullscreen),
+      focusFailure: text(automation.focusFailure),
+      source: 'service.config.json#automation',
+    } : null,
   }
 
   const permissions = {

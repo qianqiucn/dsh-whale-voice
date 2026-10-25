@@ -399,184 +399,38 @@ None of these owner changes is authorized or implemented in Phase 4B-2B-1.
 
 ---
 
-## 10. Phase 4B-2B-2 frontend interface proposal (isolated)
+## 10. Phase 4B-2B-2 frontend interface (schema v3)
 
-Read-only contract first; no write endpoint on the production Host in 2B-2a.
+Schema v2 in the fixture-only prototype put `readTiming`, `hotReload` and `requiresRestart` at the
+**source** level. That was insufficient: Sender automation has a runtime PUT API, while Sender TTS is
+read at service boot and needs a reload. The implementation contract is now **schema v3**, with those
+three fields declared **per surface**. Full routes, state vocabulary, version gating, privacy and UI
+mapping are documented in [CAPABILITY_API.md](CAPABILITY_API.md).
 
-### 10.1 Capability projection
+Key corrections:
 
-Each **surface** is projected separately, so an available owner API is never mistaken for a Core
-authorization, a save capability or apply confirmation. Sender automation and Sender TTS are two
-different surfaces.
+- **Sender automation:** `readTiming: RUNTIME_API`, `hotReload: FULL`, `requiresRestart:
+  NOT_REQUIRED`; `save.state: SUPPORTED`, `authorization: NOT_AUTHORIZED`, `enabled: false`.
+- **Sender TTS:** `readTiming: SERVICE_BOOT`, `hotReload: NONE`, `requiresRestart: REQUIRED`;
+  `save.state: UNSUPPORTED` (no update API).
+- **Bridge:** `PER_CALL / FULL / NOT_REQUIRED`, no owner write API.
+- **Worker permit:** the static audit observed `PER_JOB / PARTIAL / NOT_REQUIRED`, but the PowerShell
+  Worker has no independent version identifier. The v3 projection therefore reports the Worker
+  Surface as `UNKNOWN` for version/reload fields (never borrowing the Sender Service version), keeps
+  `policy: NEVER_WRITE` and keeps writes disabled.
+- **WeChatAgent:** `MIXED / PARTIAL / REQUIRED`, human console only.
+- **Source objects** retain identity, authority, component, version/version match, risk and surface
+  list; they no longer carry reload values that could override a surface.
+- `save.enabled` is derived (owner API + component scope + save support + authorization + write
+  mode); `APPLIED` still requires an exact loaded revision and is never inferred.
+- **Version gate:** if the component version is `CHANGED` or `UNKNOWN`, the Surface's
+  `ownerApi`/`save`/`savedRevision`/`loadedRevision`/`apply` **and** its
+  `readTiming`/`hotReload`/`requiresRestart` become `UNKNOWN`; a version-specific reload
+  conclusion is never shown for an unverified version. Worker `policy: NEVER_WRITE` is retained and
+  no save control opens.
 
-```json
-GET /whale-voice/config/capabilities
-{
-  "schemaVersion": 2,
-  "writeMode": "READ_ONLY",
-  "observedAt": "2026-10-25T00:00:00.000Z",
-  "sources": [
-    {
-      "source": "senderService",
-      "authority": "Voice Sender Service",
-      "readTiming": "SERVICE_BOOT",
-      "hotReload": "NONE",
-      "requiresRestart": "REQUIRED",
-      "risk": "HIGH",
-      "surfaces": [
-        {
-          "surface": "automation",
-          "ownerApi": {
-            "state": "AVAILABLE",
-            "kind": "HTTP",
-            "scope": "COMPONENT",
-            "endpoint": "PUT /v1/automation/config"
-          },
-          "savedRevision": { "state": "UNSUPPORTED", "kind": null },
-          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
-          "save": {
-            "state": "SUPPORTED",
-            "authorization": "NOT_AUTHORIZED",
-            "enabled": false,
-            "gate": "NO_WRITE_AUTHORIZATION"
-          },
-          "apply": { "state": "UNSUPPORTED", "reason": "NO_LOADED_REVISION" },
-          "blockers": ["NO_WRITE_AUTHORIZATION", "NO_LOADED_REVISION"]
-        },
-        {
-          "surface": "tts",
-          "ownerApi": { "state": "UNSUPPORTED", "kind": null, "scope": null, "endpoint": null },
-          "savedRevision": { "state": "UNSUPPORTED", "kind": null },
-          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
-          "save": {
-            "state": "UNSUPPORTED",
-            "authorization": "NOT_AUTHORIZED",
-            "enabled": false,
-            "gate": "NO_OWNER_API"
-          },
-          "apply": { "state": "UNSUPPORTED", "reason": "NO_OWNER_API" },
-          "blockers": ["NO_OWNER_API", "REQUIRES_RESTART", "NO_LOADED_REVISION"]
-        }
-      ]
-    },
-    {
-      "source": "wechatPermissions",
-      "authority": "WeChatAgent Console",
-      "readTiming": "MIXED",
-      "hotReload": "PARTIAL",
-      "requiresRestart": "REQUIRED",
-      "risk": "CRITICAL",
-      "surfaces": [
-        {
-          "surface": "config",
-          "ownerApi": {
-            "state": "AVAILABLE",
-            "kind": "HTTP_CONSOLE",
-            "scope": "HUMAN_CONSOLE",
-            "endpoint": "POST /api/config"
-          },
-          "savedRevision": { "state": "SUPPORTED", "kind": "file-sha256" },
-          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
-          "save": {
-            "state": "SUPPORTED",
-            "authorization": "NOT_AUTHORIZED",
-            "enabled": false,
-            "gate": "HUMAN_CONSOLE_ONLY"
-          },
-          "apply": { "state": "UNSUPPORTED", "reason": "NO_LOADED_REVISION" },
-          "blockers": ["HUMAN_CONSOLE_ONLY", "NO_WRITE_AUTHORIZATION", "NO_LOADED_REVISION", "MIXED_WRITERS"]
-        }
-      ]
-    }
-  ],
-  "summary": {
-    "ownerApiAvailable": ["senderService.automation", "wechatPermissions.config"],
-    "saveSupported": ["senderService.automation", "wechatPermissions.config"],
-    "writeAuthorized": [],
-    "writeEnabled": [],
-    "loadedRevisionAvailable": [],
-    "applySupported": []
-  }
-}
-```
-
-### 10.2 State vocabulary
-
-| Field | Values | Meaning |
-|---|---|---|
-| `writeMode` | `READ_ONLY` \| `AUTHORIZED_WRITE` | Phase-level gate for every surface. 2B-2a is `READ_ONLY`. |
-| `ownerApi.state` | `AVAILABLE` \| `UNSUPPORTED` \| `UNKNOWN` | Does the owning component expose an interface? |
-| `ownerApi.kind` | `HTTP` \| `HTTP_CONSOLE` \| `FILE` \| `NONE` \| `null` | Interface family; `null` only when no API is available. |
-| `ownerApi.scope` | `COMPONENT` \| `HUMAN_CONSOLE` \| `NONE` \| `null` | `HUMAN_CONSOLE` is not a Core integration API. |
-| `savedRevision.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Owner accepts/returns a revision for a save (e.g. `expectedRevision`). |
-| `loadedRevision.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Owner can report the revision actually loaded at runtime. |
-| `save.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Can the owner persist this surface? Does **not** include Core permission. |
-| `save.authorization` | `AUTHORIZED` \| `NOT_AUTHORIZED` \| `UNKNOWN` | Core's production write permission. |
-| `save.enabled` | `true` \| `false` | Derived: `ownerApi=AVAILABLE` **and** `scope=COMPONENT` **and** `save.state=SUPPORTED` **and** `authorization=AUTHORIZED` **and** `writeMode=AUTHORIZED_WRITE`. |
-| `save.gate` | `NONE` \| `NO_OWNER_API` \| `NO_SAVE_API` \| `NO_WRITE_AUTHORIZATION` \| `HUMAN_CONSOLE_ONLY` \| `PHASE_READ_ONLY` \| `UNKNOWN` | First reason the write is not enabled. |
-| `apply.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Can the owner confirm the loaded revision? `SUPPORTED` requires `loadedRevision=SUPPORTED`. |
-| `apply.reason` | `NO_OWNER_API` \| `NO_LOADED_REVISION` \| `null` | Why apply confirmation is unavailable. |
-| `readTiming` | `PER_CALL` \| `SERVICE_BOOT` \| `PER_JOB` \| `HOST_BOOT` \| `MIXED` \| `ON_DEMAND` \| `UNKNOWN` | When the component reads its configuration. |
-| `hotReload` | `FULL` \| `PARTIAL` \| `NONE` \| `NOT_APPLICABLE` \| `UNKNOWN` | Whether a saved change is observed without restart. |
-| `requiresRestart` | `REQUIRED` \| `NOT_REQUIRED` \| `NOT_APPLICABLE` \| `UNKNOWN` | Restart requirement for the change to take effect. |
-
-Rules:
-
-1. **`null` is never a capability state.** It is allowed only for `ownerApi.kind`,
-   `ownerApi.endpoint`, `savedRevision.kind`, `loadedRevision.kind` and `apply.reason`, where it means
-   "no value applies" (for example, no revision kind when the revision is unsupported). An unobserved
-   capability is `UNKNOWN`, not `null`. A `SUPPORTED` revision must name its `kind`.
-2. `UNSUPPORTED` means the interface does not exist. `NOT_AUTHORIZED` means an interface may exist
-   but Whale Voice has no permission. `UNKNOWN` means it could not be determined. They are not
-   interchangeable.
-3. `save.state` is independent of `loadedRevision.state` and `apply.state`. Sender automation is
-   `save.state:SUPPORTED` with `loadedRevision:UNSUPPORTED`; the save remains supported, while apply
-   stays `PENDING_APPLY`.
-4. `save.enabled` is always derived. It cannot be set true by an API string, a plan preview or the
-   frontend; authorization and write mode are mandatory.
-5. `readTiming` and `hotReload` are separate. `SERVICE_BOOT` + `NONE` means a saved file is not
-   re-read; `PER_CALL` + `FULL` means the next call sees it; `PER_JOB` + `PARTIAL` means only the next
-   job sees it and the active job does not.
-6. `requiresRestart:UNKNOWN` is not `NOT_REQUIRED`. `ownerApi.state:UNKNOWN` is not `UNSUPPORTED`.
-
-### 10.3 Status projection (saved vs applied)
-
-```json
-{
-  "source": "senderService",
-  "surface": "automation",
-  "savedRevision": "<32hex-or-null>",
-  "saveState": "SAVED",
-  "activeRevision": null,
-  "activeConfirmed": false,
-  "applyState": "PENDING_APPLY",
-  "applyReason": "NO_LOADED_REVISION",
-  "observedAt": "2026-10-25T00:00:00.000Z"
-}
-```
-
-- `savedRevision` / `saveState` describe the save side only. `savedRevision` may be a Core-computed
-  opaque fingerprint even when the owner does not accept an `expectedRevision`; the capability's
-  `savedRevision.state` says whether the owner itself supports a revision.
-- `activeRevision:null` means no loaded revision was observed. It is not "unsupported", "off" or
-  "applied".
-- `applyState` carries the reason: `PENDING_APPLY` when no loaded-revision interface exists,
-  `UNKNOWN` on a mismatch or observation failure, `APPLIED` only for an exact loaded revision.
-- A save failure does not change `activeRevision`; a loaded mismatch never rewrites `saveState`.
-
-### 10.4 UI rules for 4B-2B-2
-
-- A write control is enabled only when `save.enabled === true`. `ownerApi.state === "AVAILABLE"` or a
-  non-null `endpoint` alone is **not** sufficient; show the exact `save.gate`/blocker on a disabled
-  control.
-- Show `已保存，生效未确认` (`SAVED`/`PENDING_APPLY`) and `未知` (`UNKNOWN`); never show `已生效`
-  without an exact loaded revision.
-- Never render `null` as off/disabled/safe; render `UNKNOWN` where the state is unknown.
-- Never show paths, tokens, target IDs, whitelist names or raw config documents.
-- A plan preview may list source, surface, field names, risk, restart requirement and blockers; it
-  is not a save and not permission to enable voice.
-- If a component is unreachable, show `No-Core`/unknown for that source, not a stale success.
-
+The schema-v2 fixture has been superseded; the browser reader rejects any schema other than 3 and
+degrades to an unavailable capability state.
 ---
 
 ## 11. Blockers and risks
@@ -609,42 +463,40 @@ Residual safety risks:
 
 ## 12. Test evidence and acceptance status
 
-New isolated prototypes (fixture-only, no production adapters):
+Phase 4B-2B-2a added the production read-only projection and its tests:
 
-`test/config-capability.test.mjs` — 5 tests:
+- `core/capabilities.mjs` — schema v3 surface-level projection over the existing detector/config
+  snapshot; no I/O.
+- `core/capability-view.mjs` — pure browser/test view derivation.
+- `test/capability.test.mjs` — 9 tests: surface-level reload semantics, Sender automation vs TTS,
+  version gating, Worker version separation, static/dynamic separation, privacy, view derivation,
+  invalid/older schema, no I/O.
+- `test/config.test.mjs` — Worker-only declared version is kept separate from the Service version.
+- `test/setup-status.test.mjs` — schema v3 reader, timeout, older-schema fail-closed, malformed
+  nested payloads and stale refresh competition.
+- `test/core.test.mjs` — Host/Core routes, 401/405/cross-site, bridge methods, schema v3.
+- `tests/ui/run.mjs` — 24 checks: capability summary, per-page surfaces, components dialog,
+  invalid/missing/timeout capability, stale refresh race, changed-version reload downgrade, Worker
+  unknown version without a Service-version claim, Mock/real labels, demo-data explanation, 780 px,
+  Console/requests, no secrets.
 
-1. audited sources without a loaded-revision API stay `PENDING_APPLY`, `activeConfirmed:false`;
-2. a boot-read Sender with a mismatched loaded revision is `UNKNOWN`, never `APPLIED`;
-3. after a simulated restart, an exact loaded revision is `APPLIED`;
-4. a revision-guarded save is compare-and-swap, not proof of apply;
-5. plans and results do not echo fixture tokens or target IDs.
-
-`test/config-capability-schema.test.mjs` + `test/helpers/config-capability-schema.mjs` — 7 tests
-that enforce the §10 contract:
-
-1. Sender automation: owner API exists, Core is `NOT_AUTHORIZED`, save stays `SUPPORTED`;
-2. Sender TTS: no owner API is `UNSUPPORTED`, not `NOT_AUTHORIZED` and not `UNKNOWN`;
-3. Bridge and WeChatAgent: read timing, hot reload and human-console scope are distinct;
-4. `UNKNOWN` is not `null`, `UNSUPPORTED` or `NOT_AUTHORIZED`;
-5. a `null` status, a missing owner-API detail and a `null` restart flag are rejected;
-6. `writeEnabled` requires owner API + save capability + authorization + component scope + write
-   mode; a read-only phase disables even an authorized save;
-7. the summary keeps save, authorization and apply capability separate.
-
-These fixtures model the audited interfaces; they are not production adapters and do not touch
-production files.
+The previous fixture-only schema v2 tests remain as regression coverage for the Phase 4B-2B-1
+contract; the implementation contract is schema v3 (see §10 and
+[CAPABILITY_API.md](CAPABILITY_API.md)).
 
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 161 tests / 160 pass / 0 fail / 1 platform skip
+node --test        -> 176 tests / 175 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
-npm.cmd run test:ui -> 12/12 isolated Playwright checks
+npm.cmd run test:ui -> 24/24 isolated Playwright checks
 ```
 
-**Status:** Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**. No production configuration, service,
-audio device or WeChat operation was touched. Phase 4B-2B-2 remains **NOT STARTED**.
+**Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **OFFLINE**:
+source, Host route and isolated UI are implemented and tested (PR #15), but the running DSH Host has
+not been reloaded, so live Electron GUI integration is pending. Phase 4B-2B-2b (write) remains **NOT
+STARTED**. No production configuration, service, audio device or WeChat operation was touched.
 
 ---
 

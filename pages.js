@@ -84,7 +84,112 @@ function ConfigReadout({ setup }) {
         h('span', null, 'Core 配置尚未读取。这里不会用 Mock 配置填充真实值；请检查 Host 连接或 Core 配置。')))
 }
 
-function OverviewPage({ settings, setSetting, setPage, notify, openService, openActivity, setup, onSetup, onComponents }) {
+function CapabilityBadge({ label, state, tone }) {
+  return h(Badge, { tone: tone || (state === 'SUPPORTED' || state === 'AUTHORIZED' || state === 'APPLIED' || state === 'AVAILABLE' ? 'backend' : 'wait') }, label)
+}
+
+function CapabilityComponentRow({ component }) {
+  const stateLabel = component.rawStateText && component.rawStateText !== component.stateText
+    ? component.stateText + ' · ' + component.rawStateText
+    : component.stateText
+  return h('div', { className: 'wv-cap-component', 'data-testid': 'capability-component-' + component.id },
+    h('div', null,
+      h('strong', null, component.label),
+      h('small', null, component.versionText + ' · ' + component.versionMatchText)),
+    h('div', { className: 'wv-cap-component-state' },
+      h(CapabilityBadge, { label: stateLabel, state: component.status, tone: component.tone === 'ok' ? 'backend' : component.tone === 'blocked' ? 'demo' : 'wait' }),
+      h('small', null, component.observedAt ? '检测于 ' + component.observedText : '检测时间未知')))
+}
+
+function CapabilitySurfaceRow({ item, detailed = true }) {
+  return h('article', { className: 'wv-cap-surface', 'data-testid': 'capability-surface-' + item.key },
+    h('div', { className: 'wv-cap-surface-head' },
+      h('div', null,
+        h('strong', null, item.label),
+        h('small', null, item.sourceLabel + ' · ' + item.readText + ' · ' + item.hotText + ' · ' + item.restartText)),
+      h('div', { className: 'wv-cap-badges' },
+        h(CapabilityBadge, { label: item.saveState === 'SUPPORTED' ? '可保存' : item.saveState === 'UNKNOWN' ? '保存未知' : '无保存接口', state: item.saveState }),
+        h(CapabilityBadge, { label: item.authorization === 'AUTHORIZED' ? '已授权' : item.authorization === 'UNKNOWN' ? '授权未知' : '未授权写入', state: item.authorization }),
+        h(CapabilityBadge, { label: item.applyState === 'APPLIED' ? '已生效' : item.applyState === 'UNKNOWN' ? '生效未知' : '生效未确认', state: item.applyState === 'APPLIED' ? 'APPLIED' : 'UNKNOWN' }))),
+    h('p', { className: 'wv-cap-line' }, item.savedText),
+    h('p', { className: 'wv-cap-line' }, item.runtimeText),
+    h('p', { className: 'wv-cap-line' }, item.applyText),
+    item.blockers.length ? h('div', { className: 'wv-cap-blockers' },
+      item.blockers.slice(0, 2).map((blocker) => h('span', { key: blocker.code, className: 'wv-cap-blocker' }, blocker.text))) : null,
+    detailed ? h('details', { className: 'wv-cap-details' },
+      h('summary', null, '技术详情'),
+      h('div', { className: 'wv-cap-detail-grid' },
+        h('div', null, h('span', null, '组件接口'), h('strong', null, item.ownerApiText)),
+        h('div', null, h('span', null, '读取时机'), h('strong', null, item.readText)),
+        h('div', null, h('span', null, '热更新'), h('strong', null, item.hotText)),
+        h('div', null, h('span', null, '重启要求'), h('strong', null, item.restartText)),
+        h('div', null, h('span', null, '保存能力'), h('strong', null, item.saveStateText)),
+        h('div', null, h('span', null, '写入授权'), h('strong', null, item.authorizationText)),
+        h('div', null, h('span', null, '当前写入'), h('strong', null, item.enabled ? '已启用' : '未启用 · ' + item.gate)),
+        h('div', null, h('span', null, '生效状态'), h('strong', null, item.applyText)),
+        h('div', null, h('span', null, '保存值来源'), h('strong', null, item.savedText)),
+        h('div', null, h('span', null, '运行状态'), h('strong', null, item.runtimeText)),
+        h('div', null, h('span', null, '检测时间'), h('strong', null, item.observedAt ? String(item.observedAt).replace('T', ' ').slice(0, 19) : '未知'))),
+      item.blockers.length ? h('div', { className: 'wv-cap-detail-blockers' },
+        item.blockers.map((blocker) => h('div', { key: blocker.code }, h('code', null, blocker.code), h('span', null, blocker.text)))) : null) : null)
+}
+
+function CapabilityPanel({ capability, groups, title, desc, detailed = true, showComponents = false }) {
+  const view = deriveCapabilityView(capability && capability.data)
+  if (capability && capability.checking) {
+    return h('div', { className: 'wv-notice', style: { marginBottom: 14 } },
+      h(Icon, { name: 'clock', size: 15 }),
+      h('span', null, '正在读取组件能力与授权状态…'))
+  }
+  if (!capability || !capability.available || !view.available) {
+    return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
+      h(Icon, { name: 'alert', size: 15 }),
+      h('span', null, '能力数据不可用：需要 Whale Voice Core 的只读能力接口。Mock 数据不会替代真实能力。'))
+  }
+  const keys = Array.isArray(groups) && groups.length ? groups : ['bridge', 'senderAutomation', 'senderTts', 'worker', 'wechat', 'core', 'qwen']
+  const items = keys.map((key) => view.groups[key]).filter(Boolean)
+  return h('section', { className: 'wv-card pad wv-capability-panel', 'data-testid': 'capability-panel', style: { marginBottom: 14 } },
+    h('div', { className: 'wv-card-title' },
+      h('div', null,
+        h('h2', null, title || '能力与授权 · 只读'),
+        h('p', null, desc || view.headline)),
+      h('div', { className: 'wv-row' },
+        h(Badge, { tone: 'accent' }, '只读阶段'),
+        h(Badge, { tone: 'wait' }, '未授权写入'))),
+    showComponents ? h('div', { className: 'wv-cap-components' }, view.components.map((component) => h(CapabilityComponentRow, { key: component.id, component }))) : null,
+    h('div', { className: 'wv-cap-surfaces' }, items.map((item) => h(CapabilitySurfaceRow, { key: item.key, item, detailed }))),
+    h('div', { className: 'wv-cap-foot' },
+      h('span', null, '读取于 ' + view.observedText + ' · ' + view.summary.surfaceCount + ' 个配置面'),
+      view.blockedReasons.length ? h('span', { className: 'wv-cap-foot-warn' }, view.blockedReasons[0].text) : null))
+}
+
+function CapabilitySummary({ capability }) {
+  const view = deriveCapabilityView(capability && capability.data)
+  if (!capability || capability.checking) {
+    return h('div', { className: 'wv-notice', style: { marginBottom: 14 } }, h(Icon, { name: 'clock', size: 15 }), h('span', null, '正在读取真实能力摘要…'))
+  }
+  if (!capability.available || !view.available) {
+    return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
+      h(Icon, { name: 'alert', size: 15 }),
+      h('span', null, '能力摘要不可用：Core 未连接或能力接口未加载。不会用演示数据填充。'))
+  }
+  return h('section', { className: 'wv-card pad wv-cap-summary', 'data-testid': 'capability-summary', style: { marginBottom: 14 } },
+    h('div', { className: 'wv-card-title' },
+      h('div', null, h('h2', null, '能力与授权摘要'), h('p', null, view.headline)),
+      h(Badge, { tone: 'accent' }, '只读阶段')),
+    h('div', { className: 'wv-cap-chips' },
+      h('span', { className: 'wv-chip' }, h('strong', null, String(view.summary.surfaceCount)), '配置面'),
+      h('span', { className: 'wv-chip' }, h('strong', null, String(view.summary.saveSupported)), '支持保存'),
+      h('span', { className: 'wv-chip' }, h('strong', null, String(view.summary.notAuthorized)), '未授权写入'),
+      h('span', { className: 'wv-chip' }, h('strong', null, String(view.summary.writeEnabled)), '可执行写入'),
+      h('span', { className: 'wv-chip' }, h('strong', null, String(view.summary.unknown)), '能力未知')),
+    h('div', { className: 'wv-cap-components' }, view.components.map((component) => h(CapabilityComponentRow, { key: component.id, component }))),
+    view.blockedReasons.length ? h('div', { className: 'wv-cap-blockers' },
+      view.blockedReasons.slice(0, 3).map((reason) => h('span', { key: reason.code, className: 'wv-cap-blocker' }, reason.text))) : null,
+    h('div', { className: 'wv-cap-foot' }, h('span', null, '检测于 ' + view.observedText)))
+}
+
+function OverviewPage({ settings, setSetting, setPage, notify, openService, openActivity, setup, capability, onSetup, onComponents }) {
   const stats = [
     { label: '服务', value: '2 / 3', sub: '演示在线 · 1 忙碌' },
     { label: '专属音色', value: '1', sub: 'whale-v1 · 已就绪' },
@@ -96,7 +201,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       h('div', { className: 'wv-hero-copy' },
         h('div', { className: 'wv-eyebrow' }, 'WHALE VOICE · 小鲸鱼语音中心'),
         h('h1', null, '小鲸鱼的声音，', h('span', null, '已经准备好了。')),
-        h('p', null, 'Qwen3-TTS · whale-v1 · 私聊演示联系人。当前是前端演示环境，服务状态与参数均为 Mock，不写入生产配置。'),
+        h('p', null, 'Qwen3-TTS · whale-v1 · 私聊演示联系人。真实 Core 配置面板为只读；服务指标、联系人与任务仍为前端演示数据，不写入生产配置，也不代表真实任务状态。'),
         h('div', { className: 'wv-hero-chips' },
           h('span', { className: 'wv-chip accent' }, h('strong', null, 'whale-v1'), '专属音色'),
           h('span', { className: 'wv-chip' }, h('strong', null, '2 / 3'), '服务在线'),
@@ -108,6 +213,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       h('div', { className: 'wv-hero-art' }, h(WhaleArt))),
     h(SetupBanner, { status: setup, onSetup, onComponents }),
     h(ConfigReadout, { setup }),
+    h(CapabilitySummary, { capability }),
     h('div', { className: 'wv-grid four', style: { marginTop: 12 } },
       stats.map((s) => h('div', { key: s.label, className: 'wv-card wv-stat' },
         h('span', { className: 'wv-stat-label' }, s.label),
@@ -118,7 +224,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       h('div', null,
         h('span', { className: 'wv-section-kicker' }, 'SERVICE STATUS'),
         h('h2', null, '服务状态', h(Badge, { tone: 'demo' }, 'Mock'))),
-      h('span', { className: 'wv-section-note' }, '只读演示，不请求真实服务')),
+      h('span', { className: 'wv-section-note' }, '本区域为演示指标，不请求真实服务；真实 Core 状态见上方能力摘要')),
     h('div', { className: 'wv-grid three' }, MOCK_SERVICES.map((service) => h(ServiceCard, { key: service.id, service, onOpen: openService }))),
     h('div', { style: { height: 14 } }),
     h('div', { className: 'wv-grid two' },
@@ -166,7 +272,7 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       MOCK_ACTIVITIES.slice(0, 4).map((a, i) => h(ActivityMini, { key: a.id, activity: a, onOpen: openActivity, last: i === 3 })))))
 }
 
-function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup }) {
+function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
   const num = (v) => Number(v)
   return h(React.Fragment, null,
     h(PageHead, {
@@ -182,6 +288,12 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。')),
     h(ConfigReadout, { setup }),
+    h(CapabilityPanel, {
+      capability,
+      groups: ['bridge'],
+      title: 'Bridge 用户开关 · 真实只读状态',
+      desc: 'Bridge 每次语音调用都会读取该文件，但组件没有写入接口；本阶段只展示保存值与只读限制。',
+    }),
     h('div', { className: 'wv-grid two' },
       h(Card, { title: '基础控制', desc: '总开关与回复方式' },
         h('div', { className: 'wv-settings-group' },
@@ -247,7 +359,7 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
 
 const SAFETY_DEFAULT_SHORTCUT = 'Ctrl + Shift + F12'
 
-function SafetyPage({ settings, setup }) {
+function SafetyPage({ settings, setup, capability }) {
   const coreConnected = Boolean(setup && setup.available && setup.data && setup.data.demo !== true)
   const backendLabel = coreConnected ? '等待后端 API' : 'Core 未连接'
   const backendTone = coreConnected ? 'wait' : 'demo'
@@ -263,6 +375,12 @@ function SafetyPage({ settings, setup }) {
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'lock', size: 15 }),
       h('span', null, '安全控制后端尚未接入。候选快捷键、窗口发现、自动聚焦和游戏保护不会在本轮产生真实系统行为；未知状态不会显示为安全通过。')),
+    h(CapabilityPanel, {
+      capability,
+      groups: ['senderAutomation', 'worker'],
+      title: '发送自动化与 Worker 安全许可 · 真实只读状态',
+      desc: 'Sender automation 有运行时 PUT 接口但当前未授权；Worker voice_enabled 是独立最终安全许可，永不写入。',
+    }),
     h('div', { className: 'wv-grid three' },
       h(Card, {
         title: '紧急停止',
@@ -342,7 +460,7 @@ function MoreMenu({ contact, onCopy, onInfo }) {
       h('button', { type: 'button', onClick: () => { setOpen(false); onInfo() } }, '查看演示详情')) : null)
 }
 
-function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup, notify, setup }) {
+function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup, notify, setup, capability }) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState({ id: '', name: '', mention: true, explicit: true, groupCooldown: 30, memberCooldown: 60 })
   const [errors, setErrors] = React.useState({})
@@ -398,6 +516,12 @@ function PermissionsPage({ contacts, setContacts, groups, addGroup, removeGroup,
       h(Icon, { name: 'shield', size: 15 }),
       h('span', null, '群聊语音只有在授权群中、真实 @ 小鲸鱼且明确请求语音时才会触发。默认不提供“允许所有群聊”快捷入口。')),
     h(ConfigReadout, { setup }),
+    h(CapabilityPanel, {
+      capability,
+      groups: ['wechat'],
+      title: '微信权限范围 · 真实只读状态',
+      desc: '微信权限由 WeChatAgent 控制台人工管理；本插件只读取数量，不读取也不展示名单。',
+    }),
     h('div', { className: 'wv-grid two' },
       h(Card, { title: '私聊白名单', desc: '只允许明确列出的私聊目标',
         actions: h(Badge, { tone: 'demo' }, '演示名单') },
@@ -478,7 +602,7 @@ function GroupDialog({ form, errors, patchForm, onClose, onSave }) {
         errors.memberCooldown ? h('span', { className: 'wv-error' }, errors.memberCooldown) : h('span', { className: 'wv-hint' }, '0–86400 秒'))))
 }
 
-function StudioPage({ preview, setPreview, notify, setup }) {
+function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
   return h(React.Fragment, null,
     h(PageHead, {
@@ -493,6 +617,12 @@ function StudioPage({ preview, setPreview, notify, setup }) {
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '本轮不合成真实音频。生成与播放按钮保持禁用；下方波形为示意，不代表真实音频。')),
     h(ConfigReadout, { setup }),
+    h(CapabilityPanel, {
+      capability,
+      groups: ['senderTts', 'qwen'],
+      title: '音色与运行状态 · 真实只读能力',
+      desc: 'TTS 配置只在 Sender 服务启动时读取，没有运行时更新接口；Qwen 只提供健康观察，不代表保存值已生效。',
+    }),
     h('div', { className: 'wv-studio' },
       h('section', { className: 'wv-card wv-studio-profile' },
         h('div', { className: 'wv-studio-hero' },
@@ -645,7 +775,7 @@ function ActivityPage({ notify, openActivity }) {
             h(Button, { variant: 'ghost', size: 'sm', onClick: async () => { const ok = await copyText(e); notify(ok ? '已复制错误码。' : '复制失败：剪贴板不可用。', ok ? 'success' : 'error') } }, h(Icon, { name: 'copy', size: 12 }), '复制')))))))
 }
 
-function AdvancedPage({ notify, setup, onSetup, onComponents }) {
+function AdvancedPage({ notify, setup, capability, onSetup, onComponents }) {
   const diag = React.useMemo(() => JSON.stringify({
     plugin: 'dsh-whale-voice', version: '0.1.0', mode: 'mock',
     bridge: 'r4 (demo)', target: 'private:demo-1001', voice: 'whale-v1',
@@ -666,6 +796,14 @@ function AdvancedPage({ notify, setup, onSetup, onComponents }) {
       h(Icon, { name: 'lock', size: 15 }),
       h('span', null, '本页不会写入配置、不会启动 Qwen、不会结束进程。数值为演示占位，真实值需等待后端接入。')),
     h(ConfigReadout, { setup }),
+    h(CapabilitySummary, { capability }),
+    h(CapabilityPanel, {
+      capability,
+      title: '全部配置面 · 技术只读状态',
+      desc: '每个 Surface 独立声明读取时机、热更新、重启要求、保存能力、授权与生效证据；未知保持未知。',
+      detailed: true,
+      showComponents: true,
+    }),
     h('div', { className: 'wv-adv-grid' },
       h(Card, { title: '语音引擎', desc: 'Qwen3-TTS Provider', actions: h(Badge, { tone: 'demo' }, '演示占位') },
         h('dl', { className: 'wv-kv' }, ADVANCED.engine.map(([k, v], i) => h(React.Fragment, { key: i }, h('dt', null, k), h('dd', null, v))))),

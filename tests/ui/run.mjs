@@ -145,6 +145,205 @@ await check('all primary navigation surfaces render', async () => {
   })
 })
 
+await check('real Core panels and demo data are labeled separately', async () => {
+  await withPage(normal, async (page) => {
+    const text = await page.locator('body').innerText()
+    assert.match(text, /真实配置只读 · 生产写入禁用/)
+    assert.match(text, /部分演示/)
+    assert.match(text, /真实配置 · 只读/)
+    assert.match(text, /能力与授权摘要/)
+    assert.match(text, /演示联系人/)
+    assert.doesNotMatch(text, /所有服务状态、任务与参数均为前端演示数据/)
+    assert.doesNotMatch(text, /不读取\/不写入生产配置/)
+    const capabilityText = await page.locator('[data-testid="capability-summary"]').innerText()
+    assert.doesNotMatch(capabilityText, /演示数据|Mock/)
+  })
+})
+
+await check('demo-data explanation matches actual behavior', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '演示数据说明', exact: true }).click()
+    await page.getByText(/标记为演示的服务指标/).waitFor({ timeout: 3000 })
+    const toast = await page.getByText(/标记为演示的服务指标/).innerText()
+    assert.match(toast, /不会刷新真实数据/)
+    assert.match(toast, /真实 Core 状态与能力请在组件管理中重新检测/)
+
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    const dialogText = await dialog.innerText()
+    assert.match(dialogText, /重新检测会刷新真实 Core 状态与能力数据/)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('an older capability response cannot overwrite a newer refresh', async () => {
+  await withPage('?bridge=capability-race', async (page) => {
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    await dialog.getByRole('button', { name: '重新检测', exact: true }).click()
+    await page.waitForTimeout(400)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.waitForTimeout(2200)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /Fresh Capability/)
+    assert.doesNotMatch(text, /Stale Capability/)
+  })
+})
+
+await check('changed version hides unverified reload conclusions and keeps writes disabled', async () => {
+  await withPage('?bridge=capability-changed', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForTimeout(300)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /是否需要重启未知/)
+    assert.match(text, /组件版本与审计版本不同/)
+    assert.doesNotMatch(text, /每次调用读取/)
+    assert.doesNotMatch(text, /无需重启即可看到更新/)
+    const panel = page.locator('[data-testid="capability-panel"]').first()
+    assert.equal(await panel.getByRole('button', { name: /保存/ }).count(), 0)
+  })
+})
+
+await check('capability summary separates support, authorization and write enablement', async () => {
+  await withPage(normal, async (page) => {
+    const summary = page.locator('[data-testid="capability-summary"]')
+    await assert.doesNotReject(summary.waitFor({ timeout: 4000 }))
+    const text = await summary.innerText()
+    assert.match(text, /能力与授权摘要/)
+    assert.match(text, /只读阶段/)
+    assert.match(text, /配置面/)
+    assert.match(text, /支持保存/)
+    assert.match(text, /未授权写入/)
+    assert.match(text, /可执行写入/)
+    assert.match(text, /WeChatAgent/)
+    assert.match(text, /需要授权/)
+    assert.match(text, /Voice Sender/)
+    assert.match(text, /未运行/)
+    assert.doesNotMatch(text, /演示数据|Mock 数据|MOCK/)
+    assert.doesNotMatch(text, /fixture-token|fixture-private|fixture-install-path/)
+    const panel = page.locator('[data-testid="capability-panel"]').first()
+    if (await panel.count()) {
+      assert.equal(await panel.getByRole('button', { name: /保存/ }).count(), 0)
+    }
+  })
+})
+
+await check('settings/studio/safety expose surface-specific reload semantics', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForTimeout(250)
+    let text = await page.locator('body').innerText()
+    assert.match(text, /Bridge 用户开关 · 真实只读状态/)
+    assert.match(text, /每次调用读取/)
+    assert.match(text, /无需重启/)
+
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.waitForTimeout(250)
+    text = await page.locator('body').innerText()
+    assert.match(text, /TTS 音色与提供方/)
+    assert.match(text, /服务启动时读取/)
+    assert.match(text, /不会热更新/)
+    assert.match(text, /需要重启或重新加载/)
+
+    await page.getByRole('button', { name: '发送与安全', exact: true }).click()
+    await page.waitForTimeout(250)
+    text = await page.locator('body').innerText()
+    assert.match(text, /发送自动化设置/)
+    assert.match(text, /运行时通过受支持接口更新/)
+    assert.match(text, /Worker 最终安全许可/)
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /本插件永不写入/)
+  })
+})
+
+await check('Worker version unknown is displayed without claiming Service version', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '发送与安全', exact: true }).click()
+    await page.waitForTimeout(300)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /Worker 最终安全许可/)
+    assert.match(text, /读取时机未知/)
+    assert.match(text, /是否热更新未知/)
+    assert.match(text, /本插件永不写入/)
+    assert.doesNotMatch(text, /Worker 最终安全许可[^\n]*v0\.1\.0/)
+    const panel = page.locator('[data-testid="capability-panel"]').first()
+    assert.equal(await panel.getByRole('button', { name: /保存/ }).count(), 0)
+
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.waitForTimeout(300)
+    const workerComponent = await page.locator('[data-testid="capability-component-worker"]').innerText()
+    assert.match(workerComponent, /版本未知/)
+    assert.doesNotMatch(workerComponent, /v0\.1\.0/)
+  })
+})
+
+await check('components dialog shows capability blockers and refreshes safely', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 3000 }))
+    let text = await dialog.innerText()
+    assert.match(text, /能力、授权与阻塞原因/)
+    assert.match(text, /可保存/)
+    assert.match(text, /未授权/)
+    assert.match(text, /只能在微信助手控制台中由人工修改/)
+    assert.match(text, /当前阶段仅只读/)
+    await dialog.getByRole('button', { name: '重新检测', exact: true }).click()
+    await page.waitForTimeout(600)
+    text = await dialog.innerText()
+    assert.match(text, /能力、授权与阻塞原因/)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('invalid capability schema degrades without Mock capability data', async () => {
+  await withPage('?bridge=capability-invalid', async (page) => {
+    await page.waitForTimeout(600)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /能力摘要不可用/)
+    assert.doesNotMatch(text, /能力与授权摘要/)
+    assert.doesNotMatch(text, /可执行写入/)
+  })
+})
+
+await check('missing capability bridge degrades without Mock capability data', async () => {
+  await withPage('?bridge=capability-missing', async (page) => {
+    await page.waitForTimeout(600)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /能力摘要不可用/)
+    assert.doesNotMatch(text, /可执行写入/)
+  })
+})
+
+await check('capability timeout degrades safely', async () => {
+  await withPage('?bridge=capability-timeout', async (page) => {
+    await page.waitForTimeout(5600)
+    const text = await page.locator('body').innerText()
+    assert.match(text, /能力摘要不可用/)
+    assert.doesNotMatch(text, /可执行写入/)
+  })
+})
+
+await check('capability summary stays usable at 780px', async () => {
+  await withPage(normal, async (page) => {
+    await page.setViewportSize({ width: 780, height: 900 })
+    await page.waitForTimeout(300)
+    const metrics = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      summary: document.querySelector('[data-testid="capability-summary"]')?.innerText || '',
+    }))
+    assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, 'capability narrow overflow')
+    assert.match(metrics.summary, /能力与授权摘要/)
+    await page.screenshot({ path: path.join(artifactDir, 'capability-780.png') })
+  })
+})
+
 await check('components dialog opens with config and closes', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '组件管理', exact: true }).click()
