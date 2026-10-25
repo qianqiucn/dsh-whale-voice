@@ -40,6 +40,17 @@ explicit permission; do not silently weaken a safety boundary.
 10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
     restarts or production configuration changes, stop and obtain explicit authorization first.
 
+## 1.0.0 ChatGPT new-chat handoff (planning role only)
+
+For any **new ChatGPT conversation** that resumes Whale Voice planning, also read
+[docs/plans/NEXT_CHATGPT_HANDOFF.md](docs/plans/NEXT_CHATGPT_HANDOFF.md) and
+[docs/plans/NEXT_CHATGPT_ACTION_PLAN.md](docs/plans/NEXT_CHATGPT_ACTION_PLAN.md) on the
+current authorized plan branch (if they are not merged into main).
+Their current PR/CI information is a snapshot; verify the latest main and open PRs before
+editing or marking tasks DONE. **This extra planning-handoff requirement does not apply to
+DeepSeek's ordinary engineering tasks.** No handoff is permission to auto-merge, restart,
+write production configuration or send WeChat messages.
+
 ## 1.0.1 Two-AI collaboration and role ownership
 
 | Role | Responsible for | Not required to do |
