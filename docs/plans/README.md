@@ -5,6 +5,14 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 最新权威验收及任务派发：07-A DONE → 04-A SENT（2026-10-25）
+
+**Plan 07-A 静态审计 = DONE（RESEARCH/OFFLINE，不是 RVC 已接入）**：DS 完成初报 #19 与同编号 F01 修订，PR #19 OPEN / HEAD `e21dee8a8192f24a3465f169c761e62d30611e59` / 仅 `docs/SVC_PROVIDER_RESEARCH.md` +489 行；CI `40231587503` build/ui SUCCESS。ChatGPT 核对 C01–C17 固定源码行、三层 SVC v1/任务/后续 Fake Gateway 映射、A01–A14 与 R01–R10、组件级 Windows 安装 Manifest。结论仅 `APPROVE_FAKE_ADAPTER_DESIGN`（原创、隔离、离线），**直接复制上游代码 `BLOCKED_CODE_REUSE`、直接接入现有 RVCSVC-API `BLOCKED_DIRECT_API_INTEGRATION`**。PR #19 **未合并**，研究 DONE 与 PR MERGED 是不同状态。
+
+**正式派发下一份：Plan 04-A = SENT（等待 DS 只读审计）**，完整 Level 2：[04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)。该任务仅独立研究 `sourcepro5/WeChatAgent` 上游 v0.3.9/v0.4.0/**v0.4.1** 的 DSH/扩展/权限和首次使用路径，输出单份 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md`、独立 docs-only PR；**不升级用户本地 WeChatAgent，不安装 ZIP，不执行 Tool/微信操作**。2026-10-25 上游最新发布 **v0.4.1**，已公开正式 ZIP Plugin API v2，**与 DSH 插件格式不兼容**，必须审计其可选路径而非把当前用户的 0.3.9 自动替换。归档/当前区别详见 04-A 任务书。
+
+**状态快照**：Plan 01 SENT；Plan 02 DONE；03-A DONE；**03-B WAIT_USER_AUTHORIZATION（PR #16 仍 OPEN，0 reviews，无 Merge 授权）**；**07-A DONE、07-A-F01 DONE（静态研究）；04-A SENT**；Plan 05/07-B 及后续仍 PLANNED。原 01–14 编号不变，不能因 07-A 完成就跳过 04/05 直接做 07-B。以上为当前唯一权威状态，后面旧章节如说“07-A REVIEW_REQUIRED/F01 SENT/04 PLANNED”均是**历史快照**，不得重复派发。
+
 ## 最新报告验收与唯一正式续行任务（2026-10-25，优先于旧快照）
 
 **Plan 07-A：初次研究报告已交付 PR #19（OPEN，`8276909`，仅新增 docs/SVC_PROVIDER_RESEARCH.md 348 行，CI `40230248341` SUCCESS）。** 报告在许可/安全风险、RVC 标准翻唱定位与原创 Fake 方向上有价值，但**正式工程验收为 REVIEW_REQUIRED，不能标 DONE 或直接进入 07-B**。ChatGPT 独立查到四个需修正之处：原 A01–A14 验收编号错位、关键上游结论缺 SHA/文件/行号证据、Fake 样例未映射至 PR #16 SVC v1 已有请求/结果合同、缺逐组件新手安装 Manifest。尤其 `validateSvcRequest` 顶层字段与报告 envelope 不一致，输出缺 `targetVoiceId`，但 `normalizeSvcResult` 允许并规范化唯一的 `delivery.state=PENDING_ROUTER`（不等于有发送权限）。
