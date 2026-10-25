@@ -2,6 +2,15 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 07-A-F01 终审通过；派发 Plan 04-A / WeChatAgent v0.4.1 扩展静态审计
+
+- 实时核验 [PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) OPEN、HEAD `e21dee8`、1 file +489 行、CI `40231587503` SUCCESS；研究报告 C01–C17 固定源码行、SVC v1 三层映射、A01–A14 / R01–R10、Novice First Windows Manifest 和正负例均修复完毕。**Plan 07-A 及其 F01 修订均为 DONE（RESEARCH/OFFLINE）**，但 #19 未合并、RVC/Seed-VC 真实引擎/网关与微信均未执行。
+- 核心研究结论保留：`APPROVE_FAKE_ADAPTER_DESIGN` 仅允许后续原创隔离 Fake 契约设计；`BLOCKED_CODE_REUSE` 和 `BLOCKED_DIRECT_API_INTEGRATION` 仍为真实阻断项。不能自动开展 07-B；Plan 05 Core 契约前置仍需完成。
+- **新增并正式派发 Plan 04-A Level 2**：`docs/plans/04-A-wechatagent-extension-readonly-audit-execution.md`，只读审核 WeChatAgent v0.3.9/v0.4.0/v0.4.1 的扩展/Tool/ZIP 插件/聊天授权，输出 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md`，只创建 docs-only PR，禁止安装或改生产。
+- 上游于 2026-10-25 发布 **WeChatAgent 0.4.1**，首次公开正式 ZIP 插件 API v2；官方开发文档明确此 ZIP 插件与 DSH Plugin **不兼容**。本项目默认保持先前安装版 0.3.9 的现有稳定语音 UI Automation 链路，不因上游更新自动升级。需将 S1 当前 DSH+Adapter 与 S2 未来 ZIP 入口分开比对并保留权限/隐私。
+- 零编程新手产品门禁继续强制：默认 GUI/中文/最小依赖/授权确认/明确故障恢复；不可把研发 docs-only、Mock、代码扫描/CI 当作生产体验达标。
+- 只对 PR #17 规划 branch 写入新任务书与进度/长期记忆，不改 main、PR #16/#18/#19、不合并、不重启 DSH/WeChatAgent/微信、不发真实消息、不下载任何模型/二进制。03-B 的用户 Merge 授权依旧未给。CI 需用 #17 新 HEAD 重新核实。
+
 ## 2026-10-25 · Plan 07-A 第一次报告独立复核：REVIEW_REQUIRED，派发同编号 F01
 
 - DeepSeek 提交 PR #19 `research/plan07a-rvc-upstream-audit`，HEAD `8276909`，只有 `docs/SVC_PROVIDER_RESEARCH.md` +348 行，Actions run `40230248341` SUCCESS，PR 未合并。已验证 main `bf9cf66`、#16 `954a01a` OPEN、#17 docs OPEN、#18 Draft；CI 仅证明构建/界面现有功能通过，非 RVC 实际可用。
