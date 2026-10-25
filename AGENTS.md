@@ -25,6 +25,23 @@ do not silently weaken a safety boundary.
 10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
     restarts or production configuration changes, stop and obtain explicit authorization first.
 
+## 1.0.1 Ordered execution-plan registry
+
+Before proposing the next Whale Voice task, read [docs/plans/README.md](docs/plans/README.md)
+and the linked plan file; reconcile it with current Git/PR/CI and code evidence. The registry is
+a roadmap for work, not evidence of implementation or production authorization.
+
+- Dispatch one plan per user request. Mark it `SENT` only after the plan has actually been shared.
+- When the user proposes an idea, update the relevant plan(s), dependencies and ordered registry;
+  record reorder reasons in [docs/plans/CHANGELOG.md](docs/plans/CHANGELOG.md).
+- When a user provides a completion report, verify what is reasonably verifiable before marking
+  a plan `DONE`; record evidence, and track PR `MERGED` separately from task completion and
+  `INTEGRATED` separately from `VERIFIED`.
+- Plan changes belong on an independent branch/PR by default. Do not assume authorization to
+  merge, restart services, write production configuration or send WeChat messages.
+- These updates occur only during an active, tool-equipped chat request; no autonomous background
+  edits are implied. If repo access fails, say so rather than claiming a saved update.
+
 ## 1.1 WeChatAgent dependency rule (permanent)
 
 Whale Voice's WeChat capability is built on the independent upstream project
