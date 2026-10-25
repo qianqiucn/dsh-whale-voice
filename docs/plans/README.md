@@ -57,11 +57,13 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 
 ## 二、当前推荐发送顺序
 
+**2026-10-25 最新记录：** 01 SENT、02 DONE、03 SENT（只有合并前审查与文档同步，不授权 merge）。下表其余计划仍受安全与先决条件约束。
+
 | 顺序 | 计划书 | 流程 | Git / 事实 | 前置 |
 |---:|---|---|---|---|
 | 01 | [GUI 自动化测试收尾](01-gui-coverage-closeout.md) | **SENT** | 旧本地 test 分支/Commit 506fe3b 待再次核实；尚无对应远端 PR | 真实八页 GUI 已 INTEGRATED |
-| 02 | [TTS-A 多引擎架构补充及 PR #16 复审](02-tts-a-complete-review.md) | **IN PROGRESS**（补充已提交，待最终验收） | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN · `1fd2cca` · CI run `40160267636` SUCCESS；IndexTTS/Gemini/OpenAI 与 Whale Relay/SVC 契约已补齐，下一步只做复核 | 01 可独立收尾；02 不能再重复开发已完成项 |
-| 03 | [PR #16 合并与新基线](03-merge-tts-a-pr16.md) | PLANNED | 等待复审；明确合并授权 | 02 |
+| 02 | [TTS-A / TTS-A-H 终审和 F01–F05 契约修复](02-tts-a-complete-review.md) | **DONE（2026-10-25）** | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN @ `3ad32bc`；CI `40163881122` SUCCESS；F01–F05 修复、N01–N05 新测试；Node 197/196 pass/1 skip（DS 报告） | 设计/隔离任务完成，不等于 PR MERGED 或 Provider INTEGRATED；不再重复执行 |
+| 03 | [PR #16 合并前审查、两份状态文档同步和待授权交接](03-merge-tts-a-pr16.md) | **SENT（2026-10-25）** | 基线 `3ad32bc` / CI `40163881122` SUCCESS；仅文档/差异/隔离复验；**不许可合并** | 02 DONE；正式 merge 单独获用户授权 |
 | 04 | [WeChatAgent 扩展机制审计](04-wechatagent-extensions-audit.md) | PLANNED | 无新增 PR | 03，亦可独立只读研究 |
 | 05 | [Unified Core-A：TTS/SVC/Whale Relay 职责](05-unified-core-a.md) | PLANNED | 无新增 PR | 03–04 的契约 |
 | 06 | [Provider Core-B：引擎注册与调度](06-provider-core-b.md) | PLANNED | 无新增 PR | 05 |
@@ -82,7 +84,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - 八页包含情绪系统和任务与日志；组件管理是另验的弹层，不是第九个导航页。
 - 情绪/任务互动的额外 2 项 Playwright 检查在本地测试分支曾显示 26/26 通过，但尚需纳入远端 Git CI（Plan 01）。
 - `main@bf9cf66` 已合并 PR #15；运行已加载只读 Capability Schema v3；仍没有生产配置写入路由。
-- PR #16 的 TTS-A 与 TTS-A-H 纯契约设计已提交至 `1fd2cca`，包含 IndexTTS/Gemini/OpenAI 候选、Whale Relay 三层职责、独立 SVC 契约；最新 PR CI `40160267636` SUCCESS。**计划 02 保留 `IN PROGRESS`，因为完成审查/DONE 标记尚未执行**，不是因为这些开发工作仍未做；不要再次发出相同编码指令。功能等级仍为 `DESIGN / OFFLINE`，非生产 Provider 集成。
+- PR #16 的 TTS-A / TTS-A-H 已经在 `3ad32bc` 关闭 F01–F05 纯契约安全缺口并补 N01–N05 测试，CI `40163881122` SUCCESS；**Plan 02 = DONE**，PR 仍 OPEN，功能仍为 `DESIGN / OFFLINE`。最新 DeepSeek 报告 Node 197（196 pass/1 skip）、UI 24/24，ChatGPT 未在本地重跑。**Plan 03 = SENT**，只允许合并前审查和当前/历史状态文档同步；合并仍待用户明确授权，禁止重复 F01–F05 开发。
 - Voice Sender 的 UI Automation 路径已有外部组件；Native Hook 的代码/社区复现仍为研究候选，不能声称已正式集成。
 - WeChatAgent 为必需依赖，不自动安装/升级、不替换为自行实现的微信机器人。
 
