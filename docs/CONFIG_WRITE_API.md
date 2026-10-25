@@ -339,9 +339,9 @@ WeChatAgent/Qwen or send messages.
 ## 11. Phase 4B-2A coordination (OFFLINE)
 
 `core/config-coordinator.mjs` adds an isolated coordination protocol for multiple logical sources.
-It does not write production files, does not register a production Host route and does not use a
-production runtime. See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md) for the authority matrix,
-plan/journal/recovery contract and Phase 4B-2B prerequisites.
+It is merged via PR #12, does not write production files, does not register a production Host route
+and does not use a production runtime. See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md) for the
+authority matrix, plan/journal/recovery contract and Phase 4B-2B prerequisites.
 
 Key limits:
 

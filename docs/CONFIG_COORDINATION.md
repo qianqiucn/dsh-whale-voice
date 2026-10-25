@@ -1,7 +1,8 @@
 # Unified Configuration Coordination (Phase 4B-2A)
 
-**Status:** `OFFLINE` — isolated coordination protocol and fixture tests only. No production
-configuration write, no production Host route, no service start/stop/reload and no WeChat send.
+**Status:** `OFFLINE` — merged via PR #12; isolated coordination protocol and fixture tests only. No
+production configuration write, no production Host route, no service start/stop/reload and no WeChat
+send.
 
 **Scope:** define how a future Core can plan, save and confirm changes across independent component
 authorities without merging their safety layers or claiming runtime effect from file writes.
