@@ -406,6 +406,9 @@ test('T20b action 只接受预定义类型与字段', () => {
   expectError(transitionAudioTask(created, { type: 'BEGIN_PROCESS', targetChatId: 'fixture' }), AUDIO_ERRORS.UNKNOWN_FIELD, 'T20b field')
   expectError(transitionAudioTask(created, null), AUDIO_ERRORS.INVALID_REQUEST, 'T20b null')
   expectError(transitionAudioTask(created, { type: 'FAIL', code: 'AUDIO_STACK_TRACE' }), AUDIO_ERRORS.INVALID_REQUEST, 'T20b code')
+  for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    expectError(transitionAudioTask(created, { type }), AUDIO_ERRORS.UNKNOWN_FIELD, 'T20b prototype key ' + type)
+  }
 })
 
 // ---------------------------------------------------------------------------------------------

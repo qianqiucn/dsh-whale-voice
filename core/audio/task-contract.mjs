@@ -667,7 +667,11 @@ function readAction(input) {
   if (!typeField.present || typeField.accessor || typeof typeField.value !== 'string') {
     return failOf([issue(AUDIO_ERRORS.TYPE_MISMATCH, 'action.type', 'action type required')])
   }
-  const extraFields = ACTION_FIELDS[typeField.value]
+  // Own-property lookup only: action names such as "constructor" or "__proto__" must not
+  // resolve through Object.prototype and confuse the action table.
+  const extraFields = Object.prototype.hasOwnProperty.call(ACTION_FIELDS, typeField.value)
+    ? ACTION_FIELDS[typeField.value]
+    : null
   if (!extraFields) return failOf([issue(AUDIO_ERRORS.UNKNOWN_FIELD, 'action.type', 'unknown action type')])
   const errors = []
   const allowed = new Set(['type', ...extraFields])
