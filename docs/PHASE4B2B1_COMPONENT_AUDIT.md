@@ -2,6 +2,7 @@
 
 **Status:** `OFFLINE` — read-only audit and isolated prototype only. No production configuration write,
 no production Host write route, no service start/stop/reload, no WeChat send.
+**Deliverable PR:** #14 (`feature/phase4b2b1-component-audit`), open and not merged.
 **Date:** 2026-10-25
 **Repository baseline:** `main` at the merge of PR #13 (`e0ce035`).
 **Scope:** Bridge, Voice Sender Service/Worker, WeChatAgent, Qwen observation and the existing

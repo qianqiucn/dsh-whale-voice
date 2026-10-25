@@ -6,11 +6,11 @@
 **Updated:** 2026-10-25
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#13 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`** (isolated source adapters, journal and Fake Runtime; no production write); **Phase 4B-2B-1 component capability audit is `AUDIT COMPLETE` / `OFFLINE`** (read-only; no production write, no loaded-revision interface found); **Phase R1 `COMPLETE`**; 153 Node (152 pass, 1 skip) + 12 UI checks green; **Phase 4B-2B-2 NOT STARTED**
 **Latest associated commit:** `main` `e0ce03502d79e57ec1caacd45c9fdc9ad244f265` (merge of PR #13); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#13 — docs: Phase 4B-2A handoff baseline](https://github.com/qianqiucn/dsh-whale-voice/pull/13) — **merged with a Merge Commit**
+**Latest PR:** [#14 — docs(core): Phase 4B-2B-1 component capability audit](https://github.com/qianqiucn/dsh-whale-voice/pull/14) — **OPEN**, not merged. Latest merged PR: #13 (Phase 4B-2A handoff).
 **Acceptance caveat:** 152/153 Node (1 platform skip) and 12/12 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A and 4B-2B-1 remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
-**Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; independent PR pending.
+**Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **PR #14 open**, not merged.
 **Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13, all merged with merge commits; #10/#11 completed R1 audit/status; #12 added the Phase 4B-2A coordination protocol; #13 recorded the Phase 4B-2A handoff baseline.
 
 ---

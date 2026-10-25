@@ -34,7 +34,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
   `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/phase4b2b1-component-audit` (read-only capability audit),
-  branched from `main` at `e0ce035`.
+  branched from `main` at `e0ce035`; **PR #14 open**, not merged.
 - **Current local HEAD:** verify live with `git rev-parse HEAD`; the audit branch changes documents plus
   a fixture-only capability test.
 - **Worktree:** clean at the Phase 4B-2B-1 baseline
@@ -247,7 +247,7 @@ CI:
 - `main` at `a7a3056` after PR #12: build + ui SUCCESS (run `40148540641`);
 - PR #13 head `14cee64`: build + ui SUCCESS (run `40148775008`);
 - `main` at `e0ce035` after PR #13: build + ui SUCCESS (run `40149074319`);
-- Phase 4B-2B-1 PR: CI is reported from its actual PR run.
+- Phase 4B-2B-1 PR #14: CI is reported from its actual PR run; do not merge.
 
 ---
 
