@@ -4,6 +4,15 @@
 > **维护者：** ChatGPT（仅负责计划、排序、记忆、GitHub 计划跟踪和完成审查）。DeepSeek 不承担这份文档的维护。  
 > **本次核验：2026-10-25（UTC 以 GitHub 实时记录为准）。** 本文件里的 SHA、CI、状态是有时点的快照，启动新会话必须重新查询。
 
+## 新会话 Plan 02 静态审查结果（2026-10-25；尚未终审）
+
+本轮已读取真实 GitHub 计划分支、TTS-A PR #16 核心契约/Registry/测试；没有代替 DeepSeek 修改工程源码。PR #16 head 仍为 `1fd2cca`，该版本 CI `40160267636` SUCCESS。发现 5 项**静态代码审查待复现**问题：Manifest 未知顶层键、TTS 请求隐藏投递字段、SVC 请求额外目标字段被原样回传、Cloud 凭据 UNKNOWN 可能被判 AVAILABLE、TTS 结果 `target` 被静默接受。具体行级核验方向、唯一修复建议和 N01–N05 负向测试已写入 [Plan 02 §2.1](02-tts-a-complete-review.md)，变更登记见 [CHANGELOG](CHANGELOG.md)。这不是新运行过的测试失败结论，不是 Provider 已投入生产。
+
+- **保持** Plan 01 `SENT`，Plan 02 `IN PROGRESS / REVIEW_REQUIRED`，Plan 03 `PLANNED`；不标 Plan 02 DONE，不重复注册 10 TTS + 2 SVC 候选。
+- **下一技术闭环**：由 DeepSeek 在现有 #16 分支验证 F01–F05；必要时只修纯契约和测试，给出当前 HEAD 的 Node/UI/CI/安全证据及 T01–T10 报告。ChatGPT 核验后再决定 DONE；合并由用户另行授权。
+- H0 已完成，#17 是唯一计划体系；#18 保持 Draft 未合并/关闭。本轮记录仅在 #17，未生产写入、未发送微信、未做真实 API 调用。
+- 最近核实的 GitHub：main `bf9cf66`；#17 在计划/日志更改后 HEAD `519370f`，对应 CI run `40163140024` 当时 `in_progress`，**新提交后的 CI 状态需重新读取**，不能当成功。
+
 ## 最新接续结果（2026-10-25；优先于下方历史快照）
 
 H0 的 14 对计划/重叠入口/TASK_STATUS 比对和选择性补充已完成，见 [H0_PLAN_RECONCILIATION.md](H0_PLAN_RECONCILIATION.md)。#17 为唯一计划体系；#18 保留历史来源、仍 OPEN/DRAFT，未关闭或合并。Plan 01 SENT、Plan 02 IN PROGRESS / REVIEW_REQUIRED，未派发新任务。
