@@ -2,6 +2,16 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 新会话继续 Plan 02：PR #16 纯契约静态复核
+
+- 触发：用户要求读取旧“DSH插件”对话并继续；从 #17 交接卡恢复角色分工、H0 完成事实、Plan 01/02 状态，GitHub main 和 PR #16–#18 重新核实。
+- 当前基线：main `bf9cf66`；#16 `1fd2cca` CI `40160267636` SUCCESS；#17 整理后 `4e183fe` CI `40162268291` SUCCESS；#18 `42cec57` CI `40159114676` SUCCESS。三个 PR 都未合并，review 数为零；#18 为 Draft。
+- 审查 #16 的现有 Provider/SVC Registry、Contract、迁移和相关测试，确认十个 TTS + 两个 SVC 候选是设计态且不可选择；不重复让 DeepSeek 创建候选。
+- 对照 Plan 02 的 T05/T08、安全边界及架构文档，新增 **F01–F05** 静态审查待核验项：Manifest 未知顶层键、TTS 请求额外投递字段、SVC 请求未知字段回传、必需云凭据 UNKNOWN 时的可用性误判、合成结果 `target` 字段被静默忽略。详见 [Plan 02 §2.1](02-tts-a-complete-review.md) 和 N01–N05 负向回归要求。
+- **未本地运行 Node/UI，发现属于静态代码证据，尚未由 DeepSeek 实测复现/修复。** 不把旧 CI SUCCESS 等同于新增负向检查通过。
+- 顺序与状态：01–14 不变；Plan 01 SENT；Plan 02 IN PROGRESS / REVIEW_REQUIRED；Plan 03 仍需 Plan 02 终审和用户合并授权。TTS-A 仍 DESIGN/OFFLINE。
+- 仅修改 PR #17 中的计划与变更日志；无生产运行文件、配置、微信、音频、模型、API、服务、合并或分支删除。
+
 ## 2026-10-25 · H0 新会话接续与计划去重整理
 
 - 用户要求读取“DSH插件”并继续；完成交接指定的 H0。
