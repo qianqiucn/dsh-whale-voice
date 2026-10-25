@@ -189,7 +189,7 @@ T01 TTS 基础 draft；T02 SVC 基础 draft；T03 feature/taskType 交叉拒绝�
 T21 CREATED 取消申请；T22 取消请求≠取消确认；T23 CONFIRM_CANCEL 测试；T24 非法取消确认；T25 PROCESSING→UNKNOWN 后不自动重试；T26 SAVED 是终态且≠ APPLIED/SENT_LOCAL；T27 外部输入伪造 realOperationAllowed:true 拒绝；T28 projection 仅白名单并给中文 Mock 状态，不暴露源 ref。
 
 **依赖/首次向导 F01–F14**：
-F01 Voice required/optional/delivery 分类；F02 Singing RVC 必需集合；F03 Seed-VC 后续 OPTIONAL NOT_READY；F04 Singing 的 WhatsApp/WeChat 无关第二身份不接收新组件键；F05 缺 WeChatAgent 仍显示本地生成相关状态；F06 缺 Core = 不 ready；F07 unknown 模型 = UNKNOWN；F08 无 GPU/资源未证 = UNKNOWN；F09 全 Fake VERIFIED 仍 realReady:false；F10 Manifest list 并发读取不共享可变数组；F11 Voice 首次进入显示 Dialog；F12 Voice 已确认/Singing 未确认仍分别弹窗；F13 manifestRevision 更新重新提示；F14 非法 acknowledge/未知 feature 返回 error。
+F01 Voice required/optional/delivery 分类；F02 Singing RVC 必需集合；F03 Seed-VC 后续 OPTIONAL NOT_READY；F04 Singing 不接受未登记的组件键（包括虚构的第二账号/另一聊天平台组件）；F05 缺 WeChatAgent 仍显示本地生成相关状态；F06 缺 Core = 不 ready；F07 unknown 模型 = UNKNOWN；F08 无 GPU/资源未证 = UNKNOWN；F09 全 Fake VERIFIED 仍 realReady:false；F10 Manifest list 并发读取不共享可变数组；F11 Voice 首次进入显示 Dialog；F12 Voice 已确认/Singing 未确认仍分别弹窗；F13 manifestRevision 更新重新提示；F14 非法 acknowledge/未知 feature 返回 error。
 
 **Relay候选 R01–R10**：
 R01 SAVED + request + 已存在 fake artifact → 候选但 submitAllowed=false；R02 SAVED 无 deliveryRequested 拒绝；R03 CREATED 拒绝；R04 UNKNOWN 拒绝；R05 CANCELLED 拒绝；R06 不合法 deliveryId 拒绝；R07 无任何可提取 target/Token/URL/后台字段；R08 没有自动 Queue/HTTP 或自动重试；R09 deliverId 与 taskId 均外部注入，模块不生成唯一 ID；R10 多次调用是确定的纯数据结果，无法触发真实提交。
