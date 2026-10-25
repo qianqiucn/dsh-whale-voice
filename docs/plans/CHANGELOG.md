@@ -2,6 +2,17 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 新 ChatGPT 对话交接与下一步行动书
+
+- 触发：用户准备换新 ChatGPT 对话，要求把我自己的交接文档写入 GitHub 并给下一位 ChatGPT 一份明确的执行计划。
+- 新增 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)：新会话首读入口、用户长期要求、两 AI 分工、实际 PR/CI 状态、历史与真实集成的区别、当前计划以及安全边界。
+- 新增 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md)：**H0 ChatGPT 下一会话首项计划管理工作**，先核验并梳理 PR #17 与 PR #18 两套计划文档的重叠，保留唯一权威索引，再复核 PR #16 和 Plan 01/02 的证据。该任务不是 DeepSeek 的编码任务，也不授权合并。
+- 本轮核实 GitHub：main `bf9cf66`；PR #16 OPEN @ `1fd2cca`，CI `40160267636` SUCCESS；PR #17 OPEN（交接提交前 @ `f42f0a6`），CI `40160989897` SUCCESS；PR #18 OPEN @ `42cec57`，CI `40159114676` SUCCESS。**交接提交后 PR #17 的 HEAD 已更新，必须重新核验本次 CI。**
+- PR #17 与 PR #18 都修改 `AGENTS.md`、`docs/README.md`、`docs/plans/README.md`；两套 14 份计划书内容和命名重叠，PR #18 有独立的 `TASK_STATUS.md`。推荐以 #17 的 ChatGPT-only 执行标准/记忆及任务规格为主，逐条审查吸收 #18 的增量；未经用户授权不合并、关闭或删除任何 PR。
+- 更新 `EXECUTION_STANDARD.md`、`AGENTS.md`、`CHATGPT_LONG_TERM_MEMORY.md`、`docs/plans/README.md` 和 `docs/README.md` 的 ChatGPT 专用首读入口。
+- 计划排序/状态：01–14 不变；Plan 01 `SENT`（未验收 DONE），Plan 02 `IN PROGRESS / REVIEW_REQUIRED`，Plan 03 等待终审与单独合并授权。
+- 生产影响：无。仅文档/计划分支修改；未合并 PR，未修改生产配置、模型、微信、音频设备或服务；未新增代码运行路径。
+
 ## 2026-10-25 · GitHub 作为 ChatGPT 长期规划记忆库；任务书升级为可直接执行规格
 
 - 触发：用户要求 GitHub 持久保存重要协作记忆；**“计划书尽可能详细，留给 DS 思考的空间越少越好，它只需要执行。”**
