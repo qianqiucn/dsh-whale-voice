@@ -1,8 +1,18 @@
 # Plan 05-B · Whale Audio Core 双入口统一只读视图（纯组合 / OFFLINE）
-**版本：v1.0 · 2026-10-25 · Level 2 / SENT。**
+**版本：v1.0 · 2026-10-25 · Level 2 / REVIEW_REQUIRED（原派发版本v1.0）。**
 **执行：DeepSeek；计划与验收：ChatGPT。原 Plan 05 的子阶段，不新增主 Plan 编号。**
 **父阶段：05-A/F01 DONE / OFFLINE，PR #21 OPEN 未合并。**
 **唯一方案：三个新文件、复用 #21 纯模块、明确父分支的后续 PR；不修改已验收源文件。**
+
+## 最新正式验收（2026-10-25）· 05-B REVIEW_REQUIRED，05-B-F01 SENT
+
+[PR #22](https://github.com/qianqiucn/dsh-whale-voice/pull/22) OPEN/非Draft/0 reviews，HEAD `08a8f64ee9b6a6ca859a9ed734d2122950c46a73`，base为父#21分支 `feature/plan05a-whale-audio-core-contracts` @`da3d0f7f34df99f11d21cf3a656adcfaa206ce25`；父PR未变、未合并。相对父精确三added +1371/-0；[CI40239317990](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40239317990) build/ui全成功。
+ChatGPT独立复跑V28+父81共109/109 PASS（Node v24.22.0），并复核三文件源码；DS全量285/284/1、UI24/24、本机build为报告值，ChatGPT核查相应CI成功，未在本地重跑全仓库/UI。
+
+**额外探针发现一项P2契约缺口**：observationsByFeature中任一必填feature值显式undefined时，被底层可选参数默认行为当成{}接受。2个activeFeature×2个受影响feature四组，以及两值同时undefined均返回错误成功。原05-B要求每个值是普通对象；C04 FAIL、C07/C12 PARTIAL。动作仍全false，无真实生成/发送。
+**唯一派发：[Plan 05-B-F01 · 必填观察对象校验](05-B-F01-required-observation-object-validation.md) = SENT。** 原PR#22/原三文件最小修复，在组合层调用projectFeatureAvailability前检查普通对象，固定MANIFEST_INVALID/功能路径/安全reason；新增U01–U08。父05-A默认undefined→UNKNOWN行为和原81项不得改动。完整C01–C16复核见F01第14节。
+
+05-A/F01继续DONE/OFFLINE，05-B保持REVIEW_REQUIRED/PR_OPEN/OFFLINE；03-B WAIT_USER_AUTHORIZATION，#16 OPEN @954a01a，main仍bf9cf66807e12d0b25872a0fa3869962dde04818。不进入06/07-B，不合并、关闭PR、改base、安装或操作生产。建议继续当前DS对话做小修。以下“05-B SENT待初报”属历史，不重复派发原实现。
 
 ## 1. 目标、增量与用户可见结果
 将 05-A 的任务投影、两个功能的依赖状态与独立首访提示，组合为一个严格验证、深冻结、脱敏的应用视图。
