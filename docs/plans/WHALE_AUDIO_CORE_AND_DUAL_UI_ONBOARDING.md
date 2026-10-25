@@ -4,6 +4,15 @@
 **权威关联**：[RVC/SVC 翻唱集成蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)；原 Plan 05、08、09、12、13、14；[总计划表](README.md)。
 **本文件是规划设计而非工程合并/安装授权。Plan 01–14 编号不变。**
 
+## 最新 Whale Singing 双模式首访界面决定（2026-10-25 用户授权）
+
+**首发默认卡片：RVC · 标准翻唱（主路线）。** 只列当前所选 RVC Provider + 分离/混音（按需）+合法模型资产的依赖。**Seed-VC · 免训练零样本试唱**是后续可选卡片，当前 `PLANNED / NOT_READY / NOT_INSTALLED_BY_DEFAULT`，不能把它设为首发安装先决条件。
+
+- 说明文案须将“免训练快速尝试”与“低资源/无显卡”严格区分。Seed-VC 44.1k 歌声模型约 200M 参数，25M Tiny 面向普通语音任务；显存/CPU/整首耗时未知必须 UNKNOWN，未验证时禁止标“轻量 GPU”“CPU 支持”或“高性能”。
+- 后续模式如获单独实施批准：Seed-VC 单独弹出经审计的模型/内容编码器/Vocoder/参考音频授权和资源说明；共享已检测的合法分离/混音/Artifact/VoiceProfile，不因用户曾选 RVC 就跳过 Seed-VC 首次模式说明，不触发无权下载。
+- 已有无 GPU / CPU / 云端替代探测仍照实显示，不能默认落到 Seed-VC；许可或性能证据不足时只能只读浏览与看“后续支持”，不自动安装/启用。
+- 首次弹窗与已存在的 SetupWizard/ComponentsDialog 仍共用基础组件，生成与微信实际发送另设权限；两个产品 Voice/Singing 首次弹窗独立。
+
 ## 1. 名称与边界（唯一推荐）
 
 - **共享后端正式产品名称：Whale Audio Core（鲸音核心）**。它统一承载 TTS、SVC/歌声转换、音色 Profile、模型/Provider 适配、音频 Artifact、任务/资源调度、许可与状态。UI 名称不是第二个后端。
