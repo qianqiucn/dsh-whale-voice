@@ -2,6 +2,13 @@
 
 **状态：PLANNED；架构方案已被用户提出并认可，正式实现尚未开始。**
 
+## 2026-10-25 · 共用鲸音 Core 与双入口的投递边界（原 Plan 13，仍 PLANNED）
+
+产品共享生成后端已确定命名 **Whale Audio Core（鲸音核心）**，Whale Voice 语音气泡与 Whale Singing 唱歌为两页；鲸递 **Whale Relay Core** 原名不变。详见 [双入口首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+- 两页可各自选择生成/预览/保存，只有用户另外批准真实投递后才使用 Relay；因此**不能把 Sender/WeChatAgent 安装列为只打开页面或只生成音频的通用强制依赖**。
+- Relay 的能力探测可供首次弹窗展示交付“可用/不可用/未知”，但前端安装勾选不等于授予微信发送许可；仍由 WeChatAgent 验证目标，Worker NEVER_WRITE、UNKNOWN 不自动重发。
+- 声泡与完整歌曲分别按 Backend 支持的格式/时长/文件能力路由，不因两页共享 Core 就默认一条发送管线都支持；真实文件发送与音频设备操作分别验收与授权。
+
 ## 2026-10-25 · 翻唱输出纳入鲸递后端交付（原 Plan 13）
 
 用户希望将 astrbot_plugin_rvc_svc 的能力接入鲸递。正确架构为 Whale Voice Core 生成、Whale Relay Core 一次安全投递；详见 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。Relay 不承载歌曲抓取、GPU 推理、模型、音源授权源头。
