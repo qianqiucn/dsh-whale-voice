@@ -8,6 +8,12 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新优先决策：RVC 首发、Seed-VC 免训练零样本选配（2026-10-25）
+
+**用户明确授权调整 PR #17 的规划文档。** Whale Singing 主路线为 RVC：Plan 07-A 上游许可/API/资源只读审计→12-A RVC 离线 MVP→12-B/C 自动点歌与受控交付（均受各自前置与权限门禁约束）。**Seed-VC 非首发，不删除历史候选，仅属 Plan 12-D 后续“零样本/免训练试唱”选配**：07-A 只做固定上游来源/许可证/归档风险与专用唱歌模型情况的最小静态档案；RVC MVP 稳定后经用户另行授权才可能进行 Windows/GPU/CPU 真实实测。官方歌声转换模型约 200M 参数、Tiny 25M 主要用于语音；**不能宣传低显存、CPU 轻量或自动实时整首翻唱**。Seed-VC 官方上游 2025-11-21 归档，固定版本与安全/维护风险必须核查。
+
+Whale Audio Core（鲸音核心）仍共享 TTS/SVC；Whale Voice 与 Whale Singing 分开两个前端，首次依赖弹窗各自独立。Plan 14 默认 Singing 仅展示 RVC 标准翻唱的必需依赖，Seed-VC 只作为后续可选说明，不预装、不自动下载、不宣称 READY。Plan 06 的 provider registry 保持扩展接口但未实现候选不可选。权威 [总表](README.md)、[Plan 07](07-svc-a-seed-vc-rvc-audit.md)、[Plan 12](12-svc-b-singing-wechatagent.md)、[Plan 14](14-onboarding-release-quality.md)、[双入口规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。原 Plan 01–14 不重编号，03-B 仍 WAIT_USER_AUTHORIZATION，07-A 当前 PLANNED/NOT_SENT。本轮只有计划仓库变更，没有用户授权合并工程 PR、安装、运行模型或真实发微信。
+
 ## 最新优先交接决策：Whale Audio Core（鲸音核心）与双首次向导（2026-10-25）
 
 **用户最新要求**：语音产品 **Whale Voice · 语音气泡** 与唱歌产品 **Whale Singing · 唱歌** 共用一个更名的后端 **Whale Audio Core（鲸音核心）**，但前端是两个独立页面；分别第一次进入时弹各自的依赖清单与安装选项，之后可跳过/重新检测、安装状态可信、共用组件不重复安装。Whale Relay Core（鲸递）依旧只负责安全投递，WeChatAgent 依旧拥有微信身份；仓库/插件 ID、现有已验八页、legacy API/配置和 whale-v1 不能贸然改名。
