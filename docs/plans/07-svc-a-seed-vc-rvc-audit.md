@@ -2,6 +2,10 @@
 
 **状态：PLANNED；独立研究，不阻塞通用 Core 设计。**
 
+## 2026-10-25 · 为 Whale Singing 首次依赖向导补充研究问题
+
+用户已决定共用后端名为 **Whale Audio Core（鲸音核心）**，唱歌前端独立为 **Whale Singing**，其首次打开需展示可安装依赖。Plan 07-A 的只读报告还需新增基于上游已钉死 SHA 的依赖检测/安装清单：外部 RVC/SVC Gateway 可核验版本和健康的方法、模型与分离组件的许可及磁盘/CPU/GPU 条件、是否可跳过分离、FFmpeg 或其他混音依赖的实际需要、下载来源/校验方式、卸载/升级风险，以及哪些可标 `REQUIRED`、`CONDITIONAL`、`OPTIONAL` 或 `DELIVERY_ONLY`。没有可核验安装方式或 LICENSE，明示 `NOT_INSTALLABLE`，不得把“查看页面”当作安装许可。参见 [双功能页面规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。当前 07-A 仍 PLANNED/NOT_SENT。
+
 ## 2026-10-25 用户选择的 RVC/SVC 集成路线（Plan 07-A 可优先独立研究，仍 PLANNED）
 
 **权威跨阶段规格：[RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。** 用户决定参考 astrbot_plugin_rvc_svc 并将翻唱结果接入鲸递后端。此决定仅确立产品方向，不代表现在执行或复制、安装、下载、运行任何上游软件。
