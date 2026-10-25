@@ -181,9 +181,9 @@ interfaces behind these files:
   in the Bridge. A valid external change is hot-read; invalid JSON fails closed. Core treats it as
   read-only until the Bridge owns a write endpoint.
 - **Sender `service.config.json`** — read once at service boot. Only `PUT /v1/automation/config` is a
-  supported update (automation/hotkey, rejected while a task is active); it rewrites the whole file
-  with plain `writeFileSync` and returns no revision. TTS/port/limit fields have no update API and
-  are not hot-reloaded.
+  supported owner update (automation/hotkey, rejected while a task is active); it rewrites the whole
+  file with plain `writeFileSync` and returns no revision. Whale Voice has no production write
+  authorization for it. TTS/port/limit fields have no update API and are not hot-reloaded.
 - **Sender Worker `config.json`** — read at each worker process start; `voice_enabled` is sampled
   once per job and is an independent final-safety permit. Never a Core write target.
 - **WeChatAgent `wechatagent.json`** — console `POST /api/config` is revision-guarded (SHA-256 of the

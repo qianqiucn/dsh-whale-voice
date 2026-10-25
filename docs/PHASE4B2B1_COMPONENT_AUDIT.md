@@ -39,21 +39,34 @@ are reproduced in this document.
 
 ## 2. Capability matrix
 
-| Source | Authority | Read timing (verified) | Supported write interface | Write atomicity | Revision / CAS | Loaded-revision evidence | 4B-2B-1 verdict |
-|---|---|---|---|---|---|---|---|
-| Bridge voice settings `state/voice-settings.json` | Bridge | **Every call** (`readVoiceConfig()` on each `config` access) | **None** — no writer exists in the component | Writer-dependent; no writer API | **None** | **None** | **READ-ONLY / WRITE-UNSUPPORTED** |
-| Bridge runtime status | Bridge adapter | `GET /status` (loopback, no auth) | None | N/A | None | Runtime readiness only | **OBSERVATION** |
-| Sender Service automation (`service.config.json` `automation`, hotkey) | Sender Service | Read once at service boot | **`PUT /v1/automation/config`** (bearer token, loopback, rejects while a task is active) | Full-file plain `writeFileSync` (**not** temp+rename) | **None** | `GET /v1/automation/config` returns the in-memory values (field equality only) | **PARTIAL WRITE / APPLY-UNCONFIRMED** |
-| Sender Service TTS / port / limits | Sender Service | Read once at service boot | **None** (file edit is not a supported API; no reload) | N/A | None | `/health` returns loaded `tts.provider/baseUrl/voice` (field equality only) | **WRITE-UNSUPPORTED** |
-| Sender Worker `config.json` (`voice_enabled`, device, silence, auto flags) | Sender Worker | **Every job process start** (script top level) | None | N/A | None | None | **READ-ONLY; NEVER WRITE** |
-| Sender target map `service/targets.json` | Sender Service | Read once at boot | None | N/A | None | N/A | **NEVER READ OR WRITE** |
-| WeChatAgent config `config/wechatagent.json` | WeChatAgent | Mixed: hot per event in the Hook adapter, per request in the reader, boot-time in derived `bridge-config.json` consumers | **Console `POST /api/config`** (loopback only, CSRF header, `body.revision` required); CLI `project-config.mjs`; account-switch writer | Console: temp+rename+backup. CLI: temp+rename. Account switch: temp+rename plus rollback | Console: SHA-256 of raw file, **only for console-vs-console** | **None**; `pendingApply` is a UI hint, not loaded evidence | **HUMAN-CONSOLE WRITE / INTEGRATION-UNSUPPORTED** |
-| WeChatAgent health | Native Hook | On demand | None | N/A | None | Version/PID/account/startup state only | **OBSERVATION** |
-| Core roots / Qwen URL `%DSH_HOME%/whale-voice/core.json` | Whale Voice Core | Host boot | None | N/A | None | None | **READ-ONLY** |
-| Qwen `/health` | Qwen | On demand | None | N/A | None | Model/voice observation only | **OBSERVATION** |
+Each row separates **owner API presence**, **Core production write authorization**, **effective write
+enablement**, **save capability**, **saved revision**, **loaded revision**, **read timing** and
+**hot reload**. A missing loaded revision limits `apply`; it does not erase a save capability.
 
-Legend: `WRITE-UNSUPPORTED` means no component-owned write interface exists; editing the JSON file
-is *not* treated as a supported interface.
+| Surface | Owner API | Core write auth | Write enabled now | Save capability | Saved revision | Loaded revision | Read timing / hot reload | 4B-2B-1 verdict |
+|---|---|---|---|---|---|---|---|---|
+| Bridge voice settings `state/voice-settings.json` | **None** | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | none | per call / full | **READ-ONLY** |
+| Bridge runtime status | `GET /status` (loopback, no auth) | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | runtime readiness only | on demand / n/a | **OBSERVATION** |
+| Sender Service **automation** (`service.config.json` `automation`, hotkey) | **`PUT /v1/automation/config`** (bearer token, loopback, rejects while a task is active) | **`NOT_AUTHORIZED`** | no | **`SUPPORTED`** | none (no `expectedRevision`) | none; `GET /v1/automation/config` returns loaded values only | service boot / none | **OWNER-WRITABLE, NOT AUTHORIZED, APPLY UNCONFIRMED** |
+| Sender Service **TTS / port / limits** | **None** (no update API; boot-only read) | `NOT_AUTHORIZED` | no | **`UNSUPPORTED`** | none | `/health` returns loaded values, not a revision | service boot / none | **WRITE-UNSUPPORTED** |
+| Sender Worker `config.json` (`voice_enabled`, device, silence, auto flags) | None | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | none | per job / partial (next job only) | **READ-ONLY; NEVER WRITE** |
+| Sender target map `service/targets.json` | None | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | n/a | service boot | **NEVER READ OR WRITE** |
+| WeChatAgent config `config/wechatagent.json` | **Console `POST /api/config`** (loopback, CSRF, `body.revision`) plus CLI/account-switch writers | `NOT_AUTHORIZED` | no | **`SUPPORTED` via HUMAN_CONSOLE** | console-only SHA-256 of the raw file | **none**; `pendingApply` is a hint | mixed / partial | **HUMAN-CONSOLE ONLY** |
+| WeChatAgent health | None | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | version/PID/account/startup only | on demand | **OBSERVATION** |
+| Core roots / Qwen URL `%DSH_HOME%/whale-voice/core.json` | None | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | none | Host boot / none | **READ-ONLY** |
+| Qwen `/health` | None | `NOT_AUTHORIZED` | no | `UNSUPPORTED` | none | model/voice observation only | on demand | **OBSERVATION** |
+
+Legend:
+
+- **Save capability** = the owning component has an interface that can persist this surface. It is
+  independent of Whale Voice authorization and of loaded-revision evidence.
+- **Core write auth** = whether Whale Voice currently holds explicit production write authorization.
+  No surface does; the Phase 4B-2B-2a contract is read-only.
+- **Write enabled now** = derived from owner API + save capability + authorization + component scope +
+  current write mode. It is not a synonym for "an API string exists".
+- **Write replacement** is described per finding below. A temp+rename name replacement is not a claim
+  of crash atomicity or power-loss durability.
+- Editing a JSON file is **not** a supported interface, even when the component hot-reads that file.
 
 ---
 
@@ -77,11 +90,12 @@ Consequences:
   `configError: settings_unreadable` / `settings_disabled`, and `resolveTarget()` returns
   `voice_disabled` before any Sender HTTP request.
 
-### 3.2 Writers and atomicity
+### 3.2 Writers and replacement
 
 No writer for `voice-settings.json` exists in the audited Bridge or WeChatAgent workspace. The only
-atomic writer in the Bridge (`writeJsonAtomic`, temp + rename) is used for the dedupe file and the
-one-shot test-session file, not for voice settings. The voice-settings file is therefore an
+temp+rename writer in the Bridge (`writeJsonAtomic`, temp + rename) is used for the dedupe file and
+the one-shot test-session file, not for voice settings. That helper replaces the target name; it is
+not evidence of crash atomicity or power-loss durability. The voice-settings file is therefore an
 **unowned contract**: it can be edited by a human or by a future adapter, but the component provides
 no write API, no lock and no revision.
 
@@ -112,7 +126,7 @@ Bridge-owned endpoint (see §8.3), not a Core file write.
 `targets.json` once as well. There is no file watcher and no reload endpoint. A manual file edit is
 invisible to the running service.
 
-The one supported update path is `PUT /v1/automation/config`:
+The one owner-side update path is `PUT /v1/automation/config`:
 
 - allowed fields: `mode`, `autoFindWindow`, `autoOpenChat`, `autoRestoreMinimized`,
   `pauseWhenFullscreen`, `focusFailure`, `hotkeyAccelerator`;
@@ -121,6 +135,9 @@ The one supported update path is `PUT /v1/automation/config`:
 - updates the in-memory config, optionally re-registers the hotkey, then **rewrites the whole
   `service.config.json` with plain `writeFileSync`** (no temp+rename);
 - returns the loaded automation values, but **no revision**.
+
+The API exists at the owner. **Whale Voice holds no production write authorization for it**, and no
+Core Host route is registered; those are separate facts from API availability.
 
 The plain full-file rewrite is a concrete lost-update hazard: the running service persists its
 boot-time copy plus the automation change. Any external edit to TTS/ports/limits made while the
@@ -147,9 +164,12 @@ it with its own `voice_allowed_chats` (both must allow). This defence-in-depth m
 - `targets.json` and `allowedChats` are the Sender's final allow-list authority and must not be
   exposed or rewritten by Core.
 
-**Verdict:** automation is the only supported write today, and even that cannot be reported
-`APPLIED` without a loaded revision. TTS/port changes require a service API extension or an
-authorized restart, not a file edit.
+**Verdict:** automation is the **only owner-side write API**. It is save-capable
+(`save.state: SUPPORTED`), but Whale Voice is **not authorized** to write it and no Host write route
+exists, so `save.enabled` is false. TTS/port fields have **no owner API**; editing the file is not a
+supported interface, and changing them requires an owner API extension or an authorized restart. The
+missing loaded revision keeps automation at `PENDING_APPLY`; it does **not** make the save
+unsupported.
 
 ---
 
@@ -161,12 +181,13 @@ authorized restart, not a file edit.
 Hook loopback/version, whitelist numeric IDs, persona, wake mode, provider/model, feature policies).
 The supported management paths are:
 
-1. **Console API** (`scripts/console-server.mjs`, loopback only, default port 3210):
+1. **Console API** (`scripts/console-server.mjs`, loopback only, default port 3210; a **human**
+   console, not a Core integration API):
    - `GET /api/config` returns `{ config, revision }`, where `revision` is SHA-256 of the raw file
      plus `pendingApply` / `dshRestartRequired` from console state;
    - `POST /api/config` requires `body.revision`, rejects a stale revision with `409`, validates,
-     backs up the old file, writes temp + rename with `0o600`, and marks `pendingApply` when a
-     non-hot field changed;
+     backs up the old file, writes temp + rename with `0o600` (name replacement; no atomicity or
+     durability guarantee is claimed), and marks `pendingApply` when a non-hot field changed;
    - CSRF token is issued by `GET /api/info` and required as `x-console-token`; Host and Origin are
      checked.
 2. **CLI `project-config.mjs` / `manage.ps1 prepare`**: validates and derives
@@ -287,10 +308,12 @@ measure for a file contract that has no owner API.
 | Second `wx` create while the file exists | `EEXIST` |
 | `process.kill(pid, 0)` for a live process | succeeds |
 | `process.kill(pid, 0)` for a dead PID | `ESRCH` |
-| `fs.renameSync(temp, target)` over an existing file | succeeds (atomic replace on the same volume) |
+| `fs.renameSync(temp, target)` over an existing file | Replaces the target name in this probe |
 
-These make a cooperative lock + CAS feasible without a native dependency. They do **not** make it
-mandatory or sufficient.
+The probe shows primitive availability and name replacement only. It does **not** establish NTFS
+crash atomicity, power-loss durability, or behaviour under antivirus/filter drivers. Those require
+dedicated validation; this audit makes no such claim. The primitives make a cooperative lock + CAS
+feasible without a native dependency; they do **not** make a lock mandatory, sufficient or durable.
 
 ### 8.3 Recommended lock/CAS scheme (only if Core must write a file)
 
@@ -300,14 +323,16 @@ mandatory or sufficient.
    conservative threshold **and** the PID is not alive; steal by renaming the stale lock to a unique
    name (one stealer wins), then create a fresh lock.
 3. Under the lock: read the source, compare `expectedRevision`, recompute immediately before the
-   write, write temp + best-effort `fsync`, rename, re-read and return the observed revision.
+   write, write temp + best-effort `fsync`, replace the target name, re-read and return the observed
+   revision. The replacement is best-effort; do not present it as crash-atomic.
 4. Release only if the token matches. Never release a lock owned by another token.
 5. Keep a restricted pre-image only if the source owner provides no rollback. Store it outside the
    repository, `0o600`-equivalent ACL, size-bounded, and delete it after a confirmed transaction.
 
 Limits to document in the adapter: advisory only; PID reuse; stale-lock takeover windows;
-`EPERM`/`EACCES` from antivirus/EDR; no cross-host locking; no claim of power-loss atomicity; no
-protection against a non-cooperating writer between the final re-read and the rename.
+`EPERM`/`EACCES` from antivirus/EDR; no cross-host locking; no claim that rename is atomic on every
+Windows filesystem or filter driver; no claim of power-loss durability; no protection against a
+non-cooperating writer between the final re-read and the replacement.
 
 ### 8.4 Rejected alternatives
 
@@ -343,8 +368,14 @@ Principles:
 3. **Bridge and Worker remain independent.** Never write `voice_enabled`; never merge the two.
 4. **WeChatAgent permissions remain human-console only.** Core does not expand them.
 5. **TTS/port changes require an owner API or an authorized restart**, not a file edit.
-6. **Every save is revision-guarded** where the owner supports it; otherwise the write stays
-   unsupported.
+6. **Owner API presence, Core authorization and effective enablement are three separate facts.**
+   `save.enabled` requires an available component-scoped API, a supported save capability, explicit
+   authorization and an authorized write mode. No UI may infer writability from an API string.
+7. **Save capability is not apply confirmation.** A missing loaded revision keeps `apply` at
+   `UNSUPPORTED`/`PENDING_APPLY`; it does not erase a supported save or hide an existing owner API.
+8. **Read timing is not hot reload.** Boot-time read, per-call read and per-job read are distinct;
+   only the last two can observe a change without a restart, and a per-job Worker permit does not
+   affect an already-running job.
 
 ### 9.1 Proposed increments
 
@@ -372,52 +403,178 @@ None of these owner changes is authorized or implemented in Phase 4B-2B-1.
 
 Read-only contract first; no write endpoint on the production Host in 2B-2a.
 
+### 10.1 Capability projection
+
+Each **surface** is projected separately, so an available owner API is never mistaken for a Core
+authorization, a save capability or apply confirmation. Sender automation and Sender TTS are two
+different surfaces.
+
 ```json
 GET /whale-voice/config/capabilities
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "writeMode": "READ_ONLY",
   "observedAt": "2026-10-25T00:00:00.000Z",
   "sources": [
     {
       "source": "senderService",
       "authority": "Voice Sender Service",
-      "writable": false,
-      "writeApi": "PUT /v1/automation/config",
-      "readTiming": "service-boot",
-      "revision": { "kind": "file-sha256", "scope": "saved", "available": true },
-      "loadedConfirmation": false,
-      "requiresRestart": true,
+      "readTiming": "SERVICE_BOOT",
+      "hotReload": "NONE",
+      "requiresRestart": "REQUIRED",
       "risk": "HIGH",
-      "blockers": [{ "code": "NO_LOADED_REVISION", "message": "生效未确认" }]
+      "surfaces": [
+        {
+          "surface": "automation",
+          "ownerApi": {
+            "state": "AVAILABLE",
+            "kind": "HTTP",
+            "scope": "COMPONENT",
+            "endpoint": "PUT /v1/automation/config"
+          },
+          "savedRevision": { "state": "UNSUPPORTED", "kind": null },
+          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
+          "save": {
+            "state": "SUPPORTED",
+            "authorization": "NOT_AUTHORIZED",
+            "enabled": false,
+            "gate": "NO_WRITE_AUTHORIZATION"
+          },
+          "apply": { "state": "UNSUPPORTED", "reason": "NO_LOADED_REVISION" },
+          "blockers": ["NO_WRITE_AUTHORIZATION", "NO_LOADED_REVISION"]
+        },
+        {
+          "surface": "tts",
+          "ownerApi": { "state": "UNSUPPORTED", "kind": null, "scope": null, "endpoint": null },
+          "savedRevision": { "state": "UNSUPPORTED", "kind": null },
+          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
+          "save": {
+            "state": "UNSUPPORTED",
+            "authorization": "NOT_AUTHORIZED",
+            "enabled": false,
+            "gate": "NO_OWNER_API"
+          },
+          "apply": { "state": "UNSUPPORTED", "reason": "NO_OWNER_API" },
+          "blockers": ["NO_OWNER_API", "REQUIRES_RESTART", "NO_LOADED_REVISION"]
+        }
+      ]
+    },
+    {
+      "source": "wechatPermissions",
+      "authority": "WeChatAgent Console",
+      "readTiming": "MIXED",
+      "hotReload": "PARTIAL",
+      "requiresRestart": "REQUIRED",
+      "risk": "CRITICAL",
+      "surfaces": [
+        {
+          "surface": "config",
+          "ownerApi": {
+            "state": "AVAILABLE",
+            "kind": "HTTP_CONSOLE",
+            "scope": "HUMAN_CONSOLE",
+            "endpoint": "POST /api/config"
+          },
+          "savedRevision": { "state": "SUPPORTED", "kind": "file-sha256" },
+          "loadedRevision": { "state": "UNSUPPORTED", "kind": null },
+          "save": {
+            "state": "SUPPORTED",
+            "authorization": "NOT_AUTHORIZED",
+            "enabled": false,
+            "gate": "HUMAN_CONSOLE_ONLY"
+          },
+          "apply": { "state": "UNSUPPORTED", "reason": "NO_LOADED_REVISION" },
+          "blockers": ["HUMAN_CONSOLE_ONLY", "NO_WRITE_AUTHORIZATION", "NO_LOADED_REVISION", "MIXED_WRITERS"]
+        }
+      ]
     }
   ],
-  "summary": { "writableNow": [], "readOnly": ["bridgeVoice", "wechatPermissions"], "blocked": ["senderService"] }
+  "summary": {
+    "ownerApiAvailable": ["senderService.automation", "wechatPermissions.config"],
+    "saveSupported": ["senderService.automation", "wechatPermissions.config"],
+    "writeAuthorized": [],
+    "writeEnabled": [],
+    "loadedRevisionAvailable": [],
+    "applySupported": []
+  }
 }
 ```
 
-Status projection per source:
+### 10.2 State vocabulary
+
+| Field | Values | Meaning |
+|---|---|---|
+| `writeMode` | `READ_ONLY` \| `AUTHORIZED_WRITE` | Phase-level gate for every surface. 2B-2a is `READ_ONLY`. |
+| `ownerApi.state` | `AVAILABLE` \| `UNSUPPORTED` \| `UNKNOWN` | Does the owning component expose an interface? |
+| `ownerApi.kind` | `HTTP` \| `HTTP_CONSOLE` \| `FILE` \| `NONE` \| `null` | Interface family; `null` only when no API is available. |
+| `ownerApi.scope` | `COMPONENT` \| `HUMAN_CONSOLE` \| `NONE` \| `null` | `HUMAN_CONSOLE` is not a Core integration API. |
+| `savedRevision.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Owner accepts/returns a revision for a save (e.g. `expectedRevision`). |
+| `loadedRevision.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Owner can report the revision actually loaded at runtime. |
+| `save.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Can the owner persist this surface? Does **not** include Core permission. |
+| `save.authorization` | `AUTHORIZED` \| `NOT_AUTHORIZED` \| `UNKNOWN` | Core's production write permission. |
+| `save.enabled` | `true` \| `false` | Derived: `ownerApi=AVAILABLE` **and** `scope=COMPONENT` **and** `save.state=SUPPORTED` **and** `authorization=AUTHORIZED` **and** `writeMode=AUTHORIZED_WRITE`. |
+| `save.gate` | `NONE` \| `NO_OWNER_API` \| `NO_SAVE_API` \| `NO_WRITE_AUTHORIZATION` \| `HUMAN_CONSOLE_ONLY` \| `PHASE_READ_ONLY` \| `UNKNOWN` | First reason the write is not enabled. |
+| `apply.state` | `SUPPORTED` \| `UNSUPPORTED` \| `UNKNOWN` | Can the owner confirm the loaded revision? `SUPPORTED` requires `loadedRevision=SUPPORTED`. |
+| `apply.reason` | `NO_OWNER_API` \| `NO_LOADED_REVISION` \| `null` | Why apply confirmation is unavailable. |
+| `readTiming` | `PER_CALL` \| `SERVICE_BOOT` \| `PER_JOB` \| `HOST_BOOT` \| `MIXED` \| `ON_DEMAND` \| `UNKNOWN` | When the component reads its configuration. |
+| `hotReload` | `FULL` \| `PARTIAL` \| `NONE` \| `NOT_APPLICABLE` \| `UNKNOWN` | Whether a saved change is observed without restart. |
+| `requiresRestart` | `REQUIRED` \| `NOT_REQUIRED` \| `NOT_APPLICABLE` \| `UNKNOWN` | Restart requirement for the change to take effect. |
+
+Rules:
+
+1. **`null` is never a capability state.** It is allowed only for `ownerApi.kind`,
+   `ownerApi.endpoint`, `savedRevision.kind`, `loadedRevision.kind` and `apply.reason`, where it means
+   "no value applies" (for example, no revision kind when the revision is unsupported). An unobserved
+   capability is `UNKNOWN`, not `null`. A `SUPPORTED` revision must name its `kind`.
+2. `UNSUPPORTED` means the interface does not exist. `NOT_AUTHORIZED` means an interface may exist
+   but Whale Voice has no permission. `UNKNOWN` means it could not be determined. They are not
+   interchangeable.
+3. `save.state` is independent of `loadedRevision.state` and `apply.state`. Sender automation is
+   `save.state:SUPPORTED` with `loadedRevision:UNSUPPORTED`; the save remains supported, while apply
+   stays `PENDING_APPLY`.
+4. `save.enabled` is always derived. It cannot be set true by an API string, a plan preview or the
+   frontend; authorization and write mode are mandatory.
+5. `readTiming` and `hotReload` are separate. `SERVICE_BOOT` + `NONE` means a saved file is not
+   re-read; `PER_CALL` + `FULL` means the next call sees it; `PER_JOB` + `PARTIAL` means only the next
+   job sees it and the active job does not.
+6. `requiresRestart:UNKNOWN` is not `NOT_REQUIRED`. `ownerApi.state:UNKNOWN` is not `UNSUPPORTED`.
+
+### 10.3 Status projection (saved vs applied)
 
 ```json
 {
   "source": "senderService",
-  "savedRevision": "<32hex>",
+  "surface": "automation",
+  "savedRevision": "<32hex-or-null>",
+  "saveState": "SAVED",
   "activeRevision": null,
   "activeConfirmed": false,
   "applyState": "PENDING_APPLY",
-  "evidence": { "kind": "none", "observedAt": "..." }
+  "applyReason": "NO_LOADED_REVISION",
+  "observedAt": "2026-10-25T00:00:00.000Z"
 }
 ```
 
-UI rules for 4B-2B-2:
+- `savedRevision` / `saveState` describe the save side only. `savedRevision` may be a Core-computed
+  opaque fingerprint even when the owner does not accept an `expectedRevision`; the capability's
+  `savedRevision.state` says whether the owner itself supports a revision.
+- `activeRevision:null` means no loaded revision was observed. It is not "unsupported", "off" or
+  "applied".
+- `applyState` carries the reason: `PENDING_APPLY` when no loaded-revision interface exists,
+  `UNKNOWN` on a mismatch or observation failure, `APPLIED` only for an exact loaded revision.
+- A save failure does not change `activeRevision`; a loaded mismatch never rewrites `saveState`.
 
-- A write control exists only when `writable === true` **and** the owner API is implemented and
-  authorized; otherwise render a disabled control with the exact blocker.
+### 10.4 UI rules for 4B-2B-2
+
+- A write control is enabled only when `save.enabled === true`. `ownerApi.state === "AVAILABLE"` or a
+  non-null `endpoint` alone is **not** sufficient; show the exact `save.gate`/blocker on a disabled
+  control.
 - Show `已保存，生效未确认` (`SAVED`/`PENDING_APPLY`) and `未知` (`UNKNOWN`); never show `已生效`
   without an exact loaded revision.
-- Never render `null` as off/disabled/safe.
+- Never render `null` as off/disabled/safe; render `UNKNOWN` where the state is unknown.
 - Never show paths, tokens, target IDs, whitelist names or raw config documents.
-- A plan preview may list source, field names, risk, restart requirement and blockers; it is not a
-  save and not permission to enable voice.
+- A plan preview may list source, surface, field names, risk, restart requirement and blockers; it
+  is not a save and not permission to enable voice.
 - If a component is unreachable, show `No-Core`/unknown for that source, not a stale success.
 
 ---
@@ -427,16 +584,17 @@ UI rules for 4B-2B-2:
 | ID | Blocker / risk | Severity | Effect | Required action |
 |---|---|---|---|---|
 | B1 | Bridge has no write API | **Critical** | Bridge voice settings cannot be written by Core | Bridge owner endpoint; until then read-only |
-| B2 | No component returns a loaded config revision | **High** | No source can honestly reach `APPLIED` | Owner revision endpoints; otherwise `PENDING_APPLY` |
+| B2 | No component returns a loaded config revision | **High** | No source can honestly reach `APPLIED`; save may still be supported | Owner revision endpoints; otherwise `PENDING_APPLY` |
 | B3 | Sender TTS/port has no update API and boot-only read | **High** | TTS change requires restart or file edit (unsupported) | Sender API extension or authorized restart |
 | B4 | WeChatAgent has no integration API; console is a human UI with CSRF; three writers without a shared CAS | **High** | Permission writes cannot be automated safely | Keep read-only; console flow; future prepared endpoint |
 | B5 | Worker `voice_enabled` sampled once per job | **Medium** | Disabling the permit does not stop an active job | Emergency stop/cancel path; document |
 | B6 | Sender `PUT` rewrites the full file with plain `writeFileSync` | **Medium** | External edits are lost; partial write on crash | Use only when service is the sole writer; prefer owner fix |
 | B7 | Mixed hot/boot readers in WeChatAgent | **Medium** | Transient inconsistent authorization across processes | Owner-provided snapshot/revision; avoid mid-flight changes |
 | B8 | No cross-process lock in any component | **Medium** | Console-vs-prepare lost updates | Owner API; advisory lock only if Core writes |
-| B9 | Windows lock/AV behavior not validated under EDR | **Medium** | `EPERM`/stale lock | Test on the target machine before enabling writes |
-| B10 | 0 human reviews on #9–#13 | **Medium** | CI green is not approval | Human review before production write |
+| B9 | Windows lock/AV behavior not validated under EDR | **Medium** | `EPERM`/stale lock; rename atomicity/durability unproven | Test on the target machine before enabling writes |
+| B10 | 0 human reviews on #9–#14 | **Medium** | CI green is not approval | Human review before production write |
 | B11 | Phase 4B-2A `simulationOnly` gate | **Low** | Production adapters cannot execute yet | Deliberate gate; change only with authorization |
+| B12 | No production write authorization for any surface | **High** | Even a save-capable API cannot be enabled; `save.enabled` stays false | Separate production-write authorization and Host route |
 
 Residual safety risks:
 
@@ -451,7 +609,7 @@ Residual safety risks:
 
 ## 12. Test evidence and acceptance status
 
-New isolated prototype (fixture-only, no production adapters):
+New isolated prototypes (fixture-only, no production adapters):
 
 `test/config-capability.test.mjs` — 5 tests:
 
@@ -461,13 +619,25 @@ New isolated prototype (fixture-only, no production adapters):
 4. a revision-guarded save is compare-and-swap, not proof of apply;
 5. plans and results do not echo fixture tokens or target IDs.
 
+`test/config-capability-schema.test.mjs` + `test/helpers/config-capability-schema.mjs` — 7 tests
+that enforce the §10 contract:
+
+1. Sender automation: owner API exists, Core is `NOT_AUTHORIZED`, save stays `SUPPORTED`;
+2. Sender TTS: no owner API is `UNSUPPORTED`, not `NOT_AUTHORIZED` and not `UNKNOWN`;
+3. Bridge and WeChatAgent: read timing, hot reload and human-console scope are distinct;
+4. `UNKNOWN` is not `null`, `UNSUPPORTED` or `NOT_AUTHORIZED`;
+5. a `null` status, a missing owner-API detail and a `null` restart flag are rejected;
+6. `writeEnabled` requires owner API + save capability + authorization + component scope + write
+   mode; a read-only phase disables even an authorized save;
+7. the summary keeps save, authorization and apply capability separate.
+
 These fixtures model the audited interfaces; they are not production adapters and do not touch
 production files.
 
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 153 tests / 152 pass / 0 fail / 1 platform skip
+node --test        -> 161 tests / 160 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
 npm.cmd run test:ui -> 12/12 isolated Playwright checks

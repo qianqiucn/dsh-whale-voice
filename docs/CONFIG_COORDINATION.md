@@ -302,7 +302,7 @@ component's API or the existing ConfigStore/atomic primitives.
 
 - Journal writes use temp+rename inside the trusted temp sandbox; file locking/antivirus can still
   cause `EPERM`/`EACCES`; the result is `FAILED`/`UNKNOWN`, never an assumed success.
-- Real production files are not touched. Windows-specific atomic replacement, service reload and
+- Real production files are not touched. Windows file-replacement semantics, service reload and
   Worker/Bridge hot-read behavior must be revalidated with the real components under separate
   authorization.
 - No service start, stop, reload, audio-device change or WeChat operation is part of this phase.
@@ -316,11 +316,13 @@ Phase 4B-2B-1 completed the real-interface audit. Findings:
 - **Bridge** has no write API and no revision/loaded-config endpoint; `voice-settings.json` is
   hot-read per call but unowned. Bridge writes are **blocked** until the Bridge adds an endpoint.
 - **Sender Service** supports `PUT /v1/automation/config` only (automation/hotkey, rejected during an
-  active task); TTS/port changes have no update API. No loaded revision exists; `/health` and
+  active task); TTS/port changes have no update API. The owner API exists, but Whale Voice has **no
+  production write authorization** for it. No loaded revision exists; `/health` and
   `GET /v1/automation/config` allow field equality only.
-- **WeChatAgent** console `POST /api/config` has a SHA-256 revision and atomic write, but is a
-  human console (CSRF, not running by default); CLI `prepare` and account switching have no shared
-  CAS, and readers are mixed hot/boot. Permissions remain read-only for Core.
+- **WeChatAgent** console `POST /api/config` has a SHA-256 revision and a temp+rename write (name
+  replacement, not a verified atomicity/durability guarantee), but is a human console (CSRF, not
+  running by default); CLI `prepare` and account switching have no shared CAS, and readers are mixed
+  hot/boot. Permissions remain read-only for Core.
 - **No source can honestly reach `APPLIED`** without an owner-provided loaded revision.
 
 Before any production write/apply:

@@ -23,12 +23,12 @@ not be removed or replaced by a second WeChat bot in Whale Voice.
 Phase 4B-2A (#12) and the Phase 4B-2A handoff (#13) are integrated into `main` with merge commits;
 current `main` is `e0ce035`. Phase 4B-1 and Phase 4B-2A remain `OFFLINE` (isolated store/coordination;
 test-only APIs; no production route). Phase 4B-2B-1 completed the **read-only capability audit**:
-Bridge has no write API, Sender supports automation `PUT` only, WeChatAgent permissions are
-console-only, and no component exposes a loaded config revision. The next step is
-**Phase 4B-2B-2** (frontend capability/status projection; **NOT STARTED**), followed by a
-separately authorized production-write phase. Production config writes require separate
-authorization; Voice Sender final independent safety verification remains required before real
-sending. See [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
+Bridge has no write API, Sender has an automation `PUT` but **no Core write authorization**, Sender
+TTS has no update API, WeChatAgent permissions are console-only, and no component exposes a loaded
+config revision. The next step is **Phase 4B-2B-2** (frontend capability/status projection;
+**NOT STARTED**), followed by a separately authorized production-write phase. Production config
+writes require separate authorization; Voice Sender final independent safety verification remains
+required before real sending. See [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
 
 ---
 
@@ -323,7 +323,7 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 153 Node tests. PR #3–#13 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 161 Node tests. PR #3–#13 are integrated into `main`; Phase 4B-1
 is merged but remains `OFFLINE`; Phase 4B-2A coordination is merged and `OFFLINE`; Phase 4B-2B-1
 capability audit is complete and `OFFLINE`; Phase R1 is **COMPLETE**. The clean development baseline
 is post-integration `main` (`e0ce035`, then the 4B-2B-1 PR). No release, no public visibility and no

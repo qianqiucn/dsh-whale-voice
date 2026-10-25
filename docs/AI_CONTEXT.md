@@ -159,13 +159,15 @@ The audit document is [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT
   Bridge/Worker separation, `SAVED`/`PENDING_APPLY` vs `APPLIED`, exact saved/runtime revision match,
   and rollback confirmation by reported revision plus read-back observation. No production adapter.
 - Phase 4B-2B-1 audit: Bridge hot-reads `voice-settings.json` per call with no writer or revision;
-  Sender reads config at boot, supports automation `PUT` only (plain full-file write, no revision);
-  WeChatAgent console has a SHA-256 saved-file revision but CLI/account-switch writers lack a shared
-  CAS; no component exposes a loaded revision. `APPLIED` is unreachable today.
+  Sender reads config at boot, supports automation `PUT` only (plain full-file write, no revision;
+  owner API exists but Core has **no production write authorization**); WeChatAgent console has a
+  SHA-256 saved-file revision but CLI/account-switch writers lack a shared CAS; no component exposes
+  a loaded revision. Owner API, authorization, save capability and apply confirmation are separate
+  (`save.enabled` is derived); no source can reach `APPLIED` today.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 153 Node tests (152 pass, 1 platform skip; including 49 Phase 4B-2A coordination and 5
-  fixture-only Phase 4B-2B-1 capability tests) and 12 UI checks pass. These are offline/contract
-  evidence, not real production write/apply acceptance.
+- 161 Node tests (160 pass, 1 platform skip; including 49 Phase 4B-2A coordination, 5
+  fixture-only capability and 7 capability-schema tests) and 12 UI checks pass. These are
+  offline/contract evidence, not real production write/apply acceptance.
 
 ---
 
@@ -194,7 +196,8 @@ Do not present these as working:
 - No production configuration writes without a separate explicit authorization.
 - After the 4B-2B-1 audit: do **not** write component-owned configuration files directly. Use the
   owner's supported API; keep Bridge and WeChatAgent read-only until those APIs exist; never treat
-  `/health`, mtime, PID or equal file bytes as apply proof.
+  `/health`, mtime, PID or equal file bytes as apply proof. An available owner API is not a write
+  authorization; `save.enabled` requires both plus a supported save and an authorized write mode.
 - Phase 4B-1 store/API must remain isolated: only a trusted sandbox capability may be used; never
   point it at production directories or register its write route on the Host without separate
   authorization. No silent overwrite; use `expectedRevision`. Do not claim a multi-file transaction
@@ -229,7 +232,7 @@ Phase 4B-2B-1 result:
 
 ```text
 build: PASS, client.js 186092 bytes
-node --test: 152/153 PASS (1 platform skip; includes 49 Phase 4B-2A coordination and 5 capability tests)
+node --test: 160/161 PASS (1 platform skip; includes 49 coordination, 5 capability and 7 schema tests)
 UI: 12/12 PASS
 ```
 
@@ -281,6 +284,6 @@ Do not trust this summary alone. Verify:
 
 **2026-10-25**, after Phase 4B-2B-1: `main` is `e0ce035` (PR #13 merge); Phase R1 is **COMPLETE**,
 Phase 4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**,
-Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B-2 is **NOT STARTED**. 153 Node (152 pass, 1 skip) /
+Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B-2 is **NOT STARTED**. 161 Node (160 pass, 1 skip) /
 12 UI checks are offline evidence, not production write/apply acceptance. No production
 configuration or runtime behavior change.

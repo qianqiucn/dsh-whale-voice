@@ -370,9 +370,13 @@ real interfaces a future write adapter may use. Its practical constraints for th
 
 - the Bridge has no write/revision endpoint; `voice-settings.json` is hot-read but unowned;
 - the Sender service supports `PUT /v1/automation/config` only, rewrites the whole file without
-  temp+rename and exposes no revision; TTS/port fields have no update API;
-- WeChatAgent's console has a revision-guarded write, but CLI/account-switch writers do not share it,
-  and no process exposes a loaded revision;
+  temp+rename and exposes no revision; TTS/port fields have no update API. The owner API exists, but
+  Whale Voice has **no production write authorization** for it, so `save.enabled` is false;
+- WeChatAgent's console has a revision-guarded temp+rename write (no verified atomicity or power-loss
+  durability), but CLI/account-switch writers do not share it, and no process exposes a loaded
+  revision;
+- missing loaded revision limits `apply`, not `save`: a save-capable surface stays
+  `SUPPORTED` while `apply` stays `UNSUPPORTED`/`PENDING_APPLY`;
 - therefore no source may reach `APPLIED` yet, and `PENDING_APPLY` must be the honest default.
 
 No production write route, file adapter or Host change is added by the audit.

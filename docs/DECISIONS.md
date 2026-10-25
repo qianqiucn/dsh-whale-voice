@@ -288,12 +288,16 @@ whitelists or private recovery documents into the journal.
 **Date:** 2026-10-25
 **Decision:** After auditing the installed Bridge, Voice Sender and WeChatAgent, the minimal safe
 integration is: (1) Core does not write component-owned configuration files directly; (2) a writable
-field is exposed only through the owning component's supported API; (3) `APPLIED` requires an exact
-loaded revision from the owner, and the absence of that interface keeps the state `PENDING_APPLY`;
-(4) file locks/CAS are a secondary measure for a file contract with no owner API, not a substitute
-for one; (5) WeChatAgent permission changes remain a human console action, and Worker
-`voice_enabled` is never a Core write target; (6) Phase 4B-2B-2 starts read-only (capability/status
-projection) before any write is authorized.
+field is exposed only through the owning component's supported API; (3) owner API presence, Core
+production authorization, effective write enablement, save capability and loaded-revision
+confirmation are separate facts, and a capability report must keep them separate (`save.enabled` is
+derived, never inferred from an API string); (4) `APPLIED` requires an exact loaded revision from the
+owner, and the absence of that interface keeps the state `PENDING_APPLY` — it does not make a
+supported save unsupported; (5) file locks/CAS are a secondary measure for a file contract with no
+owner API, not a substitute for one, and a successful rename is name replacement only, not a claim of
+crash atomicity or power-loss durability; (6) WeChatAgent permission changes remain a human console
+action, and Worker `voice_enabled` is never a Core write target; (7) Phase 4B-2B-2 starts read-only
+(capability/status projection) before any write is authorized.
 
 **Reason:** The audit found that the Bridge reads `voice-settings.json` hot but has no writer or
 revision; the Sender service reads `service.config.json` at boot and supports only an automation
