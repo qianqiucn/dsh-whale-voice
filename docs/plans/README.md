@@ -5,6 +5,10 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 永久最高产品原则：为零编程基础用户设计（2026-10-25）
+
+**用户明确要求本项目始终面向不会编程的小白，优先保持易用性。** 权威规范：[NOVICE_FIRST_PRODUCT_STANDARD.md](NOVICE_FIRST_PRODUCT_STANDARD.md)。未来所有 Level 2 工程任务书与对应验收必须增加 Novice First DoD：已声称可用的普通用户流程应从图形界面完成，无需 Git/Python/pip/npm、命令行、手动 JSON/环境变量。界面提供清楚的中文指引、功能独立首次向导、只读自动检测、最小可选依赖、资源/收费说明、撤销与失败恢复。Fake/只读、OFFLINE 原型不得冒充完成用户端控制/安装。不能以易用为由擅自下载安装、收费、写入配置、真实发送或降低 WeChatAgent/Worker 安全门禁。此变更不重排 01–14 编号或改变 07-A / 03-B 权限状态。
+
 ## 最新已授权模型选型：RVC 首发，Seed-VC 免训练试唱可选（2026-10-25）
 
 **用户已明确批准这个计划调整。** Whale Singing（同一 Whale Audio Core）**首发主 Provider 是 RVC**；Seed-VC 并非废弃或主线路，而是延后到**原 Plan 12-D 的零样本/免训练试唱候选**（PLANNED / NOT_SENT / NOT_IMPLEMENTED）。不可把免训练写作低显存或 CPU 轻量：官方 Tiny 25M 针对语音转换，专用歌声模型约 200M，具体 GPU/CPU/内存需求等真实测试后才能承诺。Seed-VC 上游已归档，相关许可和维护风险纳入 Plan 07 最小静态档案。
