@@ -9,6 +9,15 @@ General engineering quality, Git safety, security and authorization rules in thi
 still apply to both. When a user request conflicts with these safety rules, stop and ask for
 explicit permission; do not silently weaken a safety boundary.
 
+## Permanent product rule: novice-first usability (2026-10-25)
+
+The user explicitly requires that Whale Audio Core, Whale Voice (speech bubbles), Whale Singing (covers), and Whale Relay remain easy for **non-programmers who cannot code**. Read [docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md](docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md) when implementing any user-facing feature. This is a permanent project-level UX/acceptance requirement, not a request to start new work.
+
+- A normal, already-supported user workflow must not require manually editing JSON/env files, using the command line, installing Python/pip/npm/Git, pasting code, or understanding ports/GPU internals. If a third-party or license constraint makes manual setup unavoidable, show an honest guided explanation and safe alternative; **never silently run untrusted installers**.
+- Prefer simple Chinese labels, safe defaults, visual hardware/dependency checks, clear local/CPU/cloud choices, first-use dialogs per Voice/Singing, only the minimum selected dependencies, and reusable shared assets. Model installation, driver changes, network/paid APIs, config writes, and actual WeChat sends require separate explicit authorization.
+- Every future implementation task should include an appropriate **Novice First DoD**: first-time workflow, clear progress, cancellation, accessible UI, no-GPU/offline states, understandable errors and recovery actions, plus explicit distinctions between Mock/OFFLINE/INTEGRATED/VERIFIED and SAVED/APPLIED/SENT_LOCAL/UNKNOWN.
+- Do not mark real user-facing capability complete based only on green code/unit tests or demo UI. Keep the existing working UI and production voice chain intact; no auto merges, service restarts, or real sending without authorization.
+
 ## 1. Startup workflow (every session)
 
 1. Read this `AGENTS.md` before implementing a task or changing repository code.
