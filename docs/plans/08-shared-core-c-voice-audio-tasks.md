@@ -2,6 +2,14 @@
 
 **状态：PLANNED；前置：Unified Core-A、Provider Core-B 和 SVC-A 的契约。**
 
+## 2026-10-25 · Whale Audio Core 双场景共享能力（原 Plan 08，仍 PLANNED）
+
+Whale Audio Core（鲸音核心）是 Voice/Singing 唯一共有的 Model/VoiceProfile/Provider/Artifact/Task 与资源运行管理者。见 [双前端首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+- voice-bubble 与 singing 的 job type、输入/输出和目标格式独立，但使用统一资产 ID/权限隔离、全局 TaskId 和 DeliveryId，复用用户有权使用的 voiceProfile，而非复制各自的 Core。
+- 定义 versioned FeatureDependencyManifest 和真实 CapabilityEvidence，按所选 local/CPU/cloud/external SVC 工作模式计算最小 required/optional/delivery-only 组件；安装状态 UNKNOWN/INSTALLED_UNVERIFIED 不等于 READY，跨场景已验共享依赖免重复下载。
+- Feature onboarding 的 introAcknowledged 与依赖安装/已加载 revision 是**不同状态**；用户跳过弹窗可以浏览 Mock/只读 UI，不能生成真实音频或直接发送。
+- 隔离正负测试：不同模式/两页交替、重装删除模型、安装失败/取消、版本变化、共享依赖失效、没有 GPU、云端凭据缺失、权限撤销和并行任务资源冲突。真实安装权限在 Plan 14。
+
 ## 2026-10-25 · 翻唱歌曲与音频 Artifact 子规格（仍 PLANNED）
 
 落实 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md) 的 CoverTask 与音源授权边界，不改变既有 TTS/SVC 请求合同：
