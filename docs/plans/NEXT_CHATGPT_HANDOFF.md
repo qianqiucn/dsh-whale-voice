@@ -8,6 +8,15 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## C1 新对话恢复实录（2026-10-25，最新状态优先）
+
+- **C1 已完成，不应再当作未开始的 ChatGPT 项目重复执行。** 已依交接标准读取五份指定文件及详细任务标准、任务索引，完成主干、PR #16–#18、最新 HEAD CI 与 03-A 工程文档核验。未来新会话依然需要实时确认 GitHub 状态，但不用新建第二个 C1。
+- main bf9cf66807e12d0b25872a0fa3869962dde04818；#16 OPEN、mergeable、未合并、HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773、CI 40163881122 SUCCESS；#18 OPEN/DRAFT、HEAD 42cec57ae7018735cb6c65a4ef8b0a1d80473810、CI 40159114676 SUCCESS。三 PR 均无已提交的人工 Review。
+- #17 本次规划文档提交前 HEAD 8864e4c3ab0aec5a8dd177579497bd1f0960efdb、run 40165005768 SUCCESS；本次写入改变 #17 HEAD，后续核查最新 CI，不沿用前版成功结论。
+- **Plan 03-A 仍 SENT、未验收**：#16 HEAD 没有从 Plan 02 的 3ad32bc 前进，docs/PROJECT_STATUS.md 和 docs/AI_CONTEXT.md 仍含旧 192、没有当前 197 与 3ad32bc 的新验收快照；合并前 22 文件独立审查、两份状态文档修改后的新 CI 与最终工程报告均无交付证据。
+- Plan 02 DONE（DESIGN/OFFLINE，工程 PR 仍 OPEN）；Plan 01 SENT；Plan 03-B WAIT_USER_AUTHORIZATION；Plan 04–14 PLANNED；H0 已完成，不再做 14 对重复比对。
+- **唯一后续动作**：请 DeepSeek 按已派发的 Plan 03-A 完成原工程 PR #16 的全 Diff 安全审查、同步两份状态文档、隔离测试与新 HEAD CI，并提交报告；ChatGPT 收到该工程报告后核实 DoD 并自动回完整续行/下一份计划书。没报告不重复创建或派发任务。未获单独许可，绝不合并 PR。
+- 本轮只更新 PR #17 计划交接状态；没有修改 #16 工程、main、运行中的 DSH/WeChatAgent/微信/音频设备或生产配置，没有本地 Windows 执行环境测试。
 ## 0. 新一位 ChatGPT 的 30 秒恢复摘要
 
 1. 这是 **Whale Voice / 小鲸鱼** 的私有仓库：\`qianqiucn/dsh-whale-voice\`，DSH 插件，**WeChatAgent 是微信接入平台的必需依赖**，不要改造成第二套微信机器人。
