@@ -31,3 +31,10 @@ Provider 分为：
 ## 交付与门禁
 
 产出架构文档、模块职责图、TTS/SVC/Relay 协议与 Fake Runtime 测试。**暂不大规模重构生产代码，不启用 Hook/真实语音发送。** PR 独立审查，完成后停止。
+
+## H0 对照补充（2026-10-25，未派发）
+
+- 任务协议审查显式覆盖 providerInstanceId、privacyScope、cancelPolicy；这些是设计要求，字段最终按已有契约核验，不能冒充现有 API。生成 taskId 与投递 deliveryId 分离，并给出错误/恢复矩阵及兼容迁移方案。
+- 回执分开 SENT_LOCAL 与可信服务端确认，HTTP 200/ret=0 不提升为确认。
+
+来源：PR #18 对应编号任务，经 [H0 对照记录](H0_PLAN_RECONCILIATION.md) 选择性吸收。仍是 PLANNED 路线条目，派发前须完善为 Level 2；本补充不启动工程实现。

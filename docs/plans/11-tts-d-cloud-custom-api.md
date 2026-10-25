@@ -13,3 +13,9 @@ Gemini TTS、OpenAI 语音 API、Azure Speech、ElevenLabs、自定义 HTTP/自�
 
 ## 验收
 Fake Cloud 模拟错误 Key、限流、余额不足、5xx、非法音频、网络断连、超时、未授权访问，且不调用真实计费 API。真实试听必须另行授权。独立适配器 PR，通过后再启用。
+
+## H0 对照补充（2026-10-25，未派发）
+
+- Fake Cloud 额外覆盖取消、重定向拒绝以及本地/云端健康独立性；不支持的克隆或情绪能力在 UI 中禁用，不静默忽略。
+
+来源：PR #18 对应编号任务，经 [H0 对照记录](H0_PLAN_RECONCILIATION.md) 选择性吸收。仍是 PLANNED 路线条目，派发前须完善为 Level 2；本补充不启动工程实现。

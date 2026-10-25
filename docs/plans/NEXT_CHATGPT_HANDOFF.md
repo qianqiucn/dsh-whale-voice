@@ -4,6 +4,12 @@
 > **维护者：** ChatGPT（仅负责计划、排序、记忆、GitHub 计划跟踪和完成审查）。DeepSeek 不承担这份文档的维护。  
 > **本次核验：2026-10-25（UTC 以 GitHub 实时记录为准）。** 本文件里的 SHA、CI、状态是有时点的快照，启动新会话必须重新查询。
 
+## 最新接续结果（2026-10-25；优先于下方历史快照）
+
+H0 的 14 对计划/重叠入口/TASK_STATUS 比对和选择性补充已完成，见 [H0_PLAN_RECONCILIATION.md](H0_PLAN_RECONCILIATION.md)。#17 为唯一计划体系；#18 保留历史来源、仍 OPEN/DRAFT，未关闭或合并。Plan 01 SENT、Plan 02 IN PROGRESS / REVIEW_REQUIRED，未派发新任务。
+
+本轮核验 main bf9cf66；#16 1fd2cca CI 40160267636 成功；#18 42cec57 CI 40159114676 成功；#17 整理前 2c4a01a CI 40161821455 成功。新 HEAD 必须重新查询。下面的旧交接保留历史；“先做 H0”已由本结果取代，下一轮依据用户请求继续 Plan 02 终审或 Plan 01 反馈。
+
 ## 0. 给下一位 ChatGPT 的最重要提醒
 
 **不要仅凭这个交接文档开始开发、标记 DONE 或合并 PR。先通过 GitHub 工具读取执行标准、长期记忆、最新源码与 Git/PR/CI。** 如果本文件尚未合并 main，使用下文列出的开放计划分支读取；不要误以为 main 已经具备新标准。
