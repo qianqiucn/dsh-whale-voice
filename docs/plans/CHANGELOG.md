@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · Plan 03-A 最终报告验收、正式派发 Plan 07-A 只读任务书
+
+- **触发**：用户提供 Plan 03 PR #16 合并前审查 G01–G12 通过报告，并说明已向 DeepSeek 同步最新架构，要求继续发下一份详细计划。
+- **事实**：PR #16 OPEN、HEAD 954a01a、main bf9cf66、0 reviews、CI 40165832178 SUCCESS；03-A DONE，03-B WAIT_USER_AUTHORIZATION，不存在默示合并。TTS/SVC 纯合同 DESIGN/OFFLINE。
+- **选择**：按最新总表，在合并审批等待期间派发与 merge 无关的 07-A 只读研究，确保不重做 03-A、不越权合并。新增 docs/plans/07-A-rvc-upstream-static-audit-execution.md 完整 Level 2 任务书，固定公开上游 SHA、唯一文档交付 docs/SVC_PROVIDER_RESEARCH.md、A01–A14、权限/负向矩阵与 Novice First DoD。
+- **状态**：Plan 07-A SENT（已交付用户、待其转发 DeepSeek，不等于 DS 完成）；07-B 未派发；03-B 未授权；原 Plan 01–14 不重编号。新研究 PR 未来由 DeepSeek 独立 docs-only 开发与提交。
+- **安全**：本轮仅 PR #17 规划分支写文档；未改 main/工程 PR、未合并、未修改微信/Worker/Voice Sender/鲸递生产配置、未下载或运行模型/歌曲/音频。最新规划 CI 以新的 PR #17 HEAD 运行后结果为准。
+
 ## 2026-10-25 · 用户确定“不会代码的编程小白优先”为永久产品门禁
 
 - **用户原话**：“请你始终记住，本项目是始终给不会代码的编程小白用的，保持易用性”。此为**跨所有 Core/UI/Installer/Provider/Relay/Release 的永久产品目标**，不属于一次性 UI 改进建议；既有生产安全与许可证门禁仍优先遵守。
