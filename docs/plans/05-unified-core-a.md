@@ -3,6 +3,15 @@
 **任务状态：PLANNED**  
 **前置：** TTS-A 契约及 WeChatAgent 扩展审计结论可用。
 
+## 2026-10-25 · RVC/SVC 自动翻唱统一后端部署边界（仍 PLANNED）
+
+依据 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)，后端可对用户呈现“鲸递的一体化唱歌交付能力”，但**不可把搜索、人声分离、RVC/SVC 推理、混音任务所有权挪给 Whale Relay**。
+- Whale Voice Core 拥有歌曲检索授权、CoverTask、TaskId、SVC Provider Adapter、源音频/分离/转换/混音 Artifact、voiceProfileId、资源/取消/缓存、DeliveryId。
+- 独立可选的合法 RVCSVC-API 或等价 Worker 仅做音频处理，Gradio show_model/convert 必须先审计；不把第三方源码直接打包进 DSH。
+- Whale Relay 只消费有效 outputArtifactId 与通过 WeChatAgent 验证的 target 和 deliveryIntent，固定 backend 只提交一次，UNKNOWN 不自动重发。长歌默认文件，Mock 与真实投递分离。
+- 新增状态矩阵：SEARCHING_METADATA、AWAITING_SELECTION、RIGHTS_NOT_CONFIRMED、SEPARATING、CONVERTING、MIXING、SAVED、DELIVERY_PENDING、UNKNOWN。生成、保存和服务端确认不能混淆。
+- DoD 用 Fake DSH Tool、Fake SVC Gateway、Fake Relay 证明无越权发送、重复任务、模型/Token 泄漏；不改真实运行链。
+
 ## 正式产品架构
 
 Whale Voice Core 统一管理配置、任务、引擎、音色、音频产物、权限和整体状态：
