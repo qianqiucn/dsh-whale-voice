@@ -32,8 +32,8 @@ interfaces and evidence.
 | Qwen | `/health` model/voice observation | Listening on loopback; observation only, not an apply proof |
 
 No token, Hook token, chat database, private target map, chat content or audio file was read for this
-audit. Config files were inspected only for schema, read timing and writer information; private
-values were redacted.
+audit. Config files were inspected for schema, read timing and writer information; no private values
+are reproduced in this document.
 
 ---
 
