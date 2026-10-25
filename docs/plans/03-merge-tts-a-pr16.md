@@ -1,11 +1,28 @@
-# Plan 03 · PR #16 正式审查及授权后合并（保留原始任务身份；当前仅执行 03-A）
+# Plan 03 · PR #16 正式审查及授权后合并（03-A 已验收；03-B 等待用户授权）
 
-**稳定任务 ID：Plan 03；计划版本：v3，2026-10-25（纠正范围/编号说明）。**  
+**稳定任务 ID：Plan 03；计划版本：v4，2026-10-25（03-A 实证验收，03-B 权限门禁）。**  
 **总任务定义：PR #16 正式审查、取得明确授权后合并、建立新的 main 基线；与上一段 GPT 的 Plan 03 完全同一个任务，不改动 01–14 顺序。**  
-**03-A 合并前安全检查与状态文档同步：SENT。03-B 合并及合并后验证：WAIT_USER_AUTHORIZATION，未派发、不得执行。**  
+**03-A 合并前安全检查与状态文档同步：DONE / READY_FOR_USER_MERGE_DECISION（2026-10-25）。03-B 合并及合并后验证：WAIT_USER_AUTHORIZATION，未派发、不得执行。**  
 **执行者：DeepSeek（只负责工程审查、最小状态文档修订和测试）；计划跟踪/DONE：ChatGPT。**  
 **工程阶段：PRE-MERGE GATE / OFFLINE。仅准备待审批资料；此版本没有合并许可。**
 
+## 0-A. 最新最终审查记录（2026-10-25；优先于下面 03-A 历史执行正文）
+
+**03-A 状态：DONE。合并门禁结果：READY_FOR_USER_MERGE_DECISION。Plan 03 总任务仍未完成：03-B 未获用户单独授权。**
+
+- 最新 Git：main `bf9cf66807e12d0b25872a0fa3869962dde04818`；工程 PR #16 `OPEN`、mergeable=true、not merged，HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`；PR 总变更 22 files、+2490/-176；Review 0。
+- `954a01a` 是在 F01–F05 的代码 HEAD `3ad32bcb22b1a0346eed91f7236afb4f1cc8f773` 之后新增的**唯一一个**文档提交，仅修改 `docs/PROJECT_STATUS.md` 与 `docs/AI_CONTEXT.md`（+63/-28）。两份文档均已新增 197/196 pass/1 skip 和 UI 24/24 的隔离结果快照，并将旧 192/191/1 保留为历史；保持 DESIGN/OFFLINE、不误标 MERGED 或 VERIFIED。
+- GitHub Actions run [40165832178](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40165832178) 对 **当前** `954a01a` 的 `build` 与 `ui` 两 Job 都为 SUCCESS。此前代码 HEAD `3ad32bc` 的 run `40163881122` 为 SUCCESS，不能互相替代。
+- DeepSeek 的 Plan 03-A 报告宣称 G01–G12 PASS、`node --test` 197（196 pass/1 skip）、UI 24/24、build 217349 bytes、docs/diff/privacy PASS；这些本地值来自执行端报告。ChatGPT 核对了实际 GitHub Commit diff、两份文档内容、PR/HEAD 与 CI Jobs；**没有在 Windows 环境独立执行 Node/Playwright，也没有另做完整本地审计**。
+- 10 TTS + 2 SVC 都只是 NOT_IMPLEMENTED 候选，无生产 Provider、Relay/WeChat 真实发送、云端凭据集成或 TTS-B 实现。Plan 01 仍 SENT；Plan 02 DONE；计划 PR #17 OPEN（唯一台账），#18 Draft 历史来源；H0 不重做。
+- **后续唯一门禁为用户对 PR #16 当前或另行确认的目标 HEAD 明确授权 03-B。** 本段不含该授权。不因审批前的计划书而给 DS 启动合并权限；不得 Merge、Squash/Rebase、Force Push、删除分支、更新 main 或重启生产。
+
+### 03-B 授权前检查清单（只有用户许可后才可变为实施任务）
+
+1. 用户本人须针对 PR #16 明确表示同意**合并至 main**，说明接受当前没有人工 PR review（0）的情况，或者要求先获得人工 review；当前对话中的验收报告不是合并授权。
+2. 获授权后 ChatGPT 先重新核对最新 main、#16 base/head、Diff、mergeability、reviews、最新 HEAD build/ui CI；任一事实改变都须重新评估，不照旧 SHA 盲执行。
+3. 用户许可后，ChatGPT 再单独提供 Plan 03-B EXECUTION-READY 的 Merge Commit 与合并后验证细则；DeepSeek 不得根据本 03-A 文档猜测或提前执行。
+4. 如果用户拒绝或暂缓，继续保留 #16 OPEN，Plan 03-B `WAIT_USER_AUTHORIZATION`，不产生无意义工作或提交。
 ## 0. 稳定编号解释与安全分段（优先于本文件其他说明）
 
 - 原 Plan 03 从来不是一个独立的“只改两份文档”任务，它的最终交付目标是 **PR #16 在用户明确授权后安全并入 main，并完成合并后验证**。2026-10-25 为了保证合并安全，将实施内容分为同一 ID 的 03-A 和 03-B；这是**子步骤，不是新增 Plan 04 或替换原 Plan 03**。
