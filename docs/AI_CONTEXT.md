@@ -9,7 +9,8 @@ against the repository, Git/GitHub, tests and the linked authoritative documents
 
 ## 1. Project and repository
 
-- **Project:** Whale Voice / 小鲸鱼语音中心
+- **Project:** Whale Voice / 小鲸鱼语音中心 — multi-engine TTS plugin; Qwen3-TTS/`whale-v1` are the
+  current reference/personal path, not product defaults.
 - **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 - **Plugin ID:** `dsh-whale-voice`
 - **Runtime:** DSH client plugin + DSH Host row
@@ -20,29 +21,35 @@ Architecture in one line:
 
 ```text
 DSH UI -> Host read-only bridge -> Core detector/config read
-       -> WeChatAgent / Voice Sender / Qwen status
+       -> provider-neutral TTS registry (design-only) + current Qwen reference
+       -> WeChatAgent / Voice Sender status
        -> separate Voice Sender UI Automation for real voice delivery
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md) and
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
 
 ---
 
 ## 2. Git baseline
 
-- **main HEAD:** `9318686141942427cf54dc6daf404fe611869228` (merge of PR #14); verify live with
+- **main HEAD:** `bf9cf66807e12d0b25872a0fa3869962dde04818` (merge of PR #15); verify live with
   `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.
-- **Current development branch:** `feature/phase4b2b2a-capability-status` (read-only capability/status
-  projection), branched from `main` at `9318686`; **PR #15 open**, not merged.
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; the branch changes Core API, frontend
-  and tests, but adds no write route.
-- **Worktree:** clean at the Phase 4B-2B-2a baseline
+- **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
+  provider contract/registry/v2 migration design + isolated tests), branched from `main` at
+  `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production
+  config change.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; TTS-A adds `core/tts/*` pure modules,
+  tests and docs, but no runtime/provider wiring.
+- **Worktree:** clean at the TTS-A design baseline
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-PRs #1/#2 and feature/docs PRs #3–#14 are merged. Phase 4B-1 and 4B-2A are merged but remain
-`OFFLINE`; Phase 4B-2B-1 is `AUDIT COMPLETE` / `OFFLINE`; Phase 4B-2B-2a is `OFFLINE` (schema v3,
-Host GET routes, isolated UI); Phase R1 is **COMPLETE**. No production write route exists.
+PRs #1/#2 and feature/docs PRs #3–#15 are merged. Phase 4B-1 and 4B-2A are merged but remain
+`OFFLINE`; Phase 4B-2B-1 is `AUDIT COMPLETE` / `OFFLINE`; Phase 4B-2B-2a is `INTEGRATED` after real
+Host/GUI acceptance (full eight-page coverage, not `VERIFIED` for destructive edge cases); Phase R1
+is **COMPLETE**. TTS-A is `DESIGN`/`OFFLINE` with all provider candidates `NOT_IMPLEMENTED`. No
+production write route or real TTS provider exists.
 
 ---
 
@@ -94,8 +101,9 @@ production write route exists.
 | Phase R1 repository audit | **COMPLETE** — PR #10/#11 merged; docs/status and non-runtime hygiene |
 | Phase 4B-2A coordination protocol | **Merged into `main`; `OFFLINE`** — isolated source adapters, journal/recovery, save/apply split, Fake Runtime; no production write |
 | Phase 4B-2B-1 component capability audit | **`AUDIT COMPLETE` / `OFFLINE`** — real read timing, write interfaces, revision/apply evidence and blockers; no production write |
-| Phase 4B-2B-2a capability/status projection | **`OFFLINE`** — schema v3 surface-level capability projection, Host GET routes and isolated frontend visualization; no write route |
+| Phase 4B-2B-2a capability/status projection | **`INTEGRATED`** — real DSH Host/GUI, schema v3, eight-page coverage; read-only, no write route; not `VERIFIED` for destructive edge cases |
 | Phase 4B-2B-2b Sender automation write | **NOT STARTED** |
+| TTS-A Provider-neutral audit/contracts | **`DESIGN` / `OFFLINE`** — audit + pure contract/registry/v2 migration + isolated tests; all provider candidates `NOT_IMPLEMENTED`, no Host wiring |
 
 Real GUI evidence exists for the Send & Safety page; it does **not** mean the Windows safety backend
 exists.
@@ -104,22 +112,23 @@ exists.
 
 ## 5. Current task
 
-This task is **Phase 4B-2B-2a: read-only capability/status integration and frontend visualization**.
+This task is **TTS-A: Provider-neutral audit and architecture design**.
 
 Scope:
 
-- schema v3: `readTiming`, `hotReload`, `requiresRestart` are per **Surface** (Sender automation vs
-  TTS must not share a reload value);
-- `core/capabilities.mjs` projects audited static capability + detector/config dynamic observation;
-  `core/capability-view.mjs` derives browser-facing states;
-- Host/Core add GET `/capabilities` and `/capabilities/status` behind the existing guard; no write
-  route;
-- Overview, Voice Settings, Permissions, Studio, Send & Safety, Components and Advanced show real
-  support/authorization/apply limits;
-- isolated Playwright covers capability states, offline/invalid/timeout, stale protection and 780 px;
-- no production write, service restart, audio operation or WeChat send; do not auto-merge the PR.
+- audit Qwen hardcodes in the detector/config/capabilities/coordinator/UI into Qwen-specific,
+  current-selection and generic-TTS categories ([TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md));
+- define a provider-neutral interface, candidate registry, unified synthesis result and delivery
+  boundary ([TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md));
+- add pure `core/tts/provider-contract.mjs`, `provider-registry.mjs` and `provider-config.mjs` with
+  v2 schema/migration design; no I/O, no provider network, no Host route, no production config;
+- add isolated tests for local/cloud fake status, Qwen-offline independence, unsupported
+  voice/emotion, missing credentials, timeout/error, unknown version, migration, Mock/real isolation
+  and the no-WeChat-send result boundary.
 
-The API contract is [CAPABILITY_API.md](CAPABILITY_API.md).
+TTS-A does **not** implement a real provider or GUI provider switcher. TTS-B is the next
+implementation step; TTS-C is real adapters/credentials. Phase 4B-2B-2b remains separate and NOT
+STARTED.
 
 ---
 
@@ -133,16 +142,17 @@ The API contract is [CAPABILITY_API.md](CAPABILITY_API.md).
 3. Phase 4B-2B-1 found **no supported write interface** for the Bridge and no loaded-revision API in
    any component; Sender supports automation `PUT` only, WeChatAgent has a human console with three
    unshared writers. `APPLIED` is unreachable today; production writes remain blocked.
-4. Phase 4B-2B-2a code/API/UI are implemented but the running DSH Host has not been reloaded; live
-   Electron GUI integration is pending separate authorization. Isolated Playwright passing is not
-   real Host acceptance.
+4. Phase 4B-2B-2a is `INTEGRATED` after real DSH Host/GUI acceptance; destructive No-Core/timeout/
+   invalid-schema injections and Console/Network reading remain unverified. It is not `VERIFIED`.
 5. Phase 4B-2B-2b (Sender automation write) is **NOT STARTED** and needs separate authorization.
-6. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
+6. TTS-A provides design-only provider contracts. No real local/cloud/custom adapter, credential
+   store, provider request, provider switcher or production TTS integration exists.
+7. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
-7. Native voice delivery candidates remain unintegrated and unverified.
-8. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
-9. Real DSH Electron DOM/CSS/Console cannot be read without separate authorized debugging; current
-   GUI acceptance used UIA + screenshots.
+8. Native voice delivery candidates remain unintegrated and unverified.
+9. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests.
+10. Real DSH Electron DOM/CSS/Console cannot be read without separate authorized debugging; current
+    GUI acceptance used UIA + screenshots.
 
 ---
 
@@ -181,9 +191,10 @@ The API contract is [CAPABILITY_API.md](CAPABILITY_API.md).
   used as Worker evidence**; Worker keeps `NEVER_WRITE` and writes disabled while Sender
   automation/TTS stay governed by the Service version. Read-only only.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 176 Node tests (175 pass, 1 platform skip; including 49 coordination, 5 capability, 7
-  capability-schema, 9 capability projection and 10 capability-reader/validation tests) and 24 UI
-  checks pass. These are offline/contract evidence, not real production write/apply acceptance.
+- 188 Node tests (187 pass, 1 platform skip; including 49 coordination, 5 capability, 7
+  capability-schema, 9 capability projection, 10 capability-reader/validation and 12 TTS provider
+  contract/migration tests) and 24 UI checks pass. These are offline/contract evidence, not real
+  production write/apply or real provider acceptance.
 
 ---
 
@@ -251,7 +262,7 @@ Phase 4B-2B-2a result:
 
 ```text
 build: PASS, client.js regenerated (in sync)
-node --test: 175/176 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 9 projection and 10 reader/validation tests)
+node --test: 187/188 PASS (1 platform skip; includes 49 coordination, 5 capability, 7 schema, 9 projection, 10 reader/validation and 12 TTS provider contract/migration tests)
 UI: 24/24 PASS
 ```
 
@@ -271,18 +282,22 @@ CI:
 - `main` at `e0ce035` after PR #13: build + ui SUCCESS (run `40149074319`);
 - PR #14 head `b6f86bf`: build + ui SUCCESS (run `40150989182`);
 - `main` at `9318686` after PR #14: build + ui SUCCESS (run `40151464926`);
-- Phase 4B-2B-2a PR #15: CI is reported from its actual PR run; do not merge.
+- PR #15 head `972ad8d`: build + ui SUCCESS (run `40154441917`);
+- `main` at `bf9cf66` after PR #15: build + ui SUCCESS (run `40154748343`).
+- TTS-A PR: CI is reported from its actual PR run; do not merge automatically.
 
 ---
 
 ## 11. Next priority
 
-1. Phase 4B-2B-2b: Sender automation write via the audited `PUT /v1/automation/config` only, after a
+1. TTS-B: implement Provider service and neutral configuration on top of the TTS-A contract;
+   provider-aware status, v2 migration and neutral read-only UI, with isolated tests. No real
+   provider/credentials/production write. Then TTS-C real local/cloud/custom adapters after separate
+   security review.
+2. Phase 4B-2B-2b: Sender automation write via the audited `PUT /v1/automation/config` only, after a
    separate production-write authorization; keep `save.enabled=false` until then and never claim
    `APPLIED` without a loaded revision. Bridge/TTS writes require owner revision endpoints first.
    It is **NOT STARTED**.
-2. Optionally obtain authorization for a normal DSH reload to verify the new `/capabilities` routes
-   in the real Electron GUI; isolated Playwright passing is not Host acceptance.
 3. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
 4. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
@@ -306,9 +321,11 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after Phase 4B-2B-2a: `main` is `9318686` (PR #14 merge); Phase R1 is **COMPLETE**,
-Phase 4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**,
-Phase 4B-2B-2a is **`OFFLINE`** (schema v3 capability/status routes + isolated UI; live Host reload
-pending), Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B-2b is **NOT STARTED**. 176 Node (175 pass,
-1 skip) / 24 UI checks are offline evidence, not production write/apply acceptance. No production
-configuration or runtime behavior change.
+**2026-10-25**, after TTS-A: `main` is `bf9cf66` (PR #15 merge); Phase R1 is **COMPLETE**, Phase
+4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE / `OFFLINE`**, Phase
+4B-2B-2a is **`INTEGRATED`** after real Host/GUI acceptance (full eight-page coverage; not
+`VERIFIED` for destructive edge cases), Phase 3B/4A remain `INTEGRATED`, TTS-A is **`DESIGN` /
+`OFFLINE`** (pure provider contract/registry/v2 migration; no provider wired), and Phase 4B-2B-2b is
+**NOT STARTED**. 188 Node (187 pass, 1 skip) / 24 UI checks are offline/contract evidence, not
+production write/apply or real provider acceptance. No production configuration or runtime behavior
+change.

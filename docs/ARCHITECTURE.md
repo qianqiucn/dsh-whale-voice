@@ -23,7 +23,7 @@ DSH host
        └─ core/detect.mjs
             ├─ packages/adapter-wechatagent (read-only manifest/version/runtime/health evidence)
             ├─ Voice Sender manifest/runtime/health evidence
-            └─ Qwen /health model+voice evidence
+            └─ Qwen /health model+voice evidence (current reference provider only)
 ```
 
 Properties:
@@ -142,9 +142,11 @@ Whale Voice Core
   │    ├─ WeChatAgent native backend — UNSUPPORTED in 0.3.9/0.4.0
   │    └─ Third-party native backend — RESEARCH_CANDIDATE, not integrated
   └─ redacted diagnostics
-       ├─ TTS Provider Registry
-       │    ├─ local Qwen3-TTS adapter
-       │    └─ explicit cloud provider adapter(s)
+       ├─ TTS Provider Registry (provider-neutral contract; all candidates DESIGN_ONLY)
+       │    ├─ local Qwen3-TTS adapter (current reference; not a product default)
+       │    ├─ local Piper / Kokoro / sherpa-onnx adapters (candidates, unverified)
+       │    ├─ explicit cloud adapter(s) (candidates, credentials/cost review required)
+       │    └─ custom HTTP adapter (candidate, target validation required)
        ├─ Sender Plugin Adapter
        │    └─ Windows Voice Sender
        └─ WeChatAgent Adapter (REQUIRED for WeChat)
@@ -159,8 +161,11 @@ negotiation. It must never send keyboard/mouse input or mutate worker-internal s
 **Core:** one source of truth for configuration, target authorization, task lifecycle, cancellation
 and provider/sender selection. All sensitive decisions belong here, not in the UI.
 
-**TTS providers:** pluggable local/cloud implementations with explicit selection. No silent
-fallback, no credential leakage, no committed API keys.
+**TTS providers:** pluggable local/cloud/custom implementations with explicit selection. The
+provider contract, registry, v2 config proposal and migration tests are in TTS-A
+(`core/tts/`, [TTS provider architecture](TTS_PROVIDER_ARCHITECTURE.md)). No provider candidate is
+implemented or selectable yet. There is no silent fallback, no credential leakage and no committed
+API key. Qwen3-TTS is the current reference implementation, not a global default.
 
 **Voice Sender:** independent Windows component for audio device handling, UI automation and native
 voice bubbles. It must expose a versioned contract and retain its own safety checks.

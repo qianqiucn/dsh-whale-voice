@@ -1,20 +1,24 @@
 # Whale Voice · 小鲸鱼语音中心
 
-Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) client plugin for managing a
-Qwen3-TTS / `whale-v1` / WeChat native-voice workflow in one place.
+Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) multi-engine voice plugin
+for local, cloud and custom TTS providers, with WeChat native-voice management through WeChatAgent.
+Qwen3-TTS and the private `whale-v1` voice are the current reference implementation and personal
+voice, not product defaults.
 
 This repository contains the **Whale Voice frontend plugin, a read-only Core detector/config reader,
 the Phase 4B-1 isolated single-file config write foundation, the Phase 4B-2A isolated coordination
-protocol and the Phase 4B-2B-2a read-only capability/status projection**. The working Windows voice
-pipeline (Voice Sender, WeChatAgent, WeChat UI automation, VB-CABLE, the Qwen runtime and the private
-`whale-v1` reference audio) is a separate local system and is **not included here**.
+protocol, the Phase 4B-2B-2a read-only capability/status projection and the TTS-A Provider-neutral
+design/contracts**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeChat UI
+automation, VB-CABLE, a local Qwen runtime and the private `whale-v1` reference audio) is a separate
+local system and is **not included here**.
 
-> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 and Phase 4B-2A are merged
-> and `OFFLINE` (isolated store/coordination + test-only APIs; no production write route).
-> Phase 4B-2B-1 real-component capability audit is complete and `OFFLINE` (read-only; see
-> [the audit](docs/PHASE4B2B1_COMPONENT_AUDIT.md)). Phase 4B-2B-2a read-only capability/status
-> projection is `OFFLINE` (schema v3, Host GET routes, isolated UI; see
-> [Capability API](docs/CAPABILITY_API.md)); Phase 4B-2B-2b write is **NOT STARTED**.
+> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-2B-2a read-only
+> capability/status projection is `INTEGRATED` after real Host/GUI acceptance (full eight-page
+> coverage; see [Capability API](docs/CAPABILITY_API.md)). Phase 4B-2B-1 real-component capability
+> audit is complete and `OFFLINE` (read-only; see
+> [the audit](docs/PHASE4B2B1_COMPONENT_AUDIT.md)). Phase 4B-1/4B-2A remain `OFFLINE` isolated
+> foundations (no production write route). TTS-A Provider-neutral audit and pure contracts are
+> **DESIGN/`OFFLINE`**: no real provider is connected. Phase 4B-2B-2b write is **NOT STARTED**.
 > Remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
 > not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
@@ -68,9 +72,14 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
 - Phase 4B-2B-1 capability audit (`OFFLINE`): verified Bridge/Sender/WeChatAgent read timing, write
   interfaces, revision/apply evidence and blockers; no production write was added. See
   [PHASE4B2B1_COMPONENT_AUDIT.md](docs/PHASE4B2B1_COMPONENT_AUDIT.md).
-- Phase 4B-2B-2a capability/status projection (`OFFLINE`): schema v3 Surface-level read/hot-reload/
-  restart semantics, Host GET `/capabilities` routes and frontend read-only status; no write control.
+- Phase 4B-2B-2a capability/status projection (`INTEGRATED`, read-only): schema v3 Surface-level
+  read/hot-reload/restart semantics, Host GET `/capabilities` routes and frontend read-only status;
+  real DSH Host/GUI acceptance covers all eight pages; no write control.
   See [CAPABILITY_API.md](docs/CAPABILITY_API.md).
+- TTS-A Provider-neutral audit and pure contracts (`DESIGN`/`OFFLINE`): Provider interface, candidate
+  registry, v2 config/migration proposal and isolated tests; all candidates `NOT_IMPLEMENTED`.
+  See [TTS_PROVIDER_AUDIT.md](docs/TTS_PROVIDER_AUDIT.md) and
+  [TTS_PROVIDER_ARCHITECTURE.md](docs/TTS_PROVIDER_ARCHITECTURE.md).
 - Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
   installation/runtime/health evidence, and local Qwen health/model/voice.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
@@ -209,14 +218,23 @@ The repository does not install, start or modify Voice Sender, WeChatAgent, WeCh
 - Group chat automation is intentionally not opened until a stable real-group identity source is
   verified.
 
-## Local and cloud TTS
+## Local, cloud and custom TTS
 
 The target architecture keeps TTS providers pluggable:
 
-- Local: Qwen3-TTS with a user-owned voice profile.
-- Cloud: a provider adapter selected deliberately by the user, never an automatic silent fallback.
+- Local: Qwen3-TTS is the current reference; Piper/Kokoro/sherpa-onnx are architecture candidates
+  only.
+- Cloud: Azure/ElevenLabs and similar providers are candidates; selection is deliberate, with
+  explicit credentials, cost and privacy disclosure.
+- Custom: self-hosted HTTP TTS requires endpoint validation, authentication references and response
+  format verification.
+- `whale-v1` is the developer's current personal voice, not a new-user default.
 
-No cloud provider, API key or vendor credential is included in this repository.
+TTS-A provides the audit, Provider contract, candidate registry and v2 config/migration proposal:
+[TTS Provider Audit](docs/TTS_PROVIDER_AUDIT.md) and
+[TTS Provider Architecture](docs/TTS_PROVIDER_ARCHITECTURE.md). No real provider adapter,
+credentials store or production TTS is included in this repository. No cloud provider, API key or
+vendor credential is included.
 
 ## Development
 

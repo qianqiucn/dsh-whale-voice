@@ -215,3 +215,23 @@ add a new configuration source and does not write any file:
   Worker evidence and still remains `UNKNOWN` without an audited Worker baseline.
 
 See [CAPABILITY_API.md](CAPABILITY_API.md).
+
+## TTS-A Provider-neutral proposal (not a source yet)
+
+TTS-A adds no configuration source and changes no production file. The design in
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md) proposes a future v2 shape:
+
+- provider **instances** (`instanceId` + catalog `providerId`), models, voices and voice packs are
+  separate; a voice is provider-scoped and may have no reference audio;
+- `qwen-local` v1 values are preserved as a Qwen instance; `cloud`/`custom` legacy values require an
+  explicit provider selection and are never mapped to Qwen;
+- credentials are represented only by a protected-storage `credentialRef`; no key belongs in config,
+  a URL, frontend state or logs;
+- provider selection is explicit and has no silent local/cloud fallback; Qwen offline does not
+  invalidate another provider;
+- the `providers`/`models`/`voices`/`voicePacks` proposal is pure and validated by
+  `core/tts/provider-config.mjs`; it is not wired to the isolated store, Host routes or production
+  configuration.
+
+This is a design proposal, not an active source. Production migration requires its own write,
+conflict and rollback authorization.

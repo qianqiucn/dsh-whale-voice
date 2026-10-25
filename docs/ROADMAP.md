@@ -20,14 +20,16 @@ platform layer, not an optional TTS feature. TTS providers may be swapped freely
 not be removed or replaced by a second WeChat bot in Whale Voice.
 
 **Next development gate:** the read-only PR stack (#3–#8), Phase 4B-1 (#9), Phase R1 (#10/#11),
-Phase 4B-2A (#12), the 4B-2A handoff (#13) and the 4B-2B-1 audit (#14) are integrated into `main` with
-merge commits; current `main` is `9318686`. Phase 4B-1 and Phase 4B-2A remain `OFFLINE` (isolated
-store/coordination; test-only APIs; no production route). Phase 4B-2B-1 completed the read-only audit
-and Phase 4B-2B-2a now exposes the **read-only capability/status projection** (`OFFLINE`): schema v3
-surface-level reload semantics, Host GET routes and isolated frontend visualization. The next step is
-**Phase 4B-2B-2b** (Sender automation write; **NOT STARTED**) after separate production-write
-authorization. Production config writes require separate authorization; Voice Sender final
-independent safety verification remains required before real sending. See
+Phase 4B-2A (#12), the 4B-2A handoff (#13), the 4B-2B-1 audit (#14) and Phase 4B-2B-2a (#15) are
+integrated into `main` with merge commits; current `main` is `bf9cf66`. Phase 4B-1 and Phase 4B-2A
+remain `OFFLINE` (isolated store/coordination; test-only APIs; no production route). Phase 4B-2B-1
+completed the read-only audit. Phase 4B-2B-2a is **`INTEGRATED`** after real DSH Host/GUI acceptance
+(schema v3, eight-page coverage, read-only). **TTS-A** has delivered a Provider-neutral audit, pure
+contract/registry/v2 migration design and isolated tests (`DESIGN`/`OFFLINE`); the next step is
+**TTS-B** provider service + neutral configuration, then **TTS-C** real adapters. Phase 4B-2B-2b
+(Sender automation write) remains **NOT STARTED** and separate. Production config writes require
+separate authorization; Voice Sender final independent safety verification remains required before
+real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
 [CAPABILITY_API.md](CAPABILITY_API.md) and
 [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
 
@@ -99,7 +101,7 @@ connection required; no secret values.
 and no secret or private mapping is logged.
 
 **Current status:** Phase 4A read-only config snapshot and UI readout are `INTEGRATED` in the live DSH
-Host (port 57393): 401-protected config routes, trusted bridge, six GUI surfaces and refresh verified.
+Host (port 59194): 401-protected config routes, trusted bridge, eight GUI pages and refresh verified.
 Saved-vs-active is separated; Bridge and Worker safety layers are distinct. Phase 4B-1 is merged and
 remains **`OFFLINE`**: trusted sandbox capability, strict schema, v0→v1 migration, HMAC revision,
 `expectedRevision` conflict detection, atomic save/rollback, read/write state separation and a
@@ -107,11 +109,13 @@ test-only API. Phase 4B-2A is **`OFFLINE`** and merged via PR #12: isolated sour
 plan, journal/recovery, save/apply split and Fake Runtime; no production adapter. Phase 4B-2B-1 is
 **AUDIT COMPLETE / `OFFLINE`**: real read timing, write interfaces, revision/apply evidence and
 blockers are documented in [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md). Phase
-4B-2B-2a is **`OFFLINE`**: schema v3 surface-level capability/status projection, Host GET routes and
-isolated frontend visualization; live Host reload pending. Phase R1 is **COMPLETE** (PR #10/#11,
-`main` `8abf031`). Production write, multi-file transaction, cross-process CAS and runtime apply remain
-`PLANNED`; no production write exists. Phase 4B-2B-2b is **NOT STARTED**. Live No-Core/timeout/
-invalid-schema/stale injections remain `OFFLINE` tests.
+4B-2B-2a is **`INTEGRATED`** after real DSH Host/GUI acceptance (PR #15): schema v3 Surface-level
+capability/status, Host GET routes and eight-page read-only frontend visualization. TTS-A is
+**`DESIGN`/`OFFLINE`**: Provider-neutral audit, contract, registry and v2 migration proposal; no
+provider is implemented. Phase R1 is **COMPLETE** (PR #10/#11). Production write, multi-file
+transaction, cross-process CAS, provider adapters and runtime apply remain `PLANNED`; no production
+write exists. Phase 4B-2B-2b is **NOT STARTED**. Live No-Core/timeout/invalid-schema/stale injections
+remain `OFFLINE` tests.
 
 ---
 
@@ -193,22 +197,28 @@ implemented. See [SEND_SAFETY_API.md](SEND_SAFETY_API.md).
 
 ---
 
-## P6 — Cloud TTS and GPU-free mode
+## P6 — Multi-engine TTS (local / cloud / custom)
 
-**Goal:** Allow an explicitly configured cloud provider without silent fallback.
+**Goal:** Allow an explicitly selected local, cloud or custom TTS provider without silent fallback.
 
 **Core tasks:**
-- Provider registry with capability and cost/privacy metadata.
-- User-selected provider and credential storage outside the repository.
-- Audio validation, timeout and cancellation behavior.
-- Clear local/cloud disclosure and no automatic provider switch.
+- Provider registry with capability, health, version, cost/privacy and resource metadata (TTS-A
+  design: `core/tts/provider-registry.mjs`).
+- Provider-neutral configuration with separate provider instances/models/voices/voice packs and
+  protected credential references (TTS-A proposal: `core/tts/provider-config.mjs`).
+- TTS-B: provider service, provider-aware status, remove Qwen-only TTS gating, neutral read-only UI.
+- TTS-C: real local adapter, real cloud adapter after credentials/cost/privacy review, and custom
+  HTTP adapter with endpoint validation and request limits.
+- Audio validation, timeout, cancellation and no automatic provider switch.
 
-**Dependencies:** P1/P2; user decision on providers and credentials policy.
+**Dependencies:** P1/P2; TTS-A design; user decision on providers and credentials policy.
 
 **Acceptance:** Provider selection is explicit; missing credentials fail closed; no key is logged or
-committed.
+committed; Qwen offline does not make another provider unavailable; a provider never sends WeChat.
 
-**Current status:** `PLANNED`.
+**Current status:** TTS-A **`DESIGN`/`OFFLINE`**: audit, contract, candidate registry, v2 migration
+proposal and 12 isolated tests. No candidate is implemented; Qwen3-TTS is the current reference,
+`whale-v1` is the current personal voice, not a product default. TTS-B/TTS-C are **NOT STARTED**.
 
 ---
 
@@ -326,8 +336,9 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 176 Node tests. PR #3–#14 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 188 Node tests. PR #3–#15 are integrated into `main`; Phase 4B-1
 is merged but remains `OFFLINE`; Phase 4B-2A coordination is merged and `OFFLINE`; Phase 4B-2B-1
 capability audit is complete and `OFFLINE`; Phase 4B-2B-2a read-only capability/status projection is
-`OFFLINE`; Phase R1 is **COMPLETE**. The clean development baseline is post-integration `main`
-(`9318686`, then the 4B-2B-2a PR). No release, no public visibility and no release artifact yet.
+`INTEGRATED` after real Host/GUI acceptance; TTS-A Provider-neutral design is `DESIGN`/`OFFLINE`;
+Phase R1 is **COMPLETE**. The clean development baseline is `main` `bf9cf66` (PR #15 merge). No
+release, no public visibility and no release artifact yet.

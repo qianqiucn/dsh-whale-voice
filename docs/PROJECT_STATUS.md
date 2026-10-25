@@ -4,26 +4,28 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-25
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#14 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `OFFLINE`** (schema v3, Host GET routes and frontend visualization; no write route); **Phase R1 `COMPLETE`**; 176 Node (175 pass, 1 skip) + 24 UI checks green; **Phase 4B-2B-2b NOT STARTED**
-**Latest associated commit:** `main` `9318686141942427cf54dc6daf404fe611869228` (merge of PR #14); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#15 — feat(core): Phase 4B-2B-2a read-only capability/status projection](https://github.com/qianqiucn/dsh-whale-voice/pull/15) — **OPEN**, not merged. Latest merged PR: #14 (Phase 4B-2B-1 audit).
-**Acceptance caveat:** 175/176 Node (1 platform skip) and 24/24 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`. The new capability routes are registered in source but the running DSH Host has not been reloaded.
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#15 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `INTEGRATED`** (real Host/GUI, full eight-page coverage; no write route); **Phase R1 `COMPLETE`**; **TTS-A Provider-neutral audit + pure contracts are `DESIGN`/`OFFLINE`** (no provider connected); **Phase 4B-2B-2b NOT STARTED**
+**Latest associated commit:** `main` `bf9cf66807e12d0b25872a0fa3869962dde04818` (merge of PR #15); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
+**Latest PR:** [#15 — feat(core): Phase 4B-2B-2a read-only capability/status projection](https://github.com/qianqiucn/dsh-whale-voice/pull/15) — **MERGED**. TTS-A branch `feature/tts-provider-neutral-contract` is the current design PR candidate.
+**Acceptance caveat:** Node/UI checks are offline/contract evidence unless explicitly marked real Host/GUI acceptance. Phase 4B-1/4B-2A/4B-2B-1 remain `OFFLINE`; Phase 4B-2B-2a is `INTEGRATED` after the authorized DSH Host/GUI acceptance. TTS-A adds no production provider, credential store, write route or audio path.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
 **Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **merged via PR #12**, not deleted.
 **Phase 4B-2B-1 branch:** `feature/phase4b2b1-component-audit` — read-only audit + fixture-only capability tests; **merged via PR #14**, not deleted.
-**Phase 4B-2B-2a branch:** `feature/phase4b2b2a-capability-status` — schema v3 capability projection, Host GET routes and frontend read-only visualization; **PR #15 open**, not merged.
-**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13 → #14, all merged with merge commits; #10/#11 completed R1 audit/status; #12 added the Phase 4B-2A coordination protocol; #13 recorded the handoff; #14 added the capability audit and schema v2 fixtures.
+**Phase 4B-2B-2a branch:** `feature/phase4b2b2a-capability-status` — schema v3 capability projection, Host GET routes and frontend read-only visualization; **merged via PR #15**, not deleted.
+**TTS-A branch:** `feature/tts-provider-neutral-contract` — provider-neutral audit, contract, registry, v2 migration design and isolated tests; pure/design only.
+**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11 → #12 → #13 → #14 → #15, all merged with merge commits; #15 delivered Phase 4B-2B-2a read-only capability/status projection.
 
 ---
 
 ## Current scope
 
-This repository contains the **DSH frontend plugin, a read-only Core detector and the Phase 4B-1
-isolated config store**. It does not contain:
+This repository contains the **DSH frontend plugin, a read-only Core detector, the Phase 4B-1
+isolated config store and TTS-A Provider-neutral contracts**. It does not contain:
 
+- a real local/cloud/custom TTS provider adapter, credential store or provider request path;
 - Voice Sender Windows service (or its installer);
 - WeChatAgent, WeChat Hook/Bridge;
-- Qwen3-TTS runtime or `whale-v1` reference audio;
+- a Qwen3-TTS runtime, model weights or `whale-v1` reference audio (Qwen is only a reference path);
 - a production configuration write/apply service;
 - real voice task database, logs, device snapshots or chat history.
 
@@ -158,32 +160,39 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       proven atomicity), minimal owner-API architecture and Phase 4B-2B-2 interface. See
       [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md). Adds 12 fixture-only tests
       (5 capability + 7 schema); no production write, service operation or audio change.
-- [x] Phase 4B-2B-2a read-only capability/status projection **OFFLINE**: schema v3 moves
+- [x] Phase 4B-2B-2a read-only capability/status projection **INTEGRATED**: schema v3 moves
       `readTiming`/`hotReload`/`requiresRestart` to each Surface; `core/capabilities.mjs` joins the
       audited contract with `core/detect.mjs` + `core/config.mjs`; `core/capability-view.mjs` derives
       natural-language UI states; Host/Core gain GET `/capabilities` and `/capabilities/status` with
-      the existing token/origin/loopback/connection guard; Overview, Voice Settings, Permissions,
-      Studio, Send & Safety, Components and Advanced show real support/authorization/apply limits.
-      No write route, no service control, no private targets. See
-      [CAPABILITY_API.md](CAPABILITY_API.md). Adds 8 capability tests, 2 reader tests and 7 UI checks;
-      176 Node / 24 UI checks pass locally.
+      the existing token/origin/loopback/connection guard. Real DSH Host/GUI acceptance covered all
+      eight navigation pages; Worker version is independent and `NEVER_WRITE` is preserved; no
+      `APPLIED` without a loaded revision. Merged via PR #15 (`bf9cf66`). See
+      [CAPABILITY_API.md](CAPABILITY_API.md). 188 Node / 24 UI checks on the integrated baseline.
+- [x] TTS-A Provider-neutral audit and pure contracts **DESIGN/OFFLINE**: `docs/TTS_PROVIDER_AUDIT.md`
+      inventories Qwen hardcodes by Qwen-specific / current-selection / generic category;
+      `docs/TTS_PROVIDER_ARCHITECTURE.md` defines the provider interface, candidate registry,
+      v2 config/migration proposal, GUI plan and TTS-B/C split. `core/tts/provider-contract.mjs`,
+      `provider-registry.mjs` and `provider-config.mjs` are pure and isolated: no I/O, no Host route,
+      no production config, no provider network call, no credentials. All candidates are
+      `NOT_IMPLEMENTED`; `whale-v1` is preserved only as the current personal voice. 12 isolated
+      provider contract/migration tests added; no runtime or UI wiring.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] No active production implementation. Phase 4B-1, 4B-2A, 4B-2B-1 and 4B-2B-2a are `OFFLINE`;
+- [ ] TTS-B Provider service and neutral configuration (next implementation step; no production
+      provider or write yet).
+- [ ] No active production implementation. Phase 4B-1, 4B-2A, 4B-2B-1 and TTS-A are `OFFLINE`;
       Phase 4B-2B-2b (write) is **NOT STARTED**.
 
 ## Next highest-priority task
 
-**Next: Phase 4B-2B-2b — Sender automation write** (**NOT STARTED**; requires separate production
-write authorization). It may use only the audited `PUT /v1/automation/config`, must keep
-`save.enabled=false` until authorization is explicit, must not claim `APPLIED` without a loaded
-revision, and must never write Worker `voice_enabled`, Bridge settings or WeChatAgent permissions.
-Do not write production configuration, restart services or send real messages before that
-authorization. Voice Sender's final independent safety verification remains mandatory before real
-sending.
+**Next: TTS-B — Provider service and neutral configuration** (design approved by TTS-A, implementation
+not started). It must implement provider-aware observations and TTS gating, v2 migration for
+`qwen-local`, neutral read-only GUI provider/voice selection and isolated tests. It must not connect
+a real provider, store cloud credentials, start Qwen, write production configuration, restart
+services or send WeChat messages. Phase 4B-2B-2b remains a separate future task and is not started.
 
 ## Pending
 
@@ -193,7 +202,8 @@ sending.
 - [ ] P4: required `packages/adapter-wechatagent` contract, version/connection checks and
       missing-WeChatAgent UI state.
 - [ ] P5: real frontend connection replacing Mock data.
-- [ ] P6: explicit cloud TTS provider and GPU-free mode.
+- [ ] P6: TTS-B provider service + neutral configuration; TTS-C real local/cloud/custom adapters,
+      protected credentials, cost/privacy gates and audio pipeline integration (no provider yet).
 - [ ] P7: installation wizard backend, real detection, install/update/repair/rollback and clean-machine
       acceptance.
 - [ ] P8: verified group identity, emergency stop and WeChat auto-location integration.
@@ -220,8 +230,8 @@ sending.
    WeChatAgent `auth_required`, Sender offline, Qwen health valid. Sender is not running; it was not
    started. Live No-Core/timeout/invalid-schema/stale GUI tests were not performed and remain
    `OFFLINE` behavior tests; this is why Phase 3B is `INTEGRATED`, not `VERIFIED`.
-9. Phase 4A is `INTEGRATED`: current Host (port 57393) serves the config routes, the trusted bridge
-   reads real config, six GUI surfaces were inspected, Bridge/Worker layers are separate, and no
+9. Phase 4A is `INTEGRATED`: current Host (port 59194) serves the config routes, the trusted bridge
+   reads real config, eight GUI surfaces were inspected, Bridge/Worker layers are separate, and no
    write API exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE`.
 10. Phase 4B-2B-1 found that the Sender automation `PUT` is the only owner-side write API, but
     Whale Voice has **no production write authorization** for it; the Bridge has no write API,
@@ -230,9 +240,11 @@ sending.
     production writes remain blocked.
 11. WeChatAgent has three config writers (console CAS, CLI prepare, account switch) with no shared
     lock, and mixed hot/boot readers; Core must not write its config. See the capability audit.
-12. Phase 4B-2B-2a code, Host routes and isolated UI are implemented, but the running DSH Host has
-    not been reloaded; live Electron GUI integration is pending separate authorization. Isolated
-    Playwright passing is not real Host acceptance.
+12. Phase 4B-2B-2a is `INTEGRATED`: real DSH Host PID `23200`/port `59194`, trusted bridge-read
+    schema v3, eight-page GUI acceptance including Emotions and Activity, and Worker/Service version
+    separation were verified. It is not `VERIFIED` because destructive No-Core/timeout/invalid-schema
+    injections and Console/Network reading were not performed. TTS-A adds only pure contracts and
+    isolated tests; no real provider exists and no production TTS is connected.
 
 ## Verification evidence
 
@@ -247,7 +259,7 @@ sending.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 176 tests: 175 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection and 10 capability-reader/validation tests |
+| `node --test` | 188 tests: 187 pass, 1 platform skip, including 49 coordination, 5 capability, 7 capability-schema, 9 capability projection, 10 capability-reader/validation and 12 TTS provider contract/migration tests |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -272,7 +284,11 @@ sending.
 | Phase 4B-2B-2a Host API | GET `/whale-voice/setup/capabilities` and `/capabilities/status`; existing token/origin/loopback/connection guard; 401/405/cross-site tests; no write route |
 | Phase 4B-2B-2a UI | Overview capability summary; Bridge/TTS/automation/Worker/WeChat surfaces on Settings/Studio/Safety/Permissions; Components dialog blockers; Advanced technical details; no enabled write control |
 | Windows lock probe (local) | `fs.open(...,'wx')` exclusive create, `EEXIST` on second create, `process.kill(pid,0)` live/`ESRCH`, `rename` replaces the name only; no atomicity or power-loss durability claim; advisory only, no production file touched |
-| Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
+| Live DSH host bridge | current port 59194 (Host PID 23200, main window 30644); Host routes 401; trusted bridge injects; eight GUI pages show real config; Phase 4B-2B-2a accepted |
+| TTS-A provider contract | pure `core/tts/provider-contract.mjs`: manifest/version/status/request/result validation; no I/O, no network, no WeChat delivery; cloud/local fake-provider behavior tested |
+| TTS-A registry | all seven candidates (`qwen3-tts`, piper, kokoro, sherpa-onnx, azure-speech, elevenlabs, custom-http) are `NOT_IMPLEMENTED`, `selectable:false`, no default; no provider is connected |
+| TTS-A config migration | v2 proposal separates provider instances/models/voices/voice packs; qwen-local v1 preserved; cloud/custom legacy requires explicit selection; secrets/unsafe URLs/provider-voice mismatches rejected; no file write |
+| TTS-A tests | 12 isolated tests: local/cloud status, Qwen-offline independence, unsupported voice/language/emotion/streaming, missing credentials, timeout/error, unknown version, migration/idempotency, Mock/real isolation and no-provider-send boundary |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
 | `npm.cmd run test:ui` | 24/24 isolated Playwright checks: real-config readout, capability summary/surfaces, Sender automation vs TTS reload, components dialog, invalid/missing/timeout capability, stale refresh race, Mock/real labels, No-Core/invalid/timeout, wizard, dialogs, glass/rounded, 780px, Console/requests |
