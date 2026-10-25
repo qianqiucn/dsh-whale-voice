@@ -3,6 +3,11 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
+## New ChatGPT conversation handoff
+
+- [NEXT_CHATGPT_HANDOFF.md](plans/NEXT_CHATGPT_HANDOFF.md) — **start here in a new ChatGPT conversation** to recover latest planning context and active PR risks.
+- [NEXT_CHATGPT_ACTION_PLAN.md](plans/NEXT_CHATGPT_ACTION_PLAN.md) — first planning/GitHub coordination task for the next ChatGPT session. Neither document authorizes engineering or production operations.
+
 ## AI collaboration and role-specific plan standard
 
 - [AGENTS.md](../AGENTS.md) — engineering/safety rules shared by DeepSeek (principal developer) and ChatGPT; explicitly describes their roles.
