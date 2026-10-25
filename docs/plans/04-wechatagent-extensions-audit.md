@@ -2,6 +2,12 @@
 
 **任务状态：PLANNED（推荐在 TTS-A 合并后）**
 
+## 最新验收（2026-10-25）· Plan 04-A DONE，独立研究 PR #20 未合并
+
+[PR #20](https://github.com/qianqiucn/dsh-whale-voice/pull/20) 的 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md` 361 行研究文档已由 ChatGPT 对照固定 E01–E25、17 Fake 测试种子、A01–A15 逐项验收，HEAD `6007fecd351d0cdb492a4ec5962ac2abe1962242`，CI `40233344202` SUCCESS。**04-A = DONE（RESEARCH/OFFLINE）**，绝不意味着上游 0.4.1 已安装或 WeChatAgent 新增 Tool/音频发送已实现。唯一技术推荐 **S1 当前 DSH Plugin + WeChatAgent Adapter**，S2 新 ZIP Plugin v2 仅未来可选（与 DSH 不兼容、无原生音频/文件发送）；S3 Native Hook/DLL 禁止，用户当前已记录 0.3.9 原链不因研究升级。
+
+**下一份正式派发 Plan 05-A（[Level 2](05-A-whale-audio-core-offline-contract-implementation.md)）**，只做统一鲸音 Core 的离线纯模块/测试，保留本阶段研究结论和小白优先。计划 03-B Merge PR #16 仍 WAIT_USER_AUTHORIZATION；不能把研究 DONE 或 CI 当作合并批准。本文下方旧“Plan 04 PLANNED”仅为历史。
+
 ## 2026-10-25 · Plan 04-A 正式 Level 2 派发（最新权威状态）
 
 **Plan 04-A = SENT / 等待 DeepSeek 静态审计报告**，完整可直接执行的任务书：[04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)。唯一输出为 `docs/WECHATAGENT_EXTENSION_INTEGRATION.md`，只限新独立研究 docs-only PR。不安装、不升级、不重启、不访问聊天数据库/Token、不调用真实微信、不动工程或计划分支、绝不合并。
