@@ -34,7 +34,9 @@ explicit permission; do not silently weaken a safety boundary.
 7. Verify that `docs/AI_CONTEXT.md` is not stale relative to Git/HEAD/PRs/tests. Re-read the named
    authoritative docs when it disagrees.
 8. State the current task boundary and whether explicit authorization is required.
-9. Select the highest-priority task that is safe to execute.
+9. **DeepSeek:** implement the currently user-assigned detailed technical task; do not independently
+   select, reprioritize or dispatch the next plan. **ChatGPT:** choose/maintain plan order and
+   dispatch a single execution-ready specification when the user requests it.
 10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
     restarts or production configuration changes, stop and obtain explicit authorization first.
 
@@ -271,23 +273,23 @@ Before staging or pushing:
 - Run `git diff --cached --check` and a secret scan before committing.
 - Use an existing legitimate Git identity; do not invent an author email.
 
-## 10. What "continue the plan" means
+## 10. What "continue the plan" means — role-aware
 
-When the user says **“继续 Whale Voice 开发计划”** (or equivalent), an agent should:
+For **ChatGPT**, “继续 Whale Voice 开发计划” (or equivalent) means: read
+[EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) and
+[docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+check latest source/Git/CI, select the next task from the ordered registry, expand it to a
+[Level 2 execution-ready specification](docs/plans/TASK_SPEC_STANDARD.md),
+update the plan branch/PR and send **one** complete task to the user.
 
-1. Read the current GitHub `main` state.
-2. Read `AGENTS.md`, roadmap and project status.
-3. Choose the next safe, highest-priority task.
-4. Create a task branch.
-5. Implement a minimal change.
-6. Run the available checks.
-7. Update status/roadmap/changelog.
-8. Commit and push when authorized.
-9. Open a PR when appropriate.
-10. Report exact results and remaining risks.
+For **DeepSeek**, the same message does **not** authorize independently choosing or reordering
+the roadmap. DeepSeek should implement the most recently explicitly assigned detailed technical
+task, using this AGENTS.md safety/engineering process (branch → minimal code → tests → privacy
+scan → PR → handoff). If no concrete execution task has been assigned, request the specific
+task/specification rather than silently starting the next plan or rewriting the plan registry.
 
-There is no autonomous scheduler in this repository. Do not claim GitHub is developing itself or that
-a roadmap automatically executes. The next cycle is triggered by the user's instruction.
+Both roles must preserve the explicit authorization boundaries in §6. There is no autonomous
+scheduler; no GitHub tasks execute in the background without an active request.
 
 ## 11. Stop conditions
 
