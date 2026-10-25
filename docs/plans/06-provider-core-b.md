@@ -2,6 +2,15 @@
 
 **状态：PLANNED；前置：TTS-A 和 Unified Core-A 契约审查完成。**
 
+## 2026-10-25 · RVC/SVC 外部 Gateway 适配规格（仍 PLANNED）
+
+结合 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md) 和 Plan 07-A 的许可/API 审计，RVC 与 SoVITS-SVC 作为分离的可选 SVC Provider 实例；不得放宽 TTS-A 白名单或当作 TTS 默认模型。
+- 先实现纯 Fake Gateway 与状态投影 OFFLINE/UNKNOWN/MODEL_NOT_AVAILABLE/AVAILABLE；Fake 健康成功不能让真实 Registry.selectable=true。
+- 模型名不得作为路径、命令、URL，稳定 modelId 应关联使用权利和资产。未知模型 fail closed。
+- 上游 Gradio show_model/convert 参数、错误、超时、输出路径和取消语义需要 07-A/07-B 静态/沙箱核实；不能因上游支持 songId 就在当前 validateSvcRequest 内注入未经验证字段。
+- Fake 回归覆盖无 GPU、断线、非法媒体、超时、取消不确认、API 版本不匹配、缓存串用户、恶意路径、未知模型、下载未授权。资源调度属于 Whale Voice Core，而不是鲸递。
+- 真后端启动、模型安装和网络下载不是该 Plan 的默认授权。
+
 ## 任务
 - 实现 TTS/SVC 分类注册、稳定 Provider ID、实例、版本、安装/健康状态、语言、音色、情绪/克隆/流式/取消、联网/费用和资源能力。
 - 用 Fake TTS、Fake SVC 执行能力协商：不支持音色、语言、情绪、格式时准确拒绝，不暗中丢参数。
