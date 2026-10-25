@@ -2,6 +2,10 @@
 
 **状态：PLANNED；独立研究，不阻塞通用 Core 设计。**
 
+## 2026-10-25 · 07-A Level 2 已派发（等待 DeepSeek 的只读研究报告）
+
+**最新派发状态：07-A = SENT（ChatGPT 已向用户交付独立完整任务书，待用户转发 DeepSeek 和完成报告）；07-B = PLANNED/NOT_SENT。** 唯一可执行版：[07-A-rvc-upstream-static-audit-execution.md](07-A-rvc-upstream-static-audit-execution.md)。本文下方历史 07-A “PLANNED/NOT_SENT/DRAFT v1” 属派发前快照，**以本段与独立 Level 2 任务书为准**。该研究只允许独立 docs/SVC_PROVIDER_RESEARCH.md 文档 PR；PR #16 未合并、03-B 待用户授权；不能下载模型/歌曲、运行真实 RVC、改运行代码/生产、合并 PR。Seed-VC 仅后续静态档案，小白优先 DoD 不得省略。
+
 ## 最新已授权收敛决策（2026-10-25；优先于下文历史调查清单）
 
 **用户正式授权：首发仅将 RVC 作为 Whale Singing 的主要歌声转换路线；Seed-VC 不删除，但降为“后续可选零样本/免训练试唱候选”，不作为 RVC 上线前置，也不是低显存或 CPU 轻量引擎。** 本轮是计划文档调整，不是实施或安装授权。
