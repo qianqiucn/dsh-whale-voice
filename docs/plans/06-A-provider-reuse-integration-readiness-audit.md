@@ -1,8 +1,28 @@
 # Plan 06-A · 现有 Provider 实现复用与集成前置核验
-**版本：v1.1 · 2026-10-26 · EXECUTION-READY Level 2 / SENT。仅纠正模式说明，取代v1.0；同一任务续行，不重复派发。**
+**版本：v1.1 · 2026-10-26 · DONE / READ_ONLY_AUDIT / Git NOT_REQUIRED。仅纠正模式说明，取代v1.0；同一任务续行，不重复派发。**
 **新对话模式：标准。原因：本次仅核验仓库和既有实现，不需要定制DSH运行时或预设。操作边界：只读、不安装、不合并；标准模式本身也有编辑/终端能力，不能代替任务授权限制。**
 **执行：DeepSeek；规划与验收：ChatGPT。原 Plan06 子任务，目标等级 READ_ONLY_AUDIT / NOT_INTEGRATED。**
 **唯一方案：跨 PR 固定版本只读核验，直接在对话交付报告；不修改仓库、不新增 PR、不新建第二套 Registry/Fake。**
+
+
+## 2026-10-26 · 06-A正式验收DONE；合并建议因新增SVC证据暂停
+本地用户报告0002（Plan06-A v1.1对应首报v1.0）达到READ_ONLY_AUDIT范围。ChatGPT重新核对main、开放PR当前HEAD/base、#16/#17当前CI及六PR changed files：与报告一致。三条共享路径为docs/README.md、AGENTS.md、docs/plans/README.md；#21五文件、#22相对父三文件，#16/#23无路径交集。所有真实映射/运行能力仍未实现。报告原件仅留本地，不上传本机路径或全文。
+| 项 | 审核结论 |
+|---|---|
+| A01 | PASS：实时main/八PR与来源清楚；#17 CI40244714524对应c8dbae4 SUCCESS |
+| A02/A03 | PASS于盘点范围：候选NOT_IMPLEMENTED，现有模块复用，尚无调度；错误域不同不自动构成枚举漏洞 |
+| A04/A05 | PASS：单任务/组合视图边界与资产映射缺口清楚 |
+| A06 | PASS于静态映射：v1与Fake不可直通，N1/N2未运行准确；不能据此认为v1校验已全面安全 |
+| A07/A08/A09 | PASS于OFFLINE范围：Fake成功不是真实可用、超时取消是模拟、投递标签不授权 |
+| A10 | PASS：路径交集/堆叠正确；未模拟合并，不背书整批merge |
+| A11/A12 | PASS：授权/接口/资产/真实运行门禁及中文新手边界分开 |
+| D01–D10 | PASS于只读审计自身DoD；Plan06运行实现不因此DONE |
+**审核澄清：** H0早已决定#17唯一、#18历史来源，不再按报告§5.3/§10重启规划取舍或启用#18。报告结果映射表中的engineId是归一化输出/函数参数，原始结果输入可选providerId；delivery可省略并由normalizer填PENDING_ROUTER，不是每个原始结果都必须显式带该字段。createdAt同样可省略。以上以源码为准，不要求DS重写一份已完成审计。
+**新增独立P2契约证据：** ChatGPT从#16@954a01a读取固定源码，SVC原5/5测试PASS；另8组探针复现未知结果字段、delivery.submitAllowed:true、隐藏token、Symbol均被接受；两个入口各执行getter4次；未知请求键名回显；createdAt对象被接受并共享引用。返回delivery仍被规范化PENDING_ROUTER，未产生真实发送，不声称权限已被绕过或实际隐私已泄露。
+因此06-A=DONE/READ_ONLY_AUDIT、Git NOT_REQUIRED，但#16当前合并建议BLOCKED_PENDING_SVC_FIX。03-A历史DONE保留；当前新增复审REVIEW_REQUIRED，03-B仍WAIT_USER_AUTHORIZATION。
+**唯一下一工程：[03-A-F01 · SVC输入边界与合并前证据修复](03-A-F01-svc-boundary-premerge-hardening.md)=SENT。** 原PR#16六文件最小修复，R01–R24与既有测试；不改TTS实现/Registry错误码，不导入未合并PR，不新建PR，不合并。
+DS归档规则：本地AGENTS第13节及报告INDEX/0001/0002文件已读到；DS报告称当前会话已热加载，跨会话加载未独立验证，不能夸称所有新对话已验证。
+
 
 ## 1. 目标和增量
 把已有 #16 TTS/SVC Registry、#21 Audio Core、#22 组合视图与 #23 RVC Fake 的复用边界、真实缺口、合并依赖整理成可供用户决定下一次工程授权的证据。

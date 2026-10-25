@@ -10,6 +10,16 @@
 
 
 
+
+## 最新验收与唯一派发（2026-10-26）· 06-A DONE，03-A-F01 SENT
+**06-A DONE / READ_ONLY_AUDIT，Plan06运行实现未开始。** 用户本地0002报告复用表、三层映射、三路径交集、#21→#22与独立门禁符合审计范围；ChatGPT重查远端事实一致，完整A01–A12/D01–D10验收及澄清见[06-A](06-A-provider-reuse-integration-readiness-audit.md)。#17唯一/#18历史的H0决定不重做。
+**新增SVC合并前缺口已独立复现。** #16@954a01a的原SVC测试5/5 PASS，但8组探针显示未知/隐藏/Symbol结果属性被接受、delivery附加submitAllowed:true被接受、请求/结果getter执行、未知键名回显、createdAt对象共享。输出仍不发送；这属于离线契约边界问题，不宣称真实权限绕过。当前合并建议BLOCKED_PENDING_SVC_FIX，03-A历史验收保留、当前REVIEW_REQUIRED；03-B仍WAIT_USER_AUTHORIZATION。
+**唯一工程：[03-A-F01 · PR#16 SVC边界与合并前修复](03-A-F01-svc-boundary-premerge-hardening.md)=SENT。** 六文件最小修复，原#16分支，不新建PR；描述符检查、结果/delivery白名单、错误脱敏、安全createdAt及迁移文档澄清，R01–R24。不重复06-A，不开始06运行代码/08，不合并任何PR。
+main仍bf9cf66807e12d0b25872a0fa3869962dde04818；#16 HEAD954a01a08587bc8bd5b8caccf026298ca54d5215/CI40165832178 SUCCESS；#17本次文档写入前c8dbae4/CI40244714524 SUCCESS。#19/#20/#21/#22/#23仍OPEN原HEAD，05-A/B与07-B既有OFFLINE验收保留。
+**DS模式：标准；建议继续当前对话。** 若新开先选标准、读有效AGENTS和报告INDEX、核对#16分支/工作区。本地第四份计划书已生成，后续报告按执行端既定目录连续编号，不覆盖0001/0002；报告与本机路径不入工程Git。
+以下“06-A SENT/唯一下一步合并授权/03-A当前READY”等均是历史快照；以本节新增证据和门禁为准。
+
+
 ## 2026-10-26 · 用户新增DS正式报告文件归档要求
 用户要求DeepSeek在其执行端实际生效的本地AGENTS.md中加入永久报告规则：每次正式报告生成完整UTF-8 Markdown，保存到用户指定的本地report目录，连续编号、完整原任务ID、版本及交付顺序齐全；具体本机路径在本地交付指令中，不写入Git。
 ChatGPT已交付本地003号《协作规则：DS报告归档与AGENTS更新》，由用户转发DS自己落地；这不表示DS端AGENTS或报告目录已经修改。模式标准；不新建主Plan、不重派06-A。DS的报告序号与ChatGPT计划书发送序号独立。

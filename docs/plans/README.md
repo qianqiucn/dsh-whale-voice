@@ -6,6 +6,16 @@
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
 
+
+## 最新验收与唯一派发（2026-10-26）· 06-A DONE，03-A-F01 SENT
+**06-A DONE / READ_ONLY_AUDIT，Plan06运行实现未开始。** 用户本地0002报告复用表、三层映射、三路径交集、#21→#22与独立门禁符合审计范围；ChatGPT重查远端事实一致，完整A01–A12/D01–D10验收及澄清见[06-A](06-A-provider-reuse-integration-readiness-audit.md)。#17唯一/#18历史的H0决定不重做。
+**新增SVC合并前缺口已独立复现。** #16@954a01a的原SVC测试5/5 PASS，但8组探针显示未知/隐藏/Symbol结果属性被接受、delivery附加submitAllowed:true被接受、请求/结果getter执行、未知键名回显、createdAt对象共享。输出仍不发送；这属于离线契约边界问题，不宣称真实权限绕过。当前合并建议BLOCKED_PENDING_SVC_FIX，03-A历史验收保留、当前REVIEW_REQUIRED；03-B仍WAIT_USER_AUTHORIZATION。
+**唯一工程：[03-A-F01 · PR#16 SVC边界与合并前修复](03-A-F01-svc-boundary-premerge-hardening.md)=SENT。** 六文件最小修复，原#16分支，不新建PR；描述符检查、结果/delivery白名单、错误脱敏、安全createdAt及迁移文档澄清，R01–R24。不重复06-A，不开始06运行代码/08，不合并任何PR。
+main仍bf9cf66807e12d0b25872a0fa3869962dde04818；#16 HEAD954a01a08587bc8bd5b8caccf026298ca54d5215/CI40165832178 SUCCESS；#17本次文档写入前c8dbae4/CI40244714524 SUCCESS。#19/#20/#21/#22/#23仍OPEN原HEAD，05-A/B与07-B既有OFFLINE验收保留。
+**DS模式：标准；建议继续当前对话。** 若新开先选标准、读有效AGENTS和报告INDEX、核对#16分支/工作区。本地第四份计划书已生成，后续报告按执行端既定目录连续编号，不覆盖0001/0002；报告与本机路径不入工程Git。
+以下“06-A SENT/唯一下一步合并授权/03-A当前READY”等均是历史快照；以本节新增证据和门禁为准。
+
+
 ## 最新验收与唯一派发（2026-10-26）· 07-B DONE，06-A SENT
 **07-B = DONE / OFFLINE / NOT_INTEGRATED，PR #23 OPEN。** HEAD a570430e9d5be24aa0f2415b6699cdfa957583f6、base main@bf9cf66807e12d0b25872a0fa3869962dde04818、0 reviews；精确三added +1892/-0。[CI40242597119](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40242597119) 当前HEAD build/ui SUCCESS。ChatGPT独立40/40与271额外边界断言PASS；DS全量216/215/1、UI24/24和本机build为报告值，未独立本地重跑全仓库/UI。完整K01–K16与非阻断错误路径/嵌套类型规格澄清见[07-B最新验收](07-B-rvc-fake-gateway-offline-protocol.md)；无阻断返修。
 **唯一下一任务：[06-A · 现有Provider复用与集成前置核验](06-A-provider-reuse-integration-readiness-audit.md) = SENT。** 只读跨PR盘点、三层字段/状态映射、文件交集与依赖，直接对话报告，不新增代码/Registry/Fake、分支、提交或PR，也不写报告入仓库。Plan06实现仍PLANNED，集成仍未开展。理由：已有实现散在未合并#16/#21/#22/#23，先核实复用和合并决策材料，避免继续叠加孤立契约或绕过03-B。
