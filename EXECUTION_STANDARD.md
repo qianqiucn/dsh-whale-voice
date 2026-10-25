@@ -8,6 +8,10 @@
 >
 > **首次登记：2026-10-25。计划唯一索引：[docs/plans/README.md](docs/plans/README.md)。**
 
+## 2026-10-25 · 已批准产品命名（更新后遵循，历史文档保留旧称）
+
+TTS 与 SVC/歌声转换的**唯一共用核心**对外正式称 **Whale Audio Core（鲸音核心）**，原“Whale Voice Core”是旧文档的兼容别名；**Whale Voice** 是语音气泡功能，**Whale Singing** 是唱歌功能。两者各有独立前端入口/首次依赖弹窗，但共用音色、模型、Provider、音频和唯一 Task/Delivery ID。**Whale Relay Core（鲸递）只负责一次安全交付**，WeChatAgent 继续负责微信权限；不能因改名降低原安全边界，也不能批量更名已部署的 plugin/route/schema。权威 [双入口与依赖规范](docs/plans/WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)；此改名仅文档决定，真正改 UI/安装器需后续 Level 2 工程计划、Fake 回归和独立授权。
+
 ## 新会话首读交接（ChatGPT 专用）
 
 用户新开 ChatGPT 对话时，除了此标准、AGENTS、长期记忆与 TASK_SPEC_STANDARD，还必须先读：
