@@ -19,7 +19,7 @@
 |---|---|
 | `main` | `bf9cf66807e12d0b25872a0fa3869962dde04818` |
 | PR #16 | OPEN，未合并，HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`，0 reviews，CI `40165832178` SUCCESS |
-| PR #17 | 规划分支 `docs/whale-voice-execution-plan-registry`，HEAD `96f9643db08280e09e26fbb2dd75bb6a192ebd5c`，CI `40232474111` SUCCESS |
+| PR #17 | 规划分支 `docs/whale-voice-execution-plan-registry`，本轮末次观测 HEAD `09badc6ff38ff71ae19ff2dfe4010f9193db0cab`；PR checks 显示的 run `40232474111` 早于该 HEAD 变化，未作为当前 HEAD 证明 |
 | PR #18 | OPEN/Draft，HEAD `42cec57ae7018735cb6c65a4ef8b0a1d80473810` |
 | PR #19 | OPEN，HEAD `e21dee8a8192f24a3465f169c761e62d30611e59`，仅 `docs/SVC_PROVIDER_RESEARCH.md`，CI `40231587503` SUCCESS |
 | Plan 03-B | `WAIT_USER_AUTHORIZATION`，不得合并 PR #16 |
