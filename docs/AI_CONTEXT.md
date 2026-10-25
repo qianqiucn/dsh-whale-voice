@@ -30,18 +30,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 2. Git baseline
 
-- **main HEAD:** `97e96b5964139edf240261117dced6236ed5cb00` (merge of PR #9); verify live with
+- **main HEAD:** `70c0756ba815f08b4f52d0ec99ccda90dc459f55` (merge of PR #10); verify live with
   `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.
-- **Current development branch:** `chore/phase-r1-repository-audit` (Phase R1 repository audit),
-  branched from `main` at `97e96b5`.
-- **Current local HEAD:** verify live with `git rev-parse HEAD`; R1 is docs/non-runtime hygiene and does not
-  pin a future commit SHA.
-- **Worktree:** clean at the R1 audit baseline
+- **Current development branch:** `docs/r1-complete-status` (R1 final status sync), branched from
+  `main` at `70c0756`.
+- **Current local HEAD:** verify live with `git rev-parse HEAD`; this status-sync branch changes only
+  status documents and references.
+- **Worktree:** clean at the R1-complete baseline
 - **Remote:** `https://github.com/qianqiucn/dsh-whale-voice.git`
 
-PRs #1/#2 and feature PRs #3–#9 are merged. Phase 4B-1 is merged into `main`; its isolated write
-infrastructure remains `OFFLINE` and has no production route.
+PRs #1/#2 and feature/docs PRs #3–#10 are merged. Phase 4B-1 is merged into `main`; its isolated
+write infrastructure remains `OFFLINE` and has no production route. Phase R1 is **COMPLETE**.
 
 ---
 
@@ -49,7 +49,7 @@ infrastructure remains `OFFLINE` and has no production route.
 
 ```text
 main
-  └─ #3 → #4 → #5 → #6 → #8 → #7 → #9 Phase 4B-1 isolated config write
+  └─ #3 → #4 → #5 → #6 → #8 → #7 → #9 Phase 4B-1 → #10 Phase R1 audit
 ```
 
 | PR | Merge commit | Result |
@@ -60,11 +60,12 @@ main
 | #6 | `95a3528` | merged; isolated UI harness + CI `ui` |
 | #8 | `5c4bc56` | merged; Send & Safety + research + docs repair |
 | #7 | final documentation merge | merged; Inspector research + docs union |
-| #9 | `97e96b5` | merged; Phase 4B-1 isolated config write foundation (2 commits) |
+| #9 | `97e96b5` | merged; Phase 4B-1 isolated config write foundation |
+| #10 | `70c0756` | merged; Phase R1 docs/status reconciliation and non-runtime hygiene |
 
-The Phase 3/4 stack (#3–#8) was integrated in order. Phase 4B-1 (#9) was merged with a Merge Commit
-after explicit authorization, with CI build+ui SUCCESS. **0 human reviews** were recorded at merge
-time; CI green is not approval.
+The Phase 3/4 stack (#3–#8) was integrated in order. Phase 4B-1 (#9) and Phase R1 (#10) were merged
+with Merge Commits after explicit authorization. **0 human reviews** were recorded for #9 and #10 at
+merge time; CI green is not approval.
 
 Phase 4B-1 consists of `core/config-sandbox.mjs`, `core/config-schema.mjs`, `core/config-store.mjs`,
 `core/isolated-write-server.mjs` and `test/config-store.test.mjs`. It remains `OFFLINE` and has no
@@ -83,7 +84,8 @@ production write route.
 | Send & Safety frontend | `MOCK` / disabled backend controls; real DSH GUI visual acceptance PASS |
 | Native voice delivery | `RESEARCH_CANDIDATE`; WeChatAgent native = `UNSUPPORTED` |
 | Phase 4B-1 isolated config write | **Merged into `main`; `OFFLINE`** — single-file store + test-only API; no production write |
-| Phase 4B-2A production write/apply | **Not started** |
+| Phase R1 repository audit | **COMPLETE** — PR #10 merged as `70c0756`; docs/status reconciliation and non-runtime hygiene |
+| Phase 4B-2A production write/apply | **NOT STARTED** |
 
 Real GUI evidence exists for the Send & Safety page; it does **not** mean the Windows safety backend
 exists.
@@ -92,17 +94,18 @@ exists.
 
 ## 5. Current task
 
-This task is **Phase R1 repository audit and non-destructive documentation cleanup**, after PR #9 was
-merged into `main`.
+This task is the **Phase R1 final status sync** after PR #10 was merged.
 
-R1 scope:
+Scope:
 
-- audit merged branches, local worktrees/temp directories, docs and resource hygiene;
-- reconcile README / AGENTS / AI_CONTEXT / PROJECT_STATUS / ROADMAP;
-- classify current and historical docs; fix confirmed stale statements and links;
-- review `.gitignore`, CI/test commands, module boundaries, fixed paths and license risks;
-- no runtime refactor, module move, branch/tag deletion, production config write or service restart;
-- commit docs and non-runtime hygiene changes to an independent branch and open an R1 PR without merging.
+- update `PROJECT_STATUS`, `AI_CONTEXT` and `ROADMAP`;
+- mark Phase R1 **COMPLETE**;
+- set the development baseline to `main` `70c0756`;
+- record PR #10 and its Merge Commit;
+- name Phase 4B-2A (`NOT STARTED`) as the next gate;
+- preserve Phase 4B-1 `OFFLINE` and Phase 3B/4A `INTEGRATED`;
+- keep 98 Node / 12 UI as offline/contract evidence, not production write acceptance;
+- no runtime code, production configuration, service restart, branch/worktree deletion or Phase 4B-2A work.
 
 No production configuration, service restart, DSH reload or real send is involved.
 
@@ -110,9 +113,9 @@ No production configuration, service restart, DSH reload or real send is involve
 
 ## 6. Unresolved issues
 
-1. **0 human reviews** were recorded for PR #9 at merge time; CI green does not equal approval.
+1. **0 human reviews** were recorded for PR #9 and PR #10 at merge time; CI green does not equal approval.
 2. Phase 4B-2A production write/apply, multi-file transaction and cross-process CAS are not
-   implemented.
+   implemented; the phase is **NOT STARTED**.
 3. Safety backends (hotkey, cancel/recovery, window discovery/focus, game detection) are not
    implemented.
 4. Native voice delivery candidates remain unintegrated and unverified.
@@ -141,7 +144,8 @@ No production configuration, service restart, DSH reload or real send is involve
   sanitized public projection, read/write state separation and a test-only loopback API. No production
   write route.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on `main` after PR #9.
+- 98 Node tests (65 prior + 33 Phase 4B-1) and 12 UI checks pass on `main` after PR #10. These are
+  offline/contract evidence, not real production configuration-write acceptance.
 
 ---
 
@@ -204,24 +208,27 @@ node --test: 98/98 PASS (65 prior tests + 33 Phase 4B-1 store/API tests)
 UI: 12/12 PASS
 ```
 
+These are offline/contract tests. They do not prove a production Bridge/Worker apply, real WeChat
+send or production configuration-write acceptance.
+
 CI:
 
 - PR #9 head `f54538c`: build + ui SUCCESS (run `40143287505`);
-- `main` at `97e96b5` after the merge: build + ui SUCCESS (run `40143846299`);
-- R1 branch: local build/tests/UI/docs checks must pass before push; CI is reported only from the
-  actual R1 PR run.
+- PR #10 head `c1e35de`: build + ui SUCCESS (run `40144453337`);
+- `main` at `97e96b5` after PR #9: build + ui SUCCESS (run `40143846299`);
+- `main` at `70c0756` after PR #10: build + ui SUCCESS (run `40144888398`);
+- R1 final status-sync PR: local checks pass before push; CI is reported from its actual PR run.
 
 ---
 
 ## 11. Next priority
 
-1. Complete Phase R1 repository audit and merge its independent docs PR after review.
-2. Phase 4B-2A: controlled production write/apply API, multi-file transaction/journal, cross-process
-   locking/CAS and trusted runtime-effect confirmation. It requires a separate task and authorization;
-   production writes still require separate authorization.
-3. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
+1. Phase 4B-2A: controlled production write/apply API, multi-file transaction/journal, cross-process
+   locking/CAS and trusted runtime-effect confirmation. It is **NOT STARTED** and requires a separate
+   task and authorization; production writes still require separate authorization.
+2. Keep Native Voice Delivery Research as a parallel `RESEARCH_CANDIDATE`; do not implement native
    send until all admission gates and owner authorization are met.
-4. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
+3. Start new development branches from the integrated `main`; do not reuse merged PR branches as a
    baseline.
 
 ---
@@ -242,6 +249,7 @@ Do not trust this summary alone. Verify:
 
 ## 13. Last update
 
-**2026-10-25**, after Phase R1 audit: PR #9 merged into `main` as `97e96b5`; docs/status reconciled,
-historical records marked, and 98 Node / 12 UI checks remain green. R1 is docs/non-runtime hygiene; no production
-configuration or runtime behavior change.
+**2026-10-25**, after Phase R1 final status sync: `main` is `70c0756` (PR #10 merge); Phase R1 is
+**COMPLETE**, Phase 4B-1 remains `OFFLINE`, Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2A is
+**NOT STARTED**. 98 Node / 12 UI checks are offline evidence, not production write acceptance. No
+production configuration or runtime behavior change.

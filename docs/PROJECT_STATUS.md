@@ -4,11 +4,12 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-25
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#9 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`** (single-file store + test-only API; no production route); docs encoding repaired; 98 Node + 12 UI checks green; Phase R1 repository audit in progress; Phase 4B-2A not started
-**Latest associated commit:** `main` `97e96b5964139edf240261117dced6236ed5cb00` (merge of PR #9); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#9 — Phase 4B-1 isolated config write foundation](https://github.com/qianqiucn/dsh-whale-voice/pull/9) — **merged with a Merge Commit**
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#10 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`** (single-file store + test-only API; no production route); **Phase R1 repository audit is `COMPLETE`**; 98 Node + 12 UI checks green; **Phase 4B-2A not started**
+**Latest associated commit:** `main` `70c0756ba815f08b4f52d0ec99ccda90dc459f55` (merge of PR #10); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
+**Latest PR:** [#10 — Phase R1 repository audit and docs reconciliation](https://github.com/qianqiucn/dsh-whale-voice/pull/10) — **merged with a Merge Commit**
+**Acceptance caveat:** 98/98 Node and 12/12 UI checks are offline/contract evidence. They are **not** real production configuration-write acceptance. Phase 4B-1 remains `OFFLINE`; Phase 3B/4A remain `INTEGRATED`.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
-**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9, all merged with merge commits; #7 resolved the `CHANGELOG.md` / `README.md` / `PROJECT_STATUS.md` union without reverting #8 state; #9 added the isolated Phase 4B-1 write foundation.
+**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10, all merged with merge commits; #7 resolved the `CHANGELOG.md` / `README.md` / `PROJECT_STATUS.md` union without reverting #8 state; #9 added the isolated Phase 4B-1 write foundation; #10 completed the R1 documentation/status reconciliation and non-runtime hygiene.
 
 ---
 
@@ -133,19 +134,25 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 - [x] PR #9 merged into `main` as `97e96b5` with a Merge Commit after explicit authorization; branch
       retained, CI build+ui SUCCESS, 98 Node / 12 UI checks green. Phase 4B-1 status remains
       `OFFLINE`; no production write route.
+- [x] Phase R1 repository audit **COMPLETE**: PR #10 merged into `main` as `70c0756`; docs/status
+      reconciliation, historical-doc marking, `.gitignore` hardening and CI artifact upload repair;
+      no runtime code change. 98 Node / 12 UI checks remain offline/contract evidence, not
+      production write acceptance.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] Phase R1 repository audit: docs/status reconciliation, historical-doc marking, resource and
-      `.gitignore` audit; docs + non-runtime hygiene independent PR, no runtime refactor.
-- [ ] Phase 4B-2A: controlled production write/apply API, multi-file transaction/journal, cross-process
-      locking/CAS and runtime effect confirmation (not started; requires a separate authorization).
-- [ ] Keep the post-integration `main` as the clean development baseline; new work must branch from it.
-- [ ] P1: module boundaries, provider/sender protocol and fake-only contract tests.
-- [ ] Establish PR-first feature workflow for all non-trivial changes.
-- [ ] Decide whether additional CI coverage is useful beyond build/syntax/sync.
+- [ ] No active implementation phase. Phase R1 is complete; Phase 4B-2A is **not started**.
+
+## Next highest-priority task
+
+**Next: Phase 4B-2A — controlled production write/apply** (**NOT STARTED**; requires a separate
+authorization). It must build on the isolated store with a production Host write route, multi-file
+transaction/journal and partial-success recovery, cross-process locking/CAS or a single-writer
+boundary, and trusted runtime-effect confirmation. Do not write production configuration, restart
+services or send real messages before that authorization. Voice Sender's final independent safety
+verification remains mandatory before real sending.
 
 ## Pending
 
@@ -172,7 +179,8 @@ reload or restart. A running DSH will only pick up new Host code after a separat
    remain blocked.
 4. A token-protected WeChatAgent/Sender health endpoint cannot be verified without reading their
    tokens; those states are deliberately `auth_required`/unknown.
-5. No automated browser/DOM test harness exists yet; Core and static UI contract tests exist.
+5. An isolated Playwright harness exists; live real-DSH Electron DOM/CSS/Console and No-Core/timeout
+   GUI injections remain `OFFLINE` or separately authorized.
 6. Real WeChat UI/window tests require separate explicit authorization.
 7. Group identity cannot be proven from display name alone, so group voice is not enabled.
 8. Phase 3B is live: routes return 401, Core reads the authorized config, and the real GUI shows
@@ -226,7 +234,7 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
-| PR #3–#9 integration | merged with merge commits; `main` contains all heads; main CI build+ui SUCCESS |
+| PR #3–#10 integration | merged with merge commits; `main` contains all heads; main CI build+ui SUCCESS |
 | PR #3 setup wizard | merged; merge commit `7b66dca`; CI passed |
 | PR #4 read-only Core | merged; merge commit `91929fd`; shared Origin guard, bounded HTTP and explicit account verification |
 | PR #5 Phase 4A config | merged; merge commit `9688ff8`; full-config HMAC revision |
@@ -234,16 +242,8 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 | PR #7 Electron feasibility | merged; Inspector research + docs union |
 | PR #8 Send & Safety / delivery research | merged; merge commit `5c4bc56`; 65 tests + 12 UI checks |
 | PR #9 Phase 4B-1 isolated config write | merged as `97e96b5`; explicit merge authorization; CI build+ui SUCCESS; 98 tests + 12 UI checks; branch retained |
+| PR #10 Phase R1 audit | merged as `70c0756`; CI build+ui SUCCESS; UI artifacts uploaded; 98 tests + 12 UI checks are offline/contract evidence, not production write acceptance |
 | Real WeChat send in this repository | not performed and not part of this repository |
-
-## Next highest-priority task
-
-**Next: Phase 4B-2A — controlled production write/apply** (not started; requires a separate
-authorization). It must build on the isolated store with a production Host write route, multi-file
-transaction/journal and partial-success recovery, cross-process locking/CAS or a single-writer
-boundary, and trusted runtime-effect confirmation. Do not write production configuration, restart
-services or send real messages before that authorization. Voice Sender's final independent safety
-verification remains mandatory before real sending.
 
 ## Update rule
 
