@@ -1,8 +1,28 @@
 # Plan 03-A-F01 · PR #16 SVC输入边界与合并前证据修复
-**版本：v1.0 · 2026-10-26 · EXECUTION-READY Level 2 / SENT。**
+**版本：v1.0 · 2026-10-26 · DONE / OFFLINE / PR_OPEN。原实施范围保留历史。**
 **模式：标准。原因：在既有仓库修复纯校验代码、测试和说明，不需要创造DSH运行时插件。**
 **执行：DeepSeek；验收/规划：ChatGPT。目标：OFFLINE / PRE_MERGE_REPAIR，复用原PR #16。**
 **本次是06-A发现问题后的同一03-A合并前门禁补丁，不是新主Plan，不重做02/F01–F05、06-A或07-B。03-B仍未获合并授权。**
+
+
+## 2026-10-26 · ChatGPT正式验收：03-A-F01 DONE / OFFLINE / PR_OPEN
+输入为用户本地正式报告0003（修复v1.0）。#16仍OPEN/非Draft/base main/0 reviews，HEAD45da9e7b2c2e4d625ef7e96315f4a41f0300bb75；main仍bf9cf66807e12d0b25872a0fa3869962dde04818。相对954a01a为两个正常提交、恰六文件+987/-84，符合白名单；未带入#23。
+[CI40246403639](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40246403639) build/ui SUCCESS，jobs的head_sha已核对。ChatGPT独立读取六文件增量及固定源码，在隔离副本运行SVC29+TTS16=45/45 PASS，另做61个断言PASS（逐已知字段getter/隐藏、两域未知/隐藏token/Symbol、投递附加flag、UTC日期、输出前置），旧F1–F8关闭。DS全量221/220/1、UI24/24、本机build为报告证据；ChatGPT核查远端CI，未独立本地重跑全仓/UI。
+| 验收 | 结果 |
+|---|---|
+| D01 | PASS：原#16、六文件白名单、无新PR或跨PR复制 |
+| D02 | PASS：普通对象/描述符/键数限制，已知及未知getter不执行 |
+| D03 | PASS：根/投递白名单、createdAt规范UTC、10字段新输出 |
+| D04 | PASS：固定占位错误，无未知键值或异常回显；独立marker探针 |
+| D05 | PASS：v1数值域/可选undefined/null原型兼容，输入不变 |
+| D06 | PASS：实际专项45/45，61独立断言；全量无新增失败据DS及CI |
+| D07 | PASS：六文件文档与构建/UI证据真实分层，未冒称独立全量 |
+| D08 | PASS：新HEAD对应build/ui SUCCESS |
+| D09 | PASS：未修改迁移/Registry实现；迁移保留既有配置选择≠运行选中/可用，按此语义解释文档 |
+| D10 | PASS：远端无运行接线，报告已归档，未合并或真实操作 |
+03-A合并前建议恢复READY_FOR_USER_MERGE_DECISION；旧BLOCKED_PENDING_SVC_FIX由本次实际验收解除，但03-B仍WAIT_USER_AUTHORIZATION/NOT_SENT_FOR_EXECUTION。
+下一阶段[03-B授权审阅稿](03-B-pr16-merge-authorization-review.md)已准备，只有用户审阅，不是DS工程派发；明确仅#16/45da9e7/Merge Commit/保留分支/新main离线CI，不包含其余PR或部署。不能为绕过授权继续叠加同目标审计/Fake。
+
 
 ## 1. 唯一目标及增量
 修复core/svc/svc-contract.mjs两入口的属性检查与错误脱敏，严格拒绝未知结果/投递字段，去除createdAt对象共享；在原PR #16补足回归与准确文档。

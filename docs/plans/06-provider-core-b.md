@@ -1,7 +1,16 @@
 # Plan 06 · Provider Core-B 多引擎注册与安全调度
 
-**状态：06-A DONE（只读审计）；03-A-F01 SENT（#16合并前修复）；06运行实现仍PLANNED，未集成。**
+**状态：06-A DONE（只读审计）；03-A-F01 DONE（#16合并前修复）；03-B待用户授权；06运行实现仍PLANNED，未集成。**
 
+
+
+
+## 最新验收与待决策（2026-10-26）· 03-A-F01 DONE，03-B仍待授权
+**03-A-F01 DONE / OFFLINE，#16仍OPEN。** HEAD45da9e7b2c2e4d625ef7e96315f4a41f0300bb75、base main；修复六文件+987/-84。ChatGPT独立专项45/45与额外61断言PASS，F1–F8关闭；[当前HEAD CI40246403639](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40246403639) build/ui SUCCESS。DS全量221/220/1、UI24/24和本机build为报告值，未独立本地重跑全仓/UI。完整D01–D10见[03-A-F01最新验收](03-A-F01-svc-boundary-premerge-hardening.md)。
+**03-A合并前建议恢复READY_FOR_USER_MERGE_DECISION；03-B仍WAIT_USER_AUTHORIZATION / NOT_SENT_FOR_EXECUTION。** 已准备[03-B单项合并授权审阅稿](03-B-pr16-merge-authorization-review.md)，本地005仅供用户审阅，不交DS执行；它不构成合并许可，正式派发须用户明确授权后再实时核验。仅拟批准#16目标45da9e7的Merge Commit、保留分支、新main离线检查；其余PR/部署/真实音频/生产/发送均不包含。
+实时main仍bf9cf66807e12d0b25872a0fa3869962dde04818；#16 0 GitHub reviews、mergeable=true；仓库允许merge commit，自动删分支false，启动仍需复核。#17本次文档提交前6f64a4b；#18历史Draft；#19–#23保持OPEN原HEAD/base，#21→#22关系不变。06-A DONE；Plan06运行实现未开始，05-A/B和07-B既有OFFLINE验收保留。
+**DS模式：获授权后标准；优先继续当前对话。** 新开则先明确标准、读取有效AGENTS和报告索引、核对授权/目标/工作区；不重启服务。DS报告按其本地规则继续归档。
+以下F01 SENT/当前BLOCKED/03-B已可自动执行等旧段均为历史或无效推断；目前停于用户合并决定，不新增重复工程。
 
 
 ## 最新验收与唯一派发（2026-10-26）· 06-A DONE，03-A-F01 SENT
