@@ -6,6 +6,14 @@
 >
 > **建立：2026-10-25。** 禁止写入用户凭据、微信身份、私人聊天、联系人、参考音频、桌面截图和生产机器路径。
 
+## 2026-10-25 · 07-A 验收完毕；新 WeChatAgent v0.4.1 与 Plan 04-A 派发
+
+计划状态真实区分：**Plan 07-A/F01 = DONE（RESEARCH/OFFLINE，PR #19 OPEN，未合并）；Plan 04-A = SENT**（权威完整任务书 [04-A-wechatagent-extension-readonly-audit-execution.md](04-A-wechatagent-extension-readonly-audit-execution.md)）；Plan 03-B = WAIT_USER_AUTHORIZATION（PR #16 未合并）；Plan 05 与 07-B 仍 PLANNED。绝不能把上游静态审计 DONE 冒充 RVC 可用、PR MERGED 或批准 07-B 工程。
+
+2026-10-25 上游 [sourcepro5/WeChatAgent v0.4.1](https://github.com/sourcepro5/WeChatAgent/releases/tag/v0.4.1) 提供正式 **ZIP 插件 API v2**，有 `plugin.json`/`index.mjs`/`setup(api)`、按聊天授权和隔离子进程（**非真正 OS 安全沙箱**），**官方文档声明 DSH 插件与 ZIP 插件不兼容**。历史本机 WeChatAgent 0.3.9、WeChat 4.1.10.27 是之前的报告状态，不等于已经升级 0.4.1；不得自动更新/重启/装 ZIP 或把 `reply` 当任意音频发送。Plan 04-A 优先研究 DSH 原插件 + 安全 WeChatAgent Adapter（S1），API v2 只做条件性 S2 方案评估；04-A 独立只读不要求先合并 #16。
+
+**零编程用户长期最高 UX 约束继续适用**：所有默认最终用户路径简体中文图形操作、可信依赖检测/同意安装、取消失败恢复，不能令小白手动安装 Python/命令行/JSON。不因此绕过许可证/会话权限/Worker NEVER_WRITE/UNKNOWN 不自动重发。下次对话必须优先核对本段、当前 [计划 README](README.md) 和最新交接卡，忽略下方历史旧状态。
+
 ## 长期最高优先级产品要求 · 零编程基础用户优先（2026-10-25，用户明确要求始终遵守）
 
 **用户原话：“请你始终记住，本项目是始终给不会代码的编程小白用的，保持易用性。”** 这是贯穿 Whale Audio Core、Whale Voice、Whale Singing、Whale Relay、首次安装、设置、模型、错误处理和正式发布的**永久产品验收原则**，高于为开发者追求技术完整性而牺牲新手可用性的偏好，但不降低安全/许可证/权限门禁。
