@@ -191,6 +191,12 @@ TTS and SVC are two task types with different inputs, even though they share inf
 - **Errors:** fixed reason phrases and fixed paths (`$`, known fields, `delivery.state`,
   `<unknown-key>`, `delivery.<unknown-key>`); failure envelopes never echo caller keys, values,
   exception text or stack text, and never carry the original request/result object.
+- **User-facing boundary:** an unsupported voice means the user must choose a valid shared voice;
+  an unsupported format or parameter means the input must be adjusted, with no silent engine switch;
+  a malformed or untrusted engine result means stop and re-check, with no automatic send or retry.
+  `SAVED` does not mean applied or sent, cancellation is not confirmation, and `UNKNOWN` is never
+  retried automatically. There is no runtime SVC caller in this repository, so the `createdAt`
+  tightening migrates no production data.
 - `PENDING_ROUTER` is a normalized label only; it does not mean queued, deliverable or backed by a
   real artifact.
 - Registry selection helpers return plain-string codes (`NOT_IMPLEMENTED`, `PROVIDER_UNKNOWN`,
