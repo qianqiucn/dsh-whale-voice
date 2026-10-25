@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · Plan 02 终审通过；自动派发 Plan 03 合并前门禁
+
+- 用户提交 F01–F05 完成报告，报告 PR #16 HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773、CI run 40163881122；ChatGPT 核对 GitHub PR OPEN / mergeable、实际该 Commit 5 个文件 Diff、5 个负向测试断言以及当前 HEAD CI SUCCESS。
+- F01–F05 五项修复均有真实代码证据；DeepSeek 报告 node --test 197（196 PASS / 1 平台 SKIP）、UI 24/24、build 217349 bytes，ChatGPT 未独立本地重跑。因此 Plan 02 更新为 DONE，但功能仍是 DESIGN/OFFLINE，PR #16 仍未合并。
+- 当前工程 PR #16 总 Diff 22 files (+2452/-173)；docs/PROJECT_STATUS.md 与 docs/AI_CONTEXT.md 仍显示旧 TTS-A 192 Node 快照，需要区分旧历史与新 197 证据；这不是再执行 F01–F05。
+- 按“报告自动回一份去重计划书”要求，将 Plan 03 从 PLANNED 改为 SENT，升级 EXECUTION-READY v2，只允许审查全量 PR Diff、同步上述两份状态文档、运行隔离回归并复核**新 HEAD** CI，最终输出待用户合并决策包，不实施合并。
+- 计划 01 保持 SENT；04–14 均未启动；PR #17 唯一计划体系、#18 Draft 历史重复记录不变。无生产服务、真实 WeChat、模型、付费 API 或主分支修改；没有自动合并任何 PR。
+- DSH 执行端对话建议：Plan 02 已完成且进入 Plan 03 新阶段，是适合新开执行端对话的安全交接节点；先保存当前工作区状态，携带唯一 Plan 03 任务书与 PR/HEAD/CI。
 ## 2026-10-25 · 避免每次报告派发重复任务书
 
 - 用户询问重复任务如何处理，明确报告触发“自动返回完整任务书”不等于每次新增一个工程任务。
