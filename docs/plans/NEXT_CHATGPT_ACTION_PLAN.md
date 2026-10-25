@@ -1,129 +1,136 @@
-# Handoff Plan H0 · 新一位 ChatGPT 的首个执行计划
+# ChatGPT 交接行动计划 C1 · 恢复上下文与 Plan 03-A 最新证据核验
 
-> **任务负责人：ChatGPT，非 DeepSeek。** 本任务是**计划仓库整理/验收/优先级协调**，不包含运行代码开发、生产配置变更或微信发送。  
-> **计划状态：H0 文档比对与整理已完成（2026-10-25）；PR 合并/关闭待用户决定。**
-> **先读结果：** [H0_PLAN_RECONCILIATION.md](H0_PLAN_RECONCILIATION.md)。下文保留原 H0 验收步骤作历史依据，不要重复执行已完成的 14 对整理。下一轮按用户请求处理 Plan 02 终审或 Plan 01 报告；本轮未派发新工程任务。  
-> **目标成果：** 消除计划管理 PR #17 与 #18 的重复和事实冲突，保持**唯一权威计划入口**；安全更新下一轮执行顺序；最终向用户汇报需单独授权的合并决策。  
-> **不是合并授权：** 本计划绝不允许自行合并、关闭、删除或强推 PR #16/#17/#18。
+> **执行者：下一次 ChatGPT 会话。不是 DeepSeek 开发任务，不是新的 Plan 15。**
+>
+> **任务状态：READY_FOR_NEXT_CHAT（待下一位 ChatGPT 执行）。**
+>
+> **执行范围：只读核验与 GitHub 计划文档必要更新；不修改工程运行代码，不自动合并 PR。**
+>
+> **起始快照：2026-10-25，Europe/Amsterdam。实时 GitHub 状态优先于以下任何 SHA。**
+>
+> 前置交接：[NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)。先读该文件再执行本计划。
 
-## 1. 为什么要先做这件事
+## 1. 唯一目标和完成后应得到什么
 
-当前仓库有 3 个开放 PR：
+下次打开新 ChatGPT 对话时，**准确恢复 Whale Voice 的规划职责，核实 Plan 03-A 是否已由 DeepSeek 完成**，基于真实 PR/CI 证据决定：
 
-| PR | 目的 | 基线/历史证据 | 目前 |
-|---|---|---|---|
-| [#16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) | TTS-A/TTS-A-H Provider-neutral、SVC/Whale Relay 契约 | head `1fd2cca`，CI `40160267636` SUCCESS | 设计完成待终审，不是生产接入 |
-| [#17](https://github.com/qianqiucn/dsh-whale-voice/pull/17) | ChatGPT 专属执行标准、长期记忆、14 计划和状态、交接 | 分支 `docs/whale-voice-execution-plan-registry`，CI 交接前 `40160989897` SUCCESS | 本次交接所在 PR，尚未合并 |
-| [#18](https://github.com/qianqiucn/dsh-whale-voice/pull/18) | 另一套 14 任务书、TASK_STATUS 台账 | head `42cec57`，CI `40159114676` SUCCESS | 未合并，和 #17 重叠 |
+- **若 03-A 未完成**：保留 \`SENT\`，给用户明确待执行项；用户要求继续开发时只发 **Plan 03-A 的续行版**（同一 ID/PR，不重复 Plan 02 TTS-A），绝不能把 03-B 视为获授权。
+- **若 03-A 已完成且验收通过**：记录其合并前门禁结果 \`READY_FOR_USER_MERGE_DECISION\`，更新计划证据，**等待用户单独授权是否执行 03-B 合并 PR #16**，不得自行合并。
+- **若出现新问题/失败**：保留当前任务，以同一 Plan 03-A 补丁/复验处理，不创建相似的 Plan 15。
+- **若用户这次发送的是 DeepSeek 的报告**：依据该报告进行审查，并**在同一答复中给出一份完整、独立可复制的 Level 2 DeepSeek 执行或续行任务书**，附 DSH 对话交接建议；无需用户重复说“下一份”。
 
-当前三个 PR 自己相对 main 的 `mergeable:true` 并不能保证 **#17→#18 或 #18→#17** 顺序合并没有文档冲突。PR #18 的 TTS-A 快照较旧，PR #17 包含更新后的 Level 2 标准与更准确的 Plan 02。**不能直接两份计划一起合并，形成两套相互竞争的状态台账。**
+**结果归属：** 这份 C1 是 ChatGPT 自己的恢复/核验计划；DeepSeek 正在执行的工程计划保持原编号 **Plan 03（03-A/03-B）**。C1 完成不等于工程 Plan 03 DONE。
 
-## 2. 事实核验顺序：本任务必须先读
+## 2. 历史事实（只有在下次实时核实后才可称为“当前”）
+
+| 项目 | 2026-10-25 最近核验 | 下次必须确认 |
+|---|---|---|
+| 仓库 | \`qianqiucn/dsh-whale-voice\`（私有） | 连接是否仍有读取/写入权限 |
+| main | \`bf9cf66807e12d0b25872a0fa3869962dde04818\` | 最新 HEAD 是否变化 |
+| PR #16 | OPEN，\`3ad32bcb22b1a0346eed91f7236afb4f1cc8f773\`，base main | 最新 head/state/draft/mergeable/review/CI/文件差异 |
+| PR #16 CI | run \`40163881122\` SUCCESS | **只能使用最新 HEAD 对应的 run** |
+| PR #17 | OPEN，当前核验前 HEAD \`4b700bc330cab4a58aec528484550ff134b78f89\` | 交接更新后 HEAD 已变，需查询最新 CI |
+| PR #18 | OPEN / Draft，\`42cec57ae7018735cb6c65a4ef8b0a1d80473810\` | 不合并、不关闭；不重做 H0 |
+| Plan 01 | \`SENT\`，旧 GUI 测试 26/26 曾为本地报告 | 是否已有远端工程 PR/CI |
+| Plan 02 | \`DONE\` / Git \`PR_OPEN\`，TTS-A 纯契约 \`DESIGN/OFFLINE\` | 若有新证据才改变状态 |
+| Plan 03 | **03-A \`SENT\`；03-B \`WAIT_USER_AUTHORIZATION\`** | 03-A 是否已有新工程提交/审查报告 |
+
+**直接源码证据：** 本轮从 PR #16 HEAD 读取 \`docs/PROJECT_STATUS.md\`、\`docs/AI_CONTEXT.md\`，二者均含历史 \`192\` 而未含新验收 \`197\`。这说明当时 Plan 03-A 的状态同步尚没有 Git 交付；不能仅凭旧用户报告宣布 03-A 完成。
+
+## 3. 必须在新会话按此顺序阅读
 
 1. [EXECUTION_STANDARD.md](../../EXECUTION_STANDARD.md)。
-2. [AGENTS.md](../../AGENTS.md)。
+2. [AGENTS.md](../../AGENTS.md)（此工程安全规则对 DeepSeek 和 ChatGPT 均适用）。
 3. [CHATGPT_LONG_TERM_MEMORY.md](CHATGPT_LONG_TERM_MEMORY.md)。
 4. [TASK_SPEC_STANDARD.md](TASK_SPEC_STANDARD.md)、[TASK_SPEC_TEMPLATE.md](TASK_SPEC_TEMPLATE.md)。
-5. [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)。
-6. [本计划索引](README.md)、[CHANGELOG.md](CHANGELOG.md)、[Plan 01](01-gui-coverage-closeout.md) 和 [Plan 02](02-tts-a-complete-review.md)。
-7. PR #17、PR #18 的实际 changed filenames + Diff，特别是双方的 `AGENTS.md`、`docs/README.md`、`docs/plans/README.md`，以及 #18 的 `TASK_STATUS.md`。
-8. PR #16 最新文件、head/CI/状态；main HEAD 与项目旧 `AI_CONTEXT` 需要分开识别。
+5. [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)、**本文件**。
+6. [计划总表](README.md)、[Plan 03-A/B](03-merge-tts-a-pr16.md)、[Plan 02](02-tts-a-complete-review.md)，按需 [Plan 01](01-gui-coverage-closeout.md)。
+7. [H0 去重交付](H0_PLAN_RECONCILIATION.md) 仅看结论，**不可把 H0 当作未执行的下一任务**。
+8. PR #16 工程分支的 \`docs/PROJECT_STATUS.md\`、\`docs/AI_CONTEXT.md\` 和必要源码/测试；实际 GitHub PR/CI/changed files 比旧状态文档更权威。
 
-不要把历史 SHA 当作当前 HEAD；如其中某 PR 已合并/关闭，本计划需要按新事实缩小范围，而不是重新打开或复写。
+这些文件目前在 **PR #17 的计划分支**；如 PR #17 已合并，改为读取最新 main 版本并避免继续向已合并旧分支提交新历史。
 
-## 3. 实施方案：只选一套权威计划体系
+## 4. 精确的 GitHub 检查步骤
 
-**推荐方案：以 PR #17 为主，选择性吸收 PR #18 的有价值内容，而不是制造第三套 14 任务书。**
+### Step A · 先验证连接与 main
 
-### 3.1 固定单一权威路径
+1. 用 GitHub connector 读取 \`AGENTS.md\` 和计划执行标准。
+2. 获取最新 main SHA；若与本快照不同，核查新合并的 PR 对计划的影响。
+3. 读取 #16/#17/#18 的最新 PR 元数据，记录 OPEN/MERGED/DRAFT、head/base、mergeable/review；不能用单个 \`mergeable:true\` 推断连续合并安全。
+4. 取每个 PR **当前 HEAD** 的 Actions run，区分 SUCCESS、FAILURE、IN_PROGRESS、无结果；旧 HEAD 的绿灯不可复用。
 
-| 内容 | 唯一建议路径 | 处理方式 |
+**停止条件：** 若 GitHub 连接失效或 PR 已无法读取，报告不能核实，绝不编造 Git 结论或 Commit。
+
+### Step B · 判断 Plan 03-A 的进度（优先）
+
+1. 读取 PR #16 最新 HEAD 的两份文档：
+   - \`docs/PROJECT_STATUS.md\`
+   - \`docs/AI_CONTEXT.md\`
+2. 检查是否记录本轮工程修复验收 \`3ad32bc\` / 197 Node（196 PASS、1 Windows skip）/24 UI、历史 192 保留为历史、TTS-A \`DESIGN/OFFLINE\`、PR #16 OPEN/待授权合并。
+3. 检查 PR #16 在 \`3ad32bc\` 之后是否又有新的工程或文档 Commit，是否属于这两份文件的 Plan 03-A 范围；比对最新 head 的 Diff 与 CI。
+4. 对照 [Plan 03](03-merge-tts-a-pr16.md) 的 DoD：是否完成全量 22 文件设计/安全审查、是否有更新后的 Node/UI/build/文档/隐私检查、是否明确输出 \`READY_FOR_USER_MERGE_DECISION\` 或 \`BLOCKED\`。
+5. **不能仅凭 PR #16 CI 绿就判定文档同步或人工评审完成。** 无实际报告/文档证据时标 \`SENT\`，不是 DONE。
+6. 检查是否发生超范围生产代码/Provider 接入变化；真实 API/发送路径若被添加，独立报告审查，停止合并建议。
+
+### Step C · 根据证据走唯一分支
+
+| 实际发现 | 本轮唯一处理 | 不得做什么 |
 |---|---|---|
-| GitHub 计划执行标准 | `EXECUTION_STANDARD.md` | 保留 ChatGPT-only 限制 |
-| 开发通用工程边界 | `AGENTS.md` | DeepSeek 执行代码，ChatGPT 负责计划 |
-| 长期用户需求与稳定架构 | `docs/plans/CHATGPT_LONG_TERM_MEMORY.md` | 用户“详细任务书、DS 只需执行”不得丢 |
-| 完整任务详细度门禁 | `docs/plans/TASK_SPEC_STANDARD.md` | Level 2 EXECUTION-READY |
-| 新会话交接 | `docs/plans/NEXT_CHATGPT_HANDOFF.md` | 每次重要里程碑刷新最新事实 |
-| 新会话首要行动 | `docs/plans/NEXT_CHATGPT_ACTION_PLAN.md` | 下一轮工作/边界 |
-| 唯一计划索引与当前任务状态 | `docs/plans/README.md` | 不再维持两张互相矛盾的当前状态表 |
-| 历史演变日志 | `docs/plans/CHANGELOG.md` | 事件追加，不覆盖旧历史 |
-| 01–14 的唯一任务正文 | PR #17 现有 01–14 文件 | 每次派发前升级为 Level 2；允许吸收 #18 更具体的内容 |
+| PR #16 无新增 03-A 交付 | Plan 03-A 继续 \`SENT\`；如用户要求任务，完整转发 Plan 03-A 的**续行版**，强调仅剩未做项 | 不产生新编号、重做 F01–F05、自动合并 |
+| 有新增提交但 HEAD CI 未完成 | 审查新增 Diff，等待用户后续请求时复核 CI；记录 IN PROGRESS / CI PENDING | 不把旧 CI SUCCESS 当新成功 |
+| 03-A DoD 完整、最新 HEAD CI 成功 | 将 03-A 标审查通过，输出 \`READY_FOR_USER_MERGE_DECISION\` 并请求用户针对 PR #16 的明确合并授权 | **不得执行 03-B 合并** |
+| 03-A 审查发现安全缺口或测试失败 | 同一 03-A 的最小补丁/复验规格，列出实际文件、负向测试、停止条件 | 不掩盖错误、不同时创建两个同目标 PR |
+| PR #16 已由别人合并 | 检查 main Merge Commit 与当前测试、更新 Plan 03 状态，避免重复 Merge | 不改写 Git 历史 |
+| PR #17 已合并 | 如真有新计划记录要写，从最新 main 建立**一个**新 docs 分支/PR | 不继续沿用旧 #17 分支制造新计划历史 |
+| PR #18 仍 Draft | 将其保留历史候选，不重做已完成的 H0 | 不关闭、删除、合并或建立第二套权威索引 |
 
-**PR #18 的 `TASK_STATUS.md`：** 对照 #17 的索引状态，若提供了独特的完成证据可吸收到现有索引/CHANGELOG；不建议作为第二份“当前权威”，除非用户明确改变这一决策。为了保留来源，可以在变更日志写明其历史价值与 PR 链接；不要未经授权直接删除 #18 或改动它的历史。
+### Step D · 处理 Plan 01、其它计划与新想法
 
-### 3.2 比对 14 对任务内容，避免实质信息丢失
+- Plan 01 是独立 GUI 自动化工作，仍 \`SENT\`；只有远端 PR/CI 或可复核交付证据才标 DONE。
+- Plan 04–14 不因本轮交接跳过 Plan 03 授权门禁；若用户明确要求提前进行**只读研究**，单独说明不依赖生产写入并更新序列记录。
+- 新想法：先查重、明确原任务与新任务的依赖/权限，选择性修改现有唯一计划文档；不要新开重复主计划；重要长期要求同步 \`CHATGPT_LONG_TERM_MEMORY.md\`。
+- 用户交付报告：按 \`EXECUTION_STANDARD.md §2\` 自动给一份完整 Level 2 任务，**不是只有链接**。若用户只是要求“恢复上下文”，先做本计划核验，不凭空派工程任务。
 
-按编号 01–14 建立对应表（PR #17 / PR #18 两份文件名不同），重点比较：
+## 5. 本任务允许与禁止的仓库写入
 
-1. 任务范围、前置依赖、技术默认方案；
-2. 具体模块路径与入口、接口契约、异常状态；
-3. 正向/负向测试、权限边界、完成 DoD；
-4. PR #18 中更细的实施说明（若确有）是否可并入 PR #17；
-5. 有无错误地将历史 `SENT`/本地测试/旧 PR #16 HEAD 标为 `DONE`。
+**允许（需要有实际变化）：** 对 PR #17（如果仍 OPEN）中 \`NEXT_CHATGPT_HANDOFF.md\`、本行动计划、\`docs/plans/README.md\`、\`CHANGELOG.md\` 进行必要的状态/证据更新；正常 Commit/Push；核验本 HEAD CI；更新 PR 描述。
 
-选取真实、可证且不违反当前产品方向的补充并入 PR #17 的相应计划；不可自动把全部 PR #18 文档复制一份进仓库，也不应删除唯一历史证据。
+**默认禁止：** 修改 PR #16 工程源码、替 DeepSeek 做 Plan 03-A、自动合并任一 PR、关闭 PR #18、写 main、Force Push、重写历史/删除分支、改变仓库可见性、发布 Release；修改任何生产 DSH/WeChatAgent/Bridge/Worker/Voice Sender/Qwen/音频设备/微信配置或 Hook/DLL；触发真实音频、微信消息、付费 API。
 
-### 3.3 先保护正在进行的任务
+**没有新事实不产生空 Commit。** 对 PR #17 的文档更新要检查与 #18 历史分支的重叠，但不要重新全面比较全部 14 份计划（H0 已完成）。
 
-- **Plan 01**：保持 `SENT`。用户已有任务书；只因本地历史 commit `506fe3b` 报告通过不能直接标 `DONE`。需要核验真实测试分支 Push/PR、CI 26/26 与变更范围。
-- **Plan 02**：保持 `IN PROGRESS / REVIEW_REQUIRED`。PR #16 最新已提交 IndexTTS、Gemini、OpenAI、Seed-VC/RVC、Whale Relay 文档；不可重复开发；按 Plan 02 T01–T10 终审并核实最新 HEAD 的 CI 之后才能标 DONE。
-- **Plan 03**：待 Plan 02 通过后提出 PR #16 合并申请；不自行合并。
-- **Phase 4B-2B-2a**：`INTEGRATED / NOT VERIFIED`，来源是真实 DSH Host 和全部八页验收；不要因 main 的旧 AI_CONTEXT/PROJECT_STATUS 仍写 OFFLINE 而降低已报告的等级，也不能伪造真实异常注入。
+## 6. 验收矩阵（ChatGPT 在新对话中逐项完成）
 
-## 4. 可接受的 Git 操作
+| ID | 检查 | 通过条件 |
+|---|---|---|
+| C1-01 | 连通性 | 可以读取私有仓库当前 AGENTS、PR 和计划分支 |
+| C1-02 | 记忆恢复 | 能正确复述 DeepSeek/ChatGPT 分工和 Level 2 计划标准 |
+| C1-03 | main/PR | #16/#17/#18 最新 HEAD、状态、Draft 与相应 CI 已核实 |
+| C1-04 | 计划 ID | Plan 01 SENT、02 DONE、03-A SENT/03-B 待授权均按实际新证据处理 |
+| C1-05 | 03-A DoD | 检查工程文档中的 197/192 状态、全 Diff 审查和最新 CI，不假定已完成 |
+| C1-06 | H0 避免重复 | #17 唯一规划体系、#18 历史 Draft；不重做 H0 |
+| C1-07 | 安全 | 无生产操作、无未授权 PR Merge、无私人数据写入 |
+| C1-08 | 记录 | 有变化才更新 #17 计划文件并报告 Commit/CI；否则说明无提交 |
+| C1-09 | 用户沟通 | 回复当前状态与下一动作；如果用户提供报告，附**完整一份 DeepSeek 计划书**和 DSH 交接建议 |
 
-**允许：** 只读审查、比对 Diff、编辑/提交 PR #17 分支的计划与交接文件、必要时正常 Push，更新 PR 描述，核验最新 CI。独立 PR 的代码实现由 DeepSeek 承担。
+**本计划仅凭 GitHub API 做只读和文档核验**；除非有授权并具备 Windows 工程环境，不能假称在本机跑了 \`node --test\` 或真实 Electron GUI。
 
-**禁止：** 自动 Merge #16/#17/#18，直接写 main，Force Push，删除/关闭 PR #18，删分支/Tag/Worktree，动真实 DSH、WeChatAgent、Bridge、Worker、Voice Sender、Qwen、微信、Hook/DLL、音频设备或生产配置，触发付费云端 TTS。
+## 7. 最终向用户怎么交付
 
-如果 PR #17 在新会话时已合并：停止向旧分支继续写，改从最新 main 新开**单一状态/计划维护分支**，避免混乱。  
-如果 PR #18 先合并：以合并后的 main 为基线进行一次结构比较，保留 ChatGPT 专用执行标准/记忆文档，报告与 PR #17 的潜在冲突，不把旧基线强行覆盖新 main。
+- 本次已读取的执行标准、交接卡及实际核验过的 PR/CI。
+- 最新 main HEAD、#16/#17/#18 的状态与当前 CI。
+- Plan 03-A 具体剩余项或通过证据，Plan 03-B 是否已获授权（默认无）。
+- 如果文档有修改：文件名、Commit、PR #17 链接、CI；如果无新证据：说明无修改、不造空 Commit。
+- 是否触及生产环境（默认否）。
+- 下一项**唯一**建议动作（Plan 03-A 续行/用户授权讨论；不重复 TTS-A）。
+- 用户若在新对话发来 DeepSeek 报告，则同轮输出完整 Level 2 工程计划和 DSH 执行端是否要换新聊天的判断。
 
-## 5. 步骤清单（按顺序执行，每步可判定）
+## 8. 完成后停止
 
-1. **确认 GitHub 连接与仓库：** 读取 private repo 上 `AGENTS.md`、PR #16/#17/#18 元数据；如无访问权限，明确汇报并停止“已更新”表述。
-2. **核验 main 最新 HEAD 和所有相关 PR：** 不再使用历史 SHA 直接声称最新；记录 head/base/CI/mergeable/审查状态。
-3. **核对执行标准与长期记忆：** 完整读取，不漏掉“DeepSeek 无须维护计划”和“用户要最大程度细化”。
-4. **检查 PR #17 与 #18 重叠文件的实际内容与 Diff：** 先列对照矩阵，明确权威文件选型和仍需吸收的内容。
-5. **只对查出的具体缺口修改 PR #17：** 最小增量吸收 PR #18 有价值任务步骤、修正任务索引与历史记录；如内容本来已完整，**不造空 Commit**。
-6. **一致性核验：** 计划 01 SENT、计划 02 REVIEW_REQUIRED、PR #16 DESIGN/OFFLINE、2B-2a INTEGRATED、WeChatAgent 必需依赖、Whale Relay Hook 研究态不得变。
-7. **文档质量检查：** UTF-8、Markdown 链接、Diff 范围/敏感字段（Token、私人聊天、音频、绝对本机路径）。如可运行 Node/UI/CI 则记录真实结果，不冒充未执行的测试。
-8. **GitHub 结果：** 正常 commit/push 到计划 PR（若有改动），更新 PR 描述、核验新 HEAD CI；没有修改则只提交对比与结论。
-9. **交付汇报：** 向用户给出建议的唯一计划体系、PR #17/#18 差异/处理、已通过的测试和需单独授权的合并步骤；无授权不得合并。
-10. **根据用户下一条消息再行动：** 用户要“下一份”才派发一份 Level 2 任务；用户给完成报告才核验 DONE；新想法当轮写库。
+**C1 只是 ChatGPT 的恢复、核验与交接计划。完成 C1 不自动推进下一技术阶段，也不代表有合并权限。** 等用户进一步提出需求、送来报告或明确授权，才执行后续范围。
 
-## 6. 必须明确处理的异常分支
+---
 
-| 发现 | 处理 |
-|---|---|
-| PR #17 已与 #18 有先后合并导致冲突 | 不 Force Push；核对 main 并记录冲突文件，按最新 main 新建独立计划维护分支 |
-| PR #18 已包含某任务的更详实测试细节 | 仅在不破坏安全前提下合并其内容到 PR #17 现有唯一编号任务书 |
-| 同一任务两份文件事实矛盾 | 以当次代码/Git/CI 为准，保留历史证据但只留下一个当前结论 |
-| PR #16 已提前合并 | 先重新核实测试、合并方式与主干状态，更新计划 02/03，而非让 DeepSeek 重做 |
-| GUI Plan 01 找不到本地分支 | 保留 SENT，按用户已批准的测试范围恢复实现；本任务只汇报，不直接代 DeepSeek 开发 |
-| 用户未授权合并 | 不合并，提供需要单独确认的建议 |
-| GitHub 连接或 PR 写入失败 | 直接说明未保存，不能发明 SHA/PR/CI |
-| GitHub CI 仍运行中或失败 | 报告 queued/in_progress/failure，不把旧 head SUCCESS 套用新 head |
+**新会话启动指令（可复制）：**
 
-## 7. 验收 DoD
-
-- [ ] GitHub 新会话读取入口/长期记忆/两个 AI 分工已重新核实；
-- [ ] PR #16/#17/#18 最新状态和 CI 正确记录；
-- [ ] 计划索引、变更历史及两套 14 任务的重叠风险被识别并明确处理建议；
-- [ ] 没有重复派发 TTS-A 已完成的编码项；
-- [ ] Plan 01、Plan 02 状态没被无证据改为 DONE；
-- [ ] 没有生产写入、微信发送、模型运行、服务重启或未授权合并；
-- [ ] 若有修改，提供 Git Commit、PR、CI；若无修改，说明原因；
-- [ ] 交付用户可决定的下一步，而不是假装已合并。
-
-## 8. 新 ChatGPT 最终报告格式
-
-1. 本次读取的规范和 main/PR 最新事实。
-2. PR #17/#18 差异和权威文件建议。
-3. 已保存的变更文件、Commit/PR 或“未产生提交”。
-4. 文档检查及 GitHub CI。
-5. Plan 01/02 与功能级别状态是否有证据改变。
-6. 当前用户还需要单独授权的操作。
-7. 下一份建议任务的**名称**；除非用户明确要求“下一份”，不提前发送一整份 DeepSeek 任务书。
-
-**执行完 H0 后停止，不自动开始下一阶段。**
+> 读取 Whale Voice 私有仓库 PR #17 分支的 \`docs/plans/NEXT_CHATGPT_HANDOFF.md\` 与 \`NEXT_CHATGPT_ACTION_PLAN.md\`，按 C1 恢复角色、核验最新 main/PR #16–18/CI 和 Plan 03-A 进度。遵守 ChatGPT 专属计划标准；DeepSeek 只负责编码。不得重复 H0、不得改动原 Plan 01–14 编号、不得未经我单独授权合并或操作生产环境。核验后告诉我当前状态和唯一下一步。
