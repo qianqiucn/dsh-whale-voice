@@ -47,7 +47,7 @@ DeepSeek 不负责更新 docs/plans，也不替 ChatGPT 决定新计划排序或
 
 - 在 docs/PROJECT_STATUS.md 的最新验收/测试区增加可辨认的 **PR #16 TTS-A post-F01–F05 acceptance checkpoint** 段落或表格行。内容必须：HEAD 3ad32bc（若同步导致新文档提交，应分别记“工程代码验收 HEAD 3ad32bc”与“文档同步后新 PR HEAD”）；原 run 40163881122 SUCCESS；Node 197（196 PASS、1 平台 SKIP）、UI 24/24 均明确标为 DeepSeek 本轮执行报告；功能 DESIGN/OFFLINE；PR OPEN 未合并；N01–N05 已新增；生产无副作用为报告说明；未来合并等待用户单独授权。
 - 在 docs/AI_CONTEXT.md 的当前工作状态与最新检查记录附近同步同样口径；对引用旧 192/191/1 的语句若对应的是旧 TTS-A 阶段，明确注记为“历史快照（修复前）”；如确属独立旧阶段基线，则保留原数字，不改变其历史含义。
-- 两份文档不得把 Fake 契约测试写成真实 Provider 可用、把 UI 24/24 写成真实八页 GUI VERIFED、把 TTS-A 写成 TTS-B、把候选变成 selectable 或 default、把 CLOSED/MERGED 写成实际 PR 状态。
+- 两份文档不得把 Fake 契约测试写成真实 Provider 可用、把 UI 24/24 写成真实八页 GUI VERIFIED、把 TTS-A 写成 TTS-B、把候选变成 selectable 或 default、把 CLOSED/MERGED 写成实际 PR 状态。
 - 使用实际最新 SHA、链接、日期，绝不写自引用的“当前文档 HEAD 就是本次提交 SHA”：写修复代码的 HEAD 和后续提交的 Git link 即可；没有可信 loaded revision 不得写 APPLIED。
 - 如果检查显示某处旧计数确实是先前一次独立历史运行，保留并加注“historical”；不要为了统一数字抹掉历史证据。
 
@@ -71,7 +71,7 @@ DeepSeek 不负责更新 docs/plans，也不替 ChatGPT 决定新计划排序或
 | G03 | Registry 候选与 v1 兼容 | TTS 10 + SVC 2、不可选、无默认；qwen-local 旧值保留 |
 | G04 | TTS/SVC 隐藏投递字段 | 现有 N01–N05 正负面测试全过，不得出现新回归 |
 | G05 | Cloud unknown credentials / UNKNOWN | 无 AVAILABLE 推断、无请求成功伪造、无自动重发 |
-| G06 | 两份文档旧测试计数 | 当前 197 和历史 192 区分明确；没有不实 VERIFED / MERGED |
+| G06 | 两份文档旧测试计数 | 当前 197 和历史 192 区分明确；没有不实 VERIFIED / MERGED |
 | G07 | 文档范围 | Git Diff 新增更改只在 docs/PROJECT_STATUS.md 与 docs/AI_CONTEXT.md |
 | G08 | Node / build / UI / diff | 重新运行并真实记录 PASS/FAIL/SKIP；生成客户端一致 |
 | G09 | CI 最新 SHA | 本次新 HEAD 的 build + ui SUCCESS；排队不算成功 |
