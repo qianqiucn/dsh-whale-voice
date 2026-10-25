@@ -2,6 +2,16 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · TTS-A 交付报告核验与计划 02 继续执行
+
+- 触发：DeepSeek 提交 TTS-A Provider-neutral 审计、契约、v2 迁移提案与隔离测试完成报告，用户要求继续开发。
+- 证据：核验 PR #16 OPEN @ `c851be7`；代码存在 Registry、Config、Provider Contract，CI run `40157763811` SUCCESS；测试 188 Node（187 pass / 1 skip）和 24 UI 属开发报告记录。
+- 工程阶段：TTS-A 初版 `DESIGN / OFFLINE` 完成，不等于生产可用。
+- 状态：Plan 02 保持 `IN PROGRESS`，Git `PR_OPEN`。理由：当前注册表没有 IndexTTS、Gemini TTS、OpenAI 语音 API；正式架构文档还需补充 Whale Relay 与 SVC 的独立责任边界。
+- 顺序：01–14 不变。优先让 DeepSeek 在现有 PR #16 进行最后一轮范围补充；计划 01 测试收尾可独立进行。
+- 下一份发送：Plan 02 的补充任务书，禁止重复新建 TTS-A PR、启动生产 TTS 或自动合并。
+- 安全：无生产配置写入、付费调用、模型启动或真实微信发送。
+
 ## 2026-10-25 · 明确 DeepSeek / ChatGPT 双 AI 分工
 
 - 触发：用户指出另一个 AI 仅参与计划书与 GitHub 协调，计划管理规则只要求 ChatGPT 遵守。
