@@ -3,6 +3,13 @@
 **任务状态：PLANNED**  
 **前置：** TTS-A 契约及 WeChatAgent 扩展审计结论可用。
 
+## 2026-10-25 · 共用 Core 正式命名与兼容门禁（原 Plan 05，仍 PLANNED）
+
+**唯一目标名：Whale Audio Core（鲸音核心）。** Whale Voice 是语音气泡产品入口，Whale Singing 是唱歌产品入口，共享一个 Core 的任务/音色/Provider/资源/Artifact/许可/配置；WeChatAgent 和 Whale Relay Core（鲸递）仍独立。权威规格：[双前端及首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+- 对已有 Whale Voice Core（旧称）先**建立逻辑/文档别名和 API 映射**，不要直接改 `dsh-whale-voice`、插件槽位/服务 API/config key、`whale-v1`、PR #16 契约或用户数据。迁移/兼容需先定版本和回退测试。
+- 增加 FeatureDependencies 合同、按 voice-bubble/singing 独立的需求清单、Capability 与安装可信观测、跨功能共享资产去重、每功能首次访问确认标记；安装器与真实写入不属于 Plan 05。
+- 技术 DoD 先用 Fake Host/FeatureManifest 证明：一份 Core 管两页，不共享错误的 onboarding 状态、不建重复 TaskId/DeliveryId、SAVED 与 APPLIED 分离、WeChatAgent 和 Relay 不受越权写入。现有八页历史验收等级保持不变。
+
 ## 2026-10-25 · RVC/SVC 自动翻唱统一后端部署边界（仍 PLANNED）
 
 依据 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)，后端可对用户呈现“鲸递的一体化唱歌交付能力”，但**不可把搜索、人声分离、RVC/SVC 推理、混音任务所有权挪给 Whale Relay**。
