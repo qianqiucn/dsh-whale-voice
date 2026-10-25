@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · RVC 定为首发；Seed-VC 延后为零样本免训练试唱选配（用户已授权）
+
+- **用户明确授权**根据前一轮建议调整规划：RVC 是 Whale Singing 的首发主线路，Seed-VC 不取消但只作为后续免训练零样本试唱选项。
+- **旧方案→新方案**：旧 Plan 07 主要对 Seed-VC 与 RVC 并行研究、旧 Plan 12 泛指 Seed-VC/RVC 同等候选、旧 Plan 14 两者均列高性能本地可选 → **Plan 07-A 专注 RVC 上游许可/API/分离混音与环境审计，Seed-VC 只做最小静态档案；Plan 12-A 首发 RVC，新增原 Plan 12 的 12-D 后续可选 Seed-VC 零样本试唱；Plan 14 默认 RVC 安装选项、Seed-VC 不预装不默认可用**。
+- 官方 Seed-VC 仓库 2025-11-21 归档，1–30 秒授权参考音频可零样本；44.1 kHz 歌声专用模型约 200M 参数，25M Tiny 主要普通语音用途。**免训练≠低显存、CPU 低资源或实时唱歌**，资源/质量/长歌可行性须经后续专项实测，未经验收不得宣称可用。
+- 已同步 Plan 06、07、12、14、RVC/SVC 总蓝图、Whale Audio Core 双入口首次依赖规范、唯一 README 派发队列、长期记忆和交接卡。原 01–14 编号、已有 01 SENT / 02 DONE / 03-A DONE、03-B WAIT_USER_AUTHORIZATION 及 07-A PLANNED/NOT_SENT 均保持；12-D 不是 Plan 15 或新 PR。
+- 本轮写入仅 PR #17 权威规划分支，**不修改 PR #16 的源码/Registry**，不合并 PR #16/#17/#18，不改 `main`、WeChatAgent、Voice Sender、鲸递、生产配置，不下载模型/曲库音频、不执行真实转换、安装器、付费服务或微信发送。最终 CI 须以 #17 最新 HEAD 为准。
+
 ## 2026-10-25 · 改名 Whale Audio Core、分开 Voice/Singing 页面与首次依赖弹窗
 
 - 用户新需求：“语音whale voice和唱歌whale singing在一个core里面，这个core也重新给我个名字，但是前端这俩界面单独分开，进入语音气泡界面和唱歌界面需要弹出第一次使用要安装的依赖”。
