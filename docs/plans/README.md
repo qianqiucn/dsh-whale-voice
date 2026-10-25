@@ -5,6 +5,12 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 最新报告验收与唯一正式续行任务（2026-10-25，优先于旧快照）
+
+**Plan 07-A：初次研究报告已交付 PR #19（OPEN，`8276909`，仅新增 docs/SVC_PROVIDER_RESEARCH.md 348 行，CI `40230248341` SUCCESS）。** 报告在许可/安全风险、RVC 标准翻唱定位与原创 Fake 方向上有价值，但**正式工程验收为 REVIEW_REQUIRED，不能标 DONE 或直接进入 07-B**。ChatGPT 独立查到四个需修正之处：原 A01–A14 验收编号错位、关键上游结论缺 SHA/文件/行号证据、Fake 样例未映射至 PR #16 SVC v1 已有请求/结果合同、缺逐组件新手安装 Manifest。尤其 `validateSvcRequest` 顶层字段与报告 envelope 不一致，输出缺 `targetVoiceId`，但 `normalizeSvcResult` 允许并规范化唯一的 `delivery.state=PENDING_ROUTER`（不等于有发送权限）。
+
+**已派发唯一续行任务：Plan 07-A-F01 = SENT**，完整 Level 2：[07-A-F01-research-acceptance-correction.md](07-A-F01-research-acceptance-correction.md)。DeepSeek 只在原 PR #19 更新原研究 Markdown，不建新 PR、不重做已完成的上游研究、不改工程代码/规划分支；R01–R10 与原 A01–A14 通过后才由 ChatGPT 标 07-A DONE 并按依赖评估后续 Plan 04 / 05 / 07-B。**Plan 07-B 未派发，Plan 03-B 仍 WAIT_USER_AUTHORIZATION，PR #16 不能自动合并。** 本轮新计划单独 Git 提交仅限 #17 规划分支。历史“07-A 已 SENT/等待首份报告”是之前状态，本段优先。
+
 ## 当前已交付 DeepSeek 的唯一下一份任务书（2026-10-25）
 
 **Plan 07-A = SENT / 等待 DeepSeek 研究报告**。可直接转发 [Plan 07-A · RVC 上游许可 / API / Windows 依赖静态审计 Level 2 任务书](07-A-rvc-upstream-static-audit-execution.md)。它依据最新用户决定：Whale Audio Core + Voice/Singing 两页、RVC 为首发、Seed-VC 仅后续免训练可选、零编程基础用户优先。ChatGPT 已核实 #16 仍 OPEN / 0 reviews / 最新 CI success、#17 规划分支最新旧 HEAD 110a1b38 对应 CI success、#18 仍 Draft。**“SENT”表示计划书已经交给用户转发，不等于 DeepSeek 已执行或完成。**
