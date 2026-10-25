@@ -4,6 +4,11 @@
 > **维护者：** ChatGPT（仅负责计划、排序、记忆、GitHub 计划跟踪和完成审查）。DeepSeek 不承担这份文档的维护。  
 > **本次核验：2026-10-25（UTC 以 GitHub 实时记录为准）。** 本文件里的 SHA、CI、状态是有时点的快照，启动新会话必须重新查询。
 
+## 稳定编号与 Plan 03 范围纠偏（2026-10-25）
+
+用户发现当前 Plan 编号似乎不同于上一段 GPT。已查 H0 的 #17/#18 14 项对照：**两个规划 PR 的 01–14 派发序号并未重排，主要差异在文件名/部分历史状态**。TTS-A/TTS-A-H、Phase 4B-2B-2a/2b 是技术阶段名，Plan 01–14 是任务序号，PR #16–#18 是 GitHub PR 编号，不能相互混用。
+
+上一段 GPT 的 Plan 03=PR #16 最终审查并在用户单独授权后合并。我曾错误地把 Plan 03 直接改为只做合并前文档同步，导致范围漂移；已恢复 Plan 03 总目标，拆为 03-A（此前派发的只读/状态文档同步，SENT）与 03-B（必须单独授权的实际 merge 与合并后验证，NOT AUTHORIZED / NOT DISPATCHED）。Plan 02 DONE、Plan 01 SENT；Plan 04–14 不变。今后保持原稳定编号，不再为补丁/子步骤重新编号。权威说明见 [计划总表](README.md) 与 [Plan 03](03-merge-tts-a-pr16.md)。
 ## Plan 02 已验收完成、Plan 03 已派发（2026-10-25，最新状态）
 
 - **Plan 02 = DONE**：工程 PR #16 HEAD 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773，main/base bf9cf66，OPEN、mergeable、未合并。GitHub Actions run 40163881122 SUCCESS。已经阅读本次 Commit 的五文件代码和负向测试 Diff，F01–F05/N01–N05 纯契约修复符合目标。DeepSeek 报告 Node 197（196 PASS/1 SKIP），UI 24/24；ChatGPT 没有本地运行这些命令。功能始终 DESIGN/OFFLINE。
