@@ -8,6 +8,16 @@
 >
 > **首次登记：2026-10-25。计划唯一索引：[docs/plans/README.md](docs/plans/README.md)。**
 
+## 永久产品门禁：新手易用性高于开发者便利（2026-10-25）
+
+用户已经明确要求：“本项目始终给不会代码的编程小白用，保持易用性。” 这是 ChatGPT 所写全部未来任务书/验收报告必须长期遵守的**产品约束**，详见 [docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md](docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md)。
+
+- **ChatGPT 派发前**：为每份相关 Level 2 任务书附“零编程基础用户第一次如何操作”的标准流程、所需依赖、简体中文控件、硬件/云端替代、取消与失败恢复，DeepSeek 不必临时补产品设计。
+- **报告验收前**：按任务范围检查普通用户不使用命令行、Git、手动 JSON、pip、npm、Python 即可使用该任务声明已经支持的功能；对 Mock/OFFLINE 研发件需诚实说明尚不支持最终用户直用，不把前端演示、只读、无真实 Installer 夸成完成。
+- **长期权衡**：功能丰富不能强迫新手预装多套模型；首访 GUI 引导与分功能最小依赖、复用原组件、透明资源/费用、无显卡和无需微信投递的预览/保存路径，优先于多引擎“功能数量”。
+- **安全不降级**：用户一键按钮仍需要经审核 Installer/API、显式安装/付费/写入/发送同意，不能因易用性绕过 WeChatAgent、Worker NEVER_WRITE、UNKNOWN 不重发和许可证限制。
+- 将上述检查纳入 [docs/plans/TASK_SPEC_STANDARD.md](docs/plans/TASK_SPEC_STANDARD.md) 和 GitHub README/交接卡；以后新会话必须读取并执行，不要让用户重复强调。
+
 ## 2026-10-25 · 已批准产品命名（更新后遵循，历史文档保留旧称）
 
 TTS 与 SVC/歌声转换的**唯一共用核心**对外正式称 **Whale Audio Core（鲸音核心）**，原“Whale Voice Core”是旧文档的兼容别名；**Whale Voice** 是语音气泡功能，**Whale Singing** 是唱歌功能。两者各有独立前端入口/首次依赖弹窗，但共用音色、模型、Provider、音频和唯一 Task/Delivery ID。**Whale Relay Core（鲸递）只负责一次安全交付**，WeChatAgent 继续负责微信权限；不能因改名降低原安全边界，也不能批量更名已部署的 plugin/route/schema。权威 [双入口与依赖规范](docs/plans/WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)；此改名仅文档决定，真正改 UI/安装器需后续 Level 2 工程计划、Fake 回归和独立授权。
