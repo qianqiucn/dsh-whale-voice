@@ -135,12 +135,84 @@ function readField(object, key) {
   return { present: true, accessor: false, value: descriptor.value }
 }
 
-// Never echo caller-supplied characters that could be a machine path, URL or control sequence.
-function safeKeyForPath(key) {
-  if (typeof key !== 'string' || key.length > 48) return '<unknown-key>'
-  if (!/^[\x20-\x7E]+$/.test(key)) return '<unknown-key>'
-  if (/[\\/:]/.test(key)) return '<unknown-key>'
-  return key
+// F01-03: error paths never echo a caller-supplied key. Unknown keys report this exact marker.
+const UNKNOWN_KEY_PLACEHOLDER = '<unknown-key>'
+
+function hasDataProperty(descriptor) {
+  return descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+}
+
+/**
+ * F01-02 input policy for observations: own keys only, string keys only, enumerable data
+ * properties only, and each value is one of the four documented observation states. Accessors are
+ * rejected without being executed.
+ */
+function collectObservations(object, knownIds, errors, observed) {
+  for (const key of Reflect.ownKeys(object)) {
+    if (typeof key === 'symbol' || !knownIds.has(key)) {
+      errors.push(
+        issue(
+          FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION,
+          'observations.' + UNKNOWN_KEY_PLACEHOLDER,
+          'component is not registered for this feature',
+        ),
+      )
+      continue
+    }
+    const path = 'observations.' + key
+    const descriptor = Object.getOwnPropertyDescriptor(object, key)
+    if (!hasDataProperty(descriptor)) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, path, 'accessor property is not accepted'))
+      continue
+    }
+    if (descriptor.enumerable !== true) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, path, 'non-enumerable field is not accepted'))
+      continue
+    }
+    if (typeof descriptor.value !== 'string' || !DEPENDENCY_OBSERVATION_STATES.includes(descriptor.value)) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, path, 'unsupported observation state'))
+      continue
+    }
+    observed.set(key, descriptor.value)
+  }
+}
+
+/**
+ * F01-02 input policy for the per-feature acknowledgement object. Every malformed shape is
+ * MANIFEST_INVALID_ACKNOWLEDGEMENT, including hidden or accessor-backed entries that must never
+ * be treated as a valid acknowledgement.
+ */
+function checkAcknowledgements(object, errors) {
+  for (const key of Reflect.ownKeys(object)) {
+    if (typeof key === 'symbol' || !FEATURE_IDS.includes(key)) {
+      errors.push(
+        issue(
+          FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
+          'acknowledgedByFeature.' + UNKNOWN_KEY_PLACEHOLDER,
+          'unknown feature acknowledgement key',
+        ),
+      )
+      continue
+    }
+    const path = 'acknowledgedByFeature.' + key
+    const descriptor = Object.getOwnPropertyDescriptor(object, key)
+    if (!hasDataProperty(descriptor)) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, path, 'accessor property is not accepted'))
+      continue
+    }
+    if (descriptor.enumerable !== true) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, path, 'non-enumerable field is not accepted'))
+      continue
+    }
+    if (descriptor.value === null) continue
+    if (typeof descriptor.value !== 'string') {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, path, 'expected revision string or null'))
+      continue
+    }
+    if (!REVISION_PATTERN.test(descriptor.value)) {
+      errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, path, 'invalid revision marker'))
+    }
+  }
 }
 
 // Never echo the caller's value: a malformed feature argument must not become a log or UI leak.
@@ -208,24 +280,7 @@ export function projectFeatureAvailability(feature, observations) {
     const knownIds = new Set(definition.dependencies.map((item) => item.id))
     const errors = []
     const observed = new Map()
-    for (const key of Object.keys(input)) {
-      if (!knownIds.has(key)) {
-        errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION, 'observations.' + safeKeyForPath(key), 'component is not registered for this feature'),
-        )
-        continue
-      }
-      const field = readField(input, key)
-      if (field.accessor) {
-        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + safeKeyForPath(key), 'accessor property is not accepted'))
-        continue
-      }
-      if (typeof field.value !== 'string' || !DEPENDENCY_OBSERVATION_STATES.includes(field.value)) {
-        errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION, 'observations.' + safeKeyForPath(key), 'unsupported observation state'))
-        continue
-      }
-      observed.set(key, field.value)
-    }
+    collectObservations(input, knownIds, errors, observed)
     if (errors.length > 0) return failOf(errors)
 
     const stateOf = (id) => observed.get(id) || 'UNKNOWN'
@@ -294,45 +349,12 @@ export function evaluateFirstUse(feature, acknowledgedByFeature, manifestRevisio
         issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature', 'expected plain object'),
       ])
     }
-    for (const key of Object.keys(acknowledgedByFeature)) {
-      if (!FEATURE_IDS.includes(key)) {
-        errors.push(
-          issue(
-            FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
-            'acknowledgedByFeature.' + safeKeyForPath(key),
-            'unknown feature acknowledgement key',
-          ),
-        )
-        continue
-      }
-      const field = readField(acknowledgedByFeature, key)
-      if (field.accessor) {
-        errors.push(
-          issue(
-            FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
-            'acknowledgedByFeature.' + safeKeyForPath(key),
-            'accessor property is not accepted',
-          ),
-        )
-        continue
-      }
-      if (field.value === null) continue
-      if (typeof field.value !== 'string') {
-        errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + safeKeyForPath(key), 'expected revision string or null'),
-        )
-        continue
-      }
-      if (!REVISION_PATTERN.test(field.value)) {
-        errors.push(
-          issue(FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT, 'acknowledgedByFeature.' + safeKeyForPath(key), 'invalid revision marker'),
-        )
-      }
-    }
+    checkAcknowledgements(acknowledgedByFeature, errors)
     if (typeof manifestRevision !== 'string' || !REVISION_PATTERN.test(manifestRevision)) {
       errors.push(issue(FEATURE_MANIFEST_ERRORS.INVALID_REVISION, 'manifestRevision', 'a safe non-empty revision marker is required'))
     }
     if (errors.length > 0) return failOf(errors)
+    // Only an enumerable data property can reach this point; a hidden entry was already rejected.
     const acknowledgedField = readField(acknowledgedByFeature, feature)
     const acknowledged = acknowledgedField.present ? acknowledgedField.value : null
     let showDialog = true

@@ -217,28 +217,41 @@ function joinPath(prefix, key) {
   return prefix ? prefix + '.' + key : key
 }
 
-/**
- * Error paths may name a rejected field for debugging, but must never echo a value that looks
- * like a machine path, URL or control sequence. Anything unexpected becomes a stable marker.
- */
-function safeKeyForPath(key) {
-  if (typeof key !== 'string' || key.length > 48) return '<unknown-key>'
-  if (!/^[\x20-\x7E]+$/.test(key)) return '<unknown-key>'
-  if (/[\\/:]/.test(key)) return '<unknown-key>'
-  return key
-}
+// F01-03: an error path never echoes an arbitrary input key. Unknown keys always report this
+// exact placeholder, regardless of how harmless or how suspicious the name looks.
+const UNKNOWN_KEY_PLACEHOLDER = '<unknown-key>'
 
-function rejectUnknownKeys(object, allowed, prefix, errors) {
-  for (const key of Object.keys(object)) {
-    if (allowed.has(key)) continue
-    const forged = SENSITIVE_KEYS.has(key)
-    errors.push(
-      issue(
-        AUDIO_ERRORS.UNKNOWN_FIELD,
-        joinPath(prefix, safeKeyForPath(key)),
-        forged ? 'sensitive or delivery field is not allowed here' : 'unknown field is not allowed',
-      ),
-    )
+/**
+ * Enforce the F01-02 input policy on one object surface: own keys only, string keys only,
+ * enumerable data properties only. Symbol keys and unknown keys are rejected without disclosing
+ * their names; known keys that are hidden or accessor-backed are a type mismatch. Values are
+ * never read through accessors, so a hostile getter is never executed.
+ */
+function checkSurface(object, allowed, prefix, errors, sensitiveCode = AUDIO_ERRORS.UNKNOWN_FIELD) {
+  for (const key of Reflect.ownKeys(object)) {
+    if (typeof key === 'symbol') {
+      errors.push(
+        issue(AUDIO_ERRORS.UNKNOWN_FIELD, joinPath(prefix, UNKNOWN_KEY_PLACEHOLDER), 'symbol keys are not allowed'),
+      )
+      continue
+    }
+    if (!allowed.has(key)) {
+      const forged = SENSITIVE_KEYS.has(key)
+      errors.push(
+        issue(
+          forged ? sensitiveCode : AUDIO_ERRORS.UNKNOWN_FIELD,
+          joinPath(prefix, UNKNOWN_KEY_PLACEHOLDER),
+          forged ? 'sensitive or delivery field is not allowed here' : 'unknown field is not allowed',
+        ),
+      )
+      continue
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(object, key)
+    if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, joinPath(prefix, key), 'accessor property is not accepted'))
+    } else if (descriptor.enumerable !== true) {
+      errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, joinPath(prefix, key), 'non-enumerable field is not accepted'))
+    }
   }
 }
 
@@ -261,9 +274,12 @@ function containsCycle(root) {
     seen.add(node)
     budget -= 1
     if (budget < 0) return true
-    const keys = Object.keys(node)
+    // Hidden and symbol-keyed children are inspected too: the scan must not be blind to a graph
+    // that the surface policy will later reject. Symbol keys cannot be traversed portably.
+    const keys = Reflect.ownKeys(node)
     if (keys.length > 64) return true
     for (const key of keys) {
+      if (typeof key === 'symbol') continue
       const child = readField(node, key)
       stack.push({ node: child.accessor ? null : child.value, depth: item.depth + 1 })
     }
@@ -391,7 +407,7 @@ function readObject(object, key, prefix, allowed, errors) {
     errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, path, 'expected plain object'))
     return null
   }
-  rejectUnknownKeys(field.value, allowed, path, errors)
+  checkSurface(field.value, allowed, path, errors)
   return field.value
 }
 
@@ -419,7 +435,7 @@ function readDraftShape(draft) {
   if (containsCycle(draft)) {
     return failOf([issue(AUDIO_ERRORS.INVALID_REQUEST, '$', 'cyclic or repeatedly referenced input is not accepted')])
   }
-  rejectUnknownKeys(draft, DRAFT_KEYS, '', errors)
+  checkSurface(draft, DRAFT_KEYS, '', errors)
   const schemaVersion = readSchemaVersion(draft, errors, '')
   const taskId = readString(draft, 'taskId', '', TASK_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque task id required', errors)
   const feature = readEnum(draft, 'feature', '', FEATURE_LIST, errors)
@@ -547,7 +563,7 @@ export function createAudioTaskRecord(draft, metadata) {
     if (!validated.ok) return validated
     const errors = []
     if (!isPlainObject(metadata)) return failOf([issue(AUDIO_ERRORS.INVALID_REQUEST, 'metadata', 'expected plain object')])
-    rejectUnknownKeys(metadata, METADATA_KEYS, 'metadata', errors)
+    checkSurface(metadata, METADATA_KEYS, 'metadata', errors)
     const observedAt = readTimestamp(metadata, 'observedAt', 'metadata', errors)
     if (errors.length > 0) return failOf(errors)
     const value = validated.value
@@ -686,11 +702,7 @@ function readAction(input) {
   if (!extraFields) return failOf([issue(AUDIO_ERRORS.UNKNOWN_FIELD, 'action.type', 'unknown action type')])
   const errors = []
   const allowed = new Set(['type', ...extraFields])
-  for (const key of Object.keys(input)) {
-    if (!allowed.has(key)) {
-      errors.push(issue(AUDIO_ERRORS.UNKNOWN_FIELD, 'action.' + safeKeyForPath(key), 'unknown action field'))
-    }
-  }
+  checkSurface(input, allowed, 'action', errors)
   let artifactRef = null
   let code = null
   if (typeField.value === 'ATTACH_FAKE_ARTIFACT') {
@@ -717,17 +729,8 @@ function readRecord(input) {
     return failOf([issue(AUDIO_ERRORS.INVALID_REQUEST, '$', 'cyclic or repeatedly referenced record is not accepted')])
   }
   const errors = []
-  for (const key of Object.keys(input)) {
-    if (RECORD_KEYS.has(key)) continue
-    const forged = SENSITIVE_KEYS.has(key)
-    errors.push(
-      issue(
-        forged ? AUDIO_ERRORS.DELIVERY_FORBIDDEN : AUDIO_ERRORS.UNKNOWN_FIELD,
-        safeKeyForPath(key),
-        forged ? 'sent or delivery fields are not part of an audio task record' : 'unknown record field',
-      ),
-    )
-  }
+  // The record surface keeps the delivery-specific code for known sensitive keys.
+  checkSurface(input, RECORD_KEYS, '', errors, AUDIO_ERRORS.DELIVERY_FORBIDDEN)
   const schemaVersion = readSchemaVersion(input, errors, '')
   const taskId = readString(input, 'taskId', '', TASK_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque task id required', errors)
   const feature = readEnum(input, 'feature', '', FEATURE_LIST, errors)
@@ -816,7 +819,7 @@ function readRecord(input) {
     if (!isPlainObject(lastErrorField.value)) {
       errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, 'lastError', 'expected object or null'))
     } else {
-      rejectUnknownKeys(lastErrorField.value, LAST_ERROR_KEYS, 'lastError', errors)
+      checkSurface(lastErrorField.value, LAST_ERROR_KEYS, 'lastError', errors)
       const code = readEnum(lastErrorField.value, 'code', 'lastError', AUDIO_TASK_FAILURE_CODES, errors)
       if (code) lastError = { code }
     }
@@ -907,6 +910,17 @@ function readRecord(input) {
 }
 
 /**
+ * Validate a complete task record and return a fresh deep-frozen normalised copy. This is the
+ * single authoritative record schema for CoreTask v1: transitionAudioTask, projectAudioTask and
+ * the Relay boundary all reuse it instead of keeping their own partial field checks.
+ * @param {object} record candidate task record
+ * @returns {{ok:true,value:object}|{ok:false,errors:Array<{code:string,path:string,reason:string}>}}
+ */
+export function validateAudioTaskRecord(record) {
+  return attempt(() => readRecord(record))
+}
+
+/**
  * Apply exactly one Fake state transition. The input record is never modified and the result is
  * a fresh deep-frozen record. This function does not run a provider, cancel a process or send.
  * @param {object} record current task record
@@ -914,13 +928,13 @@ function readRecord(input) {
  */
 export function transitionAudioTask(record, action) {
   return attempt(() => {
-    const current = readRecord(record)
+    const current = validateAudioTaskRecord(record)
     if (!current.ok) return current
     const parsed = readAction(action)
     if (!parsed.ok) return parsed
     const applied = applyAction(current.value, parsed.value)
     if (!applied.ok) return applied
-    const verified = readRecord(applied.value)
+    const verified = validateAudioTaskRecord(applied.value)
     if (!verified.ok) {
       return failOf([issue(AUDIO_ERRORS.STATE_CONFLICT, '$', 'transition produced an invalid record')])
     }
@@ -935,7 +949,7 @@ export function transitionAudioTask(record, action) {
  */
 export function projectAudioTask(record) {
   return attempt(() => {
-    const parsed = readRecord(record)
+    const parsed = validateAudioTaskRecord(record)
     if (!parsed.ok) return parsed
     const value = parsed.value
     return {

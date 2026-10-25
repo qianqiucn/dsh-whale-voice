@@ -36,8 +36,13 @@ import {
   RELAY_CANDIDATE_STAGE,
   buildRelayHandoffCandidate,
 } from '../core/audio/relay-handoff.mjs'
+// Namespace import keeps the F01 regression suite loadable before the new export exists, so the
+// pre-fix failures can be recorded honestly instead of failing at module load.
+import * as audioContract from '../core/audio/task-contract.mjs'
 
 const OBSERVED_AT = '2026-10-25T12:00:00.000Z'
+// F01-03: unknown keys are reported with this fixed placeholder, never with the caller's key.
+const UNKNOWN_PATH = '<unknown-key>'
 
 function ttsDraft(overrides = {}) {
   return {
@@ -112,6 +117,13 @@ function savedFixture() {
   return step(attachedRecord(), { type: 'MARK_SAVED' })
 }
 
+function savedSvcFixture(deliveryRequested = false) {
+  const created = record(svcDraft({ deliveryRequested }))
+  const processing = step(created, { type: 'BEGIN_PROCESS' })
+  const attached = step(processing, { type: 'ATTACH_FAKE_ARTIFACT', artifactRef: 'artifact:fixture-stage-out-01' })
+  return step(attached, { type: 'MARK_SAVED' })
+}
+
 function cancelledRecord() {
   return step(step(record(ttsDraft()), { type: 'REQUEST_CANCEL' }), { type: 'CONFIRM_CANCEL' })
 }
@@ -170,7 +182,7 @@ test('T03 feature 与 taskType 交叉配对必须被拒绝', () => {
 test('T04 未知顶层字段被拒绝且不会被静默丢弃', () => {
   const errors = expectError(validateAudioTaskDraft(ttsDraft({ nickname: 'x' })), AUDIO_ERRORS.UNKNOWN_FIELD, 'T04')
   assert.equal(errors.length, 1)
-  assert.equal(errors[0].path, 'nickname')
+  assert.equal(errors[0].path, UNKNOWN_PATH)
 })
 
 test('T04b 错误对象不回显看似路径或 URL 的字段名', () => {
@@ -923,6 +935,488 @@ test('R10 多次调用是确定的纯数据结果，不触发任何提交', () =
   assert.equal(saved.state, 'SAVED')
   assert.equal(first.submitAllowed, false)
   assert.equal(first.stage, 'PROPOSED_NOT_AUTHORIZED')
+})
+
+// ---------------------------------------------------------------------------------------------
+// F01 · input boundary regressions (N01–N16)
+// ---------------------------------------------------------------------------------------------
+
+function expectReject(result, label) {
+  assert.equal(result.ok, false, label + ' must fail closed')
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'value'), false, label + ' must not expose a value')
+  assert.ok(Array.isArray(result.errors) && result.errors.length > 0, label + ' must report at least one error')
+  for (const error of result.errors) {
+    assert.equal(typeof error.code, 'string', label + ' error code')
+    assert.equal(typeof error.path, 'string', label + ' error path')
+    assert.equal(typeof error.reason, 'string', label + ' error reason')
+  }
+  return result.errors
+}
+
+function errorText(errors) {
+  return errors.map((error) => error.path + '|' + error.reason).join(';')
+}
+
+function withHidden(object, key, value) {
+  const clone = { ...object }
+  Object.defineProperty(clone, key, { value, enumerable: false, configurable: true, writable: true })
+  return clone
+}
+
+function withSymbol(object, description, value) {
+  const clone = { ...object }
+  Object.defineProperty(clone, Symbol(description), { value, enumerable: true, configurable: true, writable: true })
+  return clone
+}
+
+test('N01 统一记录验证与 Relay 对合法 SAVED 记录给出一致结果', () => {
+  const cases = [savedRecord({ deliveryRequested: true }), savedSvcFixture(true)]
+  for (const saved of cases) {
+    const validated = expectOk(audioContract.validateAudioTaskRecord(saved), 'N01 validate')
+    assert.notStrictEqual(validated, saved)
+    assert.equal(Object.isFrozen(validated), true)
+    assert.deepEqual(validated, saved)
+    const candidate = expectOk(buildRelayHandoffCandidate(saved, 'delivery:fixture-01'), 'N01 relay')
+    assert.equal(candidate.taskId, saved.taskId)
+    assert.equal(candidate.artifactRef, saved.outputArtifactRef)
+    assert.equal(candidate.stage, RELAY_CANDIDATE_STAGE)
+    assert.equal(candidate.submitAllowed, false)
+    assert.equal(Object.keys(candidate).length, 10)
+  }
+})
+
+test('N02 删除任一必填记录字段都会被统一验证、投影与 Relay 拒绝', () => {
+  const saved = savedRecord({ deliveryRequested: true })
+  const keys = Object.keys(saved)
+  assert.equal(keys.length, 16)
+  for (const key of keys) {
+    const broken = { ...saved }
+    delete broken[key]
+    expectReject(audioContract.validateAudioTaskRecord(broken), 'N02 validate ' + key)
+    expectReject(projectAudioTask(broken), 'N02 project ' + key)
+    expectReject(buildRelayHandoffCandidate(broken, 'delivery:fixture-01'), 'N02 relay ' + key)
+  }
+})
+
+test('N03 配对、音色与时间错误在 Core 与 Relay 同时被拒绝', () => {
+  const saved = savedRecord({ deliveryRequested: true })
+  const marker = 'fixture-marker-not-a-date'
+  const mutated = [
+    { ...saved, feature: 'singing' },
+    { ...saved, taskType: 'SVC' },
+    { ...saved, source: { kind: 'AUDIO_REF', ref: 'artifact:fixture-vocal-01' } },
+    { ...saved, voiceProfileId: 'whale-v1.pth' },
+    { ...saved, voiceProfileId: 'C:\\models\\fixture.pth' },
+    { ...saved, observedAt: marker },
+  ]
+  for (const variant of mutated) {
+    expectReject(audioContract.validateAudioTaskRecord(variant), 'N03 validate')
+    expectReject(projectAudioTask(variant), 'N03 project')
+    const relayErrors = expectReject(buildRelayHandoffCandidate(variant, 'delivery:fixture-01'), 'N03 relay')
+    assert.equal(errorText(relayErrors).includes(marker), false)
+  }
+})
+
+test('N04 嵌套对象夹带 token/send/未知键一律拒绝且不回显', () => {
+  const saved = savedRecord({ deliveryRequested: true })
+  const variants = [
+    { ...saved, source: { ...saved.source, token: 'fixture' } },
+    { ...saved, source: { ...saved.source, send: true } },
+    { ...saved, source: { ...saved.source, 'fixture-private@example.test': 'x' } },
+    { ...saved, rights: { ...saved.rights, token: 'fixture' } },
+    { ...saved, cancel: { ...saved.cancel, token: 'fixture' } },
+    { ...saved, delivery: { ...saved.delivery, token: 'fixture' } },
+    { ...saved, delivery: { ...saved.delivery, backend: 'fixture' } },
+  ]
+  for (const variant of variants) {
+    const errors = expectReject(audioContract.validateAudioTaskRecord(variant), 'N04 validate')
+    assert.equal(errorText(errors).includes('token'), false)
+    assert.equal(errorText(errors).includes('fixture-private'), false)
+    expectReject(buildRelayHandoffCandidate(variant, 'delivery:fixture-01'), 'N04 relay')
+  }
+  const failed = failedRecord()
+  const withToken = { ...failed, lastError: { ...failed.lastError, token: 'fixture' } }
+  expectReject(audioContract.validateAudioTaskRecord(withToken), 'N04 lastError')
+})
+
+test('N05 状态与字段矛盾（SAVED 带错误、确认取消、缺产物、UNVERIFIED）被拒绝', () => {
+  const saved = savedRecord({ deliveryRequested: true })
+  const variants = [
+    { ...saved, lastError: { code: 'AUDIO_FAKE_FAILURE' } },
+    { ...saved, cancel: { requested: true, confirmed: true } },
+    { ...saved, cancel: { requested: true, confirmed: false } },
+    { ...saved, outputArtifactRef: null },
+    { ...saved, rights: { state: 'UNVERIFIED' } },
+    { ...saved, state: 'BLOCKED_RIGHTS' },
+  ]
+  for (const variant of variants) {
+    expectReject(audioContract.validateAudioTaskRecord(variant), 'N05 validate')
+    expectReject(projectAudioTask(variant), 'N05 project')
+    expectReject(buildRelayHandoffCandidate(variant, 'delivery:fixture-01'), 'N05 relay')
+  }
+})
+
+test('N06 顶层不可枚举 token/send 被拒绝且 action 不推进', () => {
+  const draft = withHidden(ttsDraft(), 'token', 'fixture')
+  const draftErrors = expectReject(validateAudioTaskDraft(draft), 'N06 draft')
+  assert.ok(draftErrors.some((error) => error.code === AUDIO_ERRORS.UNKNOWN_FIELD))
+  expectReject(createAudioTaskRecord(draft, { observedAt: OBSERVED_AT }), 'N06 create')
+
+  const metadata = withHidden({ observedAt: OBSERVED_AT }, 'send', true)
+  expectReject(createAudioTaskRecord(ttsDraft(), metadata), 'N06 metadata')
+
+  const created = record(ttsDraft())
+  const action = withHidden({ type: 'BEGIN_PROCESS' }, 'send', 'fixture')
+  expectReject(transitionAudioTask(created, action), 'N06 action')
+  assert.equal(created.state, AUDIO_TASK_STATES.CREATED)
+
+  const recordWithHidden = withHidden(savedRecord({ deliveryRequested: true }), 'token', 'fixture')
+  expectReject(audioContract.validateAudioTaskRecord(recordWithHidden), 'N06 record')
+  expectReject(buildRelayHandoffCandidate(recordWithHidden, 'delivery:fixture-01'), 'N06 relay')
+})
+
+test('N07 嵌套对象中的不可枚举未知字段同样被拒绝', () => {
+  const source = withHidden({ kind: 'TEXT_REF', ref: 'artifact:fixture-text-01' }, 'token', 'fixture')
+  expectReject(validateAudioTaskDraft(ttsDraft({ source })), 'N07 draft source')
+
+  const saved = savedRecord({ deliveryRequested: true })
+  const variants = [
+    { ...saved, source: withHidden({ ...saved.source }, 'send', true) },
+    { ...saved, rights: withHidden({ ...saved.rights }, 'token', 'fixture') },
+    { ...saved, cancel: withHidden({ ...saved.cancel }, 'token', 'fixture') },
+    { ...saved, delivery: withHidden({ ...saved.delivery }, 'backend', 'fixture') },
+  ]
+  for (const variant of variants) {
+    expectReject(audioContract.validateAudioTaskRecord(variant), 'N07 record')
+    expectReject(buildRelayHandoffCandidate(variant, 'delivery:fixture-01'), 'N07 relay')
+  }
+})
+
+test('N08 Symbol 键在全部入口都被拒绝且不泄露描述', () => {
+  const marker = 'fixture-symbol-secret'
+  const draft = withSymbol(ttsDraft(), marker, 'x')
+  const draftErrors = expectReject(validateAudioTaskDraft(draft), 'N08 draft')
+  assert.equal(errorText(draftErrors).includes(marker), false)
+  expectReject(createAudioTaskRecord(draft, { observedAt: OBSERVED_AT }), 'N08 create')
+
+  const created = record(ttsDraft())
+  expectReject(transitionAudioTask(created, withSymbol({ type: 'BEGIN_PROCESS' }, marker, 'x')), 'N08 action')
+
+  const saved = savedRecord({ deliveryRequested: true })
+  const withSym = withSymbol(saved, marker, 'x')
+  expectReject(audioContract.validateAudioTaskRecord(withSym), 'N08 record')
+  const relayErrors = expectReject(buildRelayHandoffCandidate(withSym, 'delivery:fixture-01'), 'N08 relay')
+  assert.equal(errorText(relayErrors).includes(marker), false)
+
+  expectError(
+    projectFeatureAvailability('singing', withSymbol({}, marker, 'VERIFIED')),
+    FEATURE_MANIFEST_ERRORS.UNKNOWN_OBSERVATION,
+    'N08 observations',
+  )
+  expectError(
+    evaluateFirstUse('singing', withSymbol({}, marker, 'plan05a.v1'), FEATURE_MANIFEST_REVISION),
+    FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
+    'N08 ack',
+  )
+})
+
+test('N09 已知字段不可枚举时按固定错误拒绝', () => {
+  expectError(
+    validateAudioTaskDraft(withHidden(ttsDraft(), 'taskId', 'task:fixture-hidden-01')),
+    AUDIO_ERRORS.TYPE_MISMATCH,
+    'N09 draft taskId',
+  )
+
+  const missingTaskId = { ...ttsDraft() }
+  delete missingTaskId.taskId
+  expectReject(
+    validateAudioTaskDraft(withHidden(missingTaskId, 'taskId', 'task:fixture-hidden-01')),
+    'N09 hidden taskId cannot replace a missing field',
+  )
+
+  expectError(
+    createAudioTaskRecord(ttsDraft(), withHidden({ observedAt: OBSERVED_AT }, 'observedAt', OBSERVED_AT)),
+    AUDIO_ERRORS.TYPE_MISMATCH,
+    'N09 metadata observedAt',
+  )
+
+  const created = record(ttsDraft())
+  expectError(
+    transitionAudioTask(created, withHidden({ type: 'BEGIN_PROCESS' }, 'type', 'BEGIN_PROCESS')),
+    AUDIO_ERRORS.TYPE_MISMATCH,
+    'N09 action type',
+  )
+  assert.equal(created.state, AUDIO_TASK_STATES.CREATED)
+
+  expectError(
+    projectFeatureAvailability('singing', withHidden({}, 'audio-core', 'VERIFIED')),
+    FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION,
+    'N09 observations audio-core',
+  )
+  expectError(
+    evaluateFirstUse('singing', withHidden({}, 'singing', FEATURE_MANIFEST_REVISION), FEATURE_MANIFEST_REVISION),
+    FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
+    'N09 ack singing',
+  )
+  expectError(
+    evaluateFirstUse('singing', withHidden({}, 'singing', 'bad/revision'), FEATURE_MANIFEST_REVISION),
+    FEATURE_MANIFEST_ERRORS.INVALID_ACKNOWLEDGEMENT,
+    'N09 hidden invalid revision',
+  )
+})
+
+test('N10 getter/setter 一律拒绝且从不执行访问器', () => {
+  let reads = 0
+  const knownGetter = { ...ttsDraft() }
+  Object.defineProperty(knownGetter, 'taskId', {
+    get() {
+      reads += 1
+      return 'task:fixture-getter-01'
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  expectError(validateAudioTaskDraft(knownGetter), AUDIO_ERRORS.TYPE_MISMATCH, 'N10 known getter')
+  assert.equal(reads, 0)
+
+  const unknownGetter = { ...ttsDraft() }
+  Object.defineProperty(unknownGetter, 'token', {
+    get() {
+      reads += 1
+      return 'fixture'
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  expectError(validateAudioTaskDraft(unknownGetter), AUDIO_ERRORS.UNKNOWN_FIELD, 'N10 unknown getter')
+  assert.equal(reads, 0)
+
+  const throwingAction = {}
+  Object.defineProperty(throwingAction, 'type', {
+    get() {
+      reads += 1
+      throw new Error('fixture-getter-marker')
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  const created = record(ttsDraft())
+  const actionErrors = expectReject(transitionAudioTask(created, throwingAction), 'N10 throwing getter')
+  assert.equal(reads, 0)
+  assert.equal(errorText(actionErrors).includes('fixture-getter-marker'), false)
+
+  const observations = {}
+  Object.defineProperty(observations, 'audio-core', {
+    get() {
+      reads += 1
+      return 'VERIFIED'
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  expectError(
+    projectFeatureAvailability('singing', observations),
+    FEATURE_MANIFEST_ERRORS.INVALID_OBSERVATION,
+    'N10 observations getter',
+  )
+  assert.equal(reads, 0)
+})
+
+test('N11 三模块错误路径固定为占位符，不回显任何未知键名', () => {
+  const markers = [
+    'fixture-private-contact@example.test',
+    'S3CR3T-fixture-marker',
+    'C:\\fixture\\private\\contact.txt',
+    'https://fixture.example.test/private',
+    '私密标记-fixture',
+  ]
+  for (const marker of markers) {
+    const draftErrors = expectReject(validateAudioTaskDraft(ttsDraft({ [marker]: 'fixture' })), 'N11 draft')
+    assert.ok(draftErrors.some((error) => error.path === UNKNOWN_PATH), 'N11 draft placeholder')
+    assert.equal(errorText(draftErrors).includes(marker), false)
+
+    const observationsErrors = expectReject(projectFeatureAvailability('singing', { [marker]: 'VERIFIED' }), 'N11 observations')
+    assert.ok(observationsErrors.some((error) => error.path === 'observations.' + UNKNOWN_PATH), 'N11 observations placeholder')
+    assert.equal(errorText(observationsErrors).includes(marker), false)
+
+    const ackErrors = expectReject(evaluateFirstUse('singing', { [marker]: 'plan05a.v1' }, FEATURE_MANIFEST_REVISION), 'N11 ack')
+    assert.ok(ackErrors.some((error) => error.path === 'acknowledgedByFeature.' + UNKNOWN_PATH), 'N11 ack placeholder')
+    assert.equal(errorText(ackErrors).includes(marker), false)
+
+    const saved = savedRecord({ deliveryRequested: true })
+    const relayErrors = expectReject(
+      buildRelayHandoffCandidate({ ...saved, [marker]: 'fixture' }, 'delivery:fixture-01'),
+      'N11 relay',
+    )
+    assert.ok(relayErrors.some((error) => error.path === UNKNOWN_PATH), 'N11 relay placeholder')
+    assert.equal(errorText(relayErrors).includes(marker), false)
+  }
+})
+
+test('N12 已知字段的非法值与异常内容不会进入错误信封', () => {
+  const marker = 'fixture-value-marker-9f3'
+  const idErrors = expectError(validateAudioTaskDraft(ttsDraft({ taskId: marker })), AUDIO_ERRORS.INVALID_ID, 'N12 id')
+  assert.equal(errorText(idErrors).includes(marker), false)
+
+  const saved = savedRecord({ deliveryRequested: true })
+  const relayErrors = expectReject(
+    buildRelayHandoffCandidate({ ...saved, observedAt: marker }, 'delivery:fixture-01'),
+    'N12 relay observedAt',
+  )
+  assert.equal(errorText(relayErrors).includes(marker), false)
+
+  const throwing = { ...ttsDraft() }
+  Object.defineProperty(throwing, 'taskId', {
+    get() {
+      throw new Error(marker)
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  const throwErrors = expectReject(validateAudioTaskDraft(throwing), 'N12 throwing getter')
+  assert.equal(errorText(throwErrors).includes(marker), false)
+  assert.equal(errorText(throwErrors).includes('stack'), false)
+})
+
+test('N13 仅普通对象可入；null 原型与冻结对象可用，自定义原型被拒绝', () => {
+  const nullProto = Object.assign(Object.create(null), ttsDraft())
+  const accepted = expectOk(validateAudioTaskDraft(nullProto), 'N13 null proto')
+  assert.notStrictEqual(accepted, nullProto)
+  assert.equal(Object.isFrozen(accepted), true)
+
+  const frozenDraft = Object.freeze(ttsDraft())
+  assert.equal(expectOk(validateAudioTaskDraft(frozenDraft), 'N13 frozen').taskId, 'task:fixture-voice-01')
+
+  const customProto = Object.create({ taskId: 'task:fixture-inherited-01' })
+  customProto.schemaVersion = 1
+  customProto.feature = 'voice-bubbles'
+  customProto.taskType = 'TTS'
+  customProto.source = { kind: 'TEXT_REF', ref: 'artifact:fixture-text-01' }
+  customProto.voiceProfileId = 'voice:fixture-voice-01'
+  customProto.deliveryRequested = false
+  customProto.rights = { state: 'CONFIRMED_FIXTURE' }
+  expectError(validateAudioTaskDraft(customProto), AUDIO_ERRORS.INVALID_REQUEST, 'N13 custom proto')
+
+  class FixtureDraft {}
+  expectError(validateAudioTaskDraft(new FixtureDraft()), AUDIO_ERRORS.INVALID_REQUEST, 'N13 class instance')
+
+  const recordWithProto = Object.assign(Object.create({ extra: true }), savedRecord({ deliveryRequested: true }))
+  expectReject(audioContract.validateAudioTaskRecord(recordWithProto), 'N13 record proto')
+  expectReject(buildRelayHandoffCandidate(recordWithProto, 'delivery:fixture-01'), 'N13 relay proto')
+})
+
+test('N14 首访与 observations 的兼容行为不退化', () => {
+  const first = expectOk(evaluateFirstUse('singing', {}, FEATURE_MANIFEST_REVISION), 'N14 empty ack')
+  assert.equal(first.showDialog, true)
+  assert.equal(first.reason, 'FIRST_USE')
+
+  const otherFeature = expectOk(
+    evaluateFirstUse('voice-bubbles', { singing: FEATURE_MANIFEST_REVISION }, FEATURE_MANIFEST_REVISION),
+    'N14 other feature',
+  )
+  assert.equal(otherFeature.showDialog, true)
+
+  const changed = expectOk(
+    evaluateFirstUse('singing', { singing: 'plan05a.v0' }, FEATURE_MANIFEST_REVISION),
+    'N14 changed revision',
+  )
+  assert.equal(changed.showDialog, true)
+  assert.equal(changed.reason, 'REVISION_CHANGED')
+
+  const unknownAll = expectOk(projectFeatureAvailability('singing'), 'N14 undefined observations')
+  assert.equal(unknownAll.realReady, false)
+  assert.deepEqual(
+    [...unknownAll.unknownRequired],
+    ['audio-core', 'rvc-gateway', 'rvc-voice-model', 'source-rights', 'preview-save'],
+  )
+
+  const allVerified = expectOk(
+    projectFeatureAvailability(
+      'singing',
+      Object.fromEntries(dependencyBuckets('singing').ids.map((id) => [id, 'VERIFIED'])),
+    ),
+    'N14 all verified',
+  )
+  assert.equal(allVerified.mode, 'MOCK_ONLY')
+  assert.equal(allVerified.realReady, false)
+})
+
+test('N15 所有可达状态送入 Relay：仅 SAVED+意图可通过，且重复调用确定', () => {
+  const states = {
+    CREATED: record(ttsDraft({ deliveryRequested: true })),
+    BLOCKED_RIGHTS: record(ttsDraft({ deliveryRequested: true, rights: { state: 'UNVERIFIED' } })),
+    PROCESSING: step(record(ttsDraft({ deliveryRequested: true })), { type: 'BEGIN_PROCESS' }),
+    ARTIFACT_READY: step(step(record(ttsDraft({ deliveryRequested: true })), { type: 'BEGIN_PROCESS' }), {
+      type: 'ATTACH_FAKE_ARTIFACT',
+      artifactRef: 'artifact:fixture-out-01',
+    }),
+    SAVED: savedRecord({ deliveryRequested: true }),
+    CANCEL_REQUESTED: step(record(ttsDraft({ deliveryRequested: true })), { type: 'REQUEST_CANCEL' }),
+    CANCELLED: cancelledRecord(),
+    FAILED: failedRecord(),
+    UNKNOWN: unknownRecord(),
+  }
+  const expectations = {
+    CREATED: AUDIO_ERRORS.STATE_CONFLICT,
+    BLOCKED_RIGHTS: AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+    PROCESSING: AUDIO_ERRORS.STATE_CONFLICT,
+    ARTIFACT_READY: AUDIO_ERRORS.STATE_CONFLICT,
+    SAVED: null,
+    CANCEL_REQUESTED: AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+    CANCELLED: AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+    FAILED: AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+    UNKNOWN: AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+  }
+  for (const [state, value] of Object.entries(states)) {
+    assert.equal(value.state, state, 'N15 fixture state ' + state)
+    const expected = expectations[state]
+    if (expected === null) {
+      expectOk(buildRelayHandoffCandidate(value, 'delivery:fixture-01'), 'N15 ' + state)
+    } else {
+      expectError(buildRelayHandoffCandidate(value, 'delivery:fixture-01'), expected, 'N15 ' + state)
+    }
+  }
+
+  expectError(
+    buildRelayHandoffCandidate(savedRecord({ deliveryRequested: false }), 'delivery:fixture-01'),
+    AUDIO_ERRORS.DELIVERY_FORBIDDEN,
+    'N15 no intent',
+  )
+
+  const saved = states.SAVED
+  const first = expectOk(buildRelayHandoffCandidate(saved, 'delivery:fixture-01'), 'N15 first')
+  const second = expectOk(buildRelayHandoffCandidate(saved, 'delivery:fixture-01'), 'N15 second')
+  assert.deepEqual(first, second)
+  assert.notStrictEqual(first, second)
+  assert.equal(Object.isFrozen(first), true)
+  assert.equal(saved.state, AUDIO_TASK_STATES.SAVED)
+})
+
+test('N16 循环、重复节点、过深与隐藏属性组合均有限失败', () => {
+  const cyclic = ttsDraft()
+  cyclic.source.self = cyclic
+  expectError(validateAudioTaskDraft(cyclic), AUDIO_ERRORS.INVALID_REQUEST, 'N16 cycle')
+
+  const shared = { kind: 'TEXT_REF', ref: 'artifact:fixture-text-01' }
+  expectReject(validateAudioTaskDraft(ttsDraft({ source: shared, rights: shared })), 'N16 repeated node')
+
+  let deep = { leaf: 'fixture' }
+  for (let index = 0; index < 8; index += 1) deep = { nested: deep }
+  expectReject(validateAudioTaskDraft(ttsDraft({ extra: deep })), 'N16 deep graph')
+
+  const saved = savedRecord({ deliveryRequested: true })
+  const recordCycle = { ...saved, cancel: { ...saved.cancel } }
+  recordCycle.cancel.self = recordCycle
+  expectReject(audioContract.validateAudioTaskRecord(recordCycle), 'N16 record cycle')
+
+  const combo = withSymbol(withHidden(ttsDraft(), 'token', 'fixture'), 'fixture-symbol', 'x')
+  expectReject(validateAudioTaskDraft(combo), 'N16 hidden + symbol')
+
+  for (const relative of MODULE_PATHS) {
+    const source = readModule(relative)
+    assert.equal(/\bnode:fs\b|\bnode:child_process\b|\bnode:http\b/.test(source), false, relative + ' must stay pure')
+    assert.equal(/\brequire\s*\(/.test(source), false, relative + ' must not require')
+  }
 })
 
 // ---------------------------------------------------------------------------------------------

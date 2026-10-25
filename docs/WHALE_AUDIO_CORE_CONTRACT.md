@@ -2,6 +2,8 @@
 
 **状态：OFFLINE / PURE-CONTRACT / FAKE-TEST。2026-10-25。**
 
+**F01 修订（同日）：** 收紧输入边界与错误脱敏——统一记录校验 `validateAudioTaskRecord`、完整自有属性检查（Symbol/隐藏/accessor）、错误路径固定占位符 `<unknown-key>`；新增回归 N01–N16。Schema 仍为 v1，合法可枚举 JSON 输入与十字段候选保持兼容。
+
 **结论先说清楚：**
 
 - 本轮只交付三个**纯函数模块**和离线自动测试，**没有**新增可点击的页面入口，**没有**真正生成语音或翻唱，**没有**安装或下载任何组件，**没有**发送任何微信消息。
@@ -84,6 +86,9 @@ Whale Voice（语音气泡）和 Whale Singing（唱歌）以后共用同一个 
 | `createAudioTaskRecord(draft, metadata)` | 生成初始记录（`metadata` 仅 `{ observedAt }`） |
 | `transitionAudioTask(record, action)` | 执行一次 Fake 状态转移，返回新记录 |
 | `projectAudioTask(record)` | 面向未来 UI 的白名单脱敏投影 |
+| `validateAudioTaskRecord(record)` | **F01-01**：完整记录的唯一权威校验；返回新的深冻结标准记录，失败返回安全错误信封 |
+
+记录校验只有一份实现：私有 `readRecord` 由公开的 `validateAudioTaskRecord` 暴露，`transitionAudioTask`、`projectAudioTask` 与 Relay 边界全部复用它。Relay **不再**维护第二套不完整的 Schema，也不会给缺失字段补默认值。
 
 ### 3.2 `AudioTaskDraft v1` 字段白名单
 
@@ -170,6 +175,31 @@ realOperationAllowed: false （不可由输入覆盖）
 
 **不输出**：`source.ref`、`artifactRef`、`rights`、`lastError` 细节、任何 Token、目标聊天、路径或用户原文。`userMessageZh` 只来自固定查表，不拼接输入文字。
 
+### 3.8 输入属性策略（F01-02）
+
+所有入口（draft、metadata、record、action、`source`/`rights`/`cancel`/`delivery`/`lastError`、observations、acknowledgements）执行同一策略：
+
+| 输入形态 | 结果 |
+|---|---|
+| `Object.prototype` 或 `null` 原型的普通对象 | 允许 |
+| 自定义原型、类实例 | 拒绝 |
+| Symbol 键（任意位置，任意嵌套） | 拒绝；错误中不出现 Symbol 描述 |
+| 未知字符串键（可枚举或隐藏） | 拒绝 |
+| 已知键但不可枚举 | `AUDIO_TYPE_MISMATCH` / `MANIFEST_INVALID_OBSERVATION` / `MANIFEST_INVALID_ACKNOWLEDGEMENT` |
+| getter / setter | 拒绝；**从不执行**访问器 |
+| 冻结对象 | 允许（只要求是可枚举数据属性） |
+| 循环、重复节点、过深、超大对象图 | 在固定步数内拒绝，不无限递归 |
+| 已知键的非法值 / 必填缺失 | 原对应错误码 |
+
+实现使用 `Reflect.ownKeys` 加属性描述符读取，**不**先 spread 或 JSON 序列化再校验，否则隐藏字段会被“洗掉”。检查过程若遇到异常，仍返回固定安全错误；本契约不宣称能够隔离任意恶意 Proxy 代码。
+
+### 3.9 错误路径与脱敏（F01-03）
+
+- 未知键一律报告固定占位符 `<unknown-key>`，**不再**根据字符外观、长度或斜杠猜测是否敏感。
+- 合法 Schema 中的固定路径仍可显示，例如 `taskId`、`source.ref`、`observedAt`、`action.type`、`observations.audio-core`。
+- 错误信封禁止出现：任意未知键名、Symbol 描述、输入值、原始异常消息或堆栈、getter 抛出的内容。
+- `reason` 只来自固定常量，不拼接用户数据。
+
 ---
 
 ## 4. 模块 B：`core/audio/feature-manifest.mjs`（FeatureDependencyManifest v1）
@@ -230,7 +260,7 @@ realOperationAllowed: false （不可由输入覆盖）
 
 1. `mode` 永远是 `MOCK_ONLY`，`realReady` 永远是 `false`。
 2. 即使把**所有**组件都伪造成 `VERIFIED`，结论仍然不是真实可用。
-3. `wechatagent` / `whale-relay` / `voice-sender` 只进入 `deliveryRequired`，**永不进入** `missingRequired`，因此缺少微信依赖不影响本地生成、试听和保存。
+3. `wechatagent` / `whale-relay` / `voice-sender` 只进入 `deliveryRequired`，**永不进入** `missingRequired`，因此缺少微信依赖不影响本地生成、试听和保存。本阶段 `deliveryRequired` 表示**发送依赖尚未真正可用**（`implemented:false`），并不代表真实检测已经证明它们缺失，也不阻塞本地生成。
 4. `seed-vc` 即使被伪造成 `VERIFIED`，也仍然出现在 `optionalUnavailable`。
 5. `CONDITIONAL` 组件只按输入需要出现，不参与就绪门槛。
 6. 组件 `UNKNOWN` 必须显示为“需要检查”，不得显示为绿色成功，也不得展示虚构的安装进度。
@@ -265,15 +295,19 @@ buildRelayHandoffCandidate(taskRecord, deliveryId)
 
 ### 5.2 前置条件（全部满足才给候选）
 
+**执行顺序固定：先做完整结构校验，再做候选语义判断。结构错误优先，且不会构造候选。**
+
 | 条件 | 不满足时 |
 |---|---|
+| 记录通过 `validateAudioTaskRecord`（16 个必填字段、嵌套白名单、配对与状态不变量） | 直接返回其安全错误信封，不构造候选 |
 | 任务状态为 `SAVED` | `AUDIO_STATE_CONFLICT` |
 | `UNKNOWN` / `CANCELLED` / `CANCEL_REQUESTED` / `FAILED` / `BLOCKED_RIGHTS` | `AUDIO_DELIVERY_FORBIDDEN` |
 | `rights.state === "CONFIRMED_FIXTURE"` | `AUDIO_RIGHTS_UNCONFIRMED` |
 | 存在合法 `outputArtifactRef` | `AUDIO_ARTIFACT_REQUIRED` / `AUDIO_INVALID_ID` |
 | `deliveryRequested === true` | `AUDIO_DELIVERY_FORBIDDEN` |
 | `deliveryId` 为 `delivery:` + 1–64 位安全字符，且与 `taskId` 不同 | `AUDIO_INVALID_ID` |
-| 记录里没有 `sent` / `delivery` / 目标 / 凭据字段 | `AUDIO_DELIVERY_FORBIDDEN` |
+| `delivery` **必须恰好**是 `{state:"NOT_REQUESTED",deliveryId:null}` | 其他状态、标识或额外字段 → `AUDIO_DELIVERY_FORBIDDEN` |
+| 记录里没有 `sent` / 目标 / 凭据等未知字段 | `AUDIO_DELIVERY_FORBIDDEN`（敏感键）或 `AUDIO_UNKNOWN_FIELD` |
 
 ### 5.3 边界声明
 
@@ -385,11 +419,13 @@ buildRelayHandoffCandidate(taskRecord, deliveryId)
 ## 9. 如何验证（本阶段实际执行过的命令）
 
 ```bash
-node --test test/audio-core-contract.test.mjs   # 65 个离线用例
+node --test test/audio-core-contract.test.mjs   # 81 个离线用例（T 36 / F 16 / R 11 / S 2 / N 16）
 node --test                                     # 全仓库既有用例
 node build.mjs                                  # 生成客户端，确认无差异
 git diff --check                                # 空白与冲突标记
 ```
+
+`N01–N16` 覆盖 F01 的三类缺口：统一记录校验与 Relay 无旁路、隐藏/Symbol/accessor 属性、错误路径不回显。修复前记录为 81 项中 14 项失败，修复后 81/81 通过。
 
 `npm run test:ui` 只有在本机 Playwright 环境已完整存在时才运行；否则如实记为 `NOT_RUN`，且本轮不修改任何 UI 代码。
 
