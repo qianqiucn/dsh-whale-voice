@@ -8,6 +8,14 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新优先交接决策：Whale Audio Core（鲸音核心）与双首次向导（2026-10-25）
+
+**用户最新要求**：语音产品 **Whale Voice · 语音气泡** 与唱歌产品 **Whale Singing · 唱歌** 共用一个更名的后端 **Whale Audio Core（鲸音核心）**，但前端是两个独立页面；分别第一次进入时弹各自的依赖清单与安装选项，之后可跳过/重新检测、安装状态可信、共用组件不重复安装。Whale Relay Core（鲸递）依旧只负责安全投递，WeChatAgent 依旧拥有微信身份；仓库/插件 ID、现有已验八页、legacy API/配置和 whale-v1 不能贸然改名。
+
+已新增权威文档：[WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)，并更新 05/07/08/09/12/13/14、翻唱蓝图、README、长期记忆、执行标准。Plan 09 先做 **Fake 两页及独立首次 Modal**，Plan 14 才审供应链/实安装。用户只授权**规划更新**，未授权创建工程代码、安装模型/工具、服务启停、付费联网、微信投递或 PR 合并。
+
+继续沿用上一轮动态推荐队列，**07-A 上游许可/API/安装可检测性只读研究是下一项可派发的候选（PLANNED/NOT_SENT）**；03-B 仍等用户单独决定是否合并 PR #16。Plan 01/02/03-A 状态和原 01–14 编号不变。任何早期交接中“只有 Whale Voice Core”或“Plan 03-A 尚未完成”的陈述均为历史快照，以本段及最新 GitHub HEAD/CI 为准。
+
 ## 最近期规划决策：采纳 AstrBot RVC/SVC 自动翻唱路线并重排动态队列（2026-10-25）
 
 **优先级高于下文任何旧“下一步是 Plan 03-A”的历史快照。** 用户决定把 astrbot_plugin_rvc_svc 的点歌/分离/RVC-SVC 转换/混音能力变成 Whale Voice + Whale Relay（鲸递）后端的可选歌唱流水线。不能直接安装 AstrBot 插件进 DSH，也不让鲸递 Core 负责搜索和推理：Whale Voice Core 协调 CoverTask/音频/Provider，独立受许可的兼容 Gateway 运行 SVC，鲸递只执行受控一次投递，WeChatAgent 依旧拥有微信身份权限。绝不修改原 01–14 编号。
