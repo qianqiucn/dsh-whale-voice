@@ -8,6 +8,16 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最近期规划决策：采纳 AstrBot RVC/SVC 自动翻唱路线并重排动态队列（2026-10-25）
+
+**优先级高于下文任何旧“下一步是 Plan 03-A”的历史快照。** 用户决定把 astrbot_plugin_rvc_svc 的点歌/分离/RVC-SVC 转换/混音能力变成 Whale Voice + Whale Relay（鲸递）后端的可选歌唱流水线。不能直接安装 AstrBot 插件进 DSH，也不让鲸递 Core 负责搜索和推理：Whale Voice Core 协调 CoverTask/音频/Provider，独立受许可的兼容 Gateway 运行 SVC，鲸递只执行受控一次投递，WeChatAgent 依旧拥有微信身份权限。绝不修改原 01–14 编号。
+
+权威设计：[RVC/SVC 自动翻唱蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。已经实际更新 Plan 04/05/06/07/08/09/12/13/14、计划总表、长期记忆、变更日志。**新推荐派发顺序以计划总表最新队列为准**，不是旧表里纯编号先后。核心：可先发 07-A 上游 API/许可证/版权和资源只读审计，再在用户单独批准的 #16 03-B 合并门禁后处理 04→05→07-B→06→08→13-A→09(OFFLINE)→12-A→13-B→12-B/12-C；10/11 可按资源并行，13-C 最后研究，14 发行验收。03-B 未获授权仍 WAIT_USER_AUTHORIZATION，不得自行 Merge；Plan 07-A 当前也还是 PLANNED/NOT_SENT，须先由 ChatGPT 升级/派发 Level 2。
+
+上游公开资料表明插件仓库带 AGPL-3.0，独立 RVCSVC-API 仓库尚未找到明确 LICENSE；必须先审计权利，不可擅自复制/打包。网易云/QQ 搜索不代表拥有歌曲下载/翻唱/分发权。默认用户提供授权音频，真实音源获取、推理和消息发送各需独立许可。
+
+最新已验收的工程事实：Plan 03-A DONE，工程 PR #16 OPEN @ 954a01a08587bc8bd5b8caccf026298ca54d5215，Actions 40165832178 build/ui SUCCESS、0 reviews；main bf9cf66，03-B 待单独合并许可；Plan 01 SENT、02 DONE；H0/C1 已完结，#17 单一规划分支、#18 历史 Draft。此规划变更仅更新 #17 docs，没有给 DeepSeek 发送新任务，也没有更改代码/生产/微信。
+
 ## 最新交接优先项：Plan 03-A 已通过，03-B 等用户授权（2026-10-25）
 
 - 用户已提交 DeepSeek 的《Plan 03 · PR #16 合并前准备与待授权报告》。本次 ChatGPT 独立核验 GitHub：PR #16 HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`、base main `bf9cf66807e12d0b25872a0fa3869962dde04818`，OPEN、mergeable、未合并；PR 总 22 文件 +2490/-176；GitHub 人工 reviews=0。
