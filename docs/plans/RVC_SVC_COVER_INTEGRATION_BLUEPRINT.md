@@ -6,6 +6,12 @@
 >
 > **稳定 ID 不变：Plan 01–14 原名和文件名保持；本文件是跨计划共享需求与分段实施规格，不创建 Plan 15。** 当前 Plan 03-A DONE；03-B WAIT_USER_AUTHORIZATION；Plan 07/12/13 仍 PLANNED。
 
+## 最新品牌与双入口决策（2026-10-25，优先于旧称）
+
+用户追加决定：将原共用的 Whale Voice Core 重新命名为 **Whale Audio Core（鲸音核心）**，保留 **Whale Voice · 语音气泡**、新增 **Whale Singing · 唱歌** 为相互独立的前端页面，首次进入每个页面展示对应依赖与安装方式的独立弹窗；共享已安装资源、Capability、音色和任务。完整约束、前端现状、依赖清单、用户跳过/取消、安全与检测状态见 [Whale Audio Core 双页面首次使用规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+
+下文所有“Whale Voice Core”在 TTS+SVC 共用服务语义下等价于**Whale Audio Core（历史旧称）**；产品“Whale Voice”只表示语音气泡入口。Whale Relay Core（鲸递）、WeChatAgent 职责和原 01–14 任务 ID 不变；不批量改 Git/plugin ID 或生产配置。Plan 05/08 负责共享 Core，Plan 09 完成 Fake 双页+首次 Modal、Plan 12 Singing 页面/依赖、Plan 14 真正安装器安全验收；Plan 07-A 增加检测与依赖许可调研。
+
 ## 1. 产品目标与用户验收场景
 
 用户向 DeepSeek/小鲸鱼说「帮我唱一首某某歌」，由已授权的 DSH Tool 理解意图并创建可观察任务；在合法可访问的歌曲目录中**搜索元数据**、澄清同名候选或选择经过确认的歌曲，获取**有使用许可**的原始音频；分离人声/伴奏、以用户有权使用的目标 RVC/SVC 模型翻唱、校验混音导出、先试听或保存，并在另行授权的渠道里作为音频文件/受支持的语音消息投递，最终显示可信回执。
