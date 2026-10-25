@@ -385,7 +385,7 @@ buildRelayHandoffCandidate(taskRecord, deliveryId)
 ## 9. 如何验证（本阶段实际执行过的命令）
 
 ```bash
-node --test test/audio-core-contract.test.mjs   # 64 个离线用例
+node --test test/audio-core-contract.test.mjs   # 65 个离线用例
 node --test                                     # 全仓库既有用例
 node build.mjs                                  # 生成客户端，确认无差异
 git diff --check                                # 空白与冲突标记
