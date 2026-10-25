@@ -2,6 +2,10 @@
 
 **状态：PLANNED；前置：TTS-A 和 Unified Core-A 契约审查完成。**
 
+## 最新已授权 Provider 选型约束（2026-10-25）
+
+Whale Singing 首发只把 **RVC** 作为主要开发和验收对象；现有 SoVITS-SVC、Seed-VC 的未来扩展槽位不删除，但不得因纯契约已声明候选，就自动把它们标为真实可选。**Seed-VC 是 Plan 12-D 的后续零样本免训练试唱候选**，不是低显存/CPU 优化承诺、不是主线路，也不阻塞 RVC Provider 与标准歌曲流水线。默认不启动 Seed-VC、加载权重或下载模型。若以后实现，须独立固定许可/接口/资源测试，通过 Fake 正负例与 Windows 实测后才能从 NOT_IMPLEMENTED 提升，且与 RVC 共用 Core 的音频/任务/交付安全状态。
+
 ## 2026-10-25 · RVC/SVC 外部 Gateway 适配规格（仍 PLANNED）
 
 结合 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md) 和 Plan 07-A 的许可/API 审计，RVC 与 SoVITS-SVC 作为分离的可选 SVC Provider 实例；不得放宽 TTS-A 白名单或当作 TTS 默认模型。
