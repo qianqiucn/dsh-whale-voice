@@ -2,6 +2,14 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · Plan 07-A 第一次报告独立复核：REVIEW_REQUIRED，派发同编号 F01
+
+- DeepSeek 提交 PR #19 `research/plan07a-rvc-upstream-audit`，HEAD `8276909`，只有 `docs/SVC_PROVIDER_RESEARCH.md` +348 行，Actions run `40230248341` SUCCESS，PR 未合并。已验证 main `bf9cf66`、#16 `954a01a` OPEN、#17 docs OPEN、#18 Draft；CI 仅证明构建/界面现有功能通过，非 RVC 实际可用。
+- 技术审计主方向认可：RVC 首发、Seed-VC 后续免训练、AstrBot AGPL 附加声明、RVCSVC-API 源许可不明、疑似泄漏第三方凭据、0.0.0.0 + Gradio share、自动模型下载及商业歌曲授权风险，推荐原创 Fake Gateway；禁止代码复制与真实直接接入。
+- **未满足的四项 Level 2 验收**：报告 A01–A14 编号与原任务书错位；缺上游 pinned SHA + 函数行号级源证据；Fake 示例 `targetVoiceProfileId`/嵌套 params 与 PR #16 SVC v1 `targetVoiceId` 等白名单不直接兼容、返回缺 `targetVoiceId`；Windows 首次依赖仍是环境总结，未给逐组件来源/探测/许可/模式/失败恢复矩阵。
+- **派发决策**：Plan 07-A 保留 REVIEW_REQUIRED；正式新增同编号 **Plan 07-A-F01 = SENT**，权威任务书 `docs/plans/07-A-F01-research-acceptance-correction.md`，只允许原 PR #19 报告文件修订、R01–R10 和原 A01–A14 复验，不新开 Plan/PR、不重做全部研究。
+- 状态与安全：Plan 03-B WAIT_USER_AUTHORIZATION、07-B NOT_SENT；本轮只改 #17 规划 docs，不动 #16 工程、#19 初始研究或 main；不运行上游模型、下载、安装、修改生产或发送微信；最终 #17 CI 后续以最新 HEAD 为准。
+
 ## 2026-10-25 · Plan 03-A 最终报告验收、正式派发 Plan 07-A 只读任务书
 
 - **触发**：用户提供 Plan 03 PR #16 合并前审查 G01–G12 通过报告，并说明已向 DeepSeek 同步最新架构，要求继续发下一份详细计划。
