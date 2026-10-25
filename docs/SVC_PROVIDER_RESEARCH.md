@@ -409,7 +409,7 @@ Whale Singing
 | A09 | ≥12 负向、Top 10、对应处理 | **PASS** | 第 6 节 N1–N15 + Top 10 |
 | A10 | Novice First DoD、中文路径与 3 条恢复 | **PASS（设计）** | 第 10 节；当前上游 UX 仍不合格 |
 | A11 | 仅许可 docs 文件变更，无秘密/隐私/模型 | **PASS** | 仅本文件；凭据值未复制 |
-| A12 | git diff/Markdown/编码/最新 HEAD CI | **PASS** | 最终 PR #19 新 HEAD CI（见第 12 节） |
+| A12 | git diff/Markdown/编码/最新 HEAD CI | **PASS** | 最终 PR #19 新 HEAD CI（见第 13 节） |
 | A13 | main/#16–#18 未改、未启动真实生产和模型 | **PASS** | 本轮仅 docs；未安装/运行/发送 |
 | A14 | 唯一后续建议与硬停止条件 | **PASS** | `APPROVE_FAKE_ADAPTER_DESIGN` + 下游仅 07-B Fake |
 
