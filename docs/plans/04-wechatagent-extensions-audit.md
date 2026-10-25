@@ -2,6 +2,14 @@
 
 **任务状态：PLANNED（推荐在 TTS-A 合并后）**
 
+## 2026-10-25 · 自动点歌入口新增审计范围（仍 PLANNED）
+
+用户选择参考 astrbot_plugin_rvc_svc 实现自然语言点歌、RVC/SVC 翻唱和鲸递交付。跨阶段规格见 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。Plan 04 只读审计新增：
+- DSH/WeChatAgent 受支持的 Tool 执行入口、消息来源、稳定会话 ID、群聊权限、用户取消/会话超时、最小权限、文件/音频支持与大小限制。
+- DeepSeek 只能经 Whale Voice Core Tool 创建、查询、取消翻唱任务；不得直连 AstrBot 插件、RVC 管理端或微信 Native Hook，亦不持有 WeChatAgent Token。
+- 如无公开扩展 API，只用 DSH Plugin/Tool + WeChatAgent Adapter，不注入已安装组件。歌曲音频来源、模型权利和投递目标必须分别获授权。
+- Mock 验收：未授权群聊拒绝、同名候选确认、禁用发送仍可离线保存、取消不等于撤回已发消息。无服务启停和真实微信调用。
+
 ## 平台关系
 
 WeChatAgent 是 Whale Voice 的必需微信平台依赖，负责微信消息、账号会话、目标身份与权限。Whale Voice 不能重新实现第二套微信账号管理、读消息或机器人框架。优先调用受支持的 WeChatAgent/DSH Tool 接口；没有官方扩展 API 时不能伪装“正式已支持”。
