@@ -2,6 +2,15 @@
 
 **状态：PLANNED；前置：Unified Core-A、Provider Core-B 和 SVC-A 的契约。**
 
+## 2026-10-25 · 翻唱歌曲与音频 Artifact 子规格（仍 PLANNED）
+
+落实 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md) 的 CoverTask 与音源授权边界，不改变既有 TTS/SVC 请求合同：
+- 一个 CoverTask 包含合法 sourceAudioArtifactId 或已验证许可的 CatalogId、sourceRightsProofRef、voiceProfileId、SVC Provider ID、modelId、pitch -12..12、separationPreset、mixConfig、outputArtifactId。严禁把外部 URL/绝对磁盘路径直接当受信任 Artifact。
+- 人声/伴奏 Stem、转换人声、混音 Master 都是受限 Artifact；记录 sourceHash、codec、duration、bytes、channels、expiry、scope、modelRevision、consent/rightsState。缓存不能跨用户暴露未授权音频，删除须可验证。
+- 状态区分 ACQUIRING、SEPARATING、CONVERTING、MIXING、VERIFYING、SAVED、DELIVERY_*；已有干净人声可跳过分离，无伴奏则不能假造伴奏。
+- 验收音频解码、大小/时长/峰值、压缩炸弹、损坏结果、错误模型、并发 GPU、任务取消、缓存污损；Relay 只接手已授权成品和目标。
+- 默认 Fake Audio/Gateway/Relay E2E；联网、真实 GPU、微信发送另行授权。
+
 ## 音色库
 设计 voiceProfileId/名称/语言/授权/来源及 Provider 专属关联：Qwen prompt、IndexTTS 参考音频、Seed-VC 参考声、RVC 模型、云端 Voice ID。共享“角色音色”身份但不共享不可兼容的模型资产；不将个人 whale-v1 变成公版默认。
 
