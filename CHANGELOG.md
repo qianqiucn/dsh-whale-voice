@@ -41,6 +41,7 @@ not invent earlier releases or imply production maturity.
 - Phase R1 repository audit: current/historical documentation index, historical-record banners, status reconciliation, `.gitignore` hardening and CI artifact hidden-directory fix; no runtime code change.
 - Phase 4B-2A isolated configuration coordination: source authority matrix, change plan, journal/recovery, save-vs-apply state contract, Fake Runtime and 49 coordination tests; merged via PR #12, no production adapter or Host write route.
 - Phase 4B-2A-H2 rollback confirmation: require exact pre-transaction revision plus read-back evidence; unconfirmed/missing/mismatched/read-failed/external-modified rollback stays UNKNOWN.
+- Phase 4B-2B-1 real-component capability audit: verified Bridge per-call hot-read with no write API, Sender boot-read + automation-only `PUT` (owner API exists, no Core write authorization), WeChatAgent console revision vs mixed hot/boot readers, and the absence of loaded-revision evidence; documents the minimal owner-API integration plan and blockers. Adds fixture-only capability, confirmation and schema-separation tests; no production write or runtime change.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.

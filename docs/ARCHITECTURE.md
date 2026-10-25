@@ -39,6 +39,10 @@ Properties:
   over injected source adapters and a trusted test sandbox. Plans/journal/recovery are tested with
   in-memory fixture adapters and a Fake Runtime; no production adapter, Host route or service reload
   exists. See [CONFIG_COORDINATION.md](CONFIG_COORDINATION.md).
+- Phase 4B-2B-1 is a **read-only capability audit** of the real Bridge, Sender and WeChatAgent
+  interfaces (read timing, write APIs, revision/apply evidence). It adds no production adapter and
+  no write route; it defines the minimal owner-API integration plan. See
+  [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
 - No component start/stop, installation, update, driver change, WeChat send or audio generation.
 - Styles are plugin-scoped and use DSH theme tokens where appropriate.
 - The UI explicitly labels demonstration data as Mock.
@@ -59,6 +63,7 @@ index.js ─→ core/detect.mjs ─→ core/server.mjs (isolated tests only)
 core/config-schema.mjs + core/config-store.mjs (isolated single-file store; no production Host route)
 core/isolated-write-server.mjs (test-only write API; not imported by index.js)
 core/config-coordinator.mjs (isolated multi-source plan/journal/recovery; fixture adapters only)
+docs/PHASE4B2B1_COMPONENT_AUDIT.md (read-only component capability audit; no code path)
 ```
 
 `client.js` is committed because it is the runtime artifact referenced by the DSH bundle, and the

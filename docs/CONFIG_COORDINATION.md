@@ -2,7 +2,8 @@
 
 **Status:** `OFFLINE` — merged via PR #12; isolated coordination protocol and fixture tests only. No
 production configuration write, no production Host route, no service start/stop/reload and no WeChat
-send.
+send. Phase 4B-2B-1 (2026-10-25) audited the real component interfaces; see
+[PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md).
 
 **Scope:** define how a future Core can plan, save and confirm changes across independent component
 authorities without merging their safety layers or claiming runtime effect from file writes.
@@ -301,7 +302,7 @@ component's API or the existing ConfigStore/atomic primitives.
 
 - Journal writes use temp+rename inside the trusted temp sandbox; file locking/antivirus can still
   cause `EPERM`/`EACCES`; the result is `FAILED`/`UNKNOWN`, never an assumed success.
-- Real production files are not touched. Windows-specific atomic replacement, service reload and
+- Real production files are not touched. Windows file-replacement semantics, service reload and
   Worker/Bridge hot-read behavior must be revalidated with the real components under separate
   authorization.
 - No service start, stop, reload, audio-device change or WeChat operation is part of this phase.
@@ -310,15 +311,35 @@ component's API or the existing ConfigStore/atomic primitives.
 
 ## 11. Next gate (Phase 4B-2B)
 
+Phase 4B-2B-1 completed the real-interface audit. Findings:
+
+- **Bridge** has no write API and no revision/loaded-config endpoint; `voice-settings.json` is
+  hot-read per call but unowned. Bridge writes are **blocked** until the Bridge adds an endpoint.
+- **Sender Service** supports `PUT /v1/automation/config` only (automation/hotkey, rejected during an
+  active task); TTS/port changes have no update API. The owner API exists, but Whale Voice has **no
+  production write authorization** for it. No loaded revision exists; `/health` and
+  `GET /v1/automation/config` allow field equality only.
+- **WeChatAgent** console `POST /api/config` has a SHA-256 revision and a temp+rename write (name
+  replacement, not a verified atomicity/durability guarantee), but is a human console (CSRF, not
+  running by default); CLI `prepare` and account switching have no shared CAS, and readers are mixed
+  hot/boot. Permissions remain read-only for Core.
+- **No source can honestly reach `APPLIED`** without an owner-provided loaded revision.
+
 Before any production write/apply:
 
-1. Implement source adapters for the actual authority owners using their supported APIs.
+1. Implement source adapters for the actual authority owners using their supported APIs. Do **not**
+   write component JSON files directly; the minimal plan uses owner APIs only.
 2. Add component-provided loaded-revision confirmation; absence must remain `PENDING_APPLY`.
-3. Resolve cross-process locking/CAS or adopt an explicit single-writer service.
-4. Add real multi-file journal persistence and restricted private recovery storage if rollback needs
-   backups.
+3. Keep cross-process locking/CAS as a secondary measure for a file contract that has no owner API
+   (see the audit for the Windows probe and lock/CAS scheme); prefer an explicit single writer.
+4. Add real multi-file journal persistence and restricted private recovery storage only if a future
+   adapter performs direct file writes; the current minimal plan does not.
 5. Revalidate Windows locking, service reload, Bridge hot-read and Worker final-safety behavior.
 6. Obtain separate production-write authorization; no UI switch may bypass Worker/WeChatAgent.
+
+Recommended sequence: 4B-2B-2a read-only capability/status projection; 4B-2B-2b Sender automation
+write (only supported surface); 4B-2B-2c Bridge/Sender revision endpoints before Bridge/TTS writes.
+None of these is started.
 
 Phase 4B-1 remains `OFFLINE`; Phase 3B/4A remain `INTEGRATED`; Phase 4B-2A is an isolated prototype,
 not production acceptance.

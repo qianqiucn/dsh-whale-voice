@@ -360,3 +360,23 @@ Key limits:
 - rollback is confirmed only when the adapter reports the exact pre-transaction revision **and** a
   read-only re-read observes that same revision; missing/mismatched/read-failed/external-modified
   results remain `UNKNOWN`.
+
+---
+
+## 12. Phase 4B-2B-1 capability audit (OFFLINE)
+
+The read-only audit in [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md) verifies the
+real interfaces a future write adapter may use. Its practical constraints for this API:
+
+- the Bridge has no write/revision endpoint; `voice-settings.json` is hot-read but unowned;
+- the Sender service supports `PUT /v1/automation/config` only, rewrites the whole file without
+  temp+rename and exposes no revision; TTS/port fields have no update API. The owner API exists, but
+  Whale Voice has **no production write authorization** for it, so `save.enabled` is false;
+- WeChatAgent's console has a revision-guarded temp+rename write (no verified atomicity or power-loss
+  durability), but CLI/account-switch writers do not share it, and no process exposes a loaded
+  revision;
+- missing loaded revision limits `apply`, not `save`: a save-capable surface stays
+  `SUPPORTED` while `apply` stays `UNSUPPORTED`/`PENDING_APPLY`;
+- therefore no source may reach `APPLIED` yet, and `PENDING_APPLY` must be the honest default.
+
+No production write route, file adapter or Host change is added by the audit.
