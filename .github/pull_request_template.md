@@ -5,7 +5,8 @@
 
 ## 仅 ChatGPT 计划管理 PR 的附加清单（普通工程 PR 可填“不适用”）
 
-- [ ] 我已阅读 [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md) 与 [执行计划总表](../docs/plans/README.md)。
+- [ ] 我已阅读 [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md)、[CHATGPT_LONG_TERM_MEMORY.md](../docs/plans/CHATGPT_LONG_TERM_MEMORY.md)、[TASK_SPEC_STANDARD.md](../docs/plans/TASK_SPEC_STANDARD.md) 与 [执行计划总表](../docs/plans/README.md)。
+- [ ] 若本 PR 涉及即将派发的工程任务书，已根据 [任务模板](../docs/plans/TASK_SPEC_TEMPLATE.md) 逐项写出文件、接口、唯一方案、异常决策树、测试与 DoD，并确认达到 EXECUTION-READY Level 2；未将简略路线图直接交给 DeepSeek。
 - [ ] 若是新想法/发送计划/完成打标，已同步计划、排序、`docs/plans/CHANGELOG.md` 与证据；`DONE` 不等于 PR `MERGED`。
 - [ ] 此 PR 仅包含计划管理/协调所需的文档或相关 Git 维护，未擅自改变 DeepSeek 的生产实现。
 - [ ] 我已检查 Diff、构建/测试（或明确说明未运行）、文档编码与隐私/密钥泄漏。
