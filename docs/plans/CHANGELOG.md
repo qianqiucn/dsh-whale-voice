@@ -13,6 +13,14 @@
 - 用户核心偏好、自动回一份完整计划、换新 DSH 执行端聊天提醒和安全门禁均已写入长期记忆/执行标准；下一 ChatGPT 应先读这些而不是只读交接卡。
 - 本轮仅 PR #17 分支的规划文档正常 Commit/Push；不改代码、main、生产配置、模型、Hook、语音发送或音频设备，不合并/关闭任何 PR。
 
+## 2026-10-25 · C1 交接恢复按新方案完成（只核验、不推进工程）
+
+- 已完整读取 #17 计划分支的执行标准、AGENTS、长期记忆、新交接卡和 C1 行动计划，并检查 TASK_SPEC_STANDARD、计划索引、Plan 02/03、主分支工程状态文件。
+- 实时 GitHub：main bf9cf66807e12d0b25872a0fa3869962dde04818；工程 PR #16 OPEN/mergeable/未合并 @ 3ad32bcb22b1a0346eed91f7236afb4f1cc8f773，CI 40163881122 SUCCESS；计划 PR #17 在本次 C1 记录修改前 @ 8864e4c3ab0aec5a8dd177579497bd1f0960efdb，CI 40165005768 SUCCESS；历史规划 PR #18 OPEN/DRAFT @ 42cec57ae7018735cb6c65a4ef8b0a1d80473810，CI 40159114676 SUCCESS；三个 PR 的人工 Review 数为零。
+- Plan 03-A 核验：#16 HEAD 仍为 Plan 02 完成时 3ad32bc，docs/PROJECT_STATUS.md 与 docs/AI_CONTEXT.md 仍保留 192、无最新 197 和修复验收 checkpoint，没有后续提交、全量差异审查报告或新 HEAD CI；所以 **03-A 保持 SENT，不能标 DONE 或 READY_FOR_USER_MERGE_DECISION**。
+- C1 自身（ChatGPT 新对话恢复计划）标记 DONE；Plan 01 SENT、Plan 02 DONE、Plan 03-B WAIT_USER_AUTHORIZATION、04–14 PLANNED。H0 已做，不重做。用户本次没有提交新的 DeepSeek 开发报告，因此不重复派发已发出的 03-A 任务书。
+- 唯一下一步仍是让 DeepSeek 按原 Plan 03-A 完成全 PR Diff 审查、仅同步两份工程状态 Markdown、重新运行隔离回归和最新 HEAD CI、交付合并前审查包。没有单独授权绝不合并 PR #16、#17、#18。
+- 本次只在 PR #17 计划分支更新 C1、交接卡、索引、变更日志，无工程源码、生产配置、模型、WeChatAgent、Voice Sender、微信或服务改动；本地未执行 Windows 测试。
 ## 2026-10-25 · 原始 Plan 编号与 Plan 03 总范围恢复
 
 - 用户发现当前 Plan 编号与上一段 GPT 可能不一致。核对 PR #17 唯一索引、PR #18 历史目录和已完成的 H0_PLAN_RECONCILIATION：01–14 的语义顺序没有改变；差别主要是文档文件名、状态快照与技术阶段名称容易混用。
