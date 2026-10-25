@@ -2,6 +2,15 @@
 
 此文件只记录任务书与排序变化，不代替 Git commit、测试或项目阶段验收。
 
+## 2026-10-25 · 改名 Whale Audio Core、分开 Voice/Singing 页面与首次依赖弹窗
+
+- 用户新需求：“语音whale voice和唱歌whale singing在一个core里面，这个core也重新给我个名字，但是前端这俩界面单独分开，进入语音气泡界面和唱歌界面需要弹出第一次使用要安装的依赖”。
+- **新架构名**：TTS+SVC 共用 Whale Audio Core（鲸音核心）；旧 Whale Voice Core 作为文档历史别名。Whale Voice=语音气泡独立前端，Whale Singing=唱歌独立前端。Whale Relay Core（鲸递）名称与唯一投递职责不变。两页共享 Task/Delivery ID、音色/Provider/模型资源和授权；仓库 `dsh-whale-voice`、老 API/config/UI 八页/whale-v1 兼容保留，不能粗暴替换或发布未测改名。
+- **首次依赖 UI**：各 feature 首访一次展示最小依赖和安装选项；Voice 提供本地/CPU/云端 TTS、音色、可选气泡发送；Singing 提供已授权源音频、RVC/SVC Worker、条件分离/混音、可选歌曲文件投递。复用现有 Modal/SetupWizard/ComponentsDialog，串行弹窗、二访不骚扰、依赖去重；仅浏览/稍后再说允许，未安装禁用真实能力。任何安装、模型下载、服务启动、生产写入和微信发送必须独立授权。
+- **旧方案→新方案**：旧“Whale Voice Core 统一 TTS/SVC + 一个 Whale Voice 前端”→ 新“Whale Audio Core 统一共享服务 + Whale Voice 与 Whale Singing 分页 + 两套 feature-scoped 首次依赖引导（复用同一组件中心）”。UI 工作加入原 Plan 09，安装供应链加入原 Plan 14；架构/共享合同属于 Plan 05/08，唱歌视图属于 Plan 12，交付兼容属于 Plan 13，上游安装检测属于 07-A。没有新 Plan 15。
+- 本轮新增 docs/plans/WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md，更新执行标准、翻唱蓝图、Plan 05/07/08/09/12/13/14、权威 README、长期记忆、交接文件及本日志。**动态派发顺序不变**：下一份安全候选 07-A 仍 PLANNED；03-B 合并需用户明确授权，#16 不得擅自 merge。
+- 全部只是 PR #17 分支规划 Markdown 修改；没有工程/运行代码、Host、真实音频、模型/安装/下载、WeChatAgent/Voice Sender/Worker、微信发送或生产环境操作；PR #18 保持历史 Draft，未合并/关闭。文档 CI 以实际最新 HEAD 为准。
+
 ## 2026-10-25 · 用户选定 AstrBot RVC/SVC 翻唱路线并重排现有计划派发顺序
 
 - **触发与意图**：用户明确表示“我想采用 astrbot_plugin_rvc_svc 并把这个集成进我的后端鲸递core，整理仓库计划书发送顺序，并将这个计划按你推荐的顺序写入”。此为功能与计划排序授权，非直接启动代码、部署、合并或真实翻唱授权。
