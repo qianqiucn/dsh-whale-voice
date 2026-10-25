@@ -28,7 +28,37 @@
 | `test/svc-contract.test.mjs` | SVC 独立输入、候选和失败关闭检查 | 运行并核对负面断言 |
 | 生产 GUI / Core | 当前尚保留 Qwen/`whale-v1` 的显示及全局关联 | **只列入后续 TTS-B/Provider Core，不在 PR #16 开发** |
 
-**当前没有已知的必须新增功能代码的缺口。** 审查若全部通过，应不制造无意义 Commit。
+**最新只读终审发现 5 项需要验证/修复的纯契约缺口（F01–F05）。** 当前不得标 DONE；只能在同一 PR #16 分支做最小契约与测试修补，不得进入生产适配器。见下文「2.1」。
+
+## 2.1 2026-10-25 ChatGPT 源码静态复核：F01–F05（待 DeepSeek 运行证明）
+
+证据基线：PR #16 head `1fd2ccaed3ee7e1c90c7caee1f22a7458ad1c184`；该 HEAD 的 GitHub Actions run `40160267636` 为 SUCCESS（build + UI），但**绿灯不是本节负向用例的覆盖证明**。下述缺口来自逐函数静态阅读，**没有在本轮本地运行 Node/Playwright，也没有执行真实服务、音频、付费请求或微信发送**。如果工程 HEAD 变化，先重新查证，已修复者记 PASS，不重复实现。
+
+| 编号 | 文件/函数 | 静态观察 | 应达到的明确契约 |
+|---|---|---|---|
+| F01 | `core/tts/provider-contract.mjs` / `validateProviderManifest()` | 注释声称拒绝未知顶层字段；实际只校验已知字段与精确命中的 forbidden key，未知普通字段可被原样克隆返回 | 采用顶层键白名单；如添加 `deliveryTarget`、`targetChatId` 或任意未知键，应返回 `INVALID_MANIFEST`；不回传原始注入字段 |
+| F02 | 同文件 / `checkSynthesisRequest()` | 对有效 Fake manifest + `observation.state:'ok'` 的请求，只读取已知键，额外 `wechat`/`targetChatId` 等不会被拒绝 | 采用明确请求字段白名单（当前文档含 `requestId,text,voiceId,language,emotion,format,streaming`）；未知字段和投递字段一律失败关闭；无新 I/O |
+| F03 | `core/svc/svc-contract.mjs` / `validateSvcRequest()` | 仅拦截少数 forbidden key，`targetChatId` 等未知字段可随完整输入 `JSON.parse(JSON.stringify(input))` 返回 | 采用白名单（`sourceAudioRef,targetVoiceId,pitchShift,formantShift,conversionStrength,outputFormat`），其余键返回 `SVC_INVALID_REQUEST`，成功结果只由允许字段构成 |
+| F04 | `core/tts/provider-contract.mjs` / `evaluateProviderStatus()`、`checkSynthesisRequest()` | 对必需凭据的 Cloud Fake，`credentials:'unknown'` + `state:'ok'` 可报告 `AVAILABLE` 并通过请求校验 | 仅在必需凭据明确为 `present` 且观测健康时可 `AVAILABLE`；`missing` 继续 `CREDENTIALS_MISSING`，`unknown` 降级 `UNKNOWN`/拒绝请求，不得据 `ok` 猜测凭据已授权 |
+| F05 | `core/tts/provider-contract.mjs` / `normalizeSynthesisResult()` | 文档称拒绝 `target`，但 forbidden key 不含 `target`，不匹配字段可被悄然丢弃而正常返回 `ok:true` | 明确结果顶层字段白名单（文档结果字段及现有 `warnings,createdAt`），未知投递目标键应拒绝而非静默忽略；成功输出继续仅有 `delivery:PENDING_ROUTER` |
+
+**唯一推荐执行顺序（仍属既有 Plan 02/PR #16，不另开 PR）：**
+
+1. 重读最新 PR #16 head、既有 TTS/SVC Contract、架构文档、测试；若 F01–F05 在新版本已修，记录行级证据和测试 PASS，不改该项。
+2. 为每项先补至少一个负向回归测试；保留已有合法 Fake provider、Qwen 迁移与 TTS/SVC 契约用例。对拒绝统一沿用当前稳定错误码，不增加真实发送/新 API。
+3. 按 F01→F05 做最小纯函数修补。只对白名单规定的键进行转换和返回；不传播调用者输入的未知隐私/目标字段。不要因未知凭据或 version/health 状态推断引擎已安装或可执行。
+4. 运行现有 `node build.mjs`、`node --test`、`npm.cmd run test:ui`、`git diff --check`、文档/Secret 检查；无生产 Root、Owner API、模型调用、真实微信发送。
+5. 若有修复，提交到同一个 PR #16，核对新 HEAD 的 CI；回报 F01–F05 + T01–T10 的 PASS/FAIL/BLOCKED、文件/行、Commit 与未覆盖项。**未通过前继续 REVIEW_REQUIRED；通过后由 ChatGPT 核验 DoD，是否合并还需用户单独授权。**
+
+**附加必须可判定的回归：**
+
+- N01 manifest 含未知顶层字段与伪投递键时拒绝；完全合法 Manifest 仍 PASS。
+- N02 TTS 请求含 `wechat`、`targetChatId`、`delivery` 等附加字段拒绝；合法 `requestId` 与文本等不被误拒。
+- N03 SVC 请求含 `targetChatId`、`recipient` 或未知嵌套对象时拒绝，不得回传；合法源 Artifact 请求仍 PASS。
+- N04 必需凭据未知+健康 ok 不得进入 `AVAILABLE`/允许合成；缺失/已证实存在/无须凭据独立测试。
+- N05 TTS 合成结果带 `target`、`targetChatId` 或未知敏感字段拒绝；合法 Artifact+`PENDING_ROUTER` 继续 PASS。
+
+**审查约束：** 此处记录的是待工程复现的代码审查发现，不是已运行测试的 FAIL，也不改变 TTS-A 的 DESIGN/OFFLINE 或 Plan 02 的 IN PROGRESS/REVIEW_REQUIRED。不得由 ChatGPT 在此计划 PR 代替 DeepSeek 修改运行代码。
 
 ## 3. 前置与阅读顺序（DeepSeek 实施侧）
 
