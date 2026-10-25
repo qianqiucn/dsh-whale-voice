@@ -5,11 +5,16 @@
 >
 > 当前产品方向：一个 Whale Voice Core（TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Voice Core。**
 
-## 0. 每次 GitHub 工作前必须先读执行标准
+## 0. AI 协作职责与执行标准范围
 
-**强制入口：[仓库根目录 EXECUTION_STANDARD.md](../../EXECUTION_STANDARD.md)**，然后阅读 [AGENTS.md](../../AGENTS.md)。每次新 Git / GitHub 工作会话开始时都重新核验；适用于只读审查、提交代码、发送计划、接收新想法和任务完成打标。执行标准是操作流程，本索引是计划与状态登记表；如有冲突，以实际代码/Git/测试和更严格的安全授权边界为准。
+本项目由两位 AI 分工协作：
 
-这套规则需要在当前聊天中调用 GitHub 执行，不代表离线自动监控。
+- **DeepSeek：主要代码开发者。** 根据用户已发送并授权的任务书实施代码、测试、技术评审和常规工程 Git/PR；遵守 [AGENTS.md](../../AGENTS.md) 的质量、安全与权限规则。**不需要执行本计划索引的调度、重排、SENT/DONE 打标和更新记录流程。**
+- **ChatGPT：计划书与 GitHub 计划协调者。** 负责发送下一份、整合新想法、修改开发顺序、记录 GitHub 计划状态、核验完成报告并标记 DONE；不代替 DeepSeek 的日常代码实现。
+
+**[EXECUTION_STANDARD.md](../../EXECUTION_STANDARD.md) 只对 ChatGPT 的计划/GitHub 协调任务强制适用。** DeepSeek 可以正常 Push 代码和创建工程 PR；无需每次访问 GitHub 都阅读计划执行标准。两个 AI 都须遵守 AGENTS 的通用安全与明确授权边界。
+
+ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新，不是离线自动监控。
 
 ## 一、严格区分发送状态与工程状态
 
