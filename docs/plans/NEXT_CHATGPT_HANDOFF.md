@@ -8,6 +8,10 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新最高优先级原则：用户零编程基础（2026-10-25）
+
+用户明确要求：“请你始终记住，本项目是始终给不会代码的编程小白用的，保持易用性。” 此为永续架构与任务验收门禁，见 [NOVICE_FIRST_PRODUCT_STANDARD.md](NOVICE_FIRST_PRODUCT_STANDARD.md)。每次 ChatGPT 给 DeepSeek 的 Level 2 任务书与对应报告验收都要附 Novice First DoD，确保普通用户从简体中文 UI 完成声明支持的流程，不被迫通过终端、Git、Python/pip/npm、手动配置 JSON/ENV 才能使用；新手安装应当是经过审核和用户主动确认的图形化过程，带最小依赖、清晰进度和错误恢复，不牺牲隐私/版权/WeChatAgent/Worker/Relay 安全。不能把当前 Mock/只读页面宣称已满足产品标准。原 Plan 01–14 和 07-A PLANNED、03-B WAIT_USER_AUTHORIZATION 不变；用户本轮仅批准记忆与规划标准落地，不授权实际下载安装/工程重构或合并 PR。
+
 ## 最新优先决策：RVC 首发、Seed-VC 免训练零样本选配（2026-10-25）
 
 **用户明确授权调整 PR #17 的规划文档。** Whale Singing 主路线为 RVC：Plan 07-A 上游许可/API/资源只读审计→12-A RVC 离线 MVP→12-B/C 自动点歌与受控交付（均受各自前置与权限门禁约束）。**Seed-VC 非首发，不删除历史候选，仅属 Plan 12-D 后续“零样本/免训练试唱”选配**：07-A 只做固定上游来源/许可证/归档风险与专用唱歌模型情况的最小静态档案；RVC MVP 稳定后经用户另行授权才可能进行 Windows/GPU/CPU 真实实测。官方歌声转换模型约 200M 参数、Tiny 25M 主要用于语音；**不能宣传低显存、CPU 轻量或自动实时整首翻唱**。Seed-VC 官方上游 2025-11-21 归档，固定版本与安全/维护风险必须核查。
