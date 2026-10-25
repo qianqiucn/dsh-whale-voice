@@ -202,6 +202,21 @@ outcome is unknown, the transaction remains `UNKNOWN` even when earlier reversib
 back. Only an explicit `NOT_WRITTEN` plus confirmed rollback of all earlier steps may produce
 `FAILED`/`rolledBack:true`.
 
+### Rollback confirmation
+
+Rollback is complete only when all of the following hold for every previously saved source:
+
+1. the adapter reports `{ok:true}`;
+2. its reported revision is present and exactly equals that source's pre-transaction
+   `previousRevision`;
+3. a subsequent read-only `read()` succeeds;
+4. the observed revision exactly equals the same `previousRevision`.
+
+Missing/mismatched reported revisions, read exceptions, observed external modification and unknown
+results are `UNCONFIRMED`; the transaction stays `UNKNOWN`. Evidence contains only source ids,
+expected/reported/observed opaque revisions and reason codes — never config documents or private
+targets. Rollback is not retried automatically.
+
 ---
 
 ## 6. Single writer and concurrency
@@ -273,7 +288,7 @@ mismatch/old/empty/forged confirmation, runtime reject/partial/unknown, sensitiv
 Worker/permission boundaries, Core read/schema errors, stale observers, Host non-import and journal
 containment.
 
-The Phase 4B-2A suite currently has 44 tests (43 pass, 1 platform-conditional symlink skip).
+The Phase 4B-2A suite currently has 49 tests (48 pass, 1 platform-conditional symlink skip).
 
 Production source adapters and real runtime confirmation remain **NOT IMPLEMENTED**. The fixture
 adapter intentionally does not claim atomic file writes; a production adapter must use the owning

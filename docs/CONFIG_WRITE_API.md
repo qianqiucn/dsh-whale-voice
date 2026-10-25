@@ -356,4 +356,7 @@ Key limits:
 - journal reads revalidate sandbox/directory/file type, size and strict schema; corrupt or oversized
   journals fail closed;
 - no PID, file mtime, health 200 or equal content is accepted as apply proof;
-- a failed save without a `NOT_WRITTEN` write outcome remains `UNKNOWN`.
+- a failed save without a `NOT_WRITTEN` write outcome remains `UNKNOWN`;
+- rollback is confirmed only when the adapter reports the exact pre-transaction revision **and** a
+  read-only re-read observes that same revision; missing/mismatched/read-failed/external-modified
+  results remain `UNKNOWN`.

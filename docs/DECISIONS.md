@@ -260,7 +260,9 @@ exact plan; plans expire and are consumed after journal creation. `APPLIED` requ
 return a loaded revision exactly matching the saved revision; file writes, PID liveness, mtime and
 HTTP 200 are not apply proof. Journals are size-bounded, strict-schema and symlink-checked on read;
 same-path temp+fsync+rename is best-effort, not a Windows power-loss atomicity claim. A failed save
-without a `NOT_WRITTEN` outcome remains `UNKNOWN`, even if earlier steps were rolled back.
+without a `NOT_WRITTEN` outcome remains `UNKNOWN`, even if earlier steps were rolled back. Rollback is
+reported complete only when the adapter's reported revision and a subsequent read-only observed
+revision both exactly equal the pre-transaction revision; otherwise the result stays `UNKNOWN`.
 
 **Reason:** The Bridge user switch and Worker final-safety permit are independent safety layers.
 Multi-file configuration cannot be made transactionally safe by pretending independent renames are

@@ -790,9 +790,19 @@ export class ConfigCoordinator {
   }
 
   async _rollback(record, saved, transactionId) {
+    if (saved.length === 0) return { confirmed: true, evidence: [] }
     let allConfirmed = true
-    if (saved.length === 0) return true
+    const evidence = []
     for (const item of [...saved].reverse()) {
+      const step = record.steps.find((candidate) => candidate.source === item.source)
+      const entry = {
+        source: item.source,
+        expectedRevision: item.previousRevision,
+        reportedRevision: null,
+        observedRevision: null,
+        status: 'UNCONFIRMED',
+        reason: null,
+      }
       let result
       try {
         result = await item.adapter.rollback({
@@ -801,17 +811,49 @@ export class ConfigCoordinator {
           toDocument: item.previousDocument,
         })
       } catch {
-        result = { ok: false }
+        result = { ok: false, error: { code: 'CONFIG_COORDINATION_ROLLBACK_FAILED' } }
       }
-      const step = record.steps.find((candidate) => candidate.source === item.source)
-      if (result && result.ok === true) {
+      if (!result || result.ok !== true) {
+        entry.reason = 'ROLLBACK_REJECTED'
+        entry.reportedRevision = typeof result?.revision === 'string' ? result.revision : null
+      } else if (typeof result.revision !== 'string' || !REVISION_PATTERN.test(result.revision)) {
+        entry.reason = result.revision === undefined ? 'REVISION_MISSING' : 'REVISION_INVALID'
+        entry.reportedRevision = typeof result.revision === 'string' ? result.revision : null
+      } else {
+        entry.reportedRevision = result.revision
+        if (result.revision !== item.previousRevision) {
+          entry.reason = 'REVISION_MISMATCH'
+        } else {
+          // A reported revision alone is not enough. Re-read the source and require the
+          // observed revision to equal the saved pre-transaction revision.
+          let observed
+          try {
+            observed = await item.adapter.read()
+          } catch {
+            observed = { ok: false, error: { code: 'CONFIG_COORDINATION_ROLLBACK_READ_FAILED' } }
+          }
+          if (!observed || observed.ok !== true || typeof observed.revision !== 'string') {
+            entry.reason = 'READ_FAILED'
+          } else {
+            entry.observedRevision = observed.revision
+            if (observed.revision !== item.previousRevision) {
+              entry.reason = 'OBSERVED_REVISION_MISMATCH'
+            } else {
+              entry.status = 'CONFIRMED'
+            }
+          }
+        }
+      }
+
+      if (entry.status === 'CONFIRMED') {
         if (step) step.status = 'ROLLED_BACK'
       } else {
         allConfirmed = false
-        if (step) step.errorCode = 'CONFIG_COORDINATION_ROLLBACK_FAILED'
+        if (step) step.errorCode = 'CONFIG_COORDINATION_ROLLBACK_' + entry.reason
       }
+      evidence.push(entry)
     }
-    return allConfirmed
+    return { confirmed: allConfirmed, evidence }
   }
 
   async execute(planId, options = {}) {
@@ -898,7 +940,8 @@ export class ConfigCoordinator {
             record.phase = definiteNoWrite ? COORDINATION_STATES.FAILED : COORDINATION_STATES.UNKNOWN
             record.errorCode = 'CONFIG_COORDINATION_SAVE_FAILED'
             this._writeJournal(record)
-            const rolledBack = await this._rollback(record, saved, transactionId)
+            const rollback = await this._rollback(record, saved, transactionId)
+            const rolledBack = rollback.confirmed
             record.phase = definiteNoWrite && rolledBack ? COORDINATION_STATES.FAILED : COORDINATION_STATES.UNKNOWN
             record.committed = false
             this._writeJournal(record)
@@ -906,6 +949,7 @@ export class ConfigCoordinator {
               rolledBack: definiteNoWrite && rolledBack,
               source: item.source,
               writeOutcome,
+              rollbackEvidence: rollback.evidence,
             })
           }
           step.status = 'SAVED'

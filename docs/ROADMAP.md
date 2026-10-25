@@ -320,7 +320,7 @@ features. These remain planned and are not coupled to native delivery.
 approves any visibility change or release.
 
 **Current status:** `IN PROGRESS`: private repository initialization, documentation, build/behavior/
-UI CI, Markdown encoding checks and 143 Node tests. PR #3–#11 are integrated into `main`; Phase 4B-1
+UI CI, Markdown encoding checks and 148 Node tests. PR #3–#11 are integrated into `main`; Phase 4B-1
 is merged but remains `OFFLINE`; Phase 4B-2A coordination is `OFFLINE`; Phase R1 is **COMPLETE**. The
 clean development baseline is post-integration `main` (`8abf031`). No release, no public visibility
 and no release artifact yet.

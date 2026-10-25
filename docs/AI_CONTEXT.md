@@ -148,10 +148,10 @@ No production configuration, service restart, DSH reload or real send is involve
   sanitized public projection, read/write state separation and a test-only loopback API. No production
   write route.
 - Phase 4B-2A coordination protocol: isolated plan/journal/recovery over fixture source adapters,
-  Bridge/Worker separation, `SAVED`/`PENDING_APPLY` vs `APPLIED`, and Fake Runtime confirmation. No
-  production adapter or route.
+  Bridge/Worker separation, `SAVED`/`PENDING_APPLY` vs `APPLIED`, exact saved/runtime revision match,
+  and rollback confirmation by reported revision plus read-back observation. No production adapter.
 - Isolated Playwright harness with fake setup bridge; no production DSH/WeChat connection.
-- 143 Node tests (142 pass, 1 platform skip; including 44 Phase 4B-2A coordination tests) and 12 UI checks pass on the
+- 148 Node tests (147 pass, 1 platform skip; including 49 Phase 4B-2A coordination tests) and 12 UI checks pass on the
   Phase 4B-2A branch. These are offline/contract evidence, not real production write/apply acceptance.
 
 ---
@@ -211,7 +211,7 @@ Phase 4B-2A result:
 
 ```text
 build: PASS, client.js 186092 bytes
-node --test: 142/143 PASS (1 platform skip; includes 44 Phase 4B-2A coordination tests)
+node --test: 147/148 PASS (1 platform skip; includes 49 Phase 4B-2A coordination tests)
 UI: 12/12 PASS
 ```
 
@@ -260,5 +260,5 @@ Do not trust this summary alone. Verify:
 
 **2026-10-25**, after Phase 4B-2A: `main` is `8abf031` (PR #11 merge); Phase R1 is **COMPLETE**,
 Phase 4B-1 and 4B-2A are `OFFLINE`, Phase 3B/4A remain `INTEGRATED`, and Phase 4B-2B is
-**NOT STARTED**. 143 Node (142 pass, 1 skip) / 12 UI checks are offline evidence, not production write/apply
+**NOT STARTED**. 148 Node (147 pass, 1 skip) / 12 UI checks are offline evidence, not production write/apply
 acceptance. No production configuration or runtime behavior change.

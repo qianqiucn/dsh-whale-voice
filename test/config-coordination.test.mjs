@@ -392,6 +392,14 @@ test('external non-cooperating modification after prepare is detected', async ()
   assert.equal(bridge.saveCount, 0)
 })
 
+function forceRollbackResult(adapter, result) {
+  const original = adapter.rollback.bind(adapter)
+  adapter.rollback = async (args) => {
+    await original(args)
+    return result
+  }
+}
+
 test('second save failure stops and rolls back the first confirmed reversible save', async () => {
   const { bridge, sender, coordinator } = await setup({ senderSaveFailure: 'EIO' })
   const { result } = await execute(bridge, sender, coordinator, {
@@ -402,6 +410,10 @@ test('second save failure stops and rolls back the first confirmed reversible sa
   assert.equal(result.state, COORDINATION_STATES.FAILED)
   assert.equal(result.error.code, 'CONFIG_COORDINATION_SAVE_FAILED')
   assert.equal(result.error.rolledBack, true)
+  assert.equal(result.error.rollbackEvidence.length, 1)
+  assert.equal(result.error.rollbackEvidence[0].status, 'CONFIRMED')
+  assert.equal(result.error.rollbackEvidence[0].reportedRevision, result.error.rollbackEvidence[0].expectedRevision)
+  assert.equal(result.error.rollbackEvidence[0].observedRevision, result.error.rollbackEvidence[0].expectedRevision)
   assert.equal(bridge.document.enabled, false)
   assert.equal(bridge.rollbackCount, 1)
   assert.equal(sender.document.tts.voice, 'whale-v1')
@@ -417,6 +429,105 @@ test('unconfirmed rollback is reported as UNKNOWN, never full rollback', async (
   assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
   assert.equal(result.error.rolledBack, false)
   assert.equal(bridge.document.enabled, true)
+})
+
+test('rollback revision mismatch is not accepted as full rollback', async () => {
+  const { bridge, sender, coordinator } = await setup({ senderSaveFailure: 'EIO' })
+  forceRollbackResult(bridge, { ok: true, revision: 'f'.repeat(32) })
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
+  assert.equal(result.error.rolledBack, false)
+  assert.equal(result.error.rollbackEvidence[0].status, 'UNCONFIRMED')
+  assert.equal(result.error.rollbackEvidence[0].reason, 'REVISION_MISMATCH')
+  assert.equal(result.error.rollbackEvidence[0].reportedRevision, 'f'.repeat(32))
+})
+
+test('rollback without a revision is not accepted as full rollback', async () => {
+  const { bridge, sender, coordinator } = await setup({ senderSaveFailure: 'EIO' })
+  forceRollbackResult(bridge, { ok: true })
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
+  assert.equal(result.error.rollbackEvidence[0].status, 'UNCONFIRMED')
+  assert.equal(result.error.rollbackEvidence[0].reason, 'REVISION_MISSING')
+})
+
+test('rollback read failure is not accepted as full rollback', async () => {
+  const { bridge, sender, coordinator } = await setup({ senderSaveFailure: 'EIO' })
+  const originalRollback = bridge.rollback.bind(bridge)
+  const originalRead = bridge.read.bind(bridge)
+  let armed = false
+  bridge.rollback = async (args) => {
+    const result = await originalRollback(args)
+    armed = true
+    return result
+  }
+  bridge.read = async () => {
+    if (armed) throw new Error('read after rollback failed')
+    return originalRead()
+  }
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
+  assert.equal(result.error.rollbackEvidence[0].status, 'UNCONFIRMED')
+  assert.equal(result.error.rollbackEvidence[0].reason, 'READ_FAILED')
+})
+
+test('external modification during rollback invalidates rollback evidence', async () => {
+  const { bridge, sender, coordinator } = await setup({ senderSaveFailure: 'EIO' })
+  const originalRollback = bridge.rollback.bind(bridge)
+  bridge.rollback = async (args) => {
+    const result = await originalRollback(args)
+    bridge.externalWrite(bridgeDocument({ enabled: true, defaultVoice: 'external' }))
+    return result
+  }
+  const { result } = await execute(bridge, sender, coordinator, {
+    bridgeVoice: { enabled: true },
+    senderService: { tts: { voice: 'fixture-voice' } },
+  })
+  assert.equal(result.state, COORDINATION_STATES.UNKNOWN)
+  assert.equal(result.error.rollbackEvidence[0].status, 'UNCONFIRMED')
+  assert.equal(result.error.rollbackEvidence[0].reason, 'OBSERVED_REVISION_MISMATCH')
+})
+
+test('a multi-source rollback with one unconfirmed source is not reported complete', async () => {
+  const { bridge, sender, coordinator } = await setup()
+  const record = {
+    steps: [
+      { source: 'bridgeVoice', status: 'SAVED' },
+      { source: 'senderService', status: 'SAVED' },
+    ],
+  }
+  const saved = [
+    {
+      source: 'bridgeVoice',
+      adapter: bridge,
+      previousRevision: bridge.revision,
+      previousDocument: bridge.document,
+    },
+    {
+      source: 'senderService',
+      adapter: sender,
+      previousRevision: sender.revision,
+      previousDocument: sender.document,
+    },
+  ]
+  forceRollbackResult(sender, { ok: true, revision: 'f'.repeat(32) })
+  const rollback = await coordinator._rollback(record, saved, 'a'.repeat(32))
+  assert.equal(rollback.confirmed, false)
+  assert.equal(rollback.evidence.length, 2)
+  const senderEvidence = rollback.evidence.find((item) => item.source === 'senderService')
+  const bridgeEvidence = rollback.evidence.find((item) => item.source === 'bridgeVoice')
+  assert.equal(senderEvidence.status, 'UNCONFIRMED')
+  assert.equal(bridgeEvidence.status, 'CONFIRMED')
+  assert.equal(record.steps.find((step) => step.source === 'bridgeVoice').status, 'ROLLED_BACK')
 })
 
 test('failure with an unconfirmed write outcome stays UNKNOWN even after prior rollback', async () => {
