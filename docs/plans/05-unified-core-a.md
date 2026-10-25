@@ -3,6 +3,14 @@
 **任务状态：PLANNED**  
 **前置：** TTS-A 契约及 WeChatAgent 扩展审计结论可用。
 
+## 最新派发（2026-10-25）· 05-A SENT：隔离纯契约 + 自动测试，避开 #16 合并门禁
+
+**Plan 05-A 正式派发 SENT，权威 Level 2：[05-A-whale-audio-core-offline-contract-implementation.md](05-A-whale-audio-core-offline-contract-implementation.md)**。此次不再只是静态调研，允许 DS 从最新 main 创建独立纯合同功能分支，仅新增 `core/audio/task-contract.mjs`、`feature-manifest.mjs`、`relay-handoff.mjs`、`test/audio-core-contract.test.mjs`、`docs/WHALE_AUDIO_CORE_CONTRACT.md`；≥40 个 Node 自动离线测试（计划 T01–T28/F01–F14/R01–R10 共 52 条）；不接 Host/生产，不读取音频或用户隐私，不发微信、不真实 RVC/Provider/Relay、不自动安装、不合并。
+
+**前置研究足够**：07-A/F01 和 04-A 均 DONE（仅 RESEARCH/OFFLINE），源研究 PR #19/#20 均 OPEN。**但 Plan 03-B 仍 WAIT_USER_AUTHORIZATION，PR #16 TTS/SVC v1 仍未合并 main**；05-A 仅从 #16 合同只读理解命名和未来映射，不导入/复制/修改其代码。**这是 Plan 05 子阶段安全推进，不代表允许 05-B 真正 Host 集成**。后续 05-B/06/07-B 等必须待各自前置/专项授权。
+
+**永续 UX 目标**：项目最终给不会代码的小白，Voice/Singing 首次功能依赖独立；本阶段 Fake 无真实生成/安装，但中文失败恢复、RVC 主线和 Seed-VC 后续不可用状态都纳入自动测试/文档。不要为了省步骤造成“假绿色”，假保存不等于配置 APPLIED 或投递成功。
+
 ## 2026-10-25 · 共用 Core 正式命名与兼容门禁（原 Plan 05，仍 PLANNED）
 
 **唯一目标名：Whale Audio Core（鲸音核心）。** Whale Voice 是语音气泡产品入口，Whale Singing 是唱歌产品入口，共享一个 Core 的任务/音色/Provider/资源/Artifact/许可/配置；WeChatAgent 和 Whale Relay Core（鲸递）仍独立。权威规格：[双前端及首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
