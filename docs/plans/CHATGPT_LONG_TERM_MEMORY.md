@@ -6,6 +6,14 @@
 >
 > **建立：2026-10-25。** 禁止写入用户凭据、微信身份、私人聊天、联系人、参考音频、桌面截图和生产机器路径。
 
+## 1.6 用户确定共享 Core 更名与两个独立首次使用页面（2026-10-25）
+
+用户明确要求：把语音 Whale Voice 与唱歌 Whale Singing 放进**一个 Core**，给共用 Core 重新命名；两种功能的前端界面单独分开，分别在**首次进入时弹出各自需要安装的依赖清单**。ChatGPT 按此确定对外共享名为 **Whale Audio Core（鲸音核心）**，Voice 与 Singing 是产品子功能/前端两页面而不是两个后端。鲸递 Whale Relay Core 和 WeChatAgent 的独立职责仍保持。
+
+权威 [双前端与首次依赖规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)：两个拟定路由 voice-bubbles 和 singing，复用现有 Modal/SetupWizard/ComponentsDialog；首访分别显示按 Provider/mode 分组的必需、可选、仅发送需要的组件、状态/来源/许可/资源，允许跳过后浏览只读页，共享依赖去重、后续重复进入不骚扰。安装/真实下载/模型启动/生产 apply/微信发送须单独明确授权；Fake/UI 清单不是真安装、UNKNOWN 不等于 READY。八页旧页面和 plugin ID/ABI/config/whale-v1 不自动更名。
+
+此需求已纳入**原 Plan 05/07-A/08/09/12/13/14**；原 Plan 01–14 编号不变，03-B 仍 WAIT_USER_AUTHORIZATION，优先可独立准备的 07-A 仍 PLANNED/NOT_SENT。以后写详细任务书须确保首访/二访/跨页/无GPU/云端/安装失败/取消/重复依赖及可访问性覆盖完整。
+
 ## 1.5 用户新确认的 RVC/SVC 自动翻唱产品路线（2026-10-25）
 
 用户明确选择 [CCYellowStar2/astrbot_plugin_rvc_svc](https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc) 作为翻唱/点歌能力参考，希望“想让小鲸鱼唱一首歌”能由 DeepSeek 触发搜索、分离、RVC/SVC 声线转换、混音、最终经鲸递发送。此为**明确的产品规划决定**，不是给 DeepSeek 的工程安装/代码复用/联网下载/真实发送授权。
