@@ -5,6 +5,12 @@
 >
 > 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
 
+## 最新已授权模型选型：RVC 首发，Seed-VC 免训练试唱可选（2026-10-25）
+
+**用户已明确批准这个计划调整。** Whale Singing（同一 Whale Audio Core）**首发主 Provider 是 RVC**；Seed-VC 并非废弃或主线路，而是延后到**原 Plan 12-D 的零样本/免训练试唱候选**（PLANNED / NOT_SENT / NOT_IMPLEMENTED）。不可把免训练写作低显存或 CPU 轻量：官方 Tiny 25M 针对语音转换，专用歌声模型约 200M，具体 GPU/CPU/内存需求等真实测试后才能承诺。Seed-VC 上游已归档，相关许可和维护风险纳入 Plan 07 最小静态档案。
+
+**派发顺序微调但不重编号**：07-A 优先**RVC 及歌曲分离/混音外部 API 和许可证只读审计**，Seed-VC 只采集基础静态事实，不做模型真实测试；后续 12-A 以 RVC 完成离线翻唱，12-B/12-C 自然语言点歌/交付不因 Seed-VC 阻塞；**12-D 只在 RVC MVP 稳定、许可证及 Windows 资源证据齐备且用户另行批准后单独派发**。Plan 14 的 Singing 首次弹窗默认 RVC，Seed-VC 只显示延后可选选项，不预装、不默认下载或误报 READY。老 Plan ID/既有完成状态、PR #16 合并门禁不变。
+
 ## 最新已确认产品架构：Whale Audio Core 与双功能入口（2026-10-25）
 
 **共用后端正式改名为 [Whale Audio Core（鲸音核心）](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)**。原 Whale Voice Core 是历史旧称；**Whale Voice · 语音气泡**和**Whale Singing · 唱歌**是两个相互独立的前端页面，前者处理 TTS/短语音气泡，后者处理点歌/分离/RVC-SVC/混音；两者共享同一个 Core、音色库、模型资产、任务与唯一 Delivery ID。鲸递 Whale Relay Core 原名/单次安全交付职责不变，WeChatAgent 仍拥有微信身份与授权。现有仓库/插件 ID、API/配置键和已验收八页不会因为计划改名被立即迁移。
@@ -29,7 +35,7 @@
 | 队列 | 稳定 ID | 交付对象 | 状态 / 前置条件 |
 |---:|---|---|---|
 | 0 | Plan 01、Plan 02、Plan 03-A | 既有工作 | 01 SENT（GUI 独立待证据）；02 DONE；03-A DONE，均不得重做 |
-| **1：可先独立开展** | **Plan 07-A** | 第三方 AstrBot/独立 RVCSVC-API 许可/API/资源/版权与部署方式只读审计；无真实模型 | **PLANNED / NOT_SENT**；可与 03-B 等待期并行，只可先升级 Level 2 再由 ChatGPT 派发 |
+| **1：可先独立开展** | **Plan 07-A** | RVC 为主的 AstrBot/独立 RVCSVC-API 许可/API/资源/版权与部署方式只读审计；Seed-VC 仅最小静态档案，无真实模型 | **PLANNED / NOT_SENT**；可与 03-B 等待期并行，只可先升级 Level 2 再由 ChatGPT 派发 |
 | **授权门禁（不排序成自动执行）** | **Plan 03-B** | 用户明确决定是否 Merge PR #16，获授权后另发安全合并任务书 | **WAIT_USER_AUTHORIZATION**；截至本轮无授权，PR #16 OPEN |
 | 2 | Plan 04 | WeChatAgent/DSH Tool 和聊天授权的公开能力审计 | PLANNED；可独立只读，支持歌曲交付的实际能力核验 |
 | 3 | Plan 05 | 定义 CoverTask、Whale Voice Core / Whale Relay 交付边界、上游 Worker 协议 | PLANNED；04 与已完成 TTS-A 契约为前置 |
@@ -38,9 +44,10 @@
 | 6 | Plan 08 | 声音/模型、源曲权益、分离与混音 Artifact、任务、缓存清理 | PLANNED；05/06/07 |
 | 7 | Plan 13-A | Fake Whale Relay 目标校验、固定后端、去重、未知结果保护 | PLANNED；05/08；独立小 PR |
 | 8 | Plan 09（只限 OFFLINE） | 音色/音源授权/后端健康/翻唱进度配置草稿 | PLANNED；06/08；生产写入另行授权 |
-| 9 | Plan 12-A | 使用授权本地音源或 Fake Artifact 完成分离 → RVC/SVC → 混音 → 保存离线 MVP | PLANNED；07/08/13-A；实际模型运行另行授权 |
+| 9 | Plan 12-A | 使用授权本地音源或 Fake Artifact 完成分离 → **RVC** → 混音 → 保存离线 MVP | PLANNED；07/08/13-A；实际模型运行另行授权 |
 | 10 | Plan 13-B | 将 Voice Sender UI Automation 作为文件/语音投递 adapter（先 Fake）；确认长歌文件支持 | PLANNED；13-A；真实微信发送另行授权 |
 | 11 | Plan 12-B / 12-C | DeepSeek 自然语言点歌、合法元数据检索、候选选择及独立批准的交付 | PLANNED；04/12-A/13-B；12-C 真实投递单独授权 |
+| 可选后置 | Plan 12-D | Seed-VC 免训练零样本试唱，仅在 RVC MVP 稳定、许可和 Windows 实测允许、用户专项授权后推进；不阻塞 12-B/C | PLANNED / NOT_SENT；默认不安装 |
 | 12 | Plan 10、Plan 11 | 原本地与云端 TTS Provider 的分项开发，可与唱歌线并行 | PLANNED；06/08/09，收费和安装独立授权 |
 | 13 | Plan 13-C | Native Hook/SILK 仅作静态研究候选 | PLANNED；严格不提前执行 |
 | 14 | Plan 14 | 可选翻唱组件安装器、许可与发布验收 | PLANNED；必要组件验收；公开/Release 另行授权 |
@@ -121,7 +128,7 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 | 04 | [WeChatAgent 扩展机制审计](04-wechatagent-extensions-audit.md) | PLANNED | 无新增 PR | 03，亦可独立只读研究 |
 | 05 | [Unified Core-A：TTS/SVC/Whale Relay 职责](05-unified-core-a.md) | PLANNED | 无新增 PR | 03–04 的契约 |
 | 06 | [Provider Core-B：引擎注册与调度](06-provider-core-b.md) | PLANNED | 无新增 PR | 05 |
-| 07 | [SVC-A：Seed-VC / RVC 研究](07-svc-a-seed-vc-rvc-audit.md) | PLANNED | 无新增 PR | 05；独立研究可并行 |
+| 07 | [SVC-A：RVC 主线审计与 Seed-VC 零样本后续候选](07-svc-a-seed-vc-rvc-audit.md) | PLANNED | 无新增 PR | 05；独立研究可并行 |
 | 08 | [Shared Core-C：音色库/音频/任务](08-shared-core-c-voice-audio-tasks.md) | PLANNED | 无新增 PR | 05–07 |
 | 09 | [Phase 4B-2B-2b：多引擎配置 UX](09-phase4b2b2b-config-ux.md) | PLANNED | 无新增 PR | 06、08；生产写入另行授权 |
 | 10 | [TTS-C：本地 Provider](10-tts-c-local-providers.md) | PLANNED | 无新增 PR | 06、08–09 |
