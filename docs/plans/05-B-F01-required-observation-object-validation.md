@@ -1,7 +1,46 @@
 # Plan 05-B-F01 · 必填功能观察对象的显式 undefined 拒绝
-**版本：v1.0 · 2026-10-25 · Level 2 / SENT。**
-**父任务：Plan05-B REVIEW_REQUIRED；功能等级OFFLINE / NOT_INTEGRATED。**
+**版本：v1.0 · 2026-10-25 · Level 2 / DONE（历史派发版本v1.0）。**
+**父任务：Plan05-B DONE / OFFLINE；功能等级OFFLINE / NOT_INTEGRATED。**
 **执行：DeepSeek；计划与验收：ChatGPT。继续原PR #22，不创建新PR或新主Plan。**
+
+## 最新独立验收（2026-10-25）· 05-B/F01 DONE / OFFLINE
+
+本节替代之前REVIEW_REQUIRED作为当前结论；旧复现与首轮验收保留历史。
+#22 OPEN/非Draft/0 reviews，HEAD `9d716583da69054ac06733a9dd18ca29b4681fbe`，base仍#21分支@da3d0f7；相对父精确三个added +1650/-0，父五文件未变。新[run40240851940](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40240851940)直接读取head_sha匹配本提交，build/ui各步骤SUCCESS。
+源码改动仅在buildFeatures调用底层函数前增加isPlainObject守卫；无全局优先级重排、父函数变更或输出权限提升。ChatGPT独立运行36+81=117/117 PASS（Node v24.22.0），旧四组activeFeature×受影响feature与双undefined探针均返回固定MANIFEST_INVALID/准确功能路径/固定reason、无value。
+全仓库293/292/1、UI24/24、本机build/privacy为DS报告；ChatGPT核对CI步骤并静态审查三文件，未本地重跑全仓库/UI，机器未操作依DS声明。
+
+| ID | 复核结果与证据 |
+|---|---|
+| D01 | PASS：原#22/正确父base/新完整HEAD，开放PR仍7，#21未变 |
+| D02 | PASS：U01/U02及5组独立探针全部按固定错误拒绝 |
+| D03 | PASS：U03–05非普通值拒绝，合法{}、null原型、冻结对象保持 |
+| D04 | PASS：U06/U07与V既有用例，顺序/脱敏/getter零执行/首访和动作不退化 |
+| D05 | PASS：U08直接断言父undefined仍合法，父81独立PASS，差异无父文件 |
+| D06 | PASS：36项与81项共117独立PASS；修复前7失败为DS记录，旧探针旧SHA曾独立复现放行 |
+| D07 | PASS（来源限定）：三文件差异、当前HEAD CI build/ui成功，DS全量本机报告与本轮专项来源分开 |
+| D08 | PASS（本阶段）：中文数据不完整恢复、MOCK/未集成说明保留，无运行入口/合并或生产变更 |
+
+| ID | 原C矩阵复核 |
+|---|---|
+| C01 | PASS：main/#16/#21/#22及03-B状态核实 |
+| C02 | PASS：原分支/原PR/父base未变 |
+| C03 | PASS：相对父仅三added，+1650/-0 |
+| C04 | PASS：完整六字段和功能map，undefined按固定错误拒绝 |
+| C05 | PASS：原描述符属性检查保留，U07无getter执行 |
+| C06 | PASS：只导入两纯模块，使用既有helper，未复制Schema |
+| C07 | PASS：task配对与活动/非活动观察类型完整验证，U01–03/U06 |
+| C08 | PASS：双首访、组件分类及依赖隔离，V17–21/U08 |
+| C09 | PASS：九键/六actions恒false，Fake不升级真实READY |
+| C10 | PASS：Task白名单与固定错误映射，V23/U03/U07 |
+| C11 | PASS：原深冻结/确定性/输入不变，V24；源码无状态写入 |
+| C12 | PASS：V28+U8+父81共117独立PASS，原漏测现已覆盖 |
+| C13 | PASS（来源限定）：DS本机全量/build/UI/docs/privacy报告，ChatGPT核对对应CI且本地专项117通过 |
+| C14 | PASS：9d71658精确head run40240851940成功 |
+| C15 | PASS（阶段性）：中文故事板/错误恢复与未实现事项保留，无最终GUI可用性宣称 |
+| C16 | PASS（可见代码/报告）：无Host/模型/发送入口、无PR合并；不从Git证明机器全部行为 |
+
+**决定：05-B/F01 DONE，PR_OPEN，OFFLINE。** 05-A/F01仍DONE。下一份仅[07-B原创Fake协议](07-B-rvc-fake-gateway-offline-protocol.md)，不自动合并父子PR。原第14节为首轮历史审查，不再代表当前状态。
 
 ## 1. 唯一目标和替代关系
 修复一个已独立复现的契约缺口：05-B要求observationsByFeature的两个必填功能键各自持有普通观察对象，但当前显式undefined会被05-A的可选参数默认行为当作空观察对象接受。
@@ -165,7 +204,7 @@ Voice/Singing各自只读检查与独立首访；RVC首发、Seed-VC暂不支持
 | D08 | Novice First说明准确，仍OFFLINE，无合并/安装/生产/发送 |
 同时重新提交原C01–C16验收表，不只报“undefined已修”。
 
-## 14. 本轮C01–C16独立复核
+## 14. 首轮历史：C01–C16独立复核
 | ID | 本轮结果与依据 |
 |---|---|
 | C01 | PASS：main/#16/#21/#22实际核验，03-B未授权 |
@@ -184,7 +223,7 @@ Voice/Singing各自只读检查与独立首访；RVC首发、Seed-VC暂不支持
 | C14 | PASS：新#22 HEAD run40239317990 build/ui成功 |
 | C15 | PASS（阶段文档）：双流程、三恢复、演示禁用与未实现门槛保留；需补本修订无效容器说明 |
 | C16 | PASS（可见代码/报告）：无真实运行入口、无merge，机器生产未操作依DS声明 |
-最终：05-B REVIEW_REQUIRED，05-B-F01 SENT，PR#22 OPEN；05-A/F01仍DONE，不进入下阶段。
+首轮历史结论：05-B REVIEW_REQUIRED，05-B-F01 SENT，PR#22 OPEN；05-A/F01仍DONE，不进入下阶段。
 
 ## 15. 报告格式
 标题《Plan05-B-F01 · 必填观察对象校验修复报告》：

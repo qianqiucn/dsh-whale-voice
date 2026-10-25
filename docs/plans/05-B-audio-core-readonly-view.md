@@ -1,8 +1,18 @@
 # Plan 05-B · Whale Audio Core 双入口统一只读视图（纯组合 / OFFLINE）
-**版本：v1.0 · 2026-10-25 · Level 2 / REVIEW_REQUIRED（原派发版本v1.0）。**
+**版本：v1.0 · 2026-10-25 · Level 2 / DONE / OFFLINE（原派发版本v1.0）。**
 **执行：DeepSeek；计划与验收：ChatGPT。原 Plan 05 的子阶段，不新增主 Plan 编号。**
 **父阶段：05-A/F01 DONE / OFFLINE，PR #21 OPEN 未合并。**
 **唯一方案：三个新文件、复用 #21 纯模块、明确父分支的后续 PR；不修改已验收源文件。**
+
+## 最新验收与唯一派发（2026-10-25）· 05-B/F01 DONE，07-B SENT
+
+**05-B与05-B-F01 = DONE / OFFLINE / NOT_INTEGRATED，PR #22仍OPEN。** 当前HEAD `9d716583da69054ac06733a9dd18ca29b4681fbe`，base为父#21分支@da3d0f7，0 reviews；相对父三added +1650/-0。[CI40240851940](https://github.com/qianqiucn/dsh-whale-voice/actions/runs/40240851940) 的head_sha已核对，build/ui各步骤SUCCESS。ChatGPT独立读三文件修订差异、重跑36+81=117/117并复验四组/双undefined，全部符合固定拒绝。DS全量293/292/1、UI24/24、本机build为报告值，ChatGPT核查对应CI成功，未本地重跑全仓库/UI。完整D01–08/C01–16复核见[05-B-F01最新验收节](05-B-F01-required-observation-object-validation.md)。
+
+**唯一下一工程：[Plan07-B · 原创RVC Fake Gateway纯协议](07-B-rvc-fake-gateway-offline-protocol.md) = SENT。** 已完成07-A/04-A研究与05-A/05-B离线边界满足本次独立Fake协议前置；Plan05真实集成未完成，不因本次放开Host/模型。按既有队列07-B先于06，不重做研究。
+从最新main独立建feature/plan07b-rvc-fake-gateway，只新增core/svc/rvc-fake-gateway.mjs、test/rvc-fake-gateway.test.mjs、docs/RVC_FAKE_GATEWAY.md；零代码依赖、G01–G40、仅Fixture/固定endpointId/模拟结果，不扩大#21→#22堆叠链。#16/#21/#22仅只读理解与文档映射，不复制/import/cherry-pick；真实SVC适配需#16专项合并与08资产映射后另派。
+
+main仍bf9cf66807e12d0b25872a0fa3869962dde04818；03-B WAIT_USER_AUTHORIZATION，#16/#19/#20/#21/#22均未合并，#18历史Draft不关闭。上游BLOCKED_CODE_REUSE/BLOCKED_DIRECT_API_INTEGRATION保留，RVC首发/Seed-VC后续、小白优先、Bridge/Worker安全不变。无真实安装/媒体/网络/微信/生产/合并。建议05-B结束后新开DS对话进入独立RVC阶段。
+**以下05-B REVIEW_REQUIRED、F01 SENT、07-B NOT_SENT均属更早快照。**
 
 ## 最新正式验收（2026-10-25）· 05-B REVIEW_REQUIRED，05-B-F01 SENT
 
