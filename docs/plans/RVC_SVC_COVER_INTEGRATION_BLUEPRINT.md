@@ -6,6 +6,13 @@
 >
 > **稳定 ID 不变：Plan 01–14 原名和文件名保持；本文件是跨计划共享需求与分段实施规格，不创建 Plan 15。** 当前 Plan 03-A DONE；03-B WAIT_USER_AUTHORIZATION；Plan 07/12/13 仍 PLANNED。
 
+## 最新 SVC 首发/选配路线（2026-10-25 用户授权，优先于旧 RVC/SVC 通用描述）
+
+- **Whale Singing 首发 RVC 主线**：采用经过许可审计的 RVC 外部兼容 Gateway，合法源音频→分离（可跳过）→RVC→混音/验证→保存/受授权投递。SoVITS-SVC 保持接口级可扩展性，不强制同时实现。
+- **Seed-VC 延后选配**：仅定位为零样本/免训练试唱的后续候选；使用有授权/同意的短参考音频，不需要训练单独的 RVC 专属模型，但**不能承诺模型小、省显存、CPU 友好或整首歌实时完成**。专用 44.1 kHz 歌声模型约 200M 参数；官方 25M Tiny 为普通语音转换。上游归档后要固定版本并审计供应链，等 RVC 基线稳定才申请实测。
+- **同 Core/同前端**：Whale Audio Core 的 VoiceProfile/Task/Artifact/分离/混音可复用；Whale Singing 首次依赖页以 RVC 为默认，Seed-VC 作为后续可选且不可运行，不要求额外新 Core 或安装器。Plan 07-A 只给 Seed-VC 建静态档案；Plan 12-D 后续验收零样本；Plan 14 将其从首发必装/首发质量门槛移除。
+- **范围不构成开发授权**：不修改 PR #16 已有 2 个 SVC 候选、Provider Registry 或端口 API，未获许可不进行模型下载、付费音源访问、真实 RVC/Seed-VC 推理或微信发送。原计划 01–14 编号不变。
+
 ## 最新品牌与双入口决策（2026-10-25，优先于旧称）
 
 用户追加决定：将原共用的 Whale Voice Core 重新命名为 **Whale Audio Core（鲸音核心）**，保留 **Whale Voice · 语音气泡**、新增 **Whale Singing · 唱歌** 为相互独立的前端页面，首次进入每个页面展示对应依赖与安装方式的独立弹窗；共享已安装资源、Capability、音色和任务。完整约束、前端现状、依赖清单、用户跳过/取消、安全与检测状态见 [Whale Audio Core 双页面首次使用规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
