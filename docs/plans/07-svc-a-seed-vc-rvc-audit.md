@@ -2,6 +2,12 @@
 
 **状态：PLANNED；独立研究，不阻塞通用 Core 设计。**
 
+## 2026-10-25 · 07-A 初次审计已交付，但验收需 F01 修订
+
+**07-A 阶段状态：REVIEW_REQUIRED（尚未 DONE）；唯一派发续行：07-A-F01 = SENT。** GitHub [PR #19](https://github.com/qianqiucn/dsh-whale-voice/pull/19) 初次仅提交 `docs/SVC_PROVIDER_RESEARCH.md` +348 行，HEAD `8276909efac54e4e2dd00c905cbd67e32c5073f3`，CI `40230248341` SUCCESS（仅文档仓库检查，非 RVC 运行）。核心方向认可：禁止直接复制许可不明上游代码/将公网无认证 Gateway 当生产依赖，后续只考虑原创 Fake。
+
+**F01 要修的确切问题**：报告 A01–A14 编号偏离原规格；API/权限关键事实缺上游 commit+精确行号；其 `targetVoiceProfileId/params/output` 草稿没有映射现有 PR #16 `validateSvcRequest/normalizeSvcResult` 的字段与错误，漏了归一化输入必需的 `targetVoiceId`；Windows 安装清单未落实每个组件的检验来源、条件、许可/资源 UNKNOWN 与新手恢复操作。详见新完整任务书 [07-A-F01-research-acceptance-correction.md](07-A-F01-research-acceptance-correction.md)。本任务只能在原 PR #19 改研究报告 Markdown，严格禁止重新开始 07-B/改 SVC 合同或合并。Seed-VC 后续可选定位不变。
+
 ## 2026-10-25 · 07-A Level 2 已派发（等待 DeepSeek 的只读研究报告）
 
 **最新派发状态：07-A = SENT（ChatGPT 已向用户交付独立完整任务书，待用户转发 DeepSeek 和完成报告）；07-B = PLANNED/NOT_SENT。** 唯一可执行版：[07-A-rvc-upstream-static-audit-execution.md](07-A-rvc-upstream-static-audit-execution.md)。本文下方历史 07-A “PLANNED/NOT_SENT/DRAFT v1” 属派发前快照，**以本段与独立 Level 2 任务书为准**。该研究只允许独立 docs/SVC_PROVIDER_RESEARCH.md 文档 PR；PR #16 未合并、03-B 待用户授权；不能下载模型/歌曲、运行真实 RVC、改运行代码/生产、合并 PR。Seed-VC 仅后续静态档案，小白优先 DoD 不得省略。
