@@ -2,6 +2,13 @@
 
 **状态：PLANNED。Phase 4B-2B-2a 已 INTEGRATED，非 VERIFIED。生产写入尚未获授权。**
 
+## 2026-10-25 · AI 翻唱离线配置 UX 追加项（仍 PLANNED）
+
+参考 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)，在既有 OFFLINE 配置草稿新增源音频授权、RVC/SVC 模式、音色同意、已审计 Gateway 健康/模型、音高 -12..12、人声/伴奏增益、预览/保存、投递授权状态。Backend OFFLINE、无 GPU、下载无许可证时禁用真实运行。
+- 上游整合包安装/升级、端口重配、网络、现有 WeChatAgent 设置均不在默认权限内。
+- 测试 Fake Backend/Model unavailable、Rights missing、Timeout/Cancellation、No delivery permission、SAVED != APPLIED、Mock 假绿灯不变可用。
+- 翻唱优先级上升不等于取得 Phase 4B-2B-2b 的生产写入许可。
+
 ## 本轮范围：OFFLINE 前端草稿
 1. 独立 Provider 选择、模型、Voice Profile、语言、情绪/语速等能力相关参数；不兼容参数切换时明确清理或询问，不静默复用。
 2. 本地/云端/自定义配置差异；凭据不得传回无授权前端、日志或公共 Capability。
