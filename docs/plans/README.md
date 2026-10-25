@@ -5,6 +5,11 @@
 >
 > 当前产品方向：一个 Whale Voice Core（TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Voice Core。**
 
+## 最新验收状态（2026-10-25 · Plan 03-A 完成）
+
+- **Plan 03-A = DONE / READY_FOR_USER_MERGE_DECISION**：工程 PR #16 已推进到 `954a01a08587bc8bd5b8caccf026298ca54d5215`，这个新提交只有 `docs/PROJECT_STATUS.md` 和 `docs/AI_CONTEXT.md`（+63/-28），保留 192 历史值，新增 197/196/1 和 UI 24/24；GitHub Actions run `40165832178` 的 build 与 ui 都 SUCCESS；main 仍 `bf9cf66`、PR #16 OPEN、0 reviews。Node/UI 的具体本地值是 DS 报告，ChatGPT 已核对实际文件/CI。
+- **Plan 03-B = WAIT_USER_AUTHORIZATION / NOT_SENT**：用户尚未就 PR #16 实际 Merge Commit 做出单独明确授权；严禁代替用户批准。整个 Plan 03 不得标 DONE，PR #16 不能自动合并。功能等级依旧 DESIGN/OFFLINE。
+- Plan 01=SENT，Plan 02=DONE，Plan 04–14=PLANNED；H0/C1 既有完成状态与原 01–14 序号不变。下一步是用户决定是否授权执行 03-B，而不是让 DeepSeek 重做 F01–F05、03-A 或提前写 TTS-B。
 ## 新对话的首要入口（ChatGPT）
 
 **用户要换新会话时，下一位 ChatGPT 首先读取 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)，再执行 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md) 的实时核验步骤。**
@@ -70,13 +75,13 @@ ChatGPT 的计划记录只在当前用户对话且 GitHub 工具可用时更新�
 - PR #17 / #18 的 14 项规划经 H0 对照为同序语义对应，主要文件名及部分历史状态不同；#17 为唯一权威计划入口，#18 保留历史来源，不发两套任务。
 ## 二、当前推荐发送顺序
 
-**2026-10-25 最新记录：** 01 SENT、02 DONE、03-A SENT／03-B 待授权（Plan 03 原任务仍是授权后合并，不改编号）。下表其余计划仍受安全与先决条件约束。
+**2026-10-25 最新记录：** 01 SENT、02 DONE、03-A DONE/READY_FOR_USER_MERGE_DECISION、03-B 待授权（Plan 03 尚未整体 DONE，不改编号）。下表其余计划仍受安全与先决条件约束。
 
 | 顺序 | 计划书 | 流程 | Git / 事实 | 前置 |
 |---:|---|---|---|---|
 | 01 | [GUI 自动化测试收尾](01-gui-coverage-closeout.md) | **SENT** | 旧本地 test 分支/Commit 506fe3b 待再次核实；尚无对应远端 PR | 真实八页 GUI 已 INTEGRATED |
 | 02 | [TTS-A / TTS-A-H 终审和 F01–F05 契约修复](02-tts-a-complete-review.md) | **DONE（2026-10-25）** | [PR #16](https://github.com/qianqiucn/dsh-whale-voice/pull/16) OPEN @ `3ad32bc`；CI `40163881122` SUCCESS；F01–F05 修复、N01–N05 新测试；Node 197/196 pass/1 skip（DS 报告） | 设计/隔离任务完成，不等于 PR MERGED 或 Provider INTEGRATED；不再重复执行 |
-| 03 | [PR #16 正式审查及授权后合并（03-A/03-B）](03-merge-tts-a-pr16.md) | **03-A SENT；03-B 待用户合并授权** | `3ad32bc` / CI `40163881122` SUCCESS；03-A 只读审查与状态文档；03-B 尚未派发；**PR 仍 OPEN** | 02 DONE；合并及合并后 main 验证必须用户单独授权 |
+| 03 | [PR #16 正式审查及授权后合并（03-A/03-B）](03-merge-tts-a-pr16.md) | **03-A DONE / READY_FOR_USER_MERGE_DECISION；03-B WAIT_USER_AUTHORIZATION** | #16 `954a01a` / CI `40165832178` SUCCESS；文档 +63/-28，当前 197/196/1、UI 24/24，**PR 仍 OPEN，0 reviews** | 02 DONE；03-B 未获单独授权、未派发；合并后验收尚未发生 |
 | 04 | [WeChatAgent 扩展机制审计](04-wechatagent-extensions-audit.md) | PLANNED | 无新增 PR | 03，亦可独立只读研究 |
 | 05 | [Unified Core-A：TTS/SVC/Whale Relay 职责](05-unified-core-a.md) | PLANNED | 无新增 PR | 03–04 的契约 |
 | 06 | [Provider Core-B：引擎注册与调度](06-provider-core-b.md) | PLANNED | 无新增 PR | 05 |
