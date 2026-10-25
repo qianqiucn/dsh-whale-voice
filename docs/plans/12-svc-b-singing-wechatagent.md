@@ -2,6 +2,14 @@
 
 **状态：PLANNED；前置：SVC-A、Shared Core-C、WeChatAgent 扩展审计。**
 
+## 2026-10-25 · Whale Singing 独立前端与初始化流程（原 Plan 12，仍 PLANNED）
+
+- 前端称 **Whale Singing · 唱歌**，与 **Whale Voice · 语音气泡** 在 NAV/页面状态上明确分开，共用 **Whale Audio Core（鲸音核心）** 与音色/任务/Artifact/Provider，实际歌声转换仍由受审计的独立 RVC/SVC Gateway 完成。
+- 首次进入 Singing 页触发 feature-scoped 依赖弹窗（Plan 09/14，详细契约 [这里](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)）：外部 SVC Worker/已授权模型、条件人声分离、所选混音格式组件、GPU/CPU 资源、曲源/音色授权；投递所需 Whale Relay 和 WeChatAgent 另列，**不必为只预览/保存而强迫安装投递组件**。
+- 没有 GPU、缺模型/许可证、仅有未审计 RVCSVC-API 时显示受限状态，不自动安装/抓取音乐；有用户授权源与稳定转换后方可生成。语音 Voice 功能不能因 Singing 缺 GPU/后端而不可用。
+- Singing 页面显示搜歌与来源选择、分离/转换/混音阶段、声线、输出格式、试听与保存，只有 Relay 支持并且用户单独授权才显示可执行发送。任何保存状态不能误称发送成功。
+- 12-A Fake E2E 应包含首次进入弹窗、跳过后禁用真实生成、从 Voice 切换、第二次不重复弹、外部服务不可用、无权模型/曲源、生成成功但投递未授权。新页面在相应 UI 阶段实际验收前保持 PLANNED/OFFLINE。
+
 ## 2026-10-25 · 用户确认 astrbot_plugin_rvc_svc 功能路线（原 Plan 12）
 
 **状态：PLANNED / NOT_SENT。** 方向确立但工程实现未启动。详细接口、法律门禁和排序见 [RVC/SVC 蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。
