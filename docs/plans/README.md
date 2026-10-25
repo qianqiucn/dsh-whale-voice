@@ -3,7 +3,15 @@
 > **本文件是未来计划执行与回报的权威登记表，不代表生产代码功能已经实现。** 当前 Git/PR/CI、源码与真实验收记录优先于本摘要。  
 > **建立日期：2026-10-25；初始仓库基线：main@bf9cf66807e12d0b25872a0fa3869962dde04818。**
 >
-> 当前产品方向：一个 Whale Voice Core（TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Voice Core。**
+> 当前产品方向：一个 Whale Audio Core（鲸音核心，原 Whale Voice Core：TTS、SVC、音色库、音频/任务），一个 Whale Relay Core（鲸递：UI Automation 和未来可选 Native Hook 的统一投递执行层），WeChatAgent 作为必需微信接入、账号/会话/授权平台。**两 Core 不得各自独立投递同一任务，唯一 taskId 和 deliveryId 属于 Whale Audio Core。**
+
+## 最新已确认产品架构：Whale Audio Core 与双功能入口（2026-10-25）
+
+**共用后端正式改名为 [Whale Audio Core（鲸音核心）](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)**。原 Whale Voice Core 是历史旧称；**Whale Voice · 语音气泡**和**Whale Singing · 唱歌**是两个相互独立的前端页面，前者处理 TTS/短语音气泡，后者处理点歌/分离/RVC-SVC/混音；两者共享同一个 Core、音色库、模型资产、任务与唯一 Delivery ID。鲸递 Whale Relay Core 原名/单次安全交付职责不变，WeChatAgent 仍拥有微信身份与授权。现有仓库/插件 ID、API/配置键和已验收八页不会因为计划改名被立即迁移。
+
+**首次使用规则**：分别首次进入 Voice 与 Singing 页面时显示该功能独立的**依赖检查与安装选择弹窗**；支持已安装/未安装/UNKNOWN 检测、local/CPU/cloud/外部 SVC 选择、许可/空间/设备资源、安装说明、可取消/稍后再说。共用依赖去重，不因某功能已配置就跳过另一功能首次说明；退出可仅浏览只读/Mock 页。安装、启动模型、联网/收费、真实发送都不得只凭进入页面自动触发。现有全局 SetupWizard/ComponentsDialog 优先复用并串行弹窗。
+
+**文档落地**：Plan 05（Core 名称/兼容）、Plan 08（FeatureDependencyManifest/共享资源）、Plan 09（两独立页面与 Fake FirstUseDialog）、Plan 12（Singing 专页）、Plan 13（两类安全投递）、Plan 14（选择性真实依赖安装/供应链）已同步；Plan 07-A 新增外部 SVC 安装/检测审计任务，PR #17 仅为 PLANNED 文档，无新实现或生产改动。**当前推荐动态派发顺序不改变，仍优先 Plan 07-A 只读研究；03-B 未获单独 Merge 授权。**
 
 ## 最新验收状态（2026-10-25 · Plan 03-A 完成）
 
