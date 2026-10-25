@@ -4,12 +4,14 @@ Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) clien
 Qwen3-TTS / `whale-v1` / WeChat native-voice workflow in one place.
 
 This repository contains the **Whale Voice frontend plugin, a read-only Core detector/config reader,
-and the Phase 4B-1 isolated single-file config write foundation**. The working Windows voice pipeline
-(Voice Sender, WeChatAgent, WeChat UI automation, VB-CABLE, the Qwen runtime and the private
-`whale-v1` reference audio) is a separate local system and is **not included here**.
+the Phase 4B-1 isolated single-file config write foundation and the Phase 4B-2A isolated coordination
+protocol**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeChat UI automation,
+VB-CABLE, the Qwen runtime and the private `whale-v1` reference audio) is a separate local system and
+is **not included here**.
 
-> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 is merged and `OFFLINE`
-> (isolated store + test-only API; no production write route). Remaining UI statistics/demo content is Mock.**
+> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-1 is merged and `OFFLINE`;
+> Phase 4B-2A is `OFFLINE` on its review branch (isolated store/coordination + test-only APIs; no
+> production write route). Remaining UI statistics/demo content is Mock.**
 > The UI does not write production voice configuration, does not install or start components, does
 > not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
 > was activated and visually accepted in the earlier DSH runtime; no production config write/apply
@@ -57,6 +59,8 @@ See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
   loopback routes.
 - Phase 4B-1 isolated single-file config store (`OFFLINE`): trusted sandbox capability, strict schema,
   HMAC revision, atomic save/rollback and a test-only API; no production write route.
+- Phase 4B-2A isolated coordination protocol (`OFFLINE`): source authority matrix, change plan,
+  journal/recovery, save-vs-apply states and Fake Runtime tests; no production adapter or route.
 - Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
   installation/runtime/health evidence, and local Qwen health/model/voice.
 - Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
@@ -124,8 +128,8 @@ Current repository
     │    └─ eight views + setup wizard + scoped CSS
     ├─ read-only Host bridge
     │    └─ core/detect.mjs (WeChatAgent / Sender / Qwen evidence)
-    └─ Phase 4B-1 isolated config store (OFFLINE; test-only API)
-         └─ core/config-sandbox.mjs, config-schema.mjs, config-store.mjs
+    └─ Phase 4B-1/4B-2A isolated config store and coordination protocol (OFFLINE; test-only)
+         └─ core/config-sandbox.mjs, config-schema.mjs, config-store.mjs, config-coordinator.mjs
 
 Target architecture (not implemented here)
   DSH plugin UI
@@ -235,6 +239,7 @@ the real WeChat pipeline.
   authorization gates.
 - [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
 - [Isolated configuration write](docs/CONFIG_WRITE_API.md) — Phase 4B-1 single-file schema, revision, atomic save and limits.
+- [Configuration coordination](docs/CONFIG_COORDINATION.md) — Phase 4B-2A authority matrix, plan/journal/recovery and apply states.
 - [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
 - [DSH Electron Inspector feasibility](docs/DSH_ELECTRON_INSPECTOR_FEASIBILITY.md) — supported Inspector limits and option assessment.
 - [Voice delivery backends](docs/VOICE_DELIVERY_BACKENDS.md) — native-vs-UI-automation research and decision.

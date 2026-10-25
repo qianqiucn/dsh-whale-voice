@@ -4,12 +4,13 @@
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (private)
 **Updated:** 2026-10-25
-**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + six-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#10 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`** (single-file store + test-only API; no production route); **Phase R1 repository audit is `COMPLETE`**; 98 Node + 12 UI checks green; **Phase 4B-2A not started**
-**Latest associated commit:** `main` `70c0756ba815f08b4f52d0ec99ccda90dc459f55` (merge of PR #10); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
-**Latest PR:** [#10 — Phase R1 repository audit and docs reconciliation](https://github.com/qianqiucn/dsh-whale-voice/pull/10) — **merged with a Merge Commit**
-**Acceptance caveat:** 98/98 Node and 12/12 UI checks are offline/contract evidence. They are **not** real production configuration-write acceptance. Phase 4B-1 remains `OFFLINE`; Phase 3B/4A remain `INTEGRATED`.
+**Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#11 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is `OFFLINE`** (isolated source adapters, journal and Fake Runtime; no production write); **Phase R1 `COMPLETE`**; 148 Node (147 pass, 1 skip) + 12 UI checks green; **Phase 4B-2B NOT STARTED**
+**Latest associated commit:** `main` `8abf0313d506b5715e538346f1f5c1cd9c8a85a9` (merge of PR #11); pre-integration backup tag `pre-pr3-8-integration` points to `b552ac0`
+**Latest PR:** [#11 — docs: mark Phase R1 complete and sync main baseline](https://github.com/qianqiucn/dsh-whale-voice/pull/11) — **merged with a Merge Commit**
+**Acceptance caveat:** 147/148 Node (1 platform skip) and 12/12 UI checks are offline/contract evidence. They are **not** production configuration-write or runtime-apply acceptance. Phase 4B-1 and 4B-2A remain `OFFLINE`; Phase 3B/4A remain `INTEGRATED`.
 **Phase 4B-1 branch:** `feature/phase4b-isolated-config-write` — isolated config store, schema, tests and docs; **merged via PR #9**, not deleted.
-**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10, all merged with merge commits; #7 resolved the `CHANGELOG.md` / `README.md` / `PROJECT_STATUS.md` union without reverting #8 state; #9 added the isolated Phase 4B-1 write foundation; #10 completed the R1 documentation/status reconciliation and non-runtime hygiene.
+**Phase 4B-2A branch:** `feature/phase4b-config-coordination` — isolated coordinator/protocol; **OPEN PR**, no production route.
+**Integrated PRs:** #3 → #4 → #5 → #6 → #8 → #7 → #9 → #10 → #11, all merged with merge commits; #10 completed R1 audit/status; #11 completed the R1 status baseline.
 
 ---
 
@@ -56,8 +57,8 @@ reload or restart. A running DSH will only pick up new Host code after a separat
 
 ## Completed
 
-- [x] Seven-page native DSH client plugin: Overview, Voice Settings, Access, Voice Studio,
-      Emotions, Activity, Advanced.
+- [x] Eight-page native DSH client plugin: Overview, Voice Settings, Access, Send & Safety,
+      Voice Studio, Emotions, Activity, Advanced.
 - [x] Dark/light visual system, glass surfaces, responsive layouts and outer frame polish.
 - [x] Mock provider for services, permissions, tasks, diagnostics and settings.
 - [x] Original `icon.svg` and localized plugin metadata.
@@ -138,21 +139,27 @@ reload or restart. A running DSH will only pick up new Host code after a separat
       reconciliation, historical-doc marking, `.gitignore` hardening and CI artifact upload repair;
       no runtime code change. 98 Node / 12 UI checks remain offline/contract evidence, not
       production write acceptance.
+- [x] PR #11 merged into `main` as `8abf031`; R1 final status baseline synchronized. R1 is complete.
+- [x] Phase 4B-2A coordination protocol **OFFLINE**: `core/config-coordinator.mjs`, isolated
+      in-memory source adapters, journal/recovery, save/apply state separation, Fake Runtime and 32
+      coordination tests. No production adapter, Host write route, service reload or WeChat send.
 - [x] GitHub CI baseline passed on the initial commit: build, syntax checks and generated-client
       sync.
 
 ## In progress
 
-- [ ] No active implementation phase. Phase R1 is complete; Phase 4B-2A is **not started**.
+- [ ] No active production implementation. Phase 4B-1 and 4B-2A are `OFFLINE`; Phase 4B-2B is
+      **NOT STARTED**.
 
 ## Next highest-priority task
 
-**Next: Phase 4B-2A — controlled production write/apply** (**NOT STARTED**; requires a separate
-authorization). It must build on the isolated store with a production Host write route, multi-file
-transaction/journal and partial-success recovery, cross-process locking/CAS or a single-writer
-boundary, and trusted runtime-effect confirmation. Do not write production configuration, restart
-services or send real messages before that authorization. Voice Sender's final independent safety
-verification remains mandatory before real sending.
+**Next: Phase 4B-2B — production adapters and confirmed apply** (**NOT STARTED**; requires a
+separate authorization). It must implement source adapters for the real authority owners, trusted
+loaded-revision confirmation, cross-process locking/CAS or a single-writer boundary, restricted
+private recovery storage/journal durability, Windows validation and production-write authorization.
+Do not write production configuration, restart services or send real messages before that
+authorization. Voice Sender's final independent safety verification remains mandatory before real
+sending.
 
 ## Pending
 
@@ -175,8 +182,10 @@ verification remains mandatory before real sending.
 2. The WeChatAgent Adapter currently provides read-only evidence only; event/identity/send contracts
    remain unimplemented.
 3. A production Core write/apply API does not exist; Phase 4B-1 provides only an isolated single-file
-   store. Installation, upgrade, repair, credential operations and production configuration writes
-   remain blocked.
+   store and Phase 4B-2A provides an isolated coordination protocol with fixture adapters. Real source
+   adapters, cross-process coordination and trusted apply confirmation remain Phase 4B-2B work.
+   Installation, upgrade, repair, credential operations and production configuration writes remain
+   blocked.
 4. A token-protected WeChatAgent/Sender health endpoint cannot be verified without reading their
    tokens; those states are deliberately `auth_required`/unknown.
 5. An isolated Playwright harness exists; live real-DSH Electron DOM/CSS/Console and No-Core/timeout
@@ -204,7 +213,7 @@ verification remains mandatory before real sending.
 | DSH slot registration | verified earlier in the live runtime |
 | Setup wizard UI smoke | live step 1–4 with real Core data; no-Core/timeout/stale remain automated only |
 | Visual validation | large/medium/narrow, dark/light screenshots reviewed locally |
-| `node --test` | 98 tests passed: 65 existing tests + 33 Phase 4B-1 config-store/API tests; original 65/65 remain passing |
+| `node --test` | 148 tests: 147 pass, 1 platform skip, including 49 Phase 4B-2A coordination tests; the existing 98-test suite remains passing |
 | Markdown encoding check | passed: tracked Markdown is UTF-8 with no PUA, U+FFFD or known mojibake sequences; failures report `file:line` |
 | Secret/privacy scan | passed: no tokens, keys, private chat IDs, contacts, audio or screenshots in tracked files/history |
 | Config store schema | v1 strict validation, v0→v1 idempotent migration, unknown fields rejected, required safety fields have no defaults |
@@ -219,6 +228,8 @@ verification remains mandatory before real sending.
 | Missing-WeChatAgent state | wizard/UI implemented; live Host bridge active and Core config loaded |
 | Core setup API | read-only status/detect/config routes are live (401 without token); Phase 4B-1 adds an isolated test-only write store/API; no production write/apply route |
 | Phase 4B-1 isolated write | merged via PR #9 (`97e96b5`); `OFFLINE`; trusted sandbox capability, strict v1 schema, v0 migration, HMAC revision, expectedRevision conflict, single-file atomic save/rollback, read/write state separation; no WeChatAgent/Sender/Qwen/core.json write |
+| Phase 4B-2A coordination | `OFFLINE`; isolated in-memory source adapters, change plan, journal/recovery, save/apply split and Fake Runtime; no production adapter/route/reload/send |
+| Phase 4B-2A test suite | 49 behavior tests: plan/schema/revision/concurrency, partial save/rollback, journal failure/recovery, PENDING/APPLIED/PARTIAL/UNKNOWN, sensitive output, Worker/permission and Host isolation |
 | Live DSH host bridge | current port 57393; Host routes 401; trusted bridge injects; six GUI surfaces show real config |
 | Phase 4A config read | `INTEGRATED`; 64 tests/build pass; Bridge/Worker semantic warning gone; component manager and refresh verified |
 | Real GUI exceptions | live No-Core/timeout/invalid-schema/stale not injected; remain `OFFLINE` |
@@ -234,7 +245,7 @@ verification remains mandatory before real sending.
 | Real installation / upgrade / rollback | not performed |
 | GitHub CI (initial commit) | passed: build, syntax checks, generated-client sync |
 | PR #1 WeChatAgent docs | merged to `main`; CI passed |
-| PR #3–#10 integration | merged with merge commits; `main` contains all heads; main CI build+ui SUCCESS |
+| PR #3–#11 integration | merged with merge commits; `main` contains all heads; main CI build+ui SUCCESS |
 | PR #3 setup wizard | merged; merge commit `7b66dca`; CI passed |
 | PR #4 read-only Core | merged; merge commit `91929fd`; shared Origin guard, bounded HTTP and explicit account verification |
 | PR #5 Phase 4A config | merged; merge commit `9688ff8`; full-config HMAC revision |
@@ -243,6 +254,8 @@ verification remains mandatory before real sending.
 | PR #8 Send & Safety / delivery research | merged; merge commit `5c4bc56`; 65 tests + 12 UI checks |
 | PR #9 Phase 4B-1 isolated config write | merged as `97e96b5`; explicit merge authorization; CI build+ui SUCCESS; 98 tests + 12 UI checks; branch retained |
 | PR #10 Phase R1 audit | merged as `70c0756`; CI build+ui SUCCESS; UI artifacts uploaded; 98 tests + 12 UI checks are offline/contract evidence, not production write acceptance |
+| PR #11 R1 final status | merged as `8abf031`; CI build+ui SUCCESS; status docs synchronized |
+| Phase 4B-2A branch | `feature/phase4b-config-coordination`; independent PR pending; no production write |
 | Real WeChat send in this repository | not performed and not part of this repository |
 
 ## Update rule
