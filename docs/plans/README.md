@@ -10,9 +10,16 @@
 **用户要换新会话时，下一位 ChatGPT 首先读取 [NEXT_CHATGPT_HANDOFF.md](NEXT_CHATGPT_HANDOFF.md)，再执行 [NEXT_CHATGPT_ACTION_PLAN.md](NEXT_CHATGPT_ACTION_PLAN.md) 的实时核验步骤。**
 
 - 交接卡记录最新计划/Git/PR 快照和重要安全边界。
-- 下一步行动书是 ChatGPT 的计划管理任务，不等于已经给 DeepSeek 分配开发。
+- 下一步行动书是 **C1 · 新会话恢复与 Plan 03-A 实时核验**（`READY_FOR_NEXT_CHAT`），不是新的 Plan 15，也不是已经给 DeepSeek 分配开发。过去的 H0 14 对计划去重**已经完成**，见 [H0 结果](H0_PLAN_RECONCILIATION.md)，不得重做。
 - 目前存在 **PR #17 和 PR #18 两套重叠的计划文件**（均独立基于 main、未合并），不能未经比对与用户批准就合并两套。
 - 任何 SHA、测试数量和 PR 状态都须重新查询；执行标准/记忆文档仍以最新可用仓库分支为准。
+
+## 当前下一次 ChatGPT 唯一首要任务（C1 · 2026-10-25）
+
+- **先读 [新会话交接卡](NEXT_CHATGPT_HANDOFF.md)，再执行 [C1 行动计划](NEXT_CHATGPT_ACTION_PLAN.md)。** C1 是 ChatGPT 自己的计划/GitHub 证据核验，不给 DeepSeek 增加计划维护负担，也不改变 Plan 01–14 的固定序号。
+- 本轮核验：`main bf9cf66`；PR #16 OPEN `3ad32bc`（run `40163881122` SUCCESS）；PR #17 OPEN `4b700bc`（交接提交前 run `40164634185` SUCCESS，**当前 HEAD 已改变，需重新查**）；PR #18 OPEN/DRAFT `42cec57`（run `40159114676` SUCCESS）。
+- **Plan 02 DONE、Plan 03-A SENT、03-B WAIT_USER_AUTHORIZATION、Plan 01 SENT。** 最新 PR #16 工程 HEAD 的 `docs/PROJECT_STATUS.md`、`docs/AI_CONTEXT.md` 尚不含最新 `197` 计数（含旧 `192`），所以 03-A 尚无完成证据；不得冒充其已完成或重做 F01–F05。
+- 新 ChatGPT 先核实 03-A 的新增工程 HEAD/文档/CI；若无新进展，保留 SENT，用户要继续时只发原 ID 的续行版；若有报告则验收并自动回**一份完整** Level 2 DeepSeek 计划书。任何 PR 合并须用户单独授权。
 
 ## H0 整理结果（2026-10-25）
 
