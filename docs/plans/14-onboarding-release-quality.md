@@ -2,6 +2,15 @@
 
 **状态：PLANNED；前置：核心、至少一种受支持 Provider 和 Relay 发送方案完成可靠集成。**
 
+## 2026-10-25 · Voice/Singing 双首次使用安装与依赖供应链（原 Plan 14，仍 PLANNED）
+
+**统一安装/组件中心，两张 feature-scoped 清单，禁止自动全量安装**。完整设计见 [Whale Audio Core 与双入口初始化规范](WHALE_AUDIO_CORE_AND_DUAL_UI_ONBOARDING.md)。
+- 首次进入 **Whale Voice · 语音气泡**、**Whale Singing · 唱歌** 各弹一次所选模式下的“依赖检查与安装选项”对话框；保留已安装依赖的共享去重，安装与首次弹窗确认分离。后续用户换模型/版本不满足/主动点“管理依赖”时重查，但不得每次切页都强制弹窗。
+- 清单必须区分共同 Core/Host、生成必需（择一 Provider）、条件人声分离/音频格式、投递专用 WeChatAgent/Relay/Voice Sender、可选模型与云端方式。普通语音无需安装大型唱歌模型；使用云端时不得强制本地 GPU；只看页面、试听既有 Artifact、保存不能被微信发送依赖阻断。
+- Installer 未来需审定来源、许可、版本/签名/哈希、空间、Windows GPU/CUDA 与 CPU fallback、权限/费用、进度/取消/断点/失败恢复与清理、敏感数据范围、实际 Host 健康复验；不可把自动下载第三方 AGPL/许可不明整合包纳为默认安装。
+- **Plan 09 先做仅 Fake 按钮/UI**，Plan 14/后续实施须针对每次真实安装、模型下载、配置写入和生产服务管理另获授权。已安装不等于已可用，已保存不等于运行时 APPLIED；现有 SetupWizard/ComponentsDialog 必须复用，不造第二个安装状态库。
+- 验收分两入口：首访一次、跨入口独立提示、第二次不弹、共享依赖不重下、未联网/用户取消/权限拒绝/磁盘不足/错误版本/无 GPU/云端凭据缺失、可访问性/窄屏，以及完整卸载/升级后的状态纠正。没有真实 Host 证据不得标 VERIFIED。
+
 ## 2026-10-25 · RVC/SVC 翻唱可选安装与发布门禁（原 Plan 14）
 
 翻唱组件可选，详细参见 [蓝图](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)。AstrBot 插件及 RVCSVC-API 均不是 Whale Voice/鲸递默认必装依赖；普通用户可继续 CPU/云端 TTS 无 GPU 路线。
