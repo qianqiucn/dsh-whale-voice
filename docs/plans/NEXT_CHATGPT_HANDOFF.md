@@ -8,6 +8,15 @@
 >
 > 重要：本文件在计划管理 **PR #17 分支**，而不是默认已合入 main。新对话若从 main 找不到，应读分支 \`docs/whale-voice-execution-plan-registry\`。**下一次必须以实时 GitHub 为准。**
 
+## 最新交接优先项：Plan 03-A 已通过，03-B 等用户授权（2026-10-25）
+
+- 用户已提交 DeepSeek 的《Plan 03 · PR #16 合并前准备与待授权报告》。本次 ChatGPT 独立核验 GitHub：PR #16 HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`、base main `bf9cf66807e12d0b25872a0fa3869962dde04818`，OPEN、mergeable、未合并；PR 总 22 文件 +2490/-176；GitHub 人工 reviews=0。
+- 03-A 的 `954a01a` 相比代码 HEAD `3ad32bcb22b1a0346eed91f7236afb4f1cc8f773` 只前进 1 个提交，两份文档 `docs/AI_CONTEXT.md` +43/-20、`docs/PROJECT_STATUS.md` +20/-8；两文档保留历史 192 并新增当前 197（196 PASS / 1 SKIP）和 UI 24/24、DESIGN/OFFLINE、合并需用户许可。
+- **HEAD 954a01a 的 GitHub Actions run `40165832178` build 与 ui 两 Jobs 均 SUCCESS**。DeepSeek 报告本地 Node 197（196 pass、1 skip）、UI 24/24、build 217349 bytes、G01–G12 全通过；ChatGPT 验证了 GitHub 文件/Commit/Jobs，但未在本地重跑 Windows Node/UI。
+- **Plan 03-A = DONE / READY_FOR_USER_MERGE_DECISION；Plan 03-B = WAIT_USER_AUTHORIZATION / 未派发**；总 Plan 03 仍未完成，PR #16 尚未合并，TTS-A 仍 DESIGN/OFFLINE，无任何真实 TTS/SVC Provider。Plan 01 SENT、Plan 02 DONE、04–14 PLANNED；H0 和 C1 不重做。
+- Plan #17 仍为唯一规划分支；#18 OPEN/DRAFT 重叠历史保持原状。任何对 #16/#17/#18 的 Merge Commit、Force Push、删分支或生产操作必须用户明确授权，不能把报告、已写计划书或绿色 CI 视为授权。
+- **下一项唯一决策：请求用户明确选择是否将 PR #16 当前（或重新核实后的）HEAD 合并进 main，特别说明目前 0 条人工 Review。** 如果用户授权才重新审阅最新 HEAD/main/reviews/CI、给 DS 03-B 精确执行任务书；如果拒绝或暂缓则等待，不生成新修复任务。
+- DeepSeek 完成 03-A，进入等待人工门禁的清晰阶段边界。DSH 对话建议：现有对话如果很长，先保全非敏感工作区 git status，在 03-B 获授权时用新的 DSH 聊天执行后续任务；只更换聊天，不重启服务。
 ## C1 新对话恢复实录（2026-10-25，最新状态优先）
 
 - **C1 已完成，不应再当作未开始的 ChatGPT 项目重复执行。** 已依交接标准读取五份指定文件及详细任务标准、任务索引，完成主干、PR #16–#18、最新 HEAD CI 与 03-A 工程文档核验。未来新会话依然需要实时确认 GitHub 状态，但不用新建第二个 C1。
