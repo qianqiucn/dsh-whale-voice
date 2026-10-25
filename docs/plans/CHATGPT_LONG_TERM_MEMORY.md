@@ -6,6 +6,18 @@
 >
 > **建立：2026-10-25。** 禁止写入用户凭据、微信身份、私人聊天、联系人、参考音频、桌面截图和生产机器路径。
 
+## 1.5 用户新确认的 RVC/SVC 自动翻唱产品路线（2026-10-25）
+
+用户明确选择 [CCYellowStar2/astrbot_plugin_rvc_svc](https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc) 作为翻唱/点歌能力参考，希望“想让小鲸鱼唱一首歌”能由 DeepSeek 触发搜索、分离、RVC/SVC 声线转换、混音、最终经鲸递发送。此为**明确的产品规划决定**，不是给 DeepSeek 的工程安装/代码复用/联网下载/真实发送授权。
+
+长期稳定要求：
+- 把原插件的点歌与 RVC/SVC 自动翻唱能力纳入 **原 Plan 07/12**，输出 Artifact 后经 **原 Plan 13 的 Whale Relay 安全交付**；必要的 Core/音频/设置依赖落在原 04/05/06/08/09/14，不创 Plan 15、不重编号。
+- 虽然希望在“鲸递后端”获得统一体验，但鲸递只负责一次受控投递。音源合法获取、分离、音色转换、混音和任务/模型生命周期必须由 Whale Voice Core / 独立合法 SVC Worker 管理。WeChatAgent 掌管微信身份，现有 Voice Sender 保留。
+- 原插件 AGPL-3.0；其独立 RVCSVC-API 仓库未见明确根 LICENSE。没有版权/许可证审计，不可直接复制/打包上游源码或整合包；采用原创 Fake + 外部 API 适配的可替换架构，始终尊重第三方许可证。
+- 歌曲搜索元数据不等于取得受版权保护的音源和分发授权；优先用户已授权音频 / 许可音源，未知权利时拒绝下载。参考音色需用户有权使用并有适当同意；不绕过音乐平台 VIP、DRM 与区域限制。
+- **权威跨计划蓝图**为 [RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md](RVC_SVC_COVER_INTEGRATION_BLUEPRINT.md)，当前权威**动态派发排序**为 [README.md](README.md) 中“已采纳的新产品方向与唯一派发排序”一节。下一项优先可派发 Plan 07-A 上游许可/API 只读研究（PLANNED/NOT_SENT），Plan 03-B 仍须用户单独合并授权。
+- 未获专项许可，不启动生产模型、下载歌曲/权重、触发真实微信发送、重启服务、修改生产配置、合并 PR 或打包发布。多 GPU / 无 GPU 路线保留，翻唱是可选模块而非基本 TTS 安装要求。
+
 ## 1. 用户最希望 ChatGPT 永远遵守的一条要求（优先级最高）
 
 **“计划书尽可能详细，留给 DeepSeek 思考的空间越少越好，它只需要执行。”**
