@@ -1,44 +1,53 @@
 # Plan 07-A · RVC 上游许可、API 与 Windows 依赖静态审计
 
-**状态：** `RESEARCH-OFFLINE` / `SENT`（本轮只读研究，不做 07-B 编码）
+**状态：** `RESEARCH-OFFLINE` / `REVIEW_REQUIRED`（F01 修订后）
 **日期：** 2026-10-25
 **执行者：** DeepSeek
-**唯一允许的工程交付：** 本文件；不修改代码、配置、模型、PR #16/#17/#18 或 `docs/plans/`
+**唯一工程交付：** 本文件；不修改代码、配置、模型、PR #16/#17/#18 或 `docs/plans/`
 **结论：** `APPROVE_FAKE_ADAPTER_DESIGN`，同时 `BLOCKED_CODE_REUSE` / `BLOCKED_DIRECT_API_INTEGRATION`
 **未执行：** 真实模型、RVC/SVC 推理、音频下载、GPU、Windows 安装、微信、付费 API、生产服务
 
+> 本文件是静态研究，不是法律意见，也不是上游可用性承诺。`UNVERIFIED` 不是“无许可”，也不是“已获许可”；`PASS` 只表示研究任务已交付可靠证据。
+
 ---
 
-## 0. 执行前基线
+## 0. 执行前基线（A01 证据）
 
 | 项 | 本轮核验值 |
 |---|---|
 | `main` | `bf9cf66807e12d0b25872a0fa3869962dde04818` |
-| PR #16 | OPEN，未合并，HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`，22 files，0 reviews，CI `40165832178` SUCCESS |
+| PR #16 | OPEN，**未合并**，HEAD `954a01a08587bc8bd5b8caccf026298ca54d5215`，22 files，**0 reviews**，CI `40165832178` SUCCESS |
 | PR #17 | 规划分支 `docs/whale-voice-execution-plan-registry`，HEAD `90391c3de9e90e26ede43186194b8d7de838be49`，OPEN |
 | PR #18 | OPEN/Draft，HEAD `42cec57ae7018735cb6c65a4ef8b0a1d80473810`，历史资料，不合并 |
-| 研究分支 | `research/plan07a-rvc-upstream-audit`，从 `main` 创建 |
+| 研究分支 | `research/plan07a-rvc-upstream-audit` |
+| 研究 PR | **#19**，HEAD 由本轮文档提交更新；base `main` |
 | 本轮唯一文件 | `docs/SVC_PROVIDER_RESEARCH.md` |
 
-GitHub 事实以执行时 API/Git 重新核验为准；本报告不把历史 SHA、CI 或 review 作为当前合并许可。
+PR #16 仍 **OPEN / DESIGN / OFFLINE**；03-B 仍为 `WAIT_USER_AUTHORIZATION`。PR #19 的 CI 成功不代表 RVC/SVC 功能可用。
 
 ## 1. 结论先行
 
 **可批准 07-B 的原创 Fake Adapter 设计；不可把上游插件或 RVCSVC-API 直接复制、vendor、内嵌或作为生产依赖。**
 
-原因：
+阻断直接复用的核心原因：
 
-1. AstrBot 插件 LICENSE 为 **AGPL-3.0**，但 README 又声明“仅供学习和研究、请勿商业用途”；代码复制/网络部署的许可义务与附加限制需要单独法律审查。
-2. RVCSVC-API 仓库根目录**未发现 LICENSE 文件**，README 只有“仅供学习、研究和个人娱乐”的限制性说明；公开可读不等于允许复制/再分发，判为 `UNVERIFIED_RIGHT_TO_REUSE`。
-3. 插件 `api.py` 内含疑似第三方请求参数/凭据常量；本报告不复制其值。该文件不能作为可复用实现。
-4. RVCSVC-API 的 `/convert` 接收**歌曲 ID/URL**并从第三方源下载音频，不接受本地授权音频 Artifact；与 Whale Audio Core 的本地素材、授权、Artifact 和隐私模型不兼容。
-5. API 以 `0.0.0.0` + Gradio `share=True` 启动，无内置认证；存在局域网/公网暴露与未授权调用风险。
-6. 上游自动下载 UVR5/MSST 模型，无校验和、无用户确认；不满足 Novice First 和供应链安全。
-7. 无取消、无稳定结构化错误、无音频时长/格式契约、无模型/音色权利验证；真实 Windows/GPU 行为未测试。
+1. AstrBot 插件 LICENSE 为 **AGPL-3.0**，但 README 又声明“仅供学习和研究、请勿商业用途”；两者关系需法律/维护者审查。
+2. RVCSVC-API 根目录**未发现 LICENSE 文件**；README 只有限制性“学习/研究/个人娱乐”声明。公开可读不等于可以复制/再分发，判为 `UNVERIFIED_RIGHT_TO_REUSE`。
+3. 插件 `api.py` 第 6–7 行含疑似第三方请求参数/凭据常量；本报告不复制其值，且该文件不能作为可复用实现。
+4. RVCSVC-API 的 `/convert` 接收**歌曲 ID/URL**并下载，不接受本地授权音频 Artifact；与 Whale Audio Core 的本地素材/授权/Artifact 模型不兼容。
+5. API 以 `0.0.0.0` + Gradio `share=True` 启动，已审文件未见认证；存在暴露风险。
+6. API 自动下载 UVR5/MSST 模型，无 checksum/用户确认；不满足 Novice First 和供应链安全。
+7. 无服务端取消、无稳定结构化错误、无音频时长/格式契约、无模型/音色权利验证；真实 Windows/GPU 行为未测试。
 
-因此，07-B 应实现**原创 Fake Gateway + 本地 Artifact 输入契约**；上游仅作为“用户自行安装的外部服务”参考，不进入仓库、不自动安装、不默认联网。
+**状态分层：**
 
-## 2. 上游锁定证据
+- 研究交付：**PASS**（证据已补齐）。
+- 上游直接代码复用：**BLOCKED_CODE_REUSE**。
+- 上游当前 API 直接接入：**BLOCKED_DIRECT_API_INTEGRATION**。
+- 上游本地 Artifact 输入能力：**UPSTREAM_BLOCKED**（能力缺失，不是审计失败）。
+- 真实 Provider/SVC/Windows：**UNVERIFIED / NOT_RUN**。
+
+## 2. 上游锁定版本
 
 | 组件 | 仓库 | 本轮锁定 |
 |---|---|---|
@@ -50,299 +59,431 @@ GitHub 事实以执行时 API/Git 重新核验为准；本报告不把历史 SHA
 | MSST | `ZFTurbo/Music-Source-Separation-Training` | MIT（仓库元数据；整合包内 vendor 代码另核） |
 | so-vits-svc | `svc-develop-team/so-vits-svc` | AGPL-3.0（仓库元数据；仅接口候选） |
 
-链路证据：
+## 3. 固定源码证据表（F02）
 
-- 插件 `main.py` 用 `gradio_client.Client` 调 `/show_model`、`/convert`，模型名来自 Gradio 端。
-- 插件 `api.py` 通过网易云/第三方搜索、评论、歌词和额外下载 URL 获取歌曲信息。
-- API `app_rvc.py` / `app_svc.py` 下载歌曲、调用 UVR/MSST 分离、调用 RVC/SVC WebUI、做后处理与混音，返回临时文件路径。
-- 插件收到路径后直接 `Record(file=result_path)` 发送，属于聊天框架内直接投递，不是 Whale Relay 的中立 Artifact 契约。
+> 凭据类只给文件和函数位置，**不复制字符串**。`#L` 链接均固定在锁定的 commit 上。
 
-## 3. 许可与权利矩阵
+| ClaimId | 技术断言 | upstreamRepo@SHA | exactFile#Lstart-Lend | sourcePermalink | evidenceType | finding | unknownOrLimits |
+|---|---|---|---|---|---|---|---|
+| C01 | 插件代码许可为 AGPL-3.0 | `astrbot_plugin_rvc_svc@0b84e382` | `LICENSE#L1-L20` | <https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/LICENSE#L1-L20> | license text | AGPL-3.0 header | 是否适用于所有子文件需逐文件核 |
+| C02 | README 另加“仅供学习/研究、勿商用”限制 | `astrbot_plugin_rvc_svc@0b84e382` | `README.md#L170-L172` | <https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/README.md#L170-L172> | README | 与 AGPL 的关系不清楚 | 非标准许可声明；需法律审查 |
+| C03 | RVCSVC-API 根目录无 LICENSE | `RVCSVC-API@274572c3` | 根文件列表无 `LICENSE` | <https://github.com/CCYellowStar2/RVCSVC-API/tree/274572c320147977a18dc0028e45f79da136a6e2> | tree listing | 未发现明确代码许可文件 | 不等于无任何授权条款；整库权利未明 |
+| C04 | API README 仅限制性使用声明 | `RVCSVC-API@274572c3` | `README.md#L281-L283` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/README.md#L281-L283> | README | 仅学习/研究/个人娱乐 | 不是 SPDX 许可；不可当开源许可 |
+| C05 | 插件含疑似第三方参数/凭据常量 | `astrbot_plugin_rvc_svc@0b84e382` | `api.py#L6-L7` | <https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/api.py#L6-L7> | source/security | 两段长硬编码字符串，文件注释含第三方来源表述 | **值不复制、不复用**；无法确认是否有效或授权 |
+| C06 | 插件直接通过 Record 发送 | `astrbot_plugin_rvc_svc@0b84e382` | `main.py#L303-L314` | <https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/main.py#L303-L314> | source | `/convert` 结果路径直接 `Record` 发送 | 绕过统一 Relay/目标复核 |
+| C07 | RVC 的 `/show_model` 暴露未被证实；SVC 有绑定 | `RVCSVC-API@274572c3` | `app_rvc.py#L76-L85`、`app_rvc.py#L434-L446`；`app_svc.py#L459-L463` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L434-L446> | source | RVC 仅见 `convert` 的 `api_name`；未见 `show_model` 绑定；SVC 明确绑定 `show_model` | 不能确认 RVC `/show_model` 可用；插件调用见 C15 |
+| C08 | `/convert` 参数与歌曲 ID/URL 输入 | `RVCSVC-API@274572c3` | `app_rvc.py#L214-L231`、`#L251` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L214-L231> | source | 参数为 `song_name_src,key_shift,vocal_vol,inst_vol,model_dropdown,...`；无本地文件输入 | 本地授权 Artifact 不支持；能力缺口 |
+| C09 | 歌曲经第三方 URL 下载 | `RVCSVC-API@274572c3` | `app_rvc.py#L32-L50`、`#L164-L182` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L32-L50> | source | `biliplayer.91vrchat.com`、`api.vkeys.cn`；`requests` 超时/重定向 | 版权/隐私/条款未核；不可自动调用 |
+| C10 | 长于 5 分钟自动截断 | `RVCSVC-API@274572c3` | `app_rvc.py#L164-L182` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L164-L182> | source | 超过 5 分钟只保留前 300000 ms，未返回明确错误 | 静默截断；不满足长歌契约 |
+| C11 | API 以 0.0.0.0 + share=True 启动 | `RVCSVC-API@274572c3` | `app_rvc.py#L458-L459`；`app_svc.py#L538-L539` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L458-L459> | source | 公网 tunnel、LAN 监听；已审文件未见认证 | 不能推定整个项目永无认证；需安全审查 |
+| C12 | UVR5 启动自动下载 | `RVCSVC-API@274572c3` | `app_rvc.py#L117-L138` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L117-L138> | source | `download_file_openxlab` 重试并写模型目录 | 未执行下载；无 checksum |
+| C13 | MSST checkpoint 自动下载无 hash | `RVCSVC-API@274572c3` | `msst_backend.py#L14-L16`、`#L44-L61` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/msst_backend.py#L44-L61> | source | `urlopen` 写 `.part`，仅检查非空，无签名/hash | 供应链风险；未执行 |
+| C14 | Python/CUDA/torch 依赖版本 | `RVCSVC-API@274572c3` | `requirements.txt#L1-L10`；`README.md#L33-L35` | <https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/requirements.txt#L1-L10> | requirements/README | `torch==2.7.1+cu118`、torchaudio/torchvision、`onnxruntime-gpu`、`audio-separator[gpu]`；README 称 Python 3.10+/CUDA 11.8+/4GB RAM | README 与 requirements 版本不一致；CPU/GPU 实测 UNKNOWN |
+| C15 | 插件模型刷新/转换调用链 | `astrbot_plugin_rvc_svc@0b84e382` | `main.py#L78-L80`、`#L303-L314` | <https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/main.py#L303-L314> | source | `/show_model`、`/convert`，只传歌曲 ID + 模型名 | RVC `/show_model` 未证实；无本地 Artifact |
+| C16 | Seed-VC 归档与 GPL-3.0；歌声模型约 200M | `seed-vc@51383efd` | `LICENSE#L1-L20`、`README.md#L8`、`#L44` | <https://github.com/Plachtaa/seed-vc/blob/51383efd921027683c89e5348211d93ff12ac2a8/LICENSE#L1-L20> | license/README | GPL-3.0；1–30 秒参考；Tiny 25M 是语音，44.1k 歌声模型约 200M | 仓库 archived；未运行，不宣传低显存/CPU |
+| C17 | RVC/SoVITS/UVR/MSST 外部许可 | 外部仓库 | 仓库元数据 | <https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI> | repo metadata | RVC MIT；SoVITS AGPL-3.0；UVR/MST MIT | 具体版本、vendor 代码、模型权重未逐一核；FFmpeg 构建许可 UNVERIFIED |
 
-> 本表是静态证据矩阵，不是法律意见。`UNVERIFIED` 不等于“无许可”，也不等于“已获许可”。
+## 4. 许可与权利矩阵（A03/A05）
 
-| component | upstreamUrl / pinnedCommit | licenseEvidence | codeRights | model/weightRights | audio/voiceRights | reuseMode | rightsStatus | risk | recommendation |
-|---|---|---|---|---|---|---|---|---|---|
-| AstrBot 插件 | `CCYellowStar2/astrbot_plugin_rvc_svc` @ `0b84e382` | 根 `LICENSE` 为 AGPL-3.0；README 另称仅供学习/研究、勿商用 | AGPL-3.0；网络交互/修改/分发义务需审查 | 插件仓库不含模型权重 | 网易云歌曲与翻唱输出权利未处理 | 独立进程参考，或 clean-room 重写 | `BLOCKED_CODE_REUSE` | 许可冲突/AGPL 传染/硬编码第三方凭据 | 不复制；只参考产品流程 |
-| RVCSVC-API | `CCYellowStar2/RVCSVC-API` @ `274572c3` | 根目录无 LICENSE；README 仅限制性“学习/研究/个人娱乐”声明 | 无明确再分发许可 | 无模型权重；下载来源另核 | 歌曲下载/改编/传播权利未处理 | 仅用户自行安装的外部服务；不 vendor | `UNVERIFIED_RIGHT_TO_REUSE` | 源码可读≠可复用；整体权利不清 | 不复制、不打包；独立适配器 |
-| RVC WebUI | `RVC-Project/Retrieval-based-Voice-Conversion-WebUI` | GitHub 元数据 MIT | MIT（具体版本核验） | RVC 模型/权重通常独立，许可未核 | 训练/推理声音授权未处理 | 可选外部 WebUI | `PARTIAL_VERIFIED` | 模型与代码许可不同 | 只做外部 Gateway 候选 |
-| so-vits-svc | `svc-develop-team/so-vits-svc` | AGPL-3.0 | AGPL-3.0 | 模型/扩散权重独立，未核 | 歌声/参考声音授权未处理 | 仅接口候选，不实现 | `BLOCKED_CODE_REUSE` | AGPL 与部署义务 | 保持可选/UNVERIFIED |
-| UVR5 | `Anjok07/ultimatevocalremovergui` | MIT（仓库元数据） | MIT | UVR 模型权重另核 | 输入歌曲版权未处理 | API 内 vendor 代码/外部工具 | `PARTIAL_UNVERIFIED` | vendor 代码无本仓库 LICENSE | 不复制 vendor 代码 |
-| MSST | `ZFTurbo/Music-Source-Separation-Training` | MIT（仓库元数据） | MIT | BS-Roformer 权重另核 | 输入歌曲版权未处理 | API 内 vendor 代码/自动下载 | `PARTIAL_UNVERIFIED` | 自动下载无 checksum | 不自动下载 |
-| Seed-VC | `Plachtaa/seed-vc` @ `51383efd` | GPL-3.0；仓库 archived | GPL-3.0 | 零样本模型权重另核 | 1–30 秒参考音频需同意/授权 | 后续可选，不做真实运行 | `PARTIAL_VERIFIED` | 归档、GPL、资源未知 | 仅静态档案，不首装 |
-| FFmpeg | 官方/发行版 | LGPL/GPL 依构建 | 依具体构建 | 不适用 | 输入/输出媒体权利另核 | 外部依赖，不内嵌 | `UNVERIFIED_BUILD` | 构建选项会影响许可 | 由安装器核验具体构建 |
-| 歌曲源/API | 网易云、`biliplayer.91vrchat.com`、`api.vkeys.cn` 等 | 服务条款/版权未核 | 不适用 | 不适用 | 下载、改编、传播权利未核 | 仅用户合法取得的本地文件 | `UNVERIFIED` | 版权/条款/地区限制/隐私 | 默认不让 Core 自动下载 |
-| 参考音色/模型 | 用户自备 | 无统一许可 | 不适用 | 用户自备模型权利未知 | 真人声音同意/授权未知 | 用户显式选择 | `UNVERIFIED` | 声音克隆滥用/权利风险 | 必须授权确认与来源记录 |
+> 本表是证据矩阵，不是法律意见。
 
-### 3.1 关键许可事实
+| component | 代码权利 | 模型/权重权利 | 音频/声音权利 | 复用结论 |
+|---|---|---|---|---|
+| AstrBot 插件 | AGPL-3.0；README 附加学习/非商用声明 | 不含权重 | 未处理 | **BLOCKED_CODE_REUSE** |
+| RVCSVC-API | 根目录无 LICENSE；README 限制性声明 | 未提供权重；自动下载 | 未处理 | **UNVERIFIED_RIGHT_TO_REUSE** |
+| 插件 `api.py` | 同插件；含疑似第三方秘密常量 | 不适用 | 不适用 | 禁止复用该文件 |
+| RVC WebUI | MIT（元数据） | RVC 模型另核 | 用户音色/音频授权另核 | 可作外部候选 |
+| so-vits-svc | AGPL-3.0 | 模型/扩散权重另核 | 声音授权另核 | 仅接口候选 |
+| Seed-VC | GPL-3.0；archived | 零样本权重另核 | 参考音频需同意 | 后续可选，不首装 |
+| UVR5 / MSST | 上游 MIT；API 内 vendor 代码无本仓库许可文件 | 分离模型另核 | 输入歌曲版权另核 | 不复制 vendor 代码 |
+| FFmpeg | 依构建 LGPL/GPL | 不适用 | 媒体权利另核 | 具体构建 **UNVERIFIED** |
+| 歌曲源/API | 服务条款未核 | 不适用 | 下载/改编/传播权利未核 | 默认禁止自动下载 |
+| 模型/参考音色 | 无统一许可 | 用户自备权利未知 | 真人同意未知 | 必须记录授权 |
 
-- 插件 LICENSE 是 AGPL-3.0（完整文本已存在），但 README 的“仅供学习/研究、请勿商业用途”是额外限制；两者关系需法律/维护者确认。即便按 AGPL 处理，复制/修改/网络部署会触发相应源码提供义务，不能直接并入本仓库。
-- RVCSVC-API 根目录文件列表**没有 LICENSE**；README 的“仅供学习、研究和个人娱乐”不是标准开源许可。其内嵌 `uvr5/`、`msst/` 代码也没有本仓库的独立许可文件。结论：**不 vendor、不复制、不随发行包分发**。
-- 插件 `api.py` 含两段长硬编码字符串和一个访问参数，文件注释带有“偷来的 key”字样；本报告不复述其值。无论其法律性质如何，都不可进入本项目。
-- API 的自动下载：`uvr5` 从 ModelScope 下载模型，`msst_backend.py` 从 ModelScope 下载 checkpoint；均无 hash/signature 校验，且 `download_file_openxlab` 有无限重试循环。
+**关键许可事实：**
 
-## 4. 原工作流与真实 API
+- 插件根目录有完整 AGPL-3.0 文本（C01），README 又有额外限制（C02）；两者不可简单合并解释。
+- API 根目录无 LICENSE（C03），README 仅是限制性说明（C04）；其内嵌 `uvr5/`、`msst/` 也没有独立许可文件。
+- 插件 `api.py` L6-L7 的疑似凭据/参数常量属于直接阻断项；本报告不复述其值（C05）。
+- RVC/SoVITS/UVR/MST 的仓库元数据不能替代对具体版本、vendor 代码和模型权重的逐项核验；未核部分一律 `UNVERIFIED`（C17）。
+
+## 5. 原工作流与真实 API（A04）
 
 ```text
-用户/AstrBot 命令
+AstrBot 命令
   -> 网易云/第三方搜索
-  -> 用户按序号选歌 + 模型
+  -> 用户选歌 + 模型
   -> 第三方 URL 下载歌曲
-  -> UVR5 / MSST 人声分离
+  -> UVR5 / MSST 分离
   -> RVC/SVC WebUI 推理
-  -> EQ/压缩/混响 + 混音
+  -> EQ/压缩/混响/混音
   -> 临时 MP3 路径
   -> AstrBot Record 直接发送
 ```
 
-与目标链路差异：
+### 5.1 `/show_model`
+
+- SVC：`app_svc.py#L459-L463` 明确 `api_name="show_model"`。
+- RVC：`app_rvc.py#L76-L85` 定义 `show_model()`；但在已审 Blocks 绑定区 `#L434-L446` 只看到 `convert` 的 `api_name`，没有 `show_model` 的 `api_name` 绑定。
+- 插件却对 RVC/SVC 都调用 `/show_model`（`main.py#L78-L80`）。
+- 结论：**RVC 的 `/show_model` 端点能力未证实/可能缺失**，不能按 README 或插件代码假定可用；需 `SOURCE_LINE_UNVERIFIED`/运行时验证（本轮未运行）。
+
+### 5.2 `/convert`
+
+- 签名：`app_rvc.py#L214`：
 
 ```text
-Whale Singing (Whale Audio Core)
-  -> 本地/已授权 sourceAudioRef
-  -> Core Task + 分离/转换/混音
-  -> 唯一 audio artifact
-  -> Whale Relay 安全投递
+convert(song_name_src, key_shift, vocal_vol, inst_vol,
+        model_dropdown, reverb_intensity, delay_intensity,
+        uvr_choice="VR-HP5 (默认)")
 ```
 
-| 项 | 上游实际 | 目标 |
-|---|---|---|
-| 音频输入 | `/convert` 接收歌曲 ID/URL，再下载 | Artifact / 本地授权文件 |
-| 歌曲搜索 | 第三方在线搜索/下载，无权利校验 | 元数据可搜索，但音频需合法取得 |
-| 模型选择 | Gradio 模型文件名，无来源/哈希 | 受控 model manifest + 许可/来源 |
-| 直接发送 | 插件 `Record` 发送 | 只产生 Artifact，Relay 投递 |
-| 取消 | 客户端超时，无服务端取消 | 明确 cancel + 任务状态 |
-| 错误 | 文本/异常/临时路径 | 结构化错误码 + 可恢复状态 |
-| 下载 | 自动 UVR/MSST 权重 | 用户确认 + 校验 + 可撤销 |
+- 参数含义（源码可见）：歌曲 ID/URL、半音升降、人声音量 dB、伴奏音量 dB、模型文件名、混响、延迟、分离模型。
+- 输出：Gradio 文件路径；不是结构化 `{artifactRef,mime,...}`。
+- 绑定：`app_rvc.py#L442-L446` 的隐藏 API 按钮 `api_name="convert"`；SVC 对应 `app_svc.py#L522-L526`。
+- 无正式 OpenAPI；无稳定版本号；依赖 Gradio 默认参数。
 
-### 4.1 协议静态结论
+### 5.3 本地 Artifact 能力缺口
 
-- `/show_model`：无参数，返回模型文件名列表（`list[str]`），无版本/哈希/许可元数据。
-- `/convert`：至少五个位置参数——歌曲 ID/URL、升降调（-12..12）、人声音量 dB、伴奏音量 dB、模型文件名；上游还有混响/延迟/UVR 选择默认参数。返回值是临时文件路径（Gradio 文件输出），不是结构化结果。
-- 插件调用 `/convert` 时只传前五个参数；依赖 Gradio 默认值，非稳定文档契约。
-- `/convert` **没有本地文件输入参数**；输入 `song_name_src` 被 `get_response()` 用于 `music.163.com/song?id=`/第三方下载。因此当前上游无法直接满足“用户合法本地音频 Artifact”。
-- 无正式 OpenAPI/版本化 schema；字段、默认值、返回路径依赖 Gradio 版本与源码。
-- `app.launch(server_name="0.0.0.0", share=True)`：对外监听并启用 Gradio 公网 tunnel；未见认证。
-- `app.queue(max_size=40)`：任务队列有限，但无用户级隔离/配额；单个 GPU 可能 OOM。
-- 插件管理员命令可设置任意 `rvc_base_url`/`svc_base_url`，无 allowlist；存在 SSRF/任意主机访问风险。
-- 插件模型选择来自后端文件名；没有模型/音色/参考音色授权验证。
+- `convert` 只接受 `song_name_src`；`app_rvc.py#L224-L231` 对空值报错，对 http(s) 链接只提取 `id=`，否则当作歌曲 ID。
+- `#L243-L251`：命中缓存则读缓存，否则调用 `wwy_downloader()` 下载。
+- `wwy_downloader` 调用 `get_response()`（`#L32-L50`）从第三方 URL 下载音频。
+- **没有任何本地文件路径/Artifact 参数**。
+- 结论：**`UPSTREAM_BLOCKED`（本地授权音频能力）**；这不是静态审计失败，而是 07-B 必须自建本地 Artifact 兼容层的原因。
 
-## 5. 安全、隐私与供应链风险
+### 5.4 歌曲下载与截断
 
-### Top 10 风险
+- `get_response()` 使用 `biliplayer.91vrchat.com`，备用 `api.vkeys.cn`（`#L32-L50`）。
+- 下载失败只抛文本异常；没有权利/地区/付费/DRM 判断。
+- `wwy_downloader` 对超过 5 分钟的音频只截取前 300000 ms（`#L164-L182`），没有明确用户错误。
+- 这不是“支持任意长度歌曲”的能力证据。
 
-1. **许可不清/AGPL 冲突**：插件 AGPL 与“仅供学习”声明并存；API 无 LICENSE；直接复用风险高。
-2. **硬编码第三方凭据**：插件 `api.py` 含疑似第三方参数/密钥，不能复制；公开仓库已有暴露风险。
-3. **公网暴露**：API `0.0.0.0` + `share=True`，无认证；可被局域网/公网调用。
-4. **SSRF/任意后端 URL**：管理员可设置任意 RVC/SVC 地址；插件无 allowlist。
-5. **自动下载无校验**：UVR/MSST 模型从 ModelScope 下载，无 hash/signature；供应链风险。
-6. **版权与隐私**：自动从第三方下载歌曲，未验证授权/隐私/地区条款；文本/音频可能离开设备。
-7. **无取消/超时副作用**：客户端超时不会取消服务端 GPU 任务；可能继续占用资源。
-8. **输入/输出契约脆弱**：歌曲 ID、模型文件名、临时路径、Gradio 默认值；无版本/错误码。
-9. **资源不可控**：4GB VRAM/16GB RAM 只是 README 建议；无 CPU 性能证据，长歌/并发可能 OOM。
-10. **直接聊天发送**：插件 `Record` 发送，绕过统一 Relay/目标校验；不可复用。
+### 5.5 公网暴露、队列、取消
 
-### 负向/异常矩阵（设计输入）
+- `app_rvc.py#L458-L459`：`app.queue(max_size=40, api_open=False)`；`app.launch(server_name="0.0.0.0", share=True, show_error=True)`。
+- `app_svc.py#L538-L539`：相同 `0.0.0.0` + `share=True`，端口 7866。
+- 已审文件未见认证配置；`api_open=False` 不是认证。
+- 已审文件未见 `job.cancel`/服务端取消路径；插件只有客户端 `timeout`（`main.py#L303-L312`）。
+- 客户端超时可能只停止等待，不能证明 GPU 任务已停止。
+- 这是“已审文件未见”，不是对整个项目做绝对否定。
 
-| # | 场景 | 预期 fail-closed 行为 |
+### 5.6 自动下载
+
+- UVR5：`download_file_openxlab()` 在启动时调用，从 ModelScope 下载 5_HP-Karaoke-UVR（`app_rvc.py#L117-L138`）。
+- MSST：`msst_backend.py#L14-L16` 固定 ModelScope checkpoint URL；`#L44-L61` 写 `.part`、仅检查非空，无 hash/signature。
+- 两者都没有用户确认/取消/校验和；不满足供应链安全。
+
+## 6. 风险 Top 10 与负向矩阵（A09）
+
+### Top 10
+
+1. **许可不清/AGPL 冲突**：插件 AGPL 与 README 限制并存；API 无 LICENSE。
+2. **硬编码疑似凭据**：插件 `api.py#L6-L7`；不复制、不复用。
+3. **公网暴露**：API `0.0.0.0` + `share=True`，已审文件无认证。
+4. **SSRF/任意后端 URL**：插件管理员可设置任意 RVC/SVC 地址，无 allowlist。
+5. **自动下载无校验**：UVR/MSST 模型无 hash/signature。
+6. **版权与隐私**：第三方歌曲源，无授权/条款/地区校验。
+7. **无服务端取消**：客户端超时不终止 GPU 任务。
+8. **输入/输出契约脆弱**：歌曲 ID、模型文件名、临时路径、Gradio 默认值。
+9. **资源不可控**：4GB VRAM/16GB RAM 只是 README 建议；CPU/长歌/并发未实测。
+10. **直接聊天发送**：插件 `Record` 绕过 Relay/目标复核。
+
+### N1–N15
+
+| # | 场景 | 预期 fail-closed |
 |---|---|---|
 | N1 | API 无 LICENSE/许可不明 | `BLOCKED_REUSE`，不复制/vendor |
-| N2 | 插件硬编码凭据 | 拒绝导入/复制；报告安全事件 |
+| N2 | 插件硬编码疑似凭据 | 拒绝复用；安全事件报告 |
 | N3 | API 无认证/公网 share | 不接入；仅本机受控 fake |
 | N4 | 任意后端 URL | 拒绝非 allowlist；默认 loopback |
-| N5 | 输入为本地文件而非 song ID | 当前上游 `UNSUPPORTED_LOCAL_INPUT`；07-B fake 定义本地 Artifact |
-| N6 | 无模型/模型未授权 | `MODEL_UNAVAILABLE`/`RIGHTS_UNVERIFIED`，不生成 |
-| N7 | 音高/音量越界 | 参数错误，不启动转换 |
-| N8 | 歌曲无法合法取得 | 不下载；提示用户提供授权文件 |
-| N9 | 分离失败/无伴奏 | 明确 `SEPARATION_FAILED`，不伪造成功 |
-| N10 | 推理超时/OOM | `TIMEOUT`/`RESOURCE_EXHAUSTED`，不自动重试 |
-| N11 | 取消后服务端继续 | 标记 `CANCEL_REQUESTED`/仍运行风险，不宣称已停止 |
+| N5 | 本地文件而非 song ID | `UPSTREAM_BLOCKED`；07-B 用本地 Artifact |
+| N6 | 无模型/未授权模型 | `MODEL_UNAVAILABLE`/`RIGHTS_UNVERIFIED` |
+| N7 | 音高/增益越界 | 参数错误，不启动转换 |
+| N8 | 歌曲无法合法取得 | 不下载；提示提供授权文件 |
+| N9 | 分离失败/无伴奏 | `SEPARATION_FAILED`，不伪造成功 |
+| N10 | 超时/OOM | `TIMEOUT`/`RESOURCE_EXHAUSTED`，不自动重试 |
+| N11 | 取消后服务端继续 | 标记风险，不宣称已停止 |
 | N12 | 返回任意路径/损坏音频 | Artifact 校验失败，拒绝交付 |
 | N13 | 长歌/格式不支持语音气泡 | 仅保存/文件投递，不强制语音气泡 |
 | N14 | 云端/付费/隐私未授权 | 拒绝网络/付费调用 |
 | N15 | 重复投递/UNKNOWN | 不自动重发；人工确认 |
 
-## 6. Windows / CPU / GPU / 安装矩阵
+## 7. Windows 依赖与组件 Manifest（A08 / F04）
+
+### 7.1 现有环境事实
 
 | 项 | 静态事实 | 证据状态 |
 |---|---|---|
-| OS | Windows 为主；bat 使用 `venv\Scripts\python.exe` | 静态可见 |
-| Python | README 称 3.10+；实际 requirements 未锁 Python | 未实机 |
-| PyTorch | 实际 `torch==2.7.1+cu118`、torchaudio/torchvision cu118 | `requirements.txt` |
-| CUDA | README 称 CUDA 11.8+；实际 cu118 wheels | 未实机 |
-| GPU | 插件 README 推荐 NVIDIA 4GB+ VRAM；API README 建议 4GB RAM | 未实机，不能当保证 |
-| CPU | API 支持 `--is_nohalf`，但没有 CPU 性能/质量证据 | `UNKNOWN` |
-| 依赖 | `audio-separator[gpu]`、`onnxruntime-gpu`、gradio、pedalboard、librosa、torch 等 | 未安装 |
-| 外部 WebUI | 需先启动 RVC 或 so-vits-svc WebUI；SVC 需替换文件/独立目录模式 | 静态说明 |
-| 模型 | RVC `.pth` + `.index`；SVC `.pth`/`.json`/diffusion；需按固定目录放置 | 静态说明 |
-| 下载 | UVR5 模型约 120MB（README）；MSST 模型自动下载 | 未执行；无 checksum |
-| 服务 | `app_rvc.py`/`app_svc.py`、Gradio `0.0.0.0`、share；bat 启动 | 静态可见 |
-| 安装器 | 无；需手动 venv/pip/CUDA/WebUI/模型/端口 | **不满足 Novice First** |
-| 卸载/升级 | 无；模型/缓存/venv 分散 | `UNVERIFIED` |
-| 实际耗时/质量 | 无 | `NOT_RUN` |
+| OS | Windows 优先；bat 用 `venv\Scripts\python.exe` | 静态 |
+| Python | README 称 3.10+；未锁 Python | UNVERIFIED |
+| PyTorch | 实际 `torch==2.7.1+cu118`、torchaudio/torchvision cu118 | C14 |
+| CUDA | README 称 CUDA 11.8+ | UNVERIFIED |
+| GPU | 插件 README 建议 NVIDIA 4GB+ VRAM；API README 称至少 4GB RAM | README 建议，不是实测保证 |
+| CPU | `--is_nohalf` 存在；无 CPU 性能/质量证据 | UNVERIFIED |
+| 外部 WebUI | 需先启动 RVC 或 so-vits-svc；SVC 需替换文件/独立目录 | 文档/源码 |
+| 模型 | RVC `.pth`+`.index`；SVC `.pth`/`.json`/diffusion | 文档 |
+| 安装器 | 无；手动 venv/pip/CUDA/WebUI/模型/端口 | 不满足 Novice First |
+| 卸载/升级 | 无完整方案 | UNVERIFIED |
+| 真实耗时/质量 | 无 | NOT_RUN |
 
-**资源结论：** 不能基于 README 宣称 CPU 可用、4GB 足够或整首歌耗时；必须在未来真实机器测试后才能写入用户承诺。
+### 7.2 未来 UI 逐组件 Manifest
 
-## 7. 与 Whale Audio Core / Relay 的兼容形态
+> 这不是已实现 API，只是未来首访弹窗/安装器的设计输入。当前上游插件/API 不能作为默认“一键安装源”。
 
-推荐架构（不复制上游）：
+| componentId | 中文显示名 / 用途 | 阶段 | 必需性 | 探测方式及可信证据 | 可复用现有 | 来源/许可/权重 | 资源/磁盘/CPU/GPU/VRAM | 自动安装 | 必须确认 | 中文失败恢复 | 后续 Plan |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `core-audio` | 鲸音核心 / 任务、音色、Artifact、模型 | 生成 | REQUIRED | Core 只读能力/loaded revision | 是 | 本项目 | 本机资源 UNKNOWN | 不适用 | 无 | 重开依赖检查/查看状态 | Plan 05/08 |
+| `rvc-voice-model` | RVC 音色模型 / 目标声线 | 生成 | REQUIRED（RVC） | 文件存在+格式/元数据+用户选择 | 用户自备 | 模型许可/训练数据/声音同意 UNKNOWN | 文件大小/显存 UNKNOWN | **否**（无默认下载） | 使用授权/真人声音同意 | 提供有权文件/换音色/取消 | Plan 07-B/12 |
+| `external-rvc-gateway` | 外部 RVC Worker/Gateway / 真实推理 | 生成 | REQUIRED（真实 RVC） | 本机回环健康、版本、模型列表、能力 | 用户自行安装 | 当前 API/插件许可不明；**不默认安装** | Python/CUDA/GPU/VRAM UNKNOWN | **否**（当前不可自动安装） | 安装来源/许可/端口/资源 | 重新检测/查看安装说明/仅保存 | Plan 07-B/14 |
+| `python-runtime` | Python/CUDA/PyTorch 运行时 / 外部 Gateway 依赖 | 生成 | CONDITIONAL（仅外部 Gateway） | 只读版本探测 | 可复用用户环境 | Python/CUDA/torch 许可与版本另核 | 版本/磁盘/GPU UNKNOWN | **否**（不作为普通用户步骤） | 版本/来源/驱动 | 查看要求/换已验证模式 | Plan 14 |
+| `rvc-webui` | RVC WebUI / 原版推理服务 | 生成 | CONDITIONAL（外部方案） | 端口/健康/模型列表 | 用户自行安装 | MIT；权重另核 | GPU/VRAM/磁盘 UNKNOWN | **否** | 来源/模型/端口 | 重新检测/查看说明/返回 | Plan 14 |
+| `separator` | 人声分离器 / 分开主唱与伴奏 | 预处理 | CONDITIONAL（纯人声可跳过） | 运行健康/模型存在 | 可复用 | UVR/MST MIT；vendor/模型另核 | 磁盘/CPU/GPU UNKNOWN | **否**（当前自动下载不可接受） | 模型来源/许可/空间 | 跳过分离/换模式/仅保存 | Plan 08/12 |
+| `ffmpeg-encoder` | 音频编码/处理 / 格式转换 | 输出 | CONDITIONAL（方案需要时） | 版本/路径/能力探测 | 可复用 | FFmpeg 构建 LGPL/GPL UNVERIFIED | 磁盘 UNKNOWN | 需受审安装器 | 构建/许可/来源 | 更换输出/仅保存 WAV | Plan 14 |
+| `preview-save` | 试听/保存 / 本地 Artifact | 输出 | REQUIRED | 本地文件/Artifact 状态 | 是 | 本项目 | 磁盘 UNKNOWN | 不适用 | 保存位置/覆盖 | 重试/更改目录/取消 | Plan 08/09 |
+| `relay` | Whale Relay（鲸递）/ 安全单次投递 | 发送 | DELIVERY_ONLY | 目标/授权/后端能力 | 现有 UI Automation | 本项目/Relay 预算 | 网络/目标 UNKNOWN | 不适用 | 目标与发送授权 | 取消发送/仅保存/重试需人工 | Plan 13 |
+| `wechatagent` | WeChatAgent / 微信身份与授权 | 发送 | DELIVERY_ONLY | 版本/连接/授权证据 | 必需外部平台 | sourcepro5/WeChatAgent 另核 | 网络/账号 UNKNOWN | 否 | 账号/会话/发送权限 | 检查连接/返回/取消 | Plan 13 |
+| `voice-sender` | Voice Sender / Windows UI Automation | 发送 | DELIVERY_ONLY | 进程/健康/版本/目标 | 现有组件 | 本项目 | 音频设备 UNKNOWN | 不适用 | 设备/目标/发送 | 检查设备/仅保存/取消 | Plan 13 |
+| `seed-vc` | Seed-VC 免训练试唱 / 后续可选 | 生成（未来） | OPTIONAL / NOT_READY | 固定模型+参考音频授权 | 否 | GPL-3.0；archived；权重另核 | 200M 歌声模型；资源 UNKNOWN | **否**（不首装/不下载） | 参考音频同意/许可 | 查看说明/返回 RVC/取消 | Plan 12-D |
+
+**Manifest 结论：**
+
+- RVC 是首发主线；Seed-VC 是后续可选，不能标低显存/CPU 可用。
+- 当前 RVCSVC-API/插件不能作为默认自动安装源；无安全渠道则标 `NOT_INSTALLABLE`。
+- 所有资源/性能未实测处只能显示 `UNKNOWN`，不得给出虚假显卡/CPU 承诺。
+- 保存输入文件 ≠ 生成成功 Artifact；生成 ≠ 已发送。
+
+## 8. 三层契约映射（F03 / A06）
+
+### 8.1 三层定义
+
+| 层 | 名称/状态 | 作用 | 允许字段/说明 |
+|---|---|---|---|
+| A | CoverTask 草稿（未来 Plan 05/08） | 歌曲翻唱任务，可含分离/混音/伴奏 | `sourceAudioRef`、`targetVoiceProfileId`、`pitchShift`、`formantShift`、`conversionStrength`、`separationMode`、`vocalGainDb`、`instrumentalGainDb`、`mix`、`outputFormat` 等；**PROPOSED，未实现** |
+| B | PR #16 SVC v1（真实纯契约，未合并 main） | SVC 请求/结果边界 | 请求：`sourceAudioRef,targetVoiceId,pitchShift,formantShift,conversionStrength,outputFormat?`；结果：`requestId,targetVoiceId,artifactRef,mime,sampleRate,durationMs`（`createdAt` 可选） |
+| C | 07-B Fake Gateway（现在仅设计） | 隔离模拟 RVC/SVC，不运行真实模型 | 内部 `engine=RVC_FAKE`；对外只把 B 层字段交给 v1，不把 CoverTask 嵌套字段直接塞入 |
+
+### 8.2 B 层源码事实
+
+请求（`core/svc/svc-contract.mjs#L20,L53-L87`，PR #16 HEAD `954a01a`）：
 
 ```text
-Whale Singing UI
-  -> Whale Audio Core (TTS/SVC tasks, voice/model/artifact)
-      -> original SVC adapter contract
-          -> FakeGateway (07-B, offline)
-          -> optional user-installed external RVC gateway (later, separately audited)
-      -> audio artifact (validated)
-  -> Whale Relay Core (target verification + one delivery)
-  -> WeChatAgent (identity/authorization)
+sourceAudioRef: string, opaque ref pattern
+targetVoiceId: string, shared voice id pattern
+pitchShift: finite, -24..24
+formantShift: finite, -1..1
+conversionStrength: finite, 0..1
+outputFormat?: audio/* (optional)
+unknown top-level fields -> SVC_INVALID_REQUEST
 ```
 
-- 上游只作为“外部 Gateway 行为参考”，不是内部实现。
-- Core 接受 `sourceAudioRef`（本地/合法授权 Artifact），不接收歌曲 ID 作为唯一输入。
-- 模型/音色/分离/混音均由 Core 的 manifest/voice library/任务管理，不让 Gradio 文件名成为公共 ID。
-- 结果只返回 Artifact + metadata；不返回临时绝对路径给 UI/Relay。
-- 真实外部 Gateway 未来必须单独许可、URL allowlist、认证、超时、取消、配额和供应链审计。
+结果（`#L94-L128`）：
 
-### 7.1 07-B Fake Gateway 输入
+```text
+requestId: non-empty string
+targetVoiceId: valid voice id
+artifactRef: opaque ref
+mime: audio/*
+sampleRate: integer 8000..192000
+durationMs: integer >= 0
+delivery?: if present, must be PENDING_ROUTER
+```
 
-必须用 fixture：
+- 成功结果由 `normalizeSvcResult` 自己生成 `delivery: {state:"PENDING_ROUTER"}`。
+- 输入带 `send`/`wechat` 或非法 `delivery` -> `SVC_DELIVERY_NOT_PROVIDER`。
+- `PENDING_ROUTER` **只表示等待共享路由**，不是发送权限、已提交、已收到或自动发送。
+- `requestId` 不在 v1 请求字段中；它必须由 Core/任务尝试的外部关联提供，不能作为请求字段硬塞。
+
+**合法 v1 请求示例（文档示例，不改源码）：**
 
 ```json
 {
-  "schemaVersion": 1,
-  "engine": "RVC_FAKE",
   "sourceAudioRef": "artifact:fixture-vocal-001",
-  "targetVoiceProfileId": "fixture-voice-a",
-  "params": {
-    "pitchShift": 0,
-    "vocalGainDb": 0,
-    "instrumentalGainDb": 0,
-    "separation": "AUTO"
-  },
-  "output": { "mime": "audio/wav", "sampleRate": 44100, "channels": 1 }
+  "targetVoiceId": "fixture-voice-a",
+  "pitchShift": 0,
+  "formantShift": 0,
+  "conversionStrength": 1,
+  "outputFormat": "audio/wav"
 }
 ```
 
-返回：
+**合法结果示例（归一化后补齐 `targetVoiceId`，不包含 `send`/`wechat`）：**
 
 ```json
 {
-  "schemaVersion": 1,
   "requestId": "fixture-request-1",
+  "targetVoiceId": "fixture-voice-a",
   "artifactRef": "artifact:fixture-output-1",
   "mime": "audio/wav",
   "sampleRate": 44100,
-  "durationMs": 1200,
-  "delivery": { "state": "PENDING_ROUTER" }
+  "durationMs": 1200
 }
 ```
 
-Fake Gateway 测试（≥10）：
+旧版研究中的 Fake 示例是 CoverTask 草稿 envelope，**不能原样作为 v1 请求**；其 `targetVoiceProfileId` 必须经层 A 映射，且结果不能缺 `targetVoiceId`。
 
-1. 合法本地 Artifact → 成功。
-2. 无 sourceAudioRef → `INVALID_SOURCE`。
-3. 非音频/损坏 source → `INVALID_AUDIO`。
-4. 模型未知 → `MODEL_NOT_FOUND`。
-5. 模型权利未确认 → `RIGHTS_UNVERIFIED`。
-6. 音高/增益越界 → `INVALID_PARAMS`。
-7. 长音频/超限 → `AUDIO_TOO_LONG`，不静默截断。
-8. 分离失败 → `SEPARATION_FAILED`，不伪造干声。
-9. 超时 → `TIMEOUT`，可取消状态可见。
-10. 取消 → `CANCELLED`，不产生“成功” Artifact。
-11. 输出损坏 → `INVALID_ARTIFACT`。
-12. 返回 `PENDING_ROUTER`；任何 `wechat/send/target` 字段拒绝。
-13. 不自动下载模型、不访问网络、不启动进程。
-14. 失败不自动重试，尤其 UNKNOWN。
+### 8.3 CoverTask/Fake -> v1 映射
 
-## 8. 新手首次体验（Novice First）
+| 来源字段 | v1 字段 | 处理 |
+|---|---|---|
+| `targetVoiceProfileId` | `targetVoiceId` | 仅在 Plan 05/08 有共享 voice identity 映射时转换；**不自动假定跨模型音色资产互通** |
+| `params.pitchShift` | `pitchShift` | 范围 -24..24；上游 RVC 界面 -12..12，适配器应拒绝/显式限制，不能静默改写 |
+| `params.formantShift` | `formantShift` | v1 接受 -1..1；真实 RVC 是否有等价能力 **UNVERIFIED**，需版本化适配 |
+| `params.conversionStrength` | `conversionStrength` | v1 接受 0..1；真实 RVC 无直接参数时需 adapter 明确 `NEEDS_VERSIONED_CONTRACT_IN_PLAN05_08` |
+| `params.vocalGainDb` | — | **不进入 v1**；留在 CoverTask/Mixer（Plan 08/12） |
+| `params.instrumentalGainDb` | — | **不进入 v1**；留在 CoverTask/Mixer |
+| `params.separation` | — | **不进入 v1**；留在 Separator/CoverTask |
+| `output.outputFormat` | `outputFormat` | 可选 `audio/*`；缺省由 Core/Adapter 决定 |
+| `requestId`（结果） | `requestId` | 不在请求字段；由 Core/Task 关联/尝试 ID 提供 |
+| `engine` / `params` / `output` envelope | — | **不进入 v1**；属于 Fake/CoverTask 内部封装 |
+| `channels`（若出现） | — | `normalizeSvcResult` 不输出 `channels`；不能冒充 v1 归一化字段 |
+
+### 8.4 六个以上文档级判断案例
+
+| # | 输入/调用器 | 预期 |
+|---|---|---|
+| 1 | 合法 v1 请求（六字段，含/不含 outputFormat） | `validateSvcRequest` PASS；只返回允许字段 |
+| 2 | 原裸 Fake 草稿 `{engine,targetVoiceProfileId,params,output}` 直接传 v1 | `SVC_INVALID_REQUEST`（`engine`/`targetVoiceProfileId`/`params`/`output` 均未知字段） |
+| 3 | 在 v1 请求加入 `vocalGainDb` | `SVC_INVALID_REQUEST`（混音参数不属于 v1） |
+| 4 | 结果缺 `targetVoiceId` | `SVC_UNSUPPORTED_VOICE`（源码如此；不是 `INVALID_RESULT`） |
+| 5 | 结果带 `send`/`wechat` | `SVC_DELIVERY_NOT_PROVIDER` |
+| 6 | 结果带 `delivery:{state:"PENDING_ROUTER"}` | 合法；归一化输出仍为 `PENDING_ROUTER`，不发送 |
+| 7 | 结果带 `delivery:{state:"SENT"}` | `SVC_DELIVERY_NOT_PROVIDER` |
+| 8 | 结果缺 `artifactRef` | `SVC_INVALID_RESULT` |
+
+## 9. 与 Whale Audio Core / Relay 的兼容形态
+
+```text
+Whale Singing
+  -> Whale Audio Core：CoverTask、音色、模型、Artifact、分离/转换/混音
+      -> 原创 SVC Adapter（层 C）
+          -> Fake Gateway（07-B）
+          -> 可选用户自行安装的外部 RVC Gateway（后续单独审查）
+      -> 受验证 audio artifact（PENDING_ROUTER）
+  -> Whale Relay Core：目标验证 + 单次安全投递
+  -> WeChatAgent：微信身份/授权
+```
+
+- 上游仅作为行为参考，不是内部实现。
+- Core 接受 `sourceAudioRef`；不把歌曲 ID 当唯一输入。
+- 不让 Gradio 模型文件名成为公共 Provider/Voice ID。
+- 不复制插件 `Record` 直接发送逻辑。
+- 真实外部 Gateway 未来必须单独许可、URL allowlist、认证、超时、取消、配额和供应链审计。
+
+## 10. 新手首次体验（A10）
 
 当前上游路径对普通用户不合格：
 
-1. 安装 AstrBot 插件/后端、Python 3.10、CUDA、PyTorch、venv、WebUI、模型文件和 FFmpeg，均需手动。
-2. 需编辑 `app_rvc.py` 的 `RVC_API_BASE`、SVC 的 `SVC_API_BASE`，启动多个 bat，理解端口和启动顺序。
-3. 需手工放置/重命名 `.pth`、`.index`、`.json`、diffusion 文件，SVC 还需替换文件/切换独立目录模式。
-4. 搜索并下载歌曲没有版权/授权确认；模型/音色没有同意流程。
-5. 出错只给技术错误/日志，无法在 GUI 内恢复。
-6. 后端 API 0.0.0.0/share、无认证，不适合普通用户机器。
+1. 需手工安装 Python/CUDA/venv/WebUI/模型/FFmpeg。
+2. 需编辑 API 端口、启动 bat、理解启动顺序。
+3. 需手工放置/重命名模型/index/配置/diffusion。
+4. 搜索下载歌曲没有版权/授权确认；模型/音色没有同意流程。
+5. 错误多为技术文本/日志，无法在 GUI 内恢复。
+6. API `0.0.0.0` + `share=True`，不适合普通用户机器。
 
-未来产品路径（设计，不实施）：
+未来设计：
 
-- Whale Singing 首次进入独立依赖弹窗；默认 RVC，展示必需/可选、来源/许可、空间/GPU/CPU、费用/网络。
-- 只读检测组件；用户点击“安装所选组件”才进入安装/许可确认；可“稍后再说”。
-- 无 GPU 时显示 CPU/远端替代/仅保存；不虚构可用。
-- 缺少 RVC/模型时禁用生成，仅允许查看/保存已有 Artifact。
-- 失败内联中文解释：模型缺失、空间不足、GPU OOM、音频无权限、分离失败、网络失败；提供重试/切换/返回。
-- 不要求终端/Python/JSON；技术细节折叠到“高级详情”。
+- Whale Singing 首次进入独立依赖弹窗；默认 RVC，Seed-VC 后续可选。
+- 只读探测；用户点击“安装所选组件”后才确认安装/许可。
+- 缺 GPU/资源未验证时显示 UNKNOWN，不虚构 CPU/云端可用。
+- 先保存输入/只读预览，生成成功后才产生 Artifact。
+- 发送是独立权限；`PENDING_ROUTER` 不等于已发送。
 
-**至少三条恢复路径：**
+### 三条中文失败恢复
 
-1. 依赖未装：稍后再说 → 只读/保存；管理依赖重开。
-2. 无 GPU/显存不足：切换已支持的 CPU/远端模式，或仅保存输入/不生成。
-3. 模型/音频无授权：停止生成，提示用户提供合法本地文件或选择已授权音色；不自动下载/替代。
+- **“未找到可用的唱歌引擎”** → “重新检测” / “暂时浏览” / “查看安全安装说明”。
+- **“当前设备未验证能运行所选翻唱模型”** → “查看硬件要求” / “更换已验证模式” / “返回语音气泡”；没有证据的 CPU/云端选项不显示为可用。
+- **“歌曲或目标音色尚未取得使用授权”** → “提供有权使用的文件” / “重新选择音色” / “取消”。
 
-## 9. A01–A14 验收矩阵
+## 11. A01–A14（原规格，F01）
+
+| ID | 原规格定义 | 结果 | 证据 |
+|---|---|---|---|
+| A01 | main/PR/CI/reviews 实时事实与 #16 未合并 | **PASS** | 第 0 节：main `bf9cf66`；#16 OPEN，HEAD `954a01a`，0 reviews，CI `40165832178` |
+| A02 | 三上游 commit 钉死 | **PASS** | 第 2 节：插件 `0b84e382`、API `274572c3`、Seed-VC `51383efd` |
+| A03 | 代码/模型/音频/声音四类许可证独立证据 | **PASS（含 UNVERIFIED）** | 第 3/4 节：AGPL、无 LICENSE、GPL、MIT、权重/音频/声音 UNVERIFIED |
+| A04 | API 参数/错误/版本来自固定源码、不臆造 | **PASS** | 第 3/5 节 C07–C15；明确 RVC `/show_model` 未证实；本地输入 `UPSTREAM_BLOCKED` |
+| A05 | 曲库权利、SSRF/DRM、音色同意与 fail-closed | **PASS** | 第 3/4/6 节：第三方源、任意 URL、无 DRM/同意检查、N1–N15 |
+| A06 | Whale Audio/Whale Relay 职责分离，现有 SVC 契约不变 | **PASS** | 第 8/9 节；PR #16 源码只读；未改契约 |
+| A07 | RVC 主线、Seed-VC 后续、不宣传低显存 | **PASS** | 第 4/7 节；Seed-VC `OPTIONAL/NOT_READY`，200M 歌声模型事实 |
+| A08 | Windows 依赖与可信探测、UNKNOWN 字段完整 | **PASS（静态）** | 第 7 节 Manifest；资源/性能未实测处 UNKNOWN |
+| A09 | ≥12 负向、Top 10、对应处理 | **PASS** | 第 6 节 N1–N15 + Top 10 |
+| A10 | Novice First DoD、中文路径与 3 条恢复 | **PASS（设计）** | 第 10 节；当前上游 UX 仍不合格 |
+| A11 | 仅许可 docs 文件变更，无秘密/隐私/模型 | **PASS** | 仅本文件；凭据值未复制 |
+| A12 | git diff/Markdown/编码/最新 HEAD CI | **PASS** | 最终 PR #19 新 HEAD CI（见第 12 节） |
+| A13 | main/#16–#18 未改、未启动真实生产和模型 | **PASS** | 本轮仅 docs；未安装/运行/发送 |
+| A14 | 唯一后续建议与硬停止条件 | **PASS** | `APPROVE_FAKE_ADAPTER_DESIGN` + 下游仅 07-B Fake |
+
+**重要区分：**
+
+- A04 的 `PASS` 是**审计交付**通过；其中“本地 Artifact 输入”是 **UPSTREAM_BLOCKED** 能力缺口。
+- A03 的 `PASS` 不等于所有许可已批准；模型/权重/音频/声音仍 `UNVERIFIED`。
+- A06 的 `PASS` 不等于 SVC v1 已合并 main；它仍是 PR #16 的未合并契约。
+- A08/A10 是设计/静态 PASS，不是 Windows/GPU/真实安装验收。
+
+## 12. R01–R10 验收
 
 | ID | 结果 | 证据 |
 |---|---|---|
-| A01 上游锁定 SHA/许可矩阵 | **PASS** | 三个 pinned commit；插件 AGPL-3.0；API 无 LICENSE；RVC MIT/SoVITS AGPL/Seed-VC GPL-3.0 archived；证据 URL/源码 |
-| A02 原工作流静态还原 | **PASS** | 搜索 → 下载 → UVR/MSST → RVC/SVC → 后处理/混音 → 临时文件 → Record |
-| A03 真实 API 契约 | **PASS（静态）** | `/show_model` list；`/convert` 5+ 参数、返回路径；Gradio，无版本化 schema |
-| A04 本地授权音频输入 | **BLOCKED** | `/convert` 只收 song ID/URL，无本地音频参数；07-B 必须自建 Artifact 接口 |
-| A05 组件许可证/权利 | **PASS（有 UNVERIFIED）** | 表格逐项；API/vendor/权重/歌曲/声音权利不明确 |
-| A06 Fake Gateway 设计 | **PASS** | 本地 Artifact、参数、Artifact 返回、PENDING_ROUTER；不含真实模型 |
-| A07 Windows/CPU/GPU/依赖 | **PASS（静态）** | 手动 Python/CUDA/WebUI/模型/bat；4GB/16GB 未实机；CPU 为 UNKNOWN |
-| A08 依赖检测/UNKNOWN | **PASS（设计）** | 组件/模型/来源/资源/许可逐项；不可检测即 UNKNOWN |
-| A09 负向测试/Top10 | **PASS** | N1–N15 + Top10 |
-| A10 Novice First | **PASS（设计）** | 独立首次弹窗、四条路径、三条恢复；当前上游不满足 |
-| A11 文档范围/隐私 | **PASS** | 仅本文件；无模型/音频/私钥；不复制硬编码凭据 |
-| A12 Diff/Markdown/编码/CI | **PASS（本地）** | 见第 10 节；PR 最新 CI 另核 |
-| A13 main/#16–#18/生产 | **PASS** | 未修改 main、PR #16/#17/#18、服务、模型、微信 |
-| A14 下游建议/停止条件 | **PASS** | `APPROVE_FAKE_ADAPTER_DESIGN`；不直接集成；07-B 只 Fake |
+| R01 原 A01–A14 对齐 | **PASS** | 第 11 节逐项按原顺序；研究 PASS 与上游 BLOCKED 分离 |
+| R02 ≥10 关键静态断言 pinned SHA/file/#L | **PASS** | 第 3 节 C01–C17（17 条），未复制凭据 |
+| R03 SVC v1 请求/结果/拒绝字段 | **PASS** | 第 8.2 节；`SVC_REQUEST_KEYS` L20；validator L53–L87；normalizer L94–L128 |
+| R04 三层映射 + ≥6 判断例 | **PASS** | 第 8.1–8.4；8 个判断例 |
+| R05 RVC 音色/外部 Gateway/分离/混音/发送/Seed-VC Manifest | **PASS** | 第 7.2 节逐组件表 |
+| R06 三种中文恢复、无 GPU/云端 UNKNOWN、无默认上游整合包 | **PASS** | 第 7/10 节；自动安装列均为否/需受审 |
+| R07 保留许可/SSRF/公网/自动下载/UNKNOWN 风险 | **PASS** | 第 4/6 节；结论未退化为“可直接集成” |
+| R08 仅一份报告、无敏感内容/生产副作用、最新 CI | **PASS** | 本轮只改本文件；CI 见第 13 节 |
+| R09 结论限定原创、隔离、离线 Fake | **PASS** | 第 1/14 节 |
+| R10 不修改 #16/#17/#18/main、不合并/安装/运行/发送 | **PASS** | 第 13/14 节 |
 
-## 10. 检查、PR 与未运行项
+## 13. 检查、PR/CI 与未运行项
 
 本地执行（仅文档）：
 
 ```text
-git diff --check
-Markdown/UTF-8 integrity test
+git diff --check                 PASS
+docs integrity / Markdown UTF-8  PASS
+secret/privacy scan              PASS（未复制凭据值）
 ```
 
-- 本研究分支只新增 `docs/SVC_PROVIDER_RESEARCH.md`。
-- 未运行 Node/UI 测试，因为未改工程代码；这不是 RVC 验证。若需要仓库通用文档检查，另行使用现有测试。
-- 未运行真实 Windows、GPU、CPU、模型、试听、微信或 UI 测试。
-- PR/CI 以最终 docs-only PR 的实际 HEAD 为准；不得沿用旧 run。
+- 研究分支：`research/plan07a-rvc-upstream-audit`。
+- 原 PR：#19；**只允许/实际只修改 `docs/SVC_PROVIDER_RESEARCH.md`**。
+- Node/UI 测试：**NOT_RUN**，本轮仅 Markdown，未改工程代码；CI 不是 RVC 验证。
+- 真实 Windows/GPU/CPU、模型、试听、音频、微信：**NOT_RUN / OUT_OF_SCOPE**。
 
-## 11. 唯一建议
+## 14. 唯一结论与硬停止
 
-**`APPROVE_FAKE_ADAPTER_DESIGN`**：允许进入 07-B 的原创 Fake Adapter 设计与隔离测试，禁止：
+**最终结论：`APPROVE_FAKE_ADAPTER_DESIGN`。**
 
-- 复制/修改/内嵌 AstrBot 插件或 RVCSVC-API 源码；
-- vendor `uvr5/`、`msst/` 或模型权重；
-- 接入真实 RVC/Seed-VC/GPU、自动下载歌曲/权重、付费 API；
-- 直接使用上游 `Record` 发送、0.0.0.0/share 服务或无认证 API；
-- 宣称 RVC/SVC 已可用、已安装或 INTEGRATED。
+允许进入 **07-B 的原创、隔离、离线 Fake Adapter 设计与测试**，但：
+
+- 不直接集成当前 RVCSVC-API；
+- 不复制 AstrBot 插件；
+- 不 vendor `uvr5/`、`msst/` 或模型；
+- 不自动下载歌曲/权重；
+- 不运行真实 RVC/Seed-VC/GPU/CUDA；
+- 不直接发送微信；
+- 不把 Fake 结果标成 INTEGRATED/VERIFIED；
+- 真实外部 Gateway/许可/安装一律另审（Plan 07-B/14）。
 
 **硬停止条件：** 任何需要真实安装、模型下载、GPU 推理、歌曲下载、凭据、生产写入、微信发送、合并 PR 或 Force Push 的动作，立即停止并等待单独授权。
 
-## 12. 来源链接（pinned）
+## 15. 来源（pinned）
 
-- 插件：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/tree/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d>
-- 插件 LICENSE：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/LICENSE>
-- API：<https://github.com/CCYellowStar2/RVCSVC-API/tree/274572c320147977a18dc0028e45f79da136a6e2>
-- API README：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/README.md>
+- 插件树：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/tree/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d>
+- 插件 LICENSE：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/LICENSE#L1-L20>
+- 插件 README 许可证段：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/README.md#L170-L172>
+- 插件 `api.py`（不复制 L6-L7 的值）：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/api.py#L6-L7>
+- 插件 `main.py` 发送链：<https://github.com/CCYellowStar2/astrbot_plugin_rvc_svc/blob/0b84e382927e088b9f4f10ce09ea1e4175bb0d8d/main.py#L303-L314>
+- API 树（无 LICENSE）：<https://github.com/CCYellowStar2/RVCSVC-API/tree/274572c320147977a18dc0028e45f79da136a6e2>
+- API README 许可证段：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/README.md#L281-L283>
+- API `app_rvc.py` `/convert`：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L214-L231>
+- API `app_rvc.py` 启动：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L458-L459>
+- API `app_rvc.py` 下载：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/app_rvc.py#L32-L50>
+- API `msst_backend.py`：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/msst_backend.py#L44-L61>
+- API `requirements.txt`：<https://github.com/CCYellowStar2/RVCSVC-API/blob/274572c320147977a18dc0028e45f79da136a6e2/requirements.txt#L1-L10>
 - Seed-VC：<https://github.com/Plachtaa/seed-vc/tree/51383efd921027683c89e5348211d93ff12ac2a8>
+- Seed-VC LICENSE：<https://github.com/Plachtaa/seed-vc/blob/51383efd921027683c89e5348211d93ff12ac2a8/LICENSE#L1-L20>
 - RVC WebUI：<https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI>
 - UVR5：<https://github.com/Anjok07/ultimatevocalremovergui>
 - MSST：<https://github.com/ZFTurbo/Music-Source-Separation-Training>
 - so-vits-svc：<https://github.com/svc-develop-team/so-vits-svc>
-
-## 13. 未决问题
-
-1. RVCSVC-API 的维护者是否能提供明确 LICENSE/再分发许可？
-2. 上游插件 README 的“仅供学习”与 AGPL-3.0 的关系需法律确认。
-3. 是否允许外部 RVC Gateway 作为“用户自行安装”的可选依赖，仍需未来 07-B/Plan 14 设计。
-4. RVC 模型/音色的训练数据与真人声音同意如何验证？
-5. Windows CPU/GPU 资源、长歌、取消/并发、真实输出质量均未实测，不能承诺。
-6. 歌曲元数据搜索/下载的版权与平台条款需后续合规审查，默认不自动化。
