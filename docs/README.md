@@ -3,6 +3,11 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
+## Active development taskbooks
+
+- [Prioritized taskbooks and dispatch ledger](plans/README.md) — 14 current taskbooks, including Unified Whale Voice Core, Whale Relay (鲸递), WeChatAgent extension research and TTS/SVC providers.
+- [Task status](plans/TASK_STATUS.md) — SENT, PLANNED, DONE, BLOCKED with verification evidence; does not supersede Git/CI or PROJECT_STATUS.
+
 ## Current authority and contracts
 
 Read these first when resuming work:
