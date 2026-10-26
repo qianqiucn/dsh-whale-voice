@@ -141,6 +141,16 @@ error. `code` is from `PROVIDER_INSTANCE_ERRORS`; `path` is one of `$`, `schemaV
 `<unknown-key>`; `reason` is a fixed English phrase. Unknown key names, caller IDs, text, exception
 text and stack text are never echoed.
 
+Reason namespace (Plan06-B-F01): reasons produced by this new layer — in both `view.instances[].reason`
+and `BLOCKED.value.reason` — use the full `PROVIDER_INSTANCE_*` enum values. Existing TTS capability
+codes returned by `checkSynthesisRequest` keep their `PROVIDER_ERRORS` values (`UNSUPPORTED_*`,
+`INVALID_RESPONSE`, `NETWORK_REQUIRED`, `TEXT_UPLOAD_NOT_CONFIRMED`, etc.). Status words remain
+unprefixed (`FIXTURE_AVAILABLE`, `VERSION_UNKNOWN`, `OFFLINE`, ...). `selection.instanceId` must match
+the same `^instance:[A-Za-z0-9_-]{1,64}$` regex used at registration; a bad id is
+`INVALID_INPUT`/`selection` and is never echoed. A present `schemaVersion` that is not integer `1`
+(including `'1'`, `null`, `true`, `0`, `2`, `1.5`, arrays or objects) is `UNSUPPORTED_VERSION`; only
+a missing key is `INVALID_INPUT`.
+
 Every layer uses the same bounded structural policy: plain/null-prototype objects only, string
 enumerable data properties only, no getters/setters/Symbols/hidden keys, no extra array properties or
 holes, no cycles, and limits of 4096 values / depth 12 / 32 object keys / 256 array items / 8192
@@ -175,11 +185,39 @@ performance is unknown and is not promised.
 
 ## 6. Verification snapshot (this branch)
 
-- `node --test test/provider-instances.test.mjs`: **30/30** (R01–R30).
-- Existing + new full suite: **408 tests / 407 pass / 1 platform skip / 0 fail**.
+- `node --test test/provider-instances.test.mjs`: **48/48** (R01–R30 + N01–N18).
+- `node --test test/tts-provider.test.mjs`: **21/21** (16 existing + M01–M05).
+- Existing + new full suite: **431 tests / 430 pass / 1 platform skip / 0 fail**.
 - `node build.mjs` succeeds; generated `client.js` is unchanged.
 - UI harness: existing 24/24 checks (no new UI).
 - This is `OFFLINE` contract evidence, not a real Host/GUI or provider integration.
+
+## 7. Plan06-B-F01 review repairs
+
+The first PR #24 review found four boundary gaps; this branch fixes them without changing the public
+success shapes:
+
+1. **Manifest helper failures** — `validateProviderManifest` now checks the return value of all eight
+   section validators (`version`, `capabilities`, `health`, `credentials`, `network`, `privacy`,
+   `cost`, `resources`). If a validator returns non-`true` without appending an error, a fixed
+   `INVALID_MANIFEST` error for that section is added; no manifest can normalize successfully after a
+   failed section. The composition layer also converts dependency exceptions into fixed
+   `INVALID_INSTANCE`/`INVALID_REQUEST` failures instead of escaping.
+2. **Selection id** — `selection.instanceId` uses the registration regex; malformed ids (URLs, paths,
+   whitespace, newlines, wrong prefix, over-64 suffix) return `INVALID_INPUT`/`selection` without
+   echoing the value. A well-formed but unknown `instance:missing` remains a legal
+   `BLOCKED`/`INSTANCE_UNKNOWN`.
+3. **Reason namespace** — new-layer reasons use the full `PROVIDER_INSTANCE_*` values, while existing
+   TTS capability codes keep `PROVIDER_ERRORS` values; status words and the fixed Chinese messages are
+   unchanged.
+4. **Schema version** — a present `schemaVersion` other than integer `1` is `UNSUPPORTED_VERSION` at
+   the build top level, the negotiation top level and `negotiate.registry`; only a missing key is
+   `INVALID_INPUT`. Instance `protocolVersion` keeps its separate rule (valid non-1 → instance
+   `VERSION_UNKNOWN`; invalid type/range → `INVALID_INSTANCE`).
+
+The original R01–R30 security intent is retained; expectations were tightened to the full reason
+values. M01–M05 cover the manifest-validator root cause and N01–N18 cover the composition/selection/
+version/reason repairs.
 
 Remaining work is explicitly out of scope here: 06-C scheduling, 08 voice/asset/id mapping, real
 provider adapters, Relay, installer and all UI product flows.

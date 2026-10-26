@@ -322,44 +322,44 @@ function adapterFor(category, canonicalId) {
 
 function computeStatus(instance) {
   if (instance.adapter === null) {
-    return { status: 'NOT_IMPLEMENTED', reason: 'NOT_IMPLEMENTED' }
+    return { status: 'NOT_IMPLEMENTED', reason: PROVIDER_INSTANCE_ERRORS.NOT_IMPLEMENTED }
   }
   if (instance.protocolVersion !== PROVIDER_INSTANCES_SCHEMA_VERSION || instance.observation.versionMatches !== true) {
-    return { status: 'VERSION_UNKNOWN', reason: 'VERSION_UNKNOWN' }
+    return { status: 'VERSION_UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.VERSION_UNKNOWN }
   }
   if (instance.category === 'TTS') {
     if (providerVersionView(instance.manifest).state !== 'AUDITED') {
-      return { status: 'VERSION_UNKNOWN', reason: 'VERSION_UNKNOWN' }
+      return { status: 'VERSION_UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.VERSION_UNKNOWN }
     }
     if (instance.manifest.credentials.required === true) {
       if (instance.observation.credentials === 'missing') {
-        return { status: 'CREDENTIALS_MISSING', reason: 'CREDENTIALS_MISSING' }
+        return { status: 'CREDENTIALS_MISSING', reason: PROVIDER_INSTANCE_ERRORS.CREDENTIALS_MISSING }
       }
       if (instance.observation.credentials === 'unknown') {
-        return { status: 'UNKNOWN', reason: 'CREDENTIALS_UNKNOWN' }
+        return { status: 'UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.CREDENTIALS_UNKNOWN }
       }
     }
   }
   switch (instance.observation.state) {
     case 'timeout':
-      return { status: 'UNKNOWN', reason: 'TIMEOUT' }
+      return { status: 'UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.TIMEOUT }
     case 'unknown':
-      return { status: 'UNKNOWN', reason: 'HEALTH_UNKNOWN' }
+      return { status: 'UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.HEALTH_UNKNOWN }
     case 'offline':
-      return { status: 'OFFLINE', reason: 'OFFLINE' }
+      return { status: 'OFFLINE', reason: PROVIDER_INSTANCE_ERRORS.OFFLINE }
     case 'degraded':
-      return { status: 'DEGRADED', reason: 'DEGRADED' }
+      return { status: 'DEGRADED', reason: PROVIDER_INSTANCE_ERRORS.DEGRADED }
     case 'ok':
       break
     default:
-      return { status: 'UNKNOWN', reason: 'HEALTH_UNKNOWN' }
+      return { status: 'UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.HEALTH_UNKNOWN }
   }
   if (instance.category === 'TTS') {
     const evaluated = evaluateProviderStatus(instance.manifest, instance.observation)
     if (evaluated.state === PROVIDER_STATES.AVAILABLE) {
       return { status: 'FIXTURE_AVAILABLE', reason: null }
     }
-    return { status: 'UNKNOWN', reason: 'HEALTH_UNKNOWN' }
+    return { status: 'UNKNOWN', reason: PROVIDER_INSTANCE_ERRORS.HEALTH_UNKNOWN }
   }
   return { status: 'FIXTURE_AVAILABLE', reason: null }
 }
@@ -426,35 +426,39 @@ function validateInstance(copiedInstance, seenIds) {
 
   if (copiedInstance.fixture !== true) return { errorKey: 'REAL_OPERATION_FORBIDDEN' }
 
-  const resolved = resolveCandidate(category, candidateId)
-  if (resolved.errorKey) return { errorKey: resolved.errorKey }
+  try {
+    const resolved = resolveCandidate(category, candidateId)
+    if (resolved.errorKey) return { errorKey: resolved.errorKey }
 
-  let manifest = null
-  if (category === 'TTS') {
-    const normalized = normalizeProviderManifest(copiedInstance.manifest)
-    if (!normalized.ok) return { errorKey: 'INVALID_INSTANCE' }
-    manifest = normalized.manifest
-    if (manifest.id !== resolved.canonicalId) return { errorKey: 'INVALID_INSTANCE' }
-    if (manifest.kind !== resolved.candidate.kind) return { errorKey: 'INVALID_INSTANCE' }
-  } else if (copiedInstance.manifest !== null) {
+    let manifest = null
+    if (category === 'TTS') {
+      const normalized = normalizeProviderManifest(copiedInstance.manifest)
+      if (!normalized.ok) return { errorKey: 'INVALID_INSTANCE' }
+      manifest = normalized.manifest
+      if (manifest.id !== resolved.canonicalId) return { errorKey: 'INVALID_INSTANCE' }
+      if (manifest.kind !== resolved.candidate.kind) return { errorKey: 'INVALID_INSTANCE' }
+    } else if (copiedInstance.manifest !== null) {
+      return { errorKey: 'INVALID_INSTANCE' }
+    }
+
+    const observation = validateObservation(category, manifest, copiedInstance.observation)
+    if (observation.errorKey) return { errorKey: observation.errorKey }
+
+    const instance = {
+      instanceId,
+      category,
+      candidateId: resolved.canonicalId,
+      kind: category === 'TTS' ? resolved.candidate.kind : 'SVC',
+      adapter: adapterFor(category, resolved.canonicalId),
+      protocolVersion,
+      manifest,
+      observation: observation.value,
+    }
+    const status = computeStatus(instance)
+    return { ok: true, value: { ...instance, ...status } }
+  } catch {
     return { errorKey: 'INVALID_INSTANCE' }
   }
-
-  const observation = validateObservation(category, manifest, copiedInstance.observation)
-  if (observation.errorKey) return { errorKey: observation.errorKey }
-
-  const instance = {
-    instanceId,
-    category,
-    candidateId: resolved.canonicalId,
-    kind: category === 'TTS' ? resolved.candidate.kind : 'SVC',
-    adapter: adapterFor(category, resolved.canonicalId),
-    protocolVersion,
-    manifest,
-    observation: observation.value,
-  }
-  const status = computeStatus(instance)
-  return { ok: true, value: { ...instance, ...status } }
 }
 
 function validateRegistry(copiedRegistry) {
@@ -466,7 +470,6 @@ function validateRegistry(copiedRegistry) {
   if (!hasOwn(copiedRegistry, 'schemaVersion') || !hasOwn(copiedRegistry, 'instances')) {
     return failKey('INVALID_INPUT', 'schemaVersion')
   }
-  if (!Number.isInteger(copiedRegistry.schemaVersion)) return failKey('INVALID_INPUT', 'schemaVersion')
   if (copiedRegistry.schemaVersion !== PROVIDER_INSTANCES_SCHEMA_VERSION) {
     return failKey('UNSUPPORTED_VERSION', 'schemaVersion')
   }
@@ -509,12 +512,32 @@ function validateRegistry(copiedRegistry) {
   return { ok: true, value: { view: deepFreeze(view), instances } }
 }
 
-export function buildProviderInstanceView(input) {
+function buildProviderInstanceViewInternal(input) {
   const copied = safeCopy(input)
   if (!copied.ok) return failKey(copied.key, '$')
-  const built = validateRegistry(copied.value)
+  let built
+  try {
+    built = validateRegistry(copied.value)
+  } catch {
+    return failKey('INVALID_INSTANCE', 'instance')
+  }
   if (!built.ok) return built
   return { ok: true, value: built.value.view }
+}
+
+export function buildProviderInstanceView(input) {
+  try {
+    return buildProviderInstanceViewInternal(input)
+  } catch {
+    return failKey('INVALID_INPUT', '$')
+  }
+}
+
+function messageFor(reason) {
+  if (!reason) return MESSAGE_ZH.FIXTURE_COMPATIBLE
+  const prefix = 'PROVIDER_INSTANCE_'
+  const key = reason.startsWith(prefix) ? reason.slice(prefix.length) : reason
+  return MESSAGE_ZH[key] || MESSAGE_ZH.INVALID_REQUEST
 }
 
 function blocked(category, instanceId, candidateId, reason) {
@@ -527,7 +550,7 @@ function blocked(category, instanceId, candidateId, reason) {
       candidateId,
       decision: 'BLOCKED',
       reason,
-      messageZh: MESSAGE_ZH[reason] || MESSAGE_ZH.INVALID_REQUEST,
+      messageZh: messageFor(reason),
       mockOnly: true,
       realOperationAllowed: false,
       submitAllowed: false,
@@ -563,7 +586,7 @@ function validateSelection(selection) {
   }
   if (keys.length !== SELECTION_KEYS.size) return failKey('INVALID_INPUT', 'selection')
   if (!CATEGORIES.has(selection.category)) return failKey('INVALID_INPUT', 'selection')
-  if (typeof selection.instanceId !== 'string' || selection.instanceId.length === 0) {
+  if (typeof selection.instanceId !== 'string' || !INSTANCE_ID_PATTERN.test(selection.instanceId)) {
     return failKey('INVALID_INPUT', 'selection')
   }
   return { ok: true, value: { category: selection.category, instanceId: selection.instanceId } }
@@ -618,21 +641,21 @@ function validateRvcRequestShape(request) {
 
 function consentGate(instance, consent) {
   if (instance.manifest.network.required === true && consent.networkAllowed !== true) {
-    return 'NETWORK_REQUIRED'
+    return PROVIDER_ERRORS.NETWORK_REQUIRED
   }
   if (
     (instance.manifest.network.textUpload === true || instance.manifest.privacy.textLeavesDevice === true) &&
     consent.textUploadAllowed !== true
   ) {
-    return 'TEXT_UPLOAD_NOT_CONFIRMED'
+    return PROVIDER_ERRORS.TEXT_UPLOAD_NOT_CONFIRMED
   }
   if (instance.manifest.cost.paid === true && consent.paidAllowed !== true) {
-    return 'COST_NOT_CONFIRMED'
+    return PROVIDER_INSTANCE_ERRORS.COST_NOT_CONFIRMED
   }
   return null
 }
 
-export function negotiateProviderInstance(input) {
+function negotiateProviderInstanceInternal(input) {
   const copied = safeCopy(input)
   if (!copied.ok) return failKey(copied.key, '$')
   const payload = copied.value
@@ -644,12 +667,16 @@ export function negotiateProviderInstance(input) {
   for (const key of NEGOTIATION_KEYS) {
     if (!hasOwn(payload, key)) return failKey('INVALID_INPUT', key)
   }
-  if (!Number.isInteger(payload.schemaVersion)) return failKey('INVALID_INPUT', 'schemaVersion')
   if (payload.schemaVersion !== PROVIDER_INSTANCES_SCHEMA_VERSION) {
     return failKey('UNSUPPORTED_VERSION', 'schemaVersion')
   }
 
-  const registry = validateRegistry(payload.registry)
+  let registry
+  try {
+    registry = validateRegistry(payload.registry)
+  } catch {
+    return failKey('INVALID_INSTANCE', 'instance')
+  }
   if (!registry.ok) return registry
 
   const selection = validateSelection(payload.selection)
@@ -659,10 +686,20 @@ export function negotiateProviderInstance(input) {
 
   const instance = registry.value.instances.find((item) => item.instanceId === selection.value.instanceId)
   if (!instance) {
-    return blocked(selection.value.category, selection.value.instanceId, null, 'INSTANCE_UNKNOWN')
+    return blocked(
+      selection.value.category,
+      selection.value.instanceId,
+      null,
+      PROVIDER_INSTANCE_ERRORS.INSTANCE_UNKNOWN,
+    )
   }
   if (instance.category !== selection.value.category) {
-    return blocked(selection.value.category, selection.value.instanceId, instance.candidateId, 'CATEGORY_MISMATCH')
+    return blocked(
+      selection.value.category,
+      selection.value.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.CATEGORY_MISMATCH,
+    )
   }
   if (instance.status !== 'FIXTURE_AVAILABLE') {
     return blocked(instance.category, instance.instanceId, instance.candidateId, instance.reason)
@@ -670,34 +707,97 @@ export function negotiateProviderInstance(input) {
 
   if (instance.category === 'TTS') {
     if (!validateTtsRequest(payload.request)) {
-      return blocked(instance.category, instance.instanceId, instance.candidateId, 'INVALID_REQUEST')
+      return blocked(
+        instance.category,
+        instance.instanceId,
+        instance.candidateId,
+        PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST,
+      )
     }
     const gate = consentGate(instance, consent.value)
     if (gate) return blocked(instance.category, instance.instanceId, instance.candidateId, gate)
-    const checked = checkSynthesisRequest(instance.manifest, instance.observation, payload.request)
+    let checked
+    try {
+      checked = checkSynthesisRequest(instance.manifest, instance.observation, payload.request)
+    } catch {
+      return blocked(
+        instance.category,
+        instance.instanceId,
+        instance.candidateId,
+        PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST,
+      )
+    }
     if (!checked.ok) {
-      const reason = ALLOWED_TTS_REASONS.has(checked.code) ? checked.code : 'INVALID_REQUEST'
+      const reason = ALLOWED_TTS_REASONS.has(checked.code)
+        ? checked.code
+        : PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST
       return blocked(instance.category, instance.instanceId, instance.candidateId, reason)
     }
     return compatible(instance.category, instance.instanceId, instance.candidateId)
   }
 
   if (!validateRvcRequestShape(payload.request)) {
-    return blocked(instance.category, instance.instanceId, instance.candidateId, 'INVALID_REQUEST')
+    return blocked(
+      instance.category,
+      instance.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST,
+    )
   }
-  const validated = validateRvcFakeRequest(payload.request)
+  let validated
+  try {
+    validated = validateRvcFakeRequest(payload.request)
+  } catch {
+    return blocked(
+      instance.category,
+      instance.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST,
+    )
+  }
   if (!validated.ok) {
     const first = Array.isArray(validated.errors) ? validated.errors[0] : null
-    const reason = first && first.code === 'RVC_FAKE_MODEL_NOT_AVAILABLE' ? 'MODEL_NOT_AVAILABLE' : 'INVALID_REQUEST'
+    const reason =
+      first && first.code === 'RVC_FAKE_MODEL_NOT_AVAILABLE'
+        ? PROVIDER_INSTANCE_ERRORS.MODEL_NOT_AVAILABLE
+        : PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST
     return blocked(instance.category, instance.instanceId, instance.candidateId, reason)
   }
-  const models = listRvcFakeModels()
+  let models
+  try {
+    models = listRvcFakeModels()
+  } catch {
+    return blocked(
+      instance.category,
+      instance.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.INVALID_REQUEST,
+    )
+  }
   if (!models.ok) {
-    return blocked(instance.category, instance.instanceId, instance.candidateId, 'MODEL_NOT_AVAILABLE')
+    return blocked(
+      instance.category,
+      instance.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.MODEL_NOT_AVAILABLE,
+    )
   }
   const model = models.value.find((item) => item.modelId === payload.request.targetModelId)
   if (!model || model.simulatedAvailable !== true) {
-    return blocked(instance.category, instance.instanceId, instance.candidateId, 'MODEL_NOT_AVAILABLE')
+    return blocked(
+      instance.category,
+      instance.instanceId,
+      instance.candidateId,
+      PROVIDER_INSTANCE_ERRORS.MODEL_NOT_AVAILABLE,
+    )
   }
   return compatible(instance.category, instance.instanceId, instance.candidateId)
+}
+
+export function negotiateProviderInstance(input) {
+  try {
+    return negotiateProviderInstanceInternal(input)
+  } catch {
+    return failKey('INVALID_INPUT', '$')
+  }
 }

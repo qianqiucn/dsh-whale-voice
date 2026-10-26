@@ -8,7 +8,7 @@ import {
   buildProviderInstanceView,
   negotiateProviderInstance,
 } from '../core/audio/provider-instances.mjs'
-import { PROVIDER_KINDS, normalizeProviderManifest } from '../core/tts/provider-contract.mjs'
+import { PROVIDER_ERRORS, PROVIDER_KINDS, normalizeProviderManifest } from '../core/tts/provider-contract.mjs'
 import { getRegistryView, selectProviderCandidate } from '../core/tts/provider-registry.mjs'
 import { getSvcRegistryView, selectSvcCandidate } from '../core/svc/svc-registry.mjs'
 
@@ -178,10 +178,27 @@ function expectError(result, key, path) {
   return result
 }
 
+const NEW_REASON_KEYS = new Set([
+  'NOT_IMPLEMENTED',
+  'VERSION_UNKNOWN',
+  'CREDENTIALS_MISSING',
+  'CREDENTIALS_UNKNOWN',
+  'HEALTH_UNKNOWN',
+  'TIMEOUT',
+  'OFFLINE',
+  'DEGRADED',
+  'INSTANCE_UNKNOWN',
+  'CATEGORY_MISMATCH',
+  'INVALID_REQUEST',
+  'MODEL_NOT_AVAILABLE',
+  'COST_NOT_CONFIRMED',
+])
+
 function expectBlocked(result, reason) {
+  const expected = NEW_REASON_KEYS.has(reason) ? ERR[reason] : reason
   assert.equal(result.ok, true)
   assert.equal(result.value.decision, 'BLOCKED')
-  assert.equal(result.value.reason, reason)
+  assert.equal(result.value.reason, expected)
   assert.equal(result.value.mockOnly, true)
   assert.equal(result.value.realOperationAllowed, false)
   assert.equal(result.value.submitAllowed, false)
@@ -278,7 +295,7 @@ test('R08 version conditions dominate healthy observations', () => {
   for (const versionMatches of [false, null]) {
     const result = buildProviderInstanceView(viewInput([ttsInstance({ observation: obs({ versionMatches }) })]))
     assert.equal(result.value.instances[0].status, 'VERSION_UNKNOWN')
-    assert.equal(result.value.instances[0].reason, 'VERSION_UNKNOWN')
+    assert.equal(result.value.instances[0].reason, ERR.VERSION_UNKNOWN)
   }
 
   const unaudited = buildProviderInstanceView(
@@ -295,11 +312,11 @@ test('R08 version conditions dominate healthy observations', () => {
 test('R09 required credential states are separated and not_required cannot masquerade', () => {
   const missing = buildProviderInstanceView(viewInput([cloudInstance({ observation: obs({ credentials: 'missing' }) })]))
   assert.equal(missing.value.instances[0].status, 'CREDENTIALS_MISSING')
-  assert.equal(missing.value.instances[0].reason, 'CREDENTIALS_MISSING')
+  assert.equal(missing.value.instances[0].reason, ERR.CREDENTIALS_MISSING)
 
   const unknown = buildProviderInstanceView(viewInput([cloudInstance({ observation: obs({ credentials: 'unknown' }) })]))
   assert.equal(unknown.value.instances[0].status, 'UNKNOWN')
-  assert.equal(unknown.value.instances[0].reason, 'CREDENTIALS_UNKNOWN')
+  assert.equal(unknown.value.instances[0].reason, ERR.CREDENTIALS_UNKNOWN)
 
   const fakeNotRequired = buildProviderInstanceView(viewInput([cloudInstance({ observation: obs() })]))
   expectError(fakeNotRequired, 'INVALID_INSTANCE', 'instance')
@@ -320,7 +337,7 @@ test('R11 timeout, unknown, offline and degraded map to fixed statuses', () => {
   for (const [state, status, reason] of cases) {
     const result = buildProviderInstanceView(viewInput([ttsInstance({ observation: obs({ state }) })]))
     assert.equal(result.value.instances[0].status, status, state)
-    assert.equal(result.value.instances[0].reason, reason, state)
+    assert.equal(result.value.instances[0].reason, ERR[reason], state)
     assert.equal(result.value.instances[0].fixtureSelectable, false)
   }
 })
@@ -722,4 +739,332 @@ test('R30 every negotiation result stays non-operational and the module has no s
   const source = await readFile(new URL('../core/audio/provider-instances.mjs', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /node:fs|node:http|node:https|child_process|\bfetch\s*\(|\bspawn\s*\(|process\.|Date\.now|Math\.random|setTimeout/)
   assert.doesNotMatch(source, /simulateRvcFakeConversion|normalizeSvcResult|normalizeSynthesisResult|transitionAudioTask/)
+})
+
+// ---------------------------------------------------------------------------
+// N01–N18: Plan06-B-F01 review repairs.
+// ---------------------------------------------------------------------------
+
+function brokenManifest(mutator) {
+  const manifest = baseManifest()
+  mutator(manifest)
+  return manifest
+}
+
+function buildBroken(manifest) {
+  return buildProviderInstanceView(viewInput([ttsInstance({ manifest })]))
+}
+
+function negotiateBroken(manifest) {
+  return negotiateProviderInstance(
+    negotiationInput([ttsInstance({ manifest })], { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest()),
+  )
+}
+
+test('N01 malformed clone/formats is rejected instead of becoming a usable instance', () => {
+  const manifest = brokenManifest((value) => {
+    value.capabilities.clone = null
+    value.capabilities.formats = null
+  })
+  const result = buildBroken(manifest)
+  expectError(result, 'INVALID_INSTANCE', 'instance')
+  assert.equal(JSON.stringify(result).includes('FIXTURE_AVAILABLE'), false)
+})
+
+test('N02 negotiating the same malformed manifest fails closed without throwing', () => {
+  const manifest = brokenManifest((value) => {
+    value.capabilities.clone = null
+    value.capabilities.formats = null
+  })
+  let result
+  assert.doesNotThrow(() => {
+    result = negotiateBroken(manifest)
+  })
+  expectError(result, 'INVALID_INSTANCE', 'instance')
+})
+
+test('N03 malformed clone/limits is rejected by both entries', () => {
+  const manifest = brokenManifest((value) => {
+    value.capabilities.clone = null
+    value.capabilities.limits = { maxChars: {}, timeoutMs: 5000, maxAudioSeconds: 30 }
+  })
+  expectError(buildBroken(manifest), 'INVALID_INSTANCE', 'instance')
+  expectError(negotiateBroken(manifest), 'INVALID_INSTANCE', 'instance')
+})
+
+test('N04 clone=null alone is still rejected, not only the formats crash path', () => {
+  const manifest = brokenManifest((value) => {
+    value.capabilities.clone = null
+  })
+  expectError(buildBroken(manifest), 'INVALID_INSTANCE', 'instance')
+  expectError(negotiateBroken(manifest), 'INVALID_INSTANCE', 'instance')
+})
+
+test('N05 selection ids use the registration regex exactly', () => {
+  const ids = [
+    'https://fixture.invalid/PRIVATE_MARKER_05',
+    '/absolute/path',
+    '   ',
+    'instance:\n',
+    'missingprefix',
+    'instance:' + 'a'.repeat(65),
+  ]
+  for (const instanceId of ids) {
+    const result = negotiateProviderInstance(
+      negotiationInput([ttsInstance()], { category: 'TTS', instanceId }, ttsRequest()),
+    )
+    expectError(result, 'INVALID_INPUT', 'selection')
+  }
+})
+
+test('N06 a private marker in an invalid selection is never echoed', () => {
+  const marker = 'PRIVATE_SELECTION_MARKER_06'
+  const result = negotiateProviderInstance(
+    negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'https://fixture.invalid/' + marker }, ttsRequest()),
+  )
+  expectError(result, 'INVALID_INPUT', 'selection')
+  const encoded = JSON.stringify(result)
+  assert.equal(encoded.includes(marker), false)
+  assert.equal(encoded.includes('https://'), false)
+})
+
+test('N07 a valid but missing instance id stays a legal BLOCKED/INSTANCE_UNKNOWN', () => {
+  const result = negotiateProviderInstance(
+    negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'instance:missing' }, ttsRequest()),
+  )
+  expectBlocked(result, 'INSTANCE_UNKNOWN')
+  assert.equal(result.value.reason, ERR.INSTANCE_UNKNOWN)
+  assert.equal(result.value.candidateId, null)
+})
+
+test('N08 registration and selection share the same 1..64 character boundary', () => {
+  const suffix64 = 'a'.repeat(64)
+  const suffix65 = 'a'.repeat(65)
+  const boundary = buildProviderInstanceView(viewInput([ttsInstance({ instanceId: 'instance:' + suffix64 })]))
+  assert.equal(boundary.ok, true)
+  expectError(
+    buildProviderInstanceView(viewInput([ttsInstance({ instanceId: 'instance:' + suffix65 })])),
+    'INVALID_INSTANCE',
+    'instance',
+  )
+  expectBlocked(
+    negotiateProviderInstance(
+      negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'instance:' + suffix64 }, ttsRequest()),
+    ),
+    'INSTANCE_UNKNOWN',
+  )
+  expectError(
+    negotiateProviderInstance(
+      negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'instance:' + suffix65 }, ttsRequest()),
+    ),
+    'INVALID_INPUT',
+    'selection',
+  )
+})
+
+test('N09 all view reasons use the exported enum values, while status words stay unchanged', () => {
+  const view = buildProviderInstanceView(
+    viewInput([
+      ttsInstance({ instanceId: 'instance:version', protocolVersion: 2 }),
+      ttsInstance({ instanceId: 'instance:offline', observation: obs({ state: 'offline' }) }),
+      seedVcInstance(),
+      ttsInstance({ instanceId: 'instance:available' }),
+    ]),
+  )
+  assert.equal(view.ok, true)
+  const statuses = new Set(['FIXTURE_AVAILABLE', 'NOT_IMPLEMENTED', 'VERSION_UNKNOWN', 'UNKNOWN', 'OFFLINE', 'DEGRADED', 'CREDENTIALS_MISSING'])
+  const reasons = new Set(Object.values(ERR))
+  for (const item of view.value.instances) {
+    assert.ok(statuses.has(item.status), item.status)
+    if (item.reason !== null) assert.ok(reasons.has(item.reason), item.reason)
+  }
+})
+
+test('N10 the blocked reason matches the view reason and keeps the fixed Chinese message', () => {
+  const offline = ttsInstance({ observation: obs({ state: 'offline' }) })
+  const view = buildProviderInstanceView(viewInput([offline]))
+  const result = negotiateProviderInstance(
+    negotiationInput([offline], { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest()),
+  )
+  expectBlocked(result, 'OFFLINE')
+  assert.equal(result.value.reason, view.value.instances[0].reason)
+  assert.match(result.value.messageZh, /不会自动重试/)
+})
+
+test('N11 selection, model, request and cost reasons use the new namespace', () => {
+  const instances = [ttsInstance(), rvcInstance(), cloudInstance()]
+  expectBlocked(
+    negotiateProviderInstance(negotiationInput(instances, { category: 'TTS', instanceId: 'instance:none' }, ttsRequest())),
+    'INSTANCE_UNKNOWN',
+  )
+  expectBlocked(
+    negotiateProviderInstance(negotiationInput(instances, { category: 'SVC', instanceId: 'instance:qwen' }, rvcRequest())),
+    'CATEGORY_MISMATCH',
+  )
+  expectBlocked(
+    negotiateProviderInstance(
+      negotiationInput(instances, { category: 'SVC', instanceId: 'instance:rvc' }, rvcRequest({ targetModelId: 'rvc-model:fixture-b' })),
+    ),
+    'MODEL_NOT_AVAILABLE',
+  )
+  expectBlocked(
+    negotiateProviderInstance(
+      negotiationInput(instances, { category: 'SVC', instanceId: 'instance:rvc' }, rvcRequest({ targetModelId: 'rvc-model:other' })),
+    ),
+    'MODEL_NOT_AVAILABLE',
+  )
+  expectBlocked(
+    negotiateProviderInstance(
+      negotiationInput(instances, { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest({ extra: 1 })),
+    ),
+    'INVALID_REQUEST',
+  )
+  expectBlocked(
+    negotiateProviderInstance(
+      negotiationInput(
+        instances,
+        { category: 'TTS', instanceId: 'instance:cloud' },
+        cloudRequest(),
+        { networkAllowed: true, textUploadAllowed: true, paidAllowed: false },
+      ),
+    ),
+    'COST_NOT_CONFIRMED',
+  )
+})
+
+test('N12 existing TTS capability codes keep their original provider namespace', () => {
+  const instances = [ttsInstance()]
+  const selection = { category: 'TTS', instanceId: 'instance:qwen' }
+  const cases = [
+    [{ voiceId: 'voice-x' }, PROVIDER_ERRORS.UNSUPPORTED_VOICE],
+    [{ language: 'en-US' }, PROVIDER_ERRORS.UNSUPPORTED_LANGUAGE],
+    [{ emotion: 'happy' }, PROVIDER_ERRORS.UNSUPPORTED_EMOTION],
+    [{ streaming: true }, PROVIDER_ERRORS.UNSUPPORTED_STREAMING],
+    [{ format: 'audio/mp3' }, PROVIDER_ERRORS.UNSUPPORTED_FORMAT],
+    [{ text: 'x'.repeat(101) }, PROVIDER_ERRORS.INVALID_RESPONSE],
+  ]
+  for (const [overrides, reason] of cases) {
+    const result = negotiateProviderInstance(negotiationInput(instances, selection, ttsRequest(overrides)))
+    assert.equal(result.value.reason, reason)
+    assert.equal(result.value.reason.startsWith('PROVIDER_INSTANCE_'), false)
+  }
+})
+
+test('N13 network/upload keep provider codes, cost uses the new enum, priority unchanged', () => {
+  const instances = [cloudInstance()]
+  const selection = { category: 'TTS', instanceId: 'instance:cloud' }
+  assert.equal(
+    negotiateProviderInstance(negotiationInput(instances, selection, cloudRequest(), {})).value.reason,
+    PROVIDER_ERRORS.NETWORK_REQUIRED,
+  )
+  assert.equal(
+    negotiateProviderInstance(
+      negotiationInput(instances, selection, cloudRequest(), { networkAllowed: true }),
+    ).value.reason,
+    PROVIDER_ERRORS.TEXT_UPLOAD_NOT_CONFIRMED,
+  )
+  const cost = negotiateProviderInstance(
+    negotiationInput(instances, selection, cloudRequest(), { networkAllowed: true, textUploadAllowed: true }),
+  )
+  expectBlocked(cost, 'COST_NOT_CONFIRMED')
+  assert.equal(cost.value.reason, ERR.COST_NOT_CONFIRMED)
+})
+
+test('N14 non-integer non-1 schema versions are UNSUPPORTED_VERSION in all three positions', () => {
+  const variants = ['1', null, true, 0, 2, 1.5, [], {}]
+  for (const schemaVersion of variants) {
+    const buildResult = buildProviderInstanceView({ schemaVersion, instances: [] })
+    assert.equal(buildResult.ok, false)
+    assert.equal(buildResult.errors[0].code, ERR.UNSUPPORTED_VERSION)
+    assert.equal(buildResult.errors[0].path, 'schemaVersion')
+
+    const negotiateTop = negotiationInput([], { category: 'TTS', instanceId: 'instance:x' }, ttsRequest())
+    negotiateTop.schemaVersion = schemaVersion
+    assert.equal(negotiateProviderInstance(negotiateTop).errors[0].code, ERR.UNSUPPORTED_VERSION)
+
+    const negotiateRegistry = negotiationInput([], { category: 'TTS', instanceId: 'instance:x' }, ttsRequest())
+    negotiateRegistry.registry.schemaVersion = schemaVersion
+    assert.equal(negotiateProviderInstance(negotiateRegistry).errors[0].code, ERR.UNSUPPORTED_VERSION)
+  }
+})
+
+test('N15 missing schema versions stay INVALID_INPUT and unsafe-copy values still fail structurally', () => {
+  expectError(buildProviderInstanceView({ instances: [] }), 'INVALID_INPUT', 'schemaVersion')
+
+  const negotiateTop = negotiationInput([], { category: 'TTS', instanceId: 'instance:x' }, ttsRequest())
+  delete negotiateTop.schemaVersion
+  expectError(negotiateProviderInstance(negotiateTop), 'INVALID_INPUT', 'schemaVersion')
+
+  const negotiateRegistry = negotiationInput([], { category: 'TTS', instanceId: 'instance:x' }, ttsRequest())
+  delete negotiateRegistry.registry.schemaVersion
+  expectError(negotiateProviderInstance(negotiateRegistry), 'INVALID_INPUT', 'schemaVersion')
+
+  expectError(buildProviderInstanceView({ schemaVersion: undefined, instances: [] }), 'INVALID_INPUT', '$')
+  expectError(buildProviderInstanceView({ schemaVersion: () => 1, instances: [] }), 'INVALID_INPUT', '$')
+
+  assert.equal(buildProviderInstanceView({ schemaVersion: 1, instances: [] }).ok, true)
+})
+
+test('N16 instance protocolVersion semantics are unchanged', () => {
+  const view = buildProviderInstanceView(viewInput([ttsInstance({ instanceId: 'instance:v2', protocolVersion: 2 })]))
+  assert.equal(view.value.instances[0].status, 'VERSION_UNKNOWN')
+  assert.equal(view.value.instances[0].reason, ERR.VERSION_UNKNOWN)
+  expectError(
+    buildProviderInstanceView(viewInput([ttsInstance({ instanceId: 'instance:bad', protocolVersion: '1' })])),
+    'INVALID_INSTANCE',
+    'instance',
+  )
+  expectError(
+    buildProviderInstanceView(viewInput([ttsInstance({ instanceId: 'instance:bad', protocolVersion: 0 })])),
+    'INVALID_INSTANCE',
+    'instance',
+  )
+})
+
+test('N17 repair paths never invoke getters, mutate input or leak markers', () => {
+  let calls = 0
+  const getterManifest = baseManifest()
+  Object.defineProperty(getterManifest.capabilities, 'clone', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      calls += 1
+      return null
+    },
+  })
+  const result = buildProviderInstanceView(viewInput([ttsInstance({ manifest: getterManifest })]))
+  expectError(result, 'INVALID_INPUT', '$')
+  assert.equal(calls, 0)
+
+  const input = viewInput([ttsInstance()])
+  const snapshot = JSON.stringify(input)
+  buildProviderInstanceView(input)
+  negotiateProviderInstance(negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest()))
+  assert.equal(JSON.stringify(input), snapshot)
+
+  const marker = 'PRIVATE_REPAIR_MARKER_17'
+  const marked = negotiateProviderInstance(
+    negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'https://x/' + marker }, ttsRequest()),
+  )
+  assert.equal(JSON.stringify(marked).includes(marker), false)
+})
+
+test('N18 normal TTS and RVC demonstrations still match with all safety flags false', () => {
+  const tts = negotiateProviderInstance(
+    negotiationInput([ttsInstance()], { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest()),
+  )
+  expectCompatible(tts, 'qwen3-tts')
+  const rvc = negotiateProviderInstance(
+    negotiationInput([rvcInstance()], { category: 'SVC', instanceId: 'instance:rvc' }, rvcRequest()),
+  )
+  expectCompatible(rvc, 'rvc')
+  for (const result of [tts, rvc]) {
+    assert.equal(result.value.mockOnly, true)
+    assert.equal(result.value.realOperationAllowed, false)
+    assert.equal(result.value.submitAllowed, false)
+    assert.equal(result.value.automaticRetryAllowed, false)
+    const encoded = JSON.stringify(result)
+    assert.equal(encoded.includes('artifactRef'), false)
+    assert.equal(encoded.includes('sampleRate'), false)
+  }
 })

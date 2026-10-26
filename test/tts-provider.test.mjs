@@ -360,3 +360,69 @@ test('provider contract modules have no I/O or delivery side effects', async () 
     assert.doesNotMatch(source, /wechat\.send|sendWeChat|sendToWeChat|\bfunction\s+send\b|\.send\s*\(/)
   }
 })
+
+// ---------------------------------------------------------------------------
+// M01–M05: Plan06-B-F01 provider-manifest helper-failure regressions.
+// ---------------------------------------------------------------------------
+
+test('M01 a valid manifest still succeeds and never shares the input object', () => {
+  const manifest = localManifest()
+  const snapshot = JSON.stringify(manifest)
+  const validated = validateProviderManifest(manifest)
+  assert.equal(validated.ok, true)
+  assert.notEqual(validated.manifest, manifest)
+  assert.equal(JSON.stringify(manifest), snapshot)
+  const normalized = normalizeProviderManifest(manifest)
+  assert.equal(normalized.ok, true)
+  assert.notEqual(normalized.manifest, manifest)
+})
+
+test('M02 invalid clone values fail with an INVALID_MANIFEST error', () => {
+  for (const clone of [null, 0, 'invalid']) {
+    const manifest = localManifest()
+    manifest.capabilities.clone = clone
+    const result = validateProviderManifest(manifest)
+    assert.equal(result.ok, false, String(clone))
+    assert.ok(result.errors.some((error) => error.code === PROVIDER_ERRORS.INVALID_MANIFEST))
+    assert.equal(normalizeProviderManifest(manifest).ok, false)
+  }
+})
+
+test('M03 clone=null with formats=null or limits.maxChars={} cannot normalize successfully', () => {
+  const formatsBroken = localManifest()
+  formatsBroken.capabilities.clone = null
+  formatsBroken.capabilities.formats = null
+  assert.equal(validateProviderManifest(formatsBroken).ok, false)
+  assert.equal(normalizeProviderManifest(formatsBroken).ok, false)
+
+  const limitsBroken = localManifest()
+  limitsBroken.capabilities.clone = null
+  limitsBroken.capabilities.limits = { maxChars: {}, timeoutMs: 5000, maxAudioSeconds: 30 }
+  assert.equal(validateProviderManifest(limitsBroken).ok, false)
+  assert.equal(normalizeProviderManifest(limitsBroken).ok, false)
+})
+
+test('M04 short-circuiting sections with null/base values still fail the whole manifest', () => {
+  for (const mutate of [
+    (manifest) => { manifest.capabilities.emotion = null },
+    (manifest) => { manifest.capabilities.limits = null },
+    (manifest) => { manifest.capabilities.retry = null },
+    (manifest) => { manifest.capabilities.voices = null },
+  ]) {
+    const manifest = localManifest()
+    mutate(manifest)
+    const result = validateProviderManifest(manifest)
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.length > 0)
+  }
+})
+
+test('M05 every top-level section is required and invalid subfields keep failing', () => {
+  for (const field of ['version', 'capabilities', 'health', 'credentials', 'network', 'privacy', 'cost', 'resources']) {
+    const manifest = localManifest()
+    delete manifest[field]
+    const result = validateProviderManifest(manifest)
+    assert.equal(result.ok, false, field)
+    assert.ok(result.errors.some((error) => error.code === PROVIDER_ERRORS.INVALID_MANIFEST), field)
+  }
+})
