@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DSH voice center plugin for Qwen3-TTS / whale-v1 / WeChat voice permissions, read-only diagnostics and configuration snapshots",
+  "description": "Multi-engine TTS/SVC DSH voice plugin for local, cloud and custom providers, WeChat voice permissions, read-only diagnostics and configuration snapshots",
   "icon": "./icon.svg",
   "exports": {
     ".": "./index.js",

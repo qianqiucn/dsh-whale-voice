@@ -487,16 +487,18 @@ contract; the implementation contract is schema v3 (see §10 and
 Local verification (baseline `main` + this branch):
 
 ```text
-node --test        -> 176 tests / 175 pass / 0 fail / 1 platform skip
+node --test        -> 192 tests / 191 pass / 0 fail / 1 platform skip
 node build.mjs     -> client.js regenerated and in sync
 node --test test/docs-integrity.test.mjs -> pass
 npm.cmd run test:ui -> 24/24 isolated Playwright checks
 ```
 
-**Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **OFFLINE**:
-source, Host route and isolated UI are implemented and tested (PR #15), but the running DSH Host has
-not been reloaded, so live Electron GUI integration is pending. Phase 4B-2B-2b (write) remains **NOT
-STARTED**. No production configuration, service, audio device or WeChat operation was touched.
+**Status:** Phase 4B-2B-1 remains **AUDIT COMPLETE / `OFFLINE`**. Phase 4B-2B-2a is **`INTEGRATED`**:
+source, Host routes and frontend were accepted in the real DSH Host/GUI across all eight navigation
+pages (PR #15). Destructive No-Core/timeout/invalid-schema injections and Console/Network reading
+remain unverified, so it is not `VERIFIED`. Phase 4B-2B-2b (write) remains **NOT STARTED**. TTS-A adds
+Provider-neutral design/contracts only; no provider is implemented. No production configuration,
+service, audio device or WeChat operation was touched.
 
 ---
 

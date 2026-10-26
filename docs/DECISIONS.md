@@ -346,3 +346,35 @@ adding a write route in a read-only phase; assuming an audited capability for an
 **Related:** [CAPABILITY_API.md](CAPABILITY_API.md),
 [PHASE4B2B1_COMPONENT_AUDIT.md](PHASE4B2B1_COMPONENT_AUDIT.md),
 [CONFIG_SOURCES.md](CONFIG_SOURCES.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-017 — TTS is Provider-neutral; Qwen and `whale-v1` are references, not defaults
+
+**Status:** `ACCEPTED` (design only; no provider implemented)
+**Date:** 2026-10-25
+**Decision:** Whale Voice is a multi-engine voice plugin. TTS providers are declared through a
+provider-neutral contract with kind (`LOCAL`/`CLOUD`/`CUSTOM`), capabilities, health, voices,
+languages, clone/emotion/streaming declarations, audio formats, limits, retry/cancel behavior,
+credential reference, network/privacy/cost/resource metadata and an opaque protocol version. Provider
+results contain an audio artifact and `delivery: PENDING_ROUTER`; providers never send WeChat. The
+registry contains candidate IDs only; all are `NOT_IMPLEMENTED` and `selectable:false` in TTS-A.
+Qwen3-TTS is the current reference implementation; `whale-v1` is the current developer's personal
+voice. Neither is a new-user or product default. Existing `qwen-local` config is preserved by a pure
+v2 migration proposal; cloud/custom legacy values require explicit selection and are never guessed
+into Qwen. Provider switches must reject incompatible voices. Credentials are references to protected
+storage, never values in config, URLs, frontend state or logs. This ADR does not authorize a real
+provider, provider request, credential store, Host route or production config write.
+
+**Reason:** The previous implementation coupled TTS health, configuration and UI defaults to
+`qwen-local`/Qwen runtime. That would make a cloud or custom provider unavailable whenever local Qwen
+was offline, and would incorrectly present a personal voice as the product default.
+
+**Rejected alternatives:** Treating Qwen as the only provider; making `whale-v1` the global default;
+requiring `baseUrl` for every provider; silently falling back between local and cloud; mapping legacy
+`cloud`/`custom` to Qwen; storing API keys in config/URL/LocalStorage; allowing a provider to call
+WeChat or Voice Sender; declaring candidates implemented without an adapter and audit.
+
+**Related:** [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

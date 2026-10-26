@@ -23,7 +23,7 @@ DSH host
        └─ core/detect.mjs
             ├─ packages/adapter-wechatagent (read-only manifest/version/runtime/health evidence)
             ├─ Voice Sender manifest/runtime/health evidence
-            └─ Qwen /health model+voice evidence
+            └─ Qwen /health model+voice evidence (current reference provider only)
 ```
 
 Properties:
@@ -135,20 +135,25 @@ DSH Plugin UI
 Whale Voice Core
   ├─ configuration + schema validation
   ├─ permissions / trusted target registry
-  ├─ task state and routing
+  ├─ TTS/SVC task state and routing
   ├─ capability + connection state
-  ├─ delivery backend router
-  │    ├─ UI Automation backend (Voice Sender) — current, SUPPORTED
-  │    ├─ WeChatAgent native backend — UNSUPPORTED in 0.3.9/0.4.0
-  │    └─ Third-party native backend — RESEARCH_CANDIDATE, not integrated
+  ├─ unified voice library + audio artifact management
+  ├─ TTS Provider Registry (10 candidates; all DESIGN_ONLY, none implemented)
+  │    ├─ Qwen3-TTS reference
+  │    ├─ local Piper / Kokoro / sherpa-onnx / IndexTTS candidates
+  │    ├─ cloud Azure / ElevenLabs / Gemini / OpenAI candidates
+  │    └─ custom HTTP candidate
+  ├─ SVC Engine Registry (Seed-VC / RVC candidates; separate from TTS)
   └─ redacted diagnostics
-       ├─ TTS Provider Registry
-       │    ├─ local Qwen3-TTS adapter
-       │    └─ explicit cloud provider adapter(s)
-       ├─ Sender Plugin Adapter
-       │    └─ Windows Voice Sender
-       └─ WeChatAgent Adapter (REQUIRED for WeChat)
-            └─ sourcepro5/WeChatAgent (external platform)
+
+Whale Relay Core（鲸递）— target component, not implemented
+  ├─ safe delivery + deduplication + target verification
+  ├─ UI Automation adapter (current Voice Sender path is the existing execution backend)
+  ├─ optional future Native Hook
+  └─ delivery status
+
+WeChatAgent Adapter (REQUIRED for WeChat)
+  └─ sourcepro5/WeChatAgent (access, account/session identity, existing authorization)
 ```
 
 ### Responsibilities
@@ -156,27 +161,38 @@ Whale Voice Core
 **Frontend:** presentation, permission confirmation, task visibility, diagnostics and capability
 negotiation. It must never send keyboard/mouse input or mutate worker-internal state directly.
 
-**Core:** one source of truth for configuration, target authorization, task lifecycle, cancellation
-and provider/sender selection. All sensitive decisions belong here, not in the UI.
+**Core:** one source of truth for TTS/SVC task lifecycle, cancellation, provider management, the
+unified voice library and audio artifact management. All sensitive decisions belong here, not in the
+UI.
 
-**TTS providers:** pluggable local/cloud implementations with explicit selection. No silent
-fallback, no credential leakage, no committed API keys.
+**TTS providers:** pluggable local/cloud/custom implementations with explicit selection. The
+provider contract, registry, v2 config proposal and migration tests are in TTS-A
+(`core/tts/`, [TTS provider architecture](TTS_PROVIDER_ARCHITECTURE.md)). Ten TTS candidates are
+listed; none is implemented or selectable. There is no silent fallback, no credential leakage and no
+committed API key. Qwen3-TTS is the current reference implementation, not a global default.
+
+**SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
+speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but
+is not in the TTS Provider Registry and is not implemented. See `core/svc/`.
+
+**Whale Relay Core（鲸递）:** target delivery layer for safe delivery, UI Automation adapter, optional
+future Native Hook, delivery status, deduplication and target verification. It is **not implemented**
+in this repository; the existing Voice Sender UI Automation path remains the current execution backend.
+Relay is the only future layer allowed to hand audio to WeChat-facing delivery.
 
 **Voice Sender:** independent Windows component for audio device handling, UI automation and native
 voice bubbles. It must expose a versioned contract and retain its own safety checks.
 
-**Delivery backend router:** Core selects exactly one backend before submission and records it.
-`ui-automation` is the current supported path. `wechatagent-native` is unsupported for WeChatAgent
-0.3.9/0.4.0. `third-party-native` remains a research candidate with no integration; it must not
-create a second queue or retry a possibly-submitted task. No automatic fallback is allowed after a
-possible external send.
-
 **WeChatAgent adapter:** required bridge to the independent sourcepro5/WeChatAgent platform. It
-owns version/compatibility discovery, connection health, target identity evidence and result
-feedback. It is not an optional TTS feature and must not be replaced by a second WeChat bot inside
-Whale Voice. Display names are not sufficient for group identity. WeChatPYAPI or PadChat-SDK are
-**not** WeChatAgent extensions and are not architectural dependencies; they remain external research
-candidates only.
+owns version/compatibility discovery, connection health, target identity evidence, account/session
+identity, existing authorization and result feedback. It is not an optional TTS feature and must not
+be replaced by a second WeChat bot inside Whale Voice. Display names are not sufficient for group
+identity. WeChatPYAPI or PadChat-SDK are **not** WeChatAgent extensions and are not architectural
+dependencies; they remain external research candidates only.
+
+**Delivery boundary:** no TTS provider or SVC engine may send WeChat messages, mutate a target or
+write a Worker permit. Their result is an audio artifact with `PENDING_ROUTER`; Relay/Core owns
+subsequent delivery decisions.
 
 ### Planned protocol principles
 
@@ -185,6 +201,8 @@ candidates only.
 - `UNKNOWN` is terminal; it is never retried automatically.
 - Target identity must be resolved from trusted configuration plus evidence, never model text.
 - Configuration and credentials are owned by Core, never by page components.
+- TTS/SVC engines return artifacts only; no Provider or SVC engine may send WeChat directly.
+- Relay/Core is the only delivery decision layer; deduplication and target verification happen there.
 - The frontend distinguishes `MOCK`, `OFFLINE`, `CONNECTED`, `DEGRADED` and `BLOCKED`.
 - A cancel/stop path must be explicit and testable before real automatic sending is enabled.
 - Windows secure-desktop, session and foreground limitations are surfaced, not bypassed.

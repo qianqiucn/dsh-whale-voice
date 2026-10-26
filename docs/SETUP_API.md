@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests; the capability routes require a normal DSH Host reload to go live.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes and is `INTEGRATED` after real DSH Host/GUI acceptance. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests. TTS-A adds a provider-neutral design only; the `tts` shape here remains the Qwen reference path.
 **Scope:** first-run setup, read-only component status, and future controlled installation.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
@@ -112,6 +112,12 @@ validation.
 Health endpoints requiring a token are reported as `auth_required`; Whale Voice does **not** read
 Hook/Sender token files to turn that into a green status. `connected` is true only for a validated,
 ready health response. Version strings marked `config_expected` are not runtime proof.
+
+> **TTS-A note:** the `tts` object above is the current Qwen reference path, not a product default and
+> not a provider-neutral contract. Provider/voice/model identity, cloud/custom providers, credential
+> references and per-provider health are a TTS-B/C design; see
+> [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md). No provider request, credential entry
+> or real TTS is exposed by this API in TTS-A.
 
 ### ConfigSnapshot shape (v1 read-only)
 
