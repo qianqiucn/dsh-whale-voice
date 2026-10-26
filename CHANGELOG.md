@@ -7,6 +7,7 @@ not invent earlier releases or imply production maturity.
 
 ### Added
 
+- Plan 06-B offline Fixture provider-instance view and explicit capability negotiation (`core/audio/provider-instances.mjs`, R01–R30): distinguishes candidate, instance, version, health, credential and capability matching; validates one bounded snapshot without I/O; never calls a provider, synthesizes/converts audio, schedules a task, creates an Artifact or sends. No real adapter, model or asset mapping is added.
 - Private GitHub repository baseline and long-term agent workflow documentation.
 - Initial `main` commit and CI baseline (build, syntax, generated-client sync).
 - Roadmap P0–P9, project status, architecture, changelog and license.
