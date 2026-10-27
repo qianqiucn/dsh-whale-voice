@@ -30,9 +30,10 @@ contract/registry/v2 migration design and isolated tests (`DESIGN`/`OFFLINE`); t
 offline Fixture provider-instance view and explicit capability negotiation on
 `feature/plan06b-provider-instances` (R01–R30 + N01–N18, pure/no I/O); after the F01–F04 review
 repair it is **`OFFLINE`** and merged via PR #24 at **M `ad25bc6`** (report 0013). Plan 06-C adds one
-synchronous RVC Fixture dispatch (`core/audio/provider-dispatch.mjs`, T01–T26) over that negotiation
-and the existing RVC Fake gateway; it is **`OFFLINE`** and pending PR review. Neither delivers TTS
-dispatch, real adapters, 08 asset/id mapping or any send path. Phase 4B-2B-2b
+synchronous RVC Fixture dispatch (`core/audio/provider-dispatch.mjs`, T01–T26 + F01/F02) over that
+negotiation and the existing RVC Fake gateway; after the F01/F02 review repair it is **`OFFLINE`** and
+pending PR #25 review. Neither delivers TTS dispatch, real adapters, 08 asset/id mapping or any send
+path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
 real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),

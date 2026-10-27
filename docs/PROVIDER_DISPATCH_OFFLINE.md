@@ -52,9 +52,11 @@ Exactly three top-level keys:
 The whole root input is copied by `copyFixtureInput` before any schema access (the shared helper
 extracted from 06-B): plain/null-prototype objects only, enumerable string data properties only, no
 getters/Symbols/hidden keys/custom prototypes, no cycles/holes/extra array properties, limits of 4096
-values / depth 12 / 32 keys / 256 array items / 8192 string code units. Caller getters are never
-invoked; the original object is never mutated or reread. This closes the check-then-use gap: the
-request and context used for simulation and validation come from the same validated copy.
+values / depth 12 / 32 keys / 256 array items / 8192 string code units. Copied objects — ordinary and
+null-prototype inputs alike — are always **null-prototype** objects; arrays stay standard dense
+arrays. Caller getters are never invoked; the original object is never mutated or reread. This closes
+the check-then-use gap: the request and context used for simulation and validation come from the same
+validated copy.
 
 ## 3. Output
 
@@ -78,7 +80,8 @@ Success (including every legal BLOCKED result) is always:
 } }
 ```
 
-The 14 fields are freshly built and deeply frozen. `requestId` is the validated context id and
+The entire success envelope (`{ ok: true, value }`) and all 14 fields are freshly built and recursively
+frozen; error envelopes are recursively frozen too. `requestId` is the validated context id and
 equals `result.requestId` for SIMULATED. A BLOCKED result never fabricates a result object.
 
 `phase` distinctions:
@@ -158,13 +161,30 @@ Three recoveries:
 
 ## 8. Verification snapshot
 
-- `node --test test/provider-dispatch.test.mjs`: **26/26** (T01–T26).
+- `node --test test/provider-dispatch.test.mjs`: **34/34** (T01–T26 + F01-A–D + F02-A–D).
 - Existing 06-B/TTS/RVC: **109/109** (48 + 21 + 40).
-- Full suite: **457 tests / 456 pass / 1 platform skip / 0 fail**.
+- Full suite: **465 tests / 464 pass / 1 platform skip / 0 fail**.
 - `node build.mjs` succeeds; `client.js` unchanged; UI harness 24/24 (no new UI).
 - These are offline contract results, not real Host/GUI/provider integration.
 
-## 9. Boundaries kept
+## 9. Plan06-C-F01 review repairs
+
+- **F01 — freeze the complete envelope.** The earlier implementation froze only `value`, leaving the
+  outer `{ ok: true, value }` writable. All success branches now return a recursively frozen
+  `successEnvelope`; `ok`, `value` and every reachable result/negotiation/safety object are frozen.
+  F01-C attempts strict-mode writes/replacements and verifies they throw without changing content.
+  F01-D verifies fresh graphs per call and that the caller input is not frozen.
+- **F02 — restore the G-equivalent copy policy.** `copyObject` again uses
+  `Object.create(null)` + field assignment (not a plain `{}` + `defineProperty`). Copied objects,
+  ordinary or null-prototype, are null-prototype; arrays remain standard dense arrays; the original
+  limits/rejections and caller isolation are unchanged. F02-B covers own `__proto__` / `constructor`
+  / `prototype` data keys without prototype pollution; F02-C pins exact limits and historic
+  rejections; F02-D revalidates the seven scenarios and 06-B decisions without prototype drift.
+- T16 now checks the outer envelope too. T22 compares against an explicit null-prototype graph while
+  keeping all fields/values and the existing `validateRvcFakeResult` revalidation; no safety
+  assertion was dropped.
+
+## 10. Boundaries kept
 
 - Worker `NEVER_WRITE`, Bridge/Worker dual gate, WeChatAgent identity/authorization, Core single task,
   Relay one delivery, `UNKNOWN` no-auto-resend and `SAVED != APPLIED/SENT` remain unchanged.

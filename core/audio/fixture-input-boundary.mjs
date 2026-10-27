@@ -78,7 +78,7 @@ export function copyFixtureInput(root) {
     if (proto !== Object.prototype && proto !== null) return { ok: false, key: 'INVALID_INPUT' }
     const keys = Reflect.ownKeys(value)
     if (keys.length > MAX_OBJECT_KEYS) return { ok: false, key: 'RESOURCE_LIMIT' }
-    const output = {}
+    const output = Object.create(null)
     for (const key of keys) {
       if (typeof key !== 'string') return { ok: false, key: 'INVALID_INPUT' }
       const descriptor = Object.getOwnPropertyDescriptor(value, key)
@@ -86,12 +86,7 @@ export function copyFixtureInput(root) {
       if (!isData || descriptor.enumerable !== true) return { ok: false, key: 'INVALID_INPUT' }
       const copied = copy(descriptor.value, depth + 1)
       if (!copied.ok) return copied
-      Object.defineProperty(output, key, {
-        value: copied.value,
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      })
+      output[key] = copied.value
     }
     return { ok: true, value: output }
   }

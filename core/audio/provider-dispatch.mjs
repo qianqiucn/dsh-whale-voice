@@ -101,6 +101,10 @@ function buildEnvelope(fields) {
   })
 }
 
+function successEnvelope(value) {
+  return deepFreezeFixtureValue({ ok: true, value })
+}
+
 function validateContext(context) {
   if (!isPlainObject(context)) return { ok: false }
   const keys = Reflect.ownKeys(context)
@@ -177,9 +181,8 @@ export function dispatchRvcFakeOnce(input) {
   if (negotiationCopy === null) return failKey('DEPENDENCY_FAILURE', '$')
 
   if (value.decision === 'BLOCKED') {
-    return {
-      ok: true,
-      value: buildEnvelope({
+    return successEnvelope(
+      buildEnvelope({
         category: value.category,
         instanceId: value.instanceId,
         candidateId: value.candidateId,
@@ -190,13 +193,12 @@ export function dispatchRvcFakeOnce(input) {
         result: null,
         messageZh: value.messageZh,
       }),
-    }
+    )
   }
 
   if (value.category !== 'SVC' || value.candidateId !== 'rvc') {
-    return {
-      ok: true,
-      value: buildEnvelope({
+    return successEnvelope(
+      buildEnvelope({
         category: value.category,
         instanceId: value.instanceId,
         candidateId: value.candidateId,
@@ -207,7 +209,7 @@ export function dispatchRvcFakeOnce(input) {
         result: null,
         messageZh: UNSUPPORTED_DISPATCH_MESSAGE,
       }),
-    }
+    )
   }
 
   const request = payload.negotiation.request
@@ -240,9 +242,8 @@ export function dispatchRvcFakeOnce(input) {
     return failKey('INVALID_RESULT', 'result')
   }
 
-  return {
-    ok: true,
-    value: buildEnvelope({
+  return successEnvelope(
+    buildEnvelope({
       category: value.category,
       instanceId: value.instanceId,
       candidateId: value.candidateId,
@@ -253,5 +254,5 @@ export function dispatchRvcFakeOnce(input) {
       result,
       messageZh: simulatedMessage(result.status),
     }),
-  }
+  )
 }

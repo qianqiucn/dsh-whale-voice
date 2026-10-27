@@ -36,8 +36,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 - **Plan 06-C branch:** `feature/plan06c-rvc-fake-dispatch` adds `core/audio/provider-dispatch.mjs`
   (one synchronous RVC Fixture dispatch over 06-B negotiation + existing RVC Fake gateway + existing
   result validator) and `core/audio/fixture-input-boundary.mjs` (shared internal copy/freeze helper),
-  with T01–T26. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
-  **457 / 456 pass / 1 platform skip / 0 fail**, UI **24/24**. An independent PR is pending review;
+  with T01–T26 + F01/F02. After the F01/F02 review repair (complete-envelope freeze, null-prototype
+  copy): `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
+  **465 / 464 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #25 is open and pending review;
   TTS dispatch, 08 mapping, real provider/model/audio/task/send remain unimplemented.
 - **Plan 06-B branch:** `feature/plan06b-provider-instances` adds `core/audio/provider-instances.mjs`
   (Fixture provider-instance view + explicit capability negotiation) and R01–R30 + N01–N18. After the

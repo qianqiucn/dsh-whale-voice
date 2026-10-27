@@ -8,6 +8,7 @@ import {
   dispatchRvcFakeOnce,
 } from '../core/audio/provider-dispatch.mjs'
 import * as instanceModule from '../core/audio/provider-instances.mjs'
+import { copyFixtureInput, deepFreezeFixtureValue } from '../core/audio/fixture-input-boundary.mjs'
 import { PROVIDER_KINDS } from '../core/tts/provider-contract.mjs'
 import { getRegistryView, selectProviderCandidate } from '../core/tts/provider-registry.mjs'
 import { getSvcRegistryView, selectSvcCandidate } from '../core/svc/svc-registry.mjs'
@@ -172,6 +173,40 @@ function expectSimulated(result) {
   assert.equal(result.value.result.delivery.state, 'NOT_REQUESTED')
   assert.equal(result.value.result.delivery.submitAllowed, false)
   return result
+}
+
+function assertDeepFrozen(value, seen = new Set()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return
+  seen.add(value)
+  assert.equal(Object.isFrozen(value), true)
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      assertDeepFrozen(descriptor.value, seen)
+    }
+  }
+}
+
+function nullProtoGraph(value) {
+  if (Array.isArray(value)) return value.map(nullProtoGraph)
+  if (value !== null && typeof value === 'object') {
+    const output = Object.create(null)
+    for (const key of Object.keys(value)) output[key] = nullProtoGraph(value[key])
+    return output
+  }
+  return value
+}
+
+function assertNullProtoGraph(value, seen = new Set()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    assert.equal(Object.getPrototypeOf(value), Array.prototype)
+    for (const item of value) assertNullProtoGraph(item, seen)
+    return
+  }
+  assert.equal(Object.getPrototypeOf(value), null)
+  for (const key of Object.keys(value)) assertNullProtoGraph(value[key], seen)
 }
 
 const SCENARIOS = {
@@ -452,6 +487,8 @@ test('T16 null prototypes and frozen inputs are accepted; input stays unchanged 
   const nullProto = Object.assign(Object.create(null), normal)
   const accepted = dispatchRvcFakeOnce(nullProto)
   expectSimulated(accepted)
+  assert.equal(Object.isFrozen(accepted), true)
+  assertDeepFrozen(accepted)
   assert.equal(Object.isFrozen(accepted.value), true)
   assert.equal(Object.isFrozen(accepted.value.result), true)
   assert.equal(Object.isFrozen(accepted.value.negotiation), true)
@@ -582,7 +619,8 @@ test('T22 SIMULATED.result revalidates with the existing validator and matches d
     assert.equal(revalidated.ok, true, scenario)
     const direct = simulateRvcFakeConversion(request, ctx)
     assert.equal(direct.ok, true, scenario)
-    assert.deepEqual(dispatch.value.result, direct.value, scenario)
+    assert.deepEqual(dispatch.value.result, nullProtoGraph(direct.value), scenario)
+    assertNullProtoGraph(dispatch.value.result)
   }
 })
 
@@ -644,4 +682,193 @@ test('T26 the dispatcher never rereads the original input or echoes its markers'
   })
   expectError(dispatchRvcFakeOnce(spy), 'INVALID_INPUT', '$')
   assert.equal(reads, 0)
+})
+
+// ---------------------------------------------------------------------------
+// F01: freeze the complete success/error envelope, not only `value`.
+// ---------------------------------------------------------------------------
+
+test('F01-A every SIMULATED envelope is recursively frozen, including the outer object', () => {
+  for (const scenario of RVC_FAKE_SCENARIOS) {
+    const result = dispatchRvcFakeOnce(rvcInput(rvcRequest(), scenario))
+    expectSimulated(result)
+    assert.equal(Object.isFrozen(result), true, scenario)
+    assertDeepFrozen(result)
+  }
+})
+
+test('F01-B 06-B BLOCKED, TTS UNSUPPORTED and error envelopes are recursively frozen', () => {
+  const offline = rvcInstance({ observation: obs({ state: 'offline' }) })
+  const blocked = dispatchRvcFakeOnce(
+    dispatchInput(negotiation([offline], { category: 'SVC', instanceId: 'instance:rvc' }, rvcRequest())),
+  )
+  expectBlocked(blocked, 'PROVIDER_INSTANCE_OFFLINE')
+  assert.equal(Object.isFrozen(blocked), true)
+  assertDeepFrozen(blocked)
+
+  const tts = dispatchRvcFakeOnce(
+    dispatchInput(negotiation([ttsInstance()], { category: 'TTS', instanceId: 'instance:qwen' }, ttsRequest())),
+  )
+  expectBlocked(tts, ERR.UNSUPPORTED_DISPATCH)
+  assert.equal(Object.isFrozen(tts), true)
+  assertDeepFrozen(tts)
+
+  const error = dispatchRvcFakeOnce({ ...rvcInput(), context: { requestId: 'bad' } })
+  expectError(error, 'INVALID_CONTEXT', 'context')
+  assert.equal(Object.isFrozen(error), true)
+  assertDeepFrozen(error)
+})
+
+test('F01-C strict-mode writes to the envelope and nested values all fail and change nothing', () => {
+  const result = dispatchRvcFakeOnce(rvcInput())
+  const snapshot = JSON.stringify(result)
+  assert.throws(() => { result.ok = false }, TypeError)
+  assert.throws(() => { result.value = {} }, TypeError)
+  assert.throws(() => { result.value.result.status = 'BROKEN' }, TypeError)
+  assert.throws(() => { result.value.negotiation.decision = 'BLOCKED' }, TypeError)
+  assert.throws(() => { result.value.submitAllowed = true }, TypeError)
+  assert.throws(() => { result.value.result.cancel.requested = true }, TypeError)
+  assert.equal(JSON.stringify(result), snapshot)
+  assert.equal(result.ok, true)
+  assert.equal(result.value.result.status, 'SUCCEEDED_FAKE')
+  assert.equal(result.value.submitAllowed, false)
+})
+
+test('F01-D calls are fresh and do not freeze the caller input', () => {
+  const input = rvcInput()
+  const first = dispatchRvcFakeOnce(input)
+  const second = dispatchRvcFakeOnce(input)
+  expectSimulated(first)
+  expectSimulated(second)
+  assert.notEqual(first, second)
+  assert.notEqual(first.value, second.value)
+  assert.notEqual(first.value.result, second.value.result)
+  assert.notEqual(first.value.negotiation, second.value.negotiation)
+  assert.equal(Object.isFrozen(input), false)
+  assert.equal(Object.isFrozen(input.context), false)
+  assert.doesNotThrow(() => { input.context.requestId = 'request:fixture-2' })
+  assert.equal(first.value.requestId, 'request:fixture-1')
+  assert.equal(input.context.requestId, 'request:fixture-2')
+})
+
+// ---------------------------------------------------------------------------
+// F02: restore the exact G helper policy — all copied objects have a null
+// prototype, including ordinary and nested objects.
+// ---------------------------------------------------------------------------
+
+test('F02-A ordinary and null-prototype nested objects copy to null-prototype objects', () => {
+  const normal = { a: 1, nested: { b: 'x' }, arr: [{ c: true }] }
+  const nullInput = Object.assign(Object.create(null), {
+    a: 1,
+    nested: Object.assign(Object.create(null), { b: 'x' }),
+    arr: [Object.assign(Object.create(null), { c: true })],
+  })
+  for (const input of [normal, nullInput]) {
+    const copied = copyFixtureInput(input)
+    assert.equal(copied.ok, true)
+    assert.equal(Object.getPrototypeOf(copied.value), null)
+    assert.equal(Object.getPrototypeOf(copied.value.nested), null)
+    assert.equal(Array.isArray(copied.value.arr), true)
+    assert.equal(Object.getPrototypeOf(copied.value.arr), Array.prototype)
+    assert.equal(Object.getPrototypeOf(copied.value.arr[0]), null)
+    assert.notEqual(copied.value, input)
+    assert.notEqual(copied.value.nested, input.nested)
+    assert.notEqual(copied.value.arr, input.arr)
+    assert.equal(deepFreezeFixtureValue(copied.value), copied.value)
+    assertDeepFrozen(copied.value)
+  }
+})
+
+test('F02-B own __proto__/constructor/prototype data keys stay data and cannot pollute', () => {
+  const input = Object.create(null)
+  for (const [key, value] of [['__proto__', 'proto-marker'], ['constructor', 'ctor-marker'], ['prototype', 'prototype-marker']]) {
+    Object.defineProperty(input, key, { value, enumerable: true, configurable: true, writable: true })
+  }
+  const copied = copyFixtureInput(input)
+  assert.equal(copied.ok, true)
+  assertNullProtoGraph(copied.value)
+  assert.equal(Object.prototype.hasOwnProperty.call(copied.value, '__proto__'), true)
+  assert.equal(copied.value.__proto__, 'proto-marker')
+  assert.equal(copied.value.constructor, 'ctor-marker')
+  assert.equal(copied.value.prototype, 'prototype-marker')
+  assert.equal({}.protoMarker, undefined)
+  assert.equal(Object.getPrototypeOf({}), Object.prototype)
+
+  let calls = 0
+  const accessor = {}
+  Object.defineProperty(accessor, 'trap', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      calls += 1
+      return 'x'
+    },
+  })
+  assert.equal(copyFixtureInput(accessor).ok, false)
+  assert.equal(calls, 0)
+})
+
+test('F02-C exact limits and all historic rejections remain unchanged', () => {
+  assert.equal(copyFixtureInput('x'.repeat(8192)).ok, true)
+  assert.equal(copyFixtureInput('x'.repeat(8193)).key, 'RESOURCE_LIMIT')
+
+  const keys32 = {}
+  for (let index = 0; index < 32; index += 1) keys32['k' + index] = index
+  assert.equal(copyFixtureInput(keys32).ok, true)
+  const keys33 = { ...keys32, extra: 1 }
+  assert.equal(copyFixtureInput(keys33).key, 'RESOURCE_LIMIT')
+
+  const array256 = Array.from({ length: 256 }, (_, index) => index)
+  assert.equal(copyFixtureInput(array256).ok, true)
+  const array257 = Array.from({ length: 257 }, (_, index) => index)
+  assert.equal(copyFixtureInput(array257).key, 'RESOURCE_LIMIT')
+
+  let depthOk = {}
+  for (let index = 0; index < 12; index += 1) depthOk = { next: depthOk }
+  assert.equal(copyFixtureInput(depthOk).ok, true)
+  let depthOver = {}
+  for (let index = 0; index < 13; index += 1) depthOver = { next: depthOver }
+  assert.equal(copyFixtureInput(depthOver).key, 'RESOURCE_LIMIT')
+
+  const manyValues = Array.from({ length: 16 }, () => Array.from({ length: 256 }, () => 0))
+  assert.equal(copyFixtureInput(manyValues).key, 'RESOURCE_LIMIT')
+
+  const cycle = { a: 1 }
+  cycle.self = cycle
+  assert.equal(copyFixtureInput(cycle).key, 'INVALID_INPUT')
+  const withHole = []
+  withHole[1] = 1
+  assert.equal(copyFixtureInput(withHole).key, 'INVALID_INPUT')
+  const extraArray = [1]
+  extraArray.extra = 2
+  assert.equal(copyFixtureInput(extraArray).key, 'INVALID_INPUT')
+  for (const value of [() => 1, 1n, NaN, Infinity]) {
+    assert.equal(copyFixtureInput(value).key, 'INVALID_INPUT')
+  }
+  const symbol = { a: 1 }
+  symbol[Symbol('x')] = 1
+  assert.equal(copyFixtureInput(symbol).key, 'INVALID_INPUT')
+  const hidden = { a: 1 }
+  Object.defineProperty(hidden, 'x', { value: 1, enumerable: false })
+  assert.equal(copyFixtureInput(hidden).key, 'INVALID_INPUT')
+  const custom = Object.assign(Object.create({}), { a: 1 })
+  assert.equal(copyFixtureInput(custom).key, 'INVALID_INPUT')
+})
+
+test('F02-D seven scenarios and the 06-B blocks still revalidate without prototype drift', () => {
+  for (const scenario of RVC_FAKE_SCENARIOS) {
+    const request = rvcRequest()
+    const ctx = context({ scenario })
+    const result = dispatchRvcFakeOnce(
+      dispatchInput(negotiation([rvcInstance()], { category: 'SVC', instanceId: 'instance:rvc' }, request), { scenario }),
+    )
+    expectSimulated(result)
+    assertNullProtoGraph(result.value.result)
+    assertNullProtoGraph(result.value.negotiation)
+    const revalidated = validateRvcFakeResult(result.value.result, request, ctx)
+    assert.equal(revalidated.ok, true, scenario)
+  }
+  assert.equal(instanceModule.negotiateProviderInstance(
+    negotiation([rvcInstance()], { category: 'SVC', instanceId: 'instance:rvc' }, rvcRequest()),
+  ).value.decision, 'FIXTURE_COMPATIBLE')
 })
