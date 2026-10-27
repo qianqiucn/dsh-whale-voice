@@ -186,6 +186,10 @@ Three recoveries:
 
 ## 10. Boundaries kept
 
+- Plan 06-D adds a separate readiness wrapper (`core/audio/provider-readiness.mjs`) that gates before
+  calling this dispatcher at most once; this module's exports, call order and behavior are unchanged.
+  See [PROVIDER_READINESS_OFFLINE.md](PROVIDER_READINESS_OFFLINE.md).
+
 - Worker `NEVER_WRITE`, Bridge/Worker dual gate, WeChatAgent identity/authorization, Core single task,
   Relay one delivery, `UNKNOWN` no-auto-resend and `SAVED != APPLIED/SENT` remain unchanged.
 - Upstream RVC `BLOCKED_CODE_REUSE` / `BLOCKED_DIRECT_API_INTEGRATION` are not resolved.

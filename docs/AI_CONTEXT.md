@@ -33,20 +33,27 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 06-D branch:** `feature/plan06d-provider-readiness` adds
+  `core/audio/provider-readiness.mjs` — a Fixture installation/resource admission wrapper over the
+  06-B negotiation and 06-C dispatch (PRESENT/ABSENT/UNKNOWN, CPU/GPU/REMOTE, optional single existing
+  RVC dispatch) with D01–D27. Plan06-D-F01 adds the D27 cross-category evidence table and controlled
+  reason-namespace clarification (docs-only). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
+  **492 / 491 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #26 pending review; no real installer,
+  hardware probe, TTS synthesizer, queue or 08 mapping.
 - **Plan 06-C branch:** `feature/plan06c-rvc-fake-dispatch` adds `core/audio/provider-dispatch.mjs`
   (one synchronous RVC Fixture dispatch over 06-B negotiation + existing RVC Fake gateway + existing
   result validator) and `core/audio/fixture-input-boundary.mjs` (shared internal copy/freeze helper),
   with T01–T26 + F01/F02. After the F01/F02 review repair (complete-envelope freeze, null-prototype
   copy): `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
-  **465 / 464 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #25 is open and pending review;
-  TTS dispatch, 08 mapping, real provider/model/audio/task/send remain unimplemented.
+  **465 / 464 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #25 merged at **M `b9336fb`**
+  (report 0016); TTS dispatch, 08 mapping, real provider/model/audio/task/send remain unimplemented.
 - **Plan 06-B branch:** `feature/plan06b-provider-instances` adds `core/audio/provider-instances.mjs`
   (Fixture provider-instance view + explicit capability negotiation) and R01–R30 + N01–N18. After the
   Plan06-B-F01 review repair: `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
   **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #24 merged at **M `ad25bc6`**
   (report 0013); no real provider, adapter, model, synthesis, scheduling or send capability.
   The older TTS-A bullets below are historical.
-- **main HEAD:** `ad25bc605d4947746a7d000f72c6b46607d574e8` (merge of PR #24); verify live with
+- **main HEAD:** `b9336fbf393dff64df1e4a55ea2865668e45333a` (merge of PR #25); verify live with
   `git rev-parse origin/main`. The earlier `bf9cf66` was the PR #15 baseline; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
