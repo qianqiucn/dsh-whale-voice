@@ -35,6 +35,10 @@ null-prototype inputs) are null-prototype; the four public exports, input/output
 behavior are otherwise unchanged, and 06-B's 48 tests still pass. The helper is not a new public
 product API.
 
+Plan 06-D adds a separate readiness wrapper (`core/audio/provider-readiness.mjs`) that imports this
+API; it does not change these four exports, the negotiation decisions or the 06-B tests. See
+[PROVIDER_READINESS_OFFLINE.md](PROVIDER_READINESS_OFFLINE.md).
+
 ## 2. `buildProviderInstanceView(input)`
 
 Input shape: `{ schemaVersion: 1, instances: [ ...0..32 items ] }`.
