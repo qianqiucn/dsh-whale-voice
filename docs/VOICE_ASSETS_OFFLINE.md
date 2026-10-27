@@ -177,6 +177,8 @@ scopeId, profileRevision, assetId, assetRevision, kind, instanceId, candidateId,
 
 ## 7. 示例（虚构数据）
 
+该示例是**完整 TTS 单实例演示**，可直接 `JSON.parse` 后原样传给本模块：
+
 ```json
 {
   "schemaVersion": 1,
@@ -190,8 +192,10 @@ scopeId, profileRevision, assetId, assetRevision, kind, instanceId, candidateId,
         "displayName": "演示角色",
         "rightsState": "CONFIRMED_FIXTURE",
         "bindings": [
-          { "instanceId": "instance:qwen", "assetId": "asset:fixture-voice-a" },
-          { "instanceId": "instance:rvc", "assetId": "asset:fixture-model-a" }
+          {
+            "instanceId": "instance:qwen",
+            "assetId": "asset:fixture-voice-a"
+          }
         ]
       }
     ],
@@ -215,16 +219,142 @@ scopeId, profileRevision, assetId, assetRevision, kind, instanceId, candidateId,
     "taskId": "task:demo-tts",
     "feature": "voice-bubbles",
     "taskType": "TTS",
-    "source": { "kind": "TEXT_REF", "ref": "artifact:fixture-text-1" },
+    "source": {
+      "kind": "TEXT_REF",
+      "ref": "artifact:fixture-text-1"
+    },
     "voiceProfileId": "voice:demo-hero",
     "deliveryRequested": false,
-    "rights": { "state": "CONFIRMED_FIXTURE" }
+    "rights": {
+      "state": "CONFIRMED_FIXTURE"
+    }
   },
   "negotiation": {
     "schemaVersion": 1,
-    "registry": { "schemaVersion": 1, "instances": [] },
-    "selection": { "category": "TTS", "instanceId": "instance:qwen" },
-    "consent": { "networkAllowed": false, "textUploadAllowed": false, "paidAllowed": false },
+    "registry": {
+      "schemaVersion": 1,
+      "instances": [
+        {
+          "instanceId": "instance:qwen",
+          "category": "TTS",
+          "candidateId": "qwen3-tts",
+          "protocolVersion": 1,
+          "fixture": true,
+          "manifest": {
+            "schemaVersion": 1,
+            "id": "qwen3-tts",
+            "name": "Fixture Local TTS",
+            "kind": "LOCAL",
+            "version": {
+              "value": "1.0.0",
+              "source": "fixture",
+              "audited": true
+            },
+            "capabilities": {
+              "languages": [
+                "zh-CN"
+              ],
+              "voices": [
+                {
+                  "id": "voice-a",
+                  "name": "Voice A",
+                  "kind": "preset",
+                  "languages": [
+                    "zh-CN"
+                  ],
+                  "referenceAudioRequired": false
+                },
+                {
+                  "id": "voice-b",
+                  "name": "Voice B",
+                  "kind": "preset",
+                  "languages": [
+                    "zh-CN"
+                  ],
+                  "referenceAudioRequired": false
+                }
+              ],
+              "clone": {
+                "supported": false,
+                "requiresReferenceAudio": false
+              },
+              "emotion": {
+                "supported": false,
+                "modes": [],
+                "defaultMode": "neutral"
+              },
+              "streaming": false,
+              "formats": [
+                {
+                  "mime": "audio/wav",
+                  "sampleRate": 24000,
+                  "channels": 1
+                }
+              ],
+              "limits": {
+                "maxChars": 100,
+                "timeoutMs": 5000,
+                "maxAudioSeconds": 30
+              },
+              "retry": {
+                "maxAttempts": 1,
+                "retryOn": [
+                  "TIMEOUT"
+                ],
+                "idempotent": true
+              },
+              "cancellation": true
+            },
+            "health": {
+              "mode": "local",
+              "path": null,
+              "timeoutMs": 1000,
+              "auth": "none"
+            },
+            "credentials": {
+              "required": false,
+              "storage": "none",
+              "ref": null
+            },
+            "network": {
+              "required": false,
+              "textUpload": false,
+              "endpointPolicy": "loopback-only"
+            },
+            "privacy": {
+              "textLeavesDevice": false,
+              "retention": "none",
+              "note": "fixture only"
+            },
+            "cost": {
+              "paid": false,
+              "model": "free",
+              "note": "fixture only"
+            },
+            "resources": {
+              "local": true,
+              "gpuRequired": false,
+              "cpuCapable": true
+            }
+          },
+          "observation": {
+            "state": "ok",
+            "credentials": "not_required",
+            "observedAt": "2026-10-26T00:00:00.000Z",
+            "versionMatches": true
+          }
+        }
+      ]
+    },
+    "selection": {
+      "category": "TTS",
+      "instanceId": "instance:qwen"
+    },
+    "consent": {
+      "networkAllowed": false,
+      "textUploadAllowed": false,
+      "paidAllowed": false
+    },
     "request": {
       "requestId": "request:fixture-1",
       "text": "hello",
@@ -235,12 +365,18 @@ scopeId, profileRevision, assetId, assetRevision, kind, instanceId, candidateId,
       "streaming": false
     }
   },
-  "expectation": { "scopeId": "scope:fixture-demo", "profileRevision": 1, "assetRevision": 1 },
+  "expectation": {
+    "scopeId": "scope:fixture-demo",
+    "profileRevision": 1,
+    "assetRevision": 1
+  },
   "now": "2026-10-27T00:00:00.000Z"
 }
 ```
 
-（`registry.instances` 必须含合法演示实例；示例省略以保持简短。）解析成功时 `decision` 为 `FIXTURE_BOUND`，`binding.providerRef` 为 `voice-a`，`messageZh` 为固定成功文案。
+该完整虚构 TTS 示例可直接交本模块进行离线绑定校验：`validateVoiceAssetLibrary(input.library)` 与 `resolveFixtureVoiceBinding(input)` 均返回 `ok: true`；解析结果为 `decision: "FIXTURE_BOUND"`、`reason: null`、`binding.instanceId = "instance:qwen"`、`binding.candidateId = "qwen3-tts"`、`binding.providerRef = "voice-a"`，`messageZh` 为固定成功文案（`演示音色绑定已核对；尚未生成音频，不能据此试听、保存或发送。`）。这仍只表示演示映射成立，尚未生成音频，不能试听、保存或发送。
+
+若把 `library.profiles[0].bindings[0].assetId` 改成库中不存在的 `asset:fixture-absent`，全库校验会先返回 `VOICE_ASSET_INVALID_REFERENCE`（`path: "library"`），不会因为当前选中 TTS 就忽略坏引用。本示例不包含 RVC 绑定，也不含多余模型资产。
 
 ### 7.1 已知限制：TTS 正文未与 request 文本关联
 
