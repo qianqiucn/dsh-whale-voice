@@ -36,8 +36,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 - **Plan 08-A branch:** `feature/plan08a-voice-assets` adds `core/audio/voice-assets.mjs` — a strict
   Fixture shared-voice-asset library plus an explicit Provider binding resolver over the existing
   AudioTaskDraft v1 and 06-B negotiation (four pure exports, 27 fixed codes, V01–V26 / 28 tests).
-  `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no dispatch, task advance, Artifact, TTS text linking,
-  queue, GUI or Host route. Full suite **520 / 519 pass / 1 platform skip / 0 fail**, UI **24/24**.
+  `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #27 open, not merged; no dispatch, task advance,
+  Artifact, TTS text linking, queue, GUI or Host route. Full suite **520 / 519 pass / 1 platform skip /
+  0 fail**, UI **24/24**.
 - **Plan 06-D branch:** `feature/plan06d-provider-readiness` adds
   `core/audio/provider-readiness.mjs` — a Fixture installation/resource admission wrapper over the
   06-B negotiation and 06-C dispatch (PRESENT/ABSENT/UNKNOWN, CPU/GPU/REMOTE, optional single existing
