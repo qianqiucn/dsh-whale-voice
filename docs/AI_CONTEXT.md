@@ -36,8 +36,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 - **Plan 06-D branch:** `feature/plan06d-provider-readiness` adds
   `core/audio/provider-readiness.mjs` — a Fixture installation/resource admission wrapper over the
   06-B negotiation and 06-C dispatch (PRESENT/ABSENT/UNKNOWN, CPU/GPU/REMOTE, optional single existing
-  RVC dispatch) with D01–D27. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
-  **492 / 491 pass / 1 platform skip / 0 fail**, UI **24/24**. PR pending review; no real installer,
+  RVC dispatch) with D01–D27. Plan06-D-F01 adds the D27 cross-category evidence table and controlled
+  reason-namespace clarification (docs-only). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
+  **492 / 491 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #26 pending review; no real installer,
   hardware probe, TTS synthesizer, queue or 08 mapping.
 - **Plan 06-C branch:** `feature/plan06c-rvc-fake-dispatch` adds `core/audio/provider-dispatch.mjs`
   (one synchronous RVC Fixture dispatch over 06-B negotiation + existing RVC Fake gateway + existing

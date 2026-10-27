@@ -191,3 +191,39 @@ button may show "real generation/send" from this layer.
 - Full suite, build, syntax, `client.js` parity and the isolated 24-check UI harness are reported in
   the associated delivery report for the actual commit; this document does not claim a green CI by
   itself.
+
+## 10. D27 cross-category evidence table (Plan06-D-F01)
+
+This table is the evidence reference required by D27. It distinguishes what was actually asserted
+offline from declarations, Fake protocol behavior, static checks and genuinely missing coverage.
+Test names are exact names in the named files at the commit that adds this section; line numbers are
+not used because they drift. Nothing below adds a real TTS runtime, a real RVC process or a new
+injection point.
+
+| # | Concern | Evidence (file → exact test/assertion) | What it proves | Level | Limit / owner |
+|---|---|---|---|---|---|
+| 1 | TTS unsupported output format / streaming | `test/provider-instances.test.mjs` → `R16 unsupported streaming/format, empty text and over-limit text block`; `test/provider-dispatch.test.mjs` → `T10 invalid Fixture request fields block in 06-B before any simulation` | Unsupported `format`/`streaming` is rejected as a controlled 06-B capability block; no provider fallback, no simulation | RUN-OFFLINE | Classification/admission only; not a real TTS codec test |
+| 2 | TTS error audio / result schema | `test/tts-provider.test.mjs` → `synthesis result is audio-only and never performs delivery`; `synthesis result rejects unknown target fields instead of silently dropping them` | Result normalization keeps audio-only fields and rejects unknown delivery/target fields | RUN-OFFLINE | Uses Fixture result objects; no real audio bytes |
+| 3 | TTS request format / hidden delivery fields | `test/tts-provider.test.mjs` → `TTS request rejects hidden delivery fields before normal validation`; `test/provider-instances.test.mjs` → `R15 unsupported voice, language and emotion each block without dropping parameters` | Request shape and delivery fields are rejected before capability checks; parameters are not silently dropped | RUN-OFFLINE | Admission/validation only |
+| 4 | TTS timeout / health degraded | `test/provider-instances.test.mjs` → `R11 timeout, unknown, offline and degraded map to fixed statuses`; `test/provider-dispatch.test.mjs` → `T03 offline/unknown/timeout/degraded/version-unknown instances block with no result` | Observation states map to fixed blocked statuses; no dispatch result | RUN-OFFLINE | Status classification; **not** a simulated TTS synthesis timeout |
+| 5 | TTS cancellation capability vs execution | `test/tts-provider.test.mjs` → `local and fake-cloud providers expose independent capabilities and status` (manifest `capabilities.cancellation: true`) | The manifest can declare cancellation capability | DECLARATION-ONLY | No TTS cancellation runtime; declaration ≠ executed cancel. TTS execution/cancel remains `NOT_IMPLEMENTED` in the parent matrix |
+| 6 | SVC invalid media / output format | `test/rvc-fake-gateway.test.mjs` → `G04 URL、路径、正文与非 Fixture 源引用全部拒绝`; `G07 outputFormat 只接受必填 audio/wav`; `test/provider-dispatch.test.mjs` → `T10 ...` | URLs/paths/wrong media formats are rejected before simulation | RUN-OFFLINE | Fixture input validation only |
+| 7 | SVC timeout / UNKNOWN | `test/rvc-fake-gateway.test.mjs` → `G22 TIMEOUT 模拟响应无产物且不得自动重试`; `G26 UNKNOWN 无产物、无重试、无后端切换`; `test/provider-dispatch.test.mjs` → `T02 all seven scenarios preserve exact status/code/cancel/delivery and fixed Chinese`, `T12 TIMEOUT/UNKNOWN produce no artifact and no retry permission` | Exact Fake status/code/artifact/retry behavior for TIMEOUT and UNKNOWN | FAKE-SCENARIO-PROTOCOL | Simulated gateway only; no real process timeout |
+| 8 | SVC cancel request vs confirmation | `test/rvc-fake-gateway.test.mjs` → `G24 取消请求不等于已停止`; `G25 CANCELLED_FAKE 仅表示模拟确认`; `test/provider-dispatch.test.mjs` → `T13 cancel request and confirmation remain distinct and never claim a real stop`; `test/provider-readiness.test.mjs` → `D14 TIMEOUT/UNKNOWN have no artifact/retry and cancel request is distinct from confirmation` | `CANCEL_REQUESTED` ≠ confirmed stop; `CANCEL_CONFIRMED` remains a simulated confirmation | FAKE-SCENARIO-PROTOCOL | No real process stop/cancel signal |
+| 9 | Wrapped RVC complete result + validator | `test/provider-readiness.test.mjs` → `D01 normal RVC PRESENT/CPU_AVAILABLE is READY and all seven scenarios match the old dispatcher`; `D13 context/request linkage, no default scenario and the complete 15-field result stay intact`; `test/provider-dispatch.test.mjs` → `T22 SIMULATED.result revalidates with the existing validator and matches direct simulation` | Gate keeps the old 15-field result, request/context linkage and revalidates with the existing validator | RUN-OFFLINE | Fake simulation; not real RVC audio/GPU execution |
+| 10 | TTS actual synthesis execution (timeout/cancel/audio) | None | No TTS synthesizer or execution path exists | NOT-IMPLEMENTED / NONE | Parent Plan06 matrix owns real TTS execution evidence; do not infer it from rows 1–5 |
+
+Rows 1–4, 6–9 are offline behavior assertions. Row 5 is declaration only. Rows 7–8 are the Fake
+scenario protocol. Row 10 is explicitly unimplemented. The schema/error-namespace check
+`D27 readiness schema version is exported as 1 and the error namespace is complete` is additional
+coverage; it does **not** replace any cross-category row above.
+
+## 11. Controlled reason namespace (clarification)
+
+The accepted 06-B negotiation can return existing TTS contract codes, for example
+`TEXT_UPLOAD_NOT_CONFIRMED` (not every reason is prefixed `PROVIDER_INSTANCE_`). The readiness wrapper
+preserves the original controlled `reason` value for a legal 06-B `BLOCKED`; it does not rewrite it,
+re-prefix it or map it into the readiness namespace. This is a documentation clarification of already
+verified behavior (`test/provider-instances.test.mjs` → `R17 cloud consent gates run before existing
+capability checks`; `N13 network/upload keep provider codes, cost uses the new enum, priority unchanged`),
+not a code change or a second enum. New readiness-only reasons use `PROVIDER_READINESS_*`.

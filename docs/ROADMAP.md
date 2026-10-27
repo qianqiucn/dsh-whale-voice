@@ -34,7 +34,8 @@ synchronous RVC Fixture dispatch (`core/audio/provider-dispatch.mjs`, T01–T26 
 negotiation and the existing RVC Fake gateway; after the F01/F02 review repair it is **`OFFLINE`** and
 merged via PR #25 at **M `b9336fb`** (report 0016). Plan 06-D adds a Fixture installation/resource
 admission wrapper (`core/audio/provider-readiness.mjs`, D01–D27) with three-state installation and
-CPU/GPU/REMOTE admission; it is **`OFFLINE`** and pending PR review. None delivers TTS dispatch, real
+CPU/GPU/REMOTE admission; it is **`OFFLINE`** and pending PR #26 review. A docs-only F01 adds the D27
+cross-category evidence table and reason-namespace clarification. None delivers TTS dispatch, real
 adapters, 08 asset/id mapping or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
