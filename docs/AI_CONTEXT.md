@@ -3,7 +3,7 @@
 **Purpose:** compact cross-session recovery note. This is a summary, not an authority. Re-verify
 against the repository, Git/GitHub, tests and the linked authoritative documents before acting.
 
-**Last updated:** 2026-10-26
+**Last updated:** 2026-10-27
 
 ---
 
@@ -33,6 +33,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 06-B branch:** `feature/plan06b-provider-instances` adds `core/audio/provider-instances.mjs`
+  (Fixture provider-instance view + explicit capability negotiation) and R01–R30 + N01–N18. After the
+  Plan06-B-F01 review repair: `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
+  **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. An independent PR #24 is updated and
+  pending review; no real provider, adapter, model, synthesis, scheduling or send capability is added.
+  The older TTS-A bullets below are historical.
 - **main HEAD:** `bf9cf66807e12d0b25872a0fa3869962dde04818` (merge of PR #15); verify live with
   `git rev-parse origin/main`. The PR #3–#8 integration baseline is `16c858b`; the older
   `pre-pr3-8-integration` backup tag is `b552ac0`.

@@ -7,6 +7,8 @@ not invent earlier releases or imply production maturity.
 
 ### Added
 
+- Plan 06-B-F01 review repair for the offline provider instances: `validateProviderManifest` now treats every helper failure as a manifest failure (even when the helper did not append an error); the instance layer rejects malformed manifests, enforces the registration regex for `selection.instanceId`, uses the exported `PROVIDER_INSTANCE_*` reason namespace for view/negotiation reasons, and maps any non-1 `schemaVersion` (including non-integer values) to `UNSUPPORTED_VERSION`. Adds M01–M05 and N01–N18 regressions; still `OFFLINE` / no real provider.
+- Plan 06-B offline Fixture provider-instance view and explicit capability negotiation (`core/audio/provider-instances.mjs`, R01–R30): distinguishes candidate, instance, version, health, credential and capability matching; validates one bounded snapshot without I/O; never calls a provider, synthesizes/converts audio, schedules a task, creates an Artifact or sends. No real adapter, model or asset mapping is added.
 - Private GitHub repository baseline and long-term agent workflow documentation.
 - Initial `main` commit and CI baseline (build, syntax, generated-client sync).
 - Roadmap P0–P9, project status, architecture, changelog and license.

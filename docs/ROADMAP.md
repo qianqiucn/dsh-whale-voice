@@ -26,7 +26,11 @@ remain `OFFLINE` (isolated store/coordination; test-only APIs; no production rou
 completed the read-only audit. Phase 4B-2B-2a is **`INTEGRATED`** after real DSH Host/GUI acceptance
 (schema v3, eight-page coverage, read-only). **TTS-A** has delivered a Provider-neutral audit, pure
 contract/registry/v2 migration design and isolated tests (`DESIGN`/`OFFLINE`); the next step is
-**TTS-B** provider service + neutral configuration, then **TTS-C** real adapters. Phase 4B-2B-2b
+**TTS-B** provider service + neutral configuration, then **TTS-C** real adapters. Plan 06-B adds an
+offline Fixture provider-instance view and explicit capability negotiation on
+`feature/plan06b-provider-instances` (R01–R30 + N01–N18, pure/no I/O); after the F01–F04 review
+repair it is **`OFFLINE`** and awaits PR #24 review. It does not deliver real adapters, 06-C
+scheduling, 08 asset/id mapping or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
 real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),

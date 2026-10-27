@@ -324,18 +324,31 @@ export function validateProviderManifest(input) {
   if (!KINDS.has(input.kind)) {
     errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, 'kind', 'unsupported provider kind'))
   }
-  validateVersion(input.version, errors)
-  validateCapabilities(input.capabilities, errors)
-  validateHealth(input.health, errors)
-  validateCredentials(input.credentials, errors)
-  validateNetwork(input.network, errors)
-  validatePrivacy(input.privacy, errors)
-  validateCost(input.cost, errors)
-  validateResources(input.resources, errors)
+  const sections = [
+    ['version', validateVersion],
+    ['capabilities', validateCapabilities],
+    ['health', validateHealth],
+    ['credentials', validateCredentials],
+    ['network', validateNetwork],
+    ['privacy', validatePrivacy],
+    ['cost', validateCost],
+    ['resources', validateResources],
+  ]
+  let sectionsOk = true
+  for (const [field, validate] of sections) {
+    const before = errors.length
+    const passed = validate(input[field], errors)
+    if (passed !== true) {
+      sectionsOk = false
+      if (errors.length === before) {
+        errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, field, 'invalid manifest section'))
+      }
+    }
+  }
   if (isObject(input.network) && isObject(input.privacy) && input.network.textUpload === true && input.privacy.textLeavesDevice !== true) {
     errors.push(issue(PROVIDER_ERRORS.INVALID_MANIFEST, 'privacy.textLeavesDevice', 'text upload requires an explicit text-leaves-device declaration'))
   }
-  if (errors.length) return { ok: false, errors }
+  if (errors.length || !sectionsOk) return { ok: false, errors }
   return { ok: true, errors: [], manifest: JSON.parse(JSON.stringify(input)) }
 }
 
