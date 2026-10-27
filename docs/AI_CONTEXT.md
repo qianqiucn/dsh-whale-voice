@@ -33,13 +33,19 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 08-A branch:** `feature/plan08a-voice-assets` adds `core/audio/voice-assets.mjs` — a strict
+  Fixture shared-voice-asset library plus an explicit Provider binding resolver over the existing
+  AudioTaskDraft v1 and 06-B negotiation (four pure exports, 27 fixed codes, V01–V26 / 28 tests).
+  `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #27 open, not merged; no dispatch, task advance,
+  Artifact, TTS text linking, queue, GUI or Host route. Full suite **520 / 519 pass / 1 platform skip /
+  0 fail**, UI **24/24**.
 - **Plan 06-D branch:** `feature/plan06d-provider-readiness` adds
   `core/audio/provider-readiness.mjs` — a Fixture installation/resource admission wrapper over the
   06-B negotiation and 06-C dispatch (PRESENT/ABSENT/UNKNOWN, CPU/GPU/REMOTE, optional single existing
   RVC dispatch) with D01–D27. Plan06-D-F01 adds the D27 cross-category evidence table and controlled
   reason-namespace clarification (docs-only). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; full suite
-  **492 / 491 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #26 pending review; no real installer,
-  hardware probe, TTS synthesizer, queue or 08 mapping.
+  **492 / 491 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #26 merged at **M `a1bdcbb`**
+  (report 0019); no real installer, hardware probe, TTS synthesizer, queue or 08 mapping.
 - **Plan 06-C branch:** `feature/plan06c-rvc-fake-dispatch` adds `core/audio/provider-dispatch.mjs`
   (one synchronous RVC Fixture dispatch over 06-B negotiation + existing RVC Fake gateway + existing
   result validator) and `core/audio/fixture-input-boundary.mjs` (shared internal copy/freeze helper),
@@ -53,9 +59,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #24 merged at **M `ad25bc6`**
   (report 0013); no real provider, adapter, model, synthesis, scheduling or send capability.
   The older TTS-A bullets below are historical.
-- **main HEAD:** `b9336fbf393dff64df1e4a55ea2865668e45333a` (merge of PR #25); verify live with
-  `git rev-parse origin/main`. The earlier `bf9cf66` was the PR #15 baseline; the older
-  `pre-pr3-8-integration` backup tag is `b552ac0`.
+- **main HEAD:** `a1bdcbb656a1e13cc7d8434aff80221a15e74f1f` (merge of PR #26); verify live with
+  `git rev-parse origin/main`. The earlier `b9336fb` was the PR #25 baseline and `bf9cf66` the PR #15
+  baseline; the older `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production

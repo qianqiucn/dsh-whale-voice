@@ -34,9 +34,15 @@ synchronous RVC Fixture dispatch (`core/audio/provider-dispatch.mjs`, T01–T26 
 negotiation and the existing RVC Fake gateway; after the F01/F02 review repair it is **`OFFLINE`** and
 merged via PR #25 at **M `b9336fb`** (report 0016). Plan 06-D adds a Fixture installation/resource
 admission wrapper (`core/audio/provider-readiness.mjs`, D01–D27) with three-state installation and
-CPU/GPU/REMOTE admission; it is **`OFFLINE`** and pending PR #26 review. A docs-only F01 adds the D27
-cross-category evidence table and reason-namespace clarification. None delivers TTS dispatch, real
-adapters, 08 asset/id mapping or any send path. Phase 4B-2B-2b
+CPU/GPU/REMOTE admission; it is **`OFFLINE`** and merged via PR #26 at **M `a1bdcbb`** (report 0019).
+A docs-only F01 adds the
+D27 cross-category evidence table and reason-namespace clarification. Plan 08-A adds a strict Fixture
+shared voice-asset library and explicit Provider binding resolver (`core/audio/voice-assets.mjs`,
+V01–V26 / 28 tests): one `voiceProfileId` maps to per-instance TTS voice ids or RVC model ids with
+three independent rights layers, revisions, availability/expiry and exact canonical/Provider reference
+matching; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR #27 open (not merged). None
+delivers TTS dispatch, real
+adapters, TTS text↔Artifact association or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
 real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
