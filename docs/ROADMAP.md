@@ -40,9 +40,12 @@ D27 cross-category evidence table and reason-namespace clarification. Plan 08-A 
 shared voice-asset library and explicit Provider binding resolver (`core/audio/voice-assets.mjs`,
 V01–V26 / 28 tests): one `voiceProfileId` maps to per-instance TTS voice ids or RVC model ids with
 three independent rights layers, revisions, availability/expiry and exact canonical/Provider reference
-matching; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR #27 open (not merged). None
-delivers TTS dispatch, real
-adapters, TTS text↔Artifact association or any send path. Phase 4B-2B-2b
+matching; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #27 at
+**M `df4e4b7`** (report 0022). Plan 08-B adds a strict Fixture source-Artifact library and one
+resolver (`core/audio/source-artifacts.mjs`, S01–S22 / 25 tests) that reuses the 08-A binding once
+and checks TTS text or RVC input-audio metadata against the same request; it is **`OFFLINE`** /
+`FIXTURE_ONLY` / `NOT_INTEGRATED`. None delivers TTS dispatch, real adapters, real byte/codec/hash
+verification or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
 real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
