@@ -28,6 +28,11 @@ validators and the RVC Fake v1 **capability description** are reused. The module
 `simulateRvcFakeConversion`, `normalizeSvcResult`, `normalizeSynthesisResult`, `transitionAudioTask`
 or any Relay interface.
 
+Plan 06-C extracted the existing bounded copy/freeze implementation into the internal helper
+`core/audio/fixture-input-boundary.mjs` (`copyFixtureInput` / `deepFreezeFixtureValue`), and this
+module now imports it. The four public exports, input/output shapes, limits and behavior are
+unchanged; 06-B's 48 tests still pass. The helper is not a new public product API.
+
 ## 2. `buildProviderInstanceView(input)`
 
 Input shape: `{ schemaVersion: 1, instances: [ ...0..32 items ] }`.
