@@ -48,7 +48,12 @@ and checks TTS text or RVC input-audio metadata against the same request; it is 
 adds one synchronous composition (`core/audio/task-fixture-runner.mjs`, C01–C20 / 20 tests) from the
 source check to the 06-D gate, at most one RVC Fixture dispatch and the existing AudioTask actions;
 success ends at `ARTIFACT_READY` only, with no save/delivery/send. It is **`OFFLINE`** /
-`FIXTURE_ONLY` / `NOT_INTEGRATED`. None delivers real adapters, real byte/codec/hash verification,
+`FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #29 at **M `b9f663c`** (report 0026). Plan 08-D-A
+adds an isolated persistent task catalog (`core/audio/task-catalog.mjs`, D01–D20 / 21 tests) that
+persists only initial `CREATED`/`BLOCKED_RIGHTS` records, issues owner ids and deduplicates by
+scope/key with atomic temp+fsync+rename+read-back and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** /
+`FIXTURE_ONLY` / `NOT_INTEGRATED` and has no execution, delivery or cross-process recovery. None
+delivers real adapters, real byte/codec/hash verification,
 save/delivery or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
