@@ -33,6 +33,26 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 08-D-B branch:** `feature/plan08d-record-reuse` adds the single internal engine
+  `core/audio/task-fixture-engine-internal.mjs` (four exports) and turns `task-fixture-runner.mjs`
+  into a compatibility facade. `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a
+  complete initial `CREATED`/`BLOCKED_RIGHTS` record with its original TaskId/scope/`observedAt`;
+  it never calls create, never reconstructs a record from the projection and never persists a
+  claim. Internal `{record, result}` keeps the full record private; the public 13-key envelope and
+  three legacy exports are unchanged. The F01 v1.6 evidence close-out keeps product code read-only
+  and splits the test-only worker **entry** (existing / internal draft / actual public) from the
+  injected **fault**, deriving the `final` record-validator call index from the real entry; it adds
+  the three-stage legal-refusal vs bad-protocol matrix, measured `depth12`/13 partition bounds, the
+  legal cross-scope voice library (`VOICE_ASSET_PROFILE_UNAVAILABLE`), legal eight-domain identity
+  controls, the `REMOTE` readiness policy, full-graph output isolation and the gate/dispatch vs
+  RVC-result error split. The v1.7 patch makes every validator wrapper delegate to the real validator
+  with the original arguments first and only inject after a real `ok:true` control, separates input
+  delete / success-payload delete / `undefined` as three sources, drives the same eight protocol
+  kinds through the existing/draft/public `final` entry, and adds worker counts for three existing
+  legal frames plus `REMOTE` negative, owner value-budget and per-object record frozen-state
+  assertions. D-B tests 28; full suite **638 / 636 pass / 2 platform skips / 0 fail**,
+  UI **24/24** (same UI tree; CI re-runs it on the new head). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #32 still OPEN, no cross-call idempotency,
+  recovery, Host/GUI or real generation.
 - **Plan 08-D-A branch:** `feature/plan08d-task-catalog` adds `core/audio/task-catalog.mjs` — an
   isolated persistent catalog over the trusted temporary sandbox that stores only initial
   `CREATED`/`BLOCKED_RIGHTS` records, issues owner `task:fixture-<32hex>` ids and prevents duplicate
@@ -86,10 +106,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #24 merged at **M `ad25bc6`**
   (report 0013); no real provider, adapter, model, synthesis, scheduling or send capability.
   The older TTS-A bullets below are historical.
-- **main HEAD:** `b9f663c9e732e319a0920a3e02737400ee4cf0f2` (merge of PR #29); verify live with
-  `git rev-parse origin/main`. The earlier `3182ca1` was the PR #28 baseline, `df4e4b7` the PR #27
-  baseline, `a1bdcbb` the PR #26 baseline, `b9336fb` the PR #25 baseline and `bf9cf66` the PR #15
-  baseline; the older `pre-pr3-8-integration` backup tag is `b552ac0`.
+- **main HEAD:** `20909433f7d530e98fe06e7832da4b21561196d4` (merge of PR #30, Plan08-D-A); verify
+  live with `git rev-parse origin/main`. The earlier `f09115f` was the PR #31 baseline, `b9f663c`
+  the PR #29 baseline, `3182ca1` the PR #28 baseline, `df4e4b7` the PR #27 baseline and `bf9cf66`
+  the PR #15 baseline; the older `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production

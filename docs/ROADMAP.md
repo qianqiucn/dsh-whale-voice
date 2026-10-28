@@ -55,8 +55,14 @@ records, issues owner ids and deduplicates by scope/key with bounded fd reads, f
 completion, atomic temp+fsync+rename+read-back, post-commit identity checks, close-failure phase
 propagation, one close per open lease, cleanup trust-failure classification, one-shot cleanup
 eligibility and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`
-(035–038 storage-boundary repairs included, pending re-review) and has no execution, delivery or
-cross-process recovery. None
+(035–038 storage-boundary repairs included, merged via PR #30 at **M `2090943`**, report 0032) and has no
+execution, delivery or cross-process recovery. Plan 08-D-B
+adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
+compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
+initial record with original TaskId/scope/`observedAt` without a second create, while the full record
+stays private and the old public envelope is unchanged. New D-B tests 28; full suite **638 / 636 pass / 2 platform skips / 0 fail**. The F01 v1.6 evidence close-out keeps product code read-only and separates the test-only worker entry from the injected fault, closing the three-stage legal-refusal/bad-protocol matrix, measured `depth12`/13 partition bounds, the legal cross-scope voice library, legal eight-domain identity controls, the `REMOTE` readiness policy, full-graph output isolation and the gate/dispatch vs RVC-result error split. The v1.7 patch then makes every validator wrapper delegate to the real validator first (inject only after a real `ok:true` control), separates input-delete / success-payload `delete` / `undefined` sources, and reuses the same eight protocol kinds at the existing/draft/public `final` entry, with three legal-frame worker counts. It is **`OFFLINE`** / `FIXTURE_ONLY` /
+`NOT_INTEGRATED` and adds no persistent claim, cross-call idempotency, recovery, Host/GUI or real
+generation. None
 delivers real adapters, real byte/codec/hash verification,
 save/delivery or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
