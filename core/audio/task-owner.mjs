@@ -40,17 +40,17 @@ import {
   enqueue,
   getStoreState,
   hasOwn,
-  identityHashOf,
   isPlainObject,
   isStoreFailure,
   keySurface,
   lockStore,
   openOwnerFile,
   raiseStore,
-  readCatalogEntries,
+  sameOwnerImmutable,
   sha256,
   stableStringify,
   storeReason,
+  verifyOwnerAssociations,
 } from './fixture-task-store-internal.mjs'
 
 export const TASK_OWNER_SCHEMA_VERSION = OWNER_SNAPSHOT_SCHEMA_VERSION
@@ -175,14 +175,13 @@ function birthOf(catalog, scopeId, taskId) {
 
 /**
  * Restricted real reads of the two fixed files plus the full association gate. Nothing here is
- * cached: `readCatalogEntries`/`openOwnerFile` re-validate the capability, re-read the bytes
- * bounded and compare against the per-file confirmed digest, and `crossCheck` re-resolves every
- * owner entry against the current birth registry.
+ * cached: `openOwnerFile` re-validates the capability and re-reads the owner bytes bounded, and the
+ * shared `verifyOwnerAssociations` (one implementation, also used by the owner write transaction)
+ * re-resolves every owner entry against a freshly read birth registry.
  */
 function freshAssociations(state) {
-  const catalog = readCatalogEntries(state, STORE_DOMAINS.OWNER)
   const owner = openOwnerFile(state).read()
-  crossCheck(owner.snapshot, catalog)
+  const catalog = verifyOwnerAssociations(state, owner.snapshot)
   return { catalog, owner }
 }
 
@@ -190,41 +189,6 @@ function requireClaimed(owner, scopeId, taskId) {
   const entry = entryFor(owner.snapshot, scopeId, taskId)
   if (!entry || entry.phase !== 'CLAIMED') raise('STORE_INVALID', '$')
   return entry
-}
-
-/* --------------------------------------- association rules ---------------------------------- */
-
-function sameImmutable(finalRecord, birthRecord) {
-  return (
-    finalRecord.taskId === birthRecord.taskId &&
-    finalRecord.feature === birthRecord.feature &&
-    finalRecord.taskType === birthRecord.taskType &&
-    finalRecord.source.kind === birthRecord.source.kind &&
-    finalRecord.source.ref === birthRecord.source.ref &&
-    finalRecord.voiceProfileId === birthRecord.voiceProfileId &&
-    finalRecord.rights.state === birthRecord.rights.state &&
-    finalRecord.deliveryRequested === birthRecord.deliveryRequested &&
-    finalRecord.observedAt === birthRecord.observedAt
-  )
-}
-
-/** Every owner entry must resolve to its catalog birth entry and to the same immutable identity. */
-function crossCheck(snapshot, catalog) {
-  for (const entry of snapshot.entries) {
-    const birth = catalog.entries.find(
-      (item) => item.scopeId === entry.scopeId && item.record.taskId === entry.taskId,
-    )
-    if (!birth) raise('BIRTH_INVALID', '$')
-    if (identityHashOf(birth.record) !== entry.birthIdentityHash) raise('BIRTH_INVALID', '$')
-    if (entry.phase === 'CLAIMED') {
-      if (stableStringify(entry.record) !== stableStringify(birth.record)) raise('BIRTH_INVALID', '$')
-      continue
-    }
-    if (!sameImmutable(entry.record, birth.record)) raise('BIRTH_INVALID', '$')
-    if (entry.completion.kind === 'NO_EXECUTION' && stableStringify(entry.record) !== stableStringify(birth.record)) {
-      raise('BIRTH_INVALID', '$')
-    }
-  }
 }
 
 /* --------------------------------------- input readers -------------------------------------- */
@@ -327,6 +291,56 @@ function projectOrNull(record) {
 }
 
 /**
+ * Data-descriptor-only copy of the engine's task projection. Accessors, hidden keys, Symbols and
+ * extra keys are rejected without being invoked, so the later structural comparison can never run a
+ * getter or silently drop a non-enumerable key. This is a bounded copy, not a second Task Schema.
+ */
+function copyDataGraph(value, depth) {
+  if (depth > 6) return { ok: false }
+  if (value === null) return { ok: true, value: null }
+  const type = typeof value
+  if (type === 'string' || type === 'boolean') return { ok: true, value }
+  if (type === 'number' && Number.isFinite(value)) return { ok: true, value }
+  if (type !== 'object') return { ok: false }
+  if (Array.isArray(value)) {
+    const length = value.length
+    if (!Number.isInteger(length) || length > 64) return { ok: false }
+    if (Reflect.ownKeys(value).length !== length + 1) return { ok: false }
+    const copied = []
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+      if (!descriptor || !hasOwn(descriptor, 'value') || descriptor.enumerable !== true) return { ok: false }
+      const inner = copyDataGraph(descriptor.value, depth + 1)
+      if (!inner.ok) return { ok: false }
+      copied.push(inner.value)
+    }
+    return { ok: true, value: copied }
+  }
+  if (!isPlainObject(value)) return { ok: false }
+  const keys = Reflect.ownKeys(value)
+  if (keys.length > 32) return { ok: false }
+  const copied = {}
+  for (const key of keys) {
+    if (typeof key !== 'string') return { ok: false }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor || !hasOwn(descriptor, 'value') || descriptor.enumerable !== true) return { ok: false }
+    const inner = copyDataGraph(descriptor.value, depth + 1)
+    if (!inner.ok) return { ok: false }
+    copied[key] = inner.value
+  }
+  return { ok: true, value: copied }
+}
+
+/** Guard `value.task` against the real expected projection key set before comparing it. */
+function guardProjection(value, expected) {
+  const top = engineObject(value, new Set(Object.keys(expected)))
+  if (top === null) return null
+  const copied = copyDataGraph(top, 0)
+  if (!copied.ok) return null
+  return copied.value
+}
+
+/**
  * Thin adapter guard for the unchanged existing engine. It re-checks the frozen protocol shape,
  * the fixed safety flags, the immutable birth identity, the real old validator, the complete
  * `projectAudioTask` equality with the engine's own projection, and the legal phase/reason/state
@@ -370,13 +384,15 @@ function interpretEngineUnsafe(out, birthRecord) {
   if (!validated || typeof validated !== 'object' || validated.ok !== true) return null
   if (!isPlainObject(validated.value)) return null
   const finalRecord = validated.value
-  if (!sameImmutable(finalRecord, birthRecord)) return null
+  if (!sameOwnerImmutable(finalRecord, birthRecord)) return null
   if (finalRecord.mockOnly !== true || finalRecord.realOperationAllowed !== false) return null
   if (!isPlainObject(finalRecord.delivery) || finalRecord.delivery.deliveryId !== null) return null
 
   const expectedTask = projectOrNull(finalRecord)
   if (expectedTask === null) return null
-  if (stableStringify(expectedTask) !== stableStringify(value.task)) return null
+  const guardedTask = guardProjection(value.task, expectedTask)
+  if (guardedTask === null) return null
+  if (stableStringify(expectedTask) !== stableStringify(guardedTask)) return null
   if (value.states[value.states.length - 1] !== finalRecord.state) return null
 
   if (value.phase === 'BLOCKED') {

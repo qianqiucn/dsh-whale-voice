@@ -7,7 +7,8 @@ import { execFileSync } from 'node:child_process'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { copyFixtureInput } from '../core/audio/fixture-input-boundary.mjs'
-import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
+import { openFixtureTaskCatalog, TASK_CATALOG_ERRORS } from '../core/audio/task-catalog.mjs'
+import { runExistingFixtureTaskOnce } from '../core/audio/task-fixture-engine-internal.mjs'
 import { openFixtureTaskOwner, TASK_OWNER_ERRORS, TASK_OWNER_SCHEMA_VERSION } from '../core/audio/task-owner.mjs'
 import * as storeModule from '../core/audio/fixture-task-store-internal.mjs'
 
@@ -123,9 +124,11 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, fsFaults: 0 }
+const counts = { engine: 0, fsFaults: 0, ownerRenames: 0 }
 let hits = 0
 let faultAt = null
+let legalBirthValid = null
+const getterCalls = { count: 0 }
 let root = ''
 const fdPaths = new Map()
 
@@ -154,6 +157,22 @@ function legalBirthAdd() {
   fsReal.writeFileSync(file, JSON.stringify(snapshot))
 }
 
+function legalBirthChange() {
+  const file = root + '/audio-task-catalog-v1.json'
+  const snapshot = JSON.parse(fsReal.readFileSync(file, 'utf8'))
+  snapshot.entries[0].record.observedAt = '2026-10-27T01:02:03.000Z'
+  fsReal.writeFileSync(file, JSON.stringify(snapshot))
+  let valid = false
+  try {
+    real.store.parseCatalogSnapshot(fsReal.readFileSync(file))
+    valid = true
+  } catch {
+    valid = false
+  }
+  legalBirthValid = valid
+  return valid
+}
+
 function whenMatches(when) {
   if (!when || when === 'always') return true
   if (when === 'engine0') return counts.engine === 0
@@ -176,13 +195,23 @@ const fsProxy = new Proxy({}, {
         hits += 1
         if (counts.fsFaults === 0 && hits === (fault.skip || 0) + 1) {
           counts.fsFaults += 1
-          faultAt = { call: prop, engine: counts.engine, ownerPhase: ownerPhase(), args0: String(args[0]).slice(-24) }
+          faultAt = {
+            call: prop,
+            engine: counts.engine,
+            ownerPhase: ownerPhase(),
+            ownerRenames: counts.ownerRenames,
+            args0: String(args[0]).slice(-24),
+          }
           if (fault.action === 'corrupt-birth') {
             fsReal.writeFileSync(root + '/audio-task-catalog-v1.json', '{bad')
             return original.apply(fsReal, args)
           }
           if (fault.action === 'legal-birth-add') {
             legalBirthAdd()
+            return original.apply(fsReal, args)
+          }
+          if (fault.action === 'legal-birth-change') {
+            legalBirthChange()
             return original.apply(fsReal, args)
           }
           const error = new Error('injected fs fault')
@@ -193,6 +222,7 @@ const fsProxy = new Proxy({}, {
       const result = original.apply(fsReal, args)
       if (prop === 'openSync' && typeof result === 'number') fdPaths.set(result, String(args[0]))
       if (prop === 'closeSync') fdPaths.delete(args[0])
+      if (prop === 'renameSync' && String(args[1]).includes('audio-task-owner-v1.json')) counts.ownerRenames += 1
       return result
     }
   },
@@ -201,6 +231,7 @@ const fsProxy = new Proxy({}, {
 const real = {
   engine: await import(new URL('task-fixture-engine-internal.mjs', base).href),
   sandbox: await import(new URL('../config-sandbox.mjs', base).href),
+  store: await import(new URL('fixture-task-store-internal.mjs', base).href),
 }
 
 const synth = (url, ns) => new vm.SyntheticModule(Object.keys(ns), function () {
@@ -233,6 +264,20 @@ const wrappedEngine = (frame) => {
     configurable: true,
     get() { throw new Error('injected accessor') },
   })
+  else if (fault === 'task-getter') Object.defineProperty(copy.result.value.task, 'state', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      getterCalls.count += 1
+      return out.result.value.task.state
+    },
+  })
+  else if (fault === 'task-hidden') Object.defineProperty(copy.result.value.task, 'hiddenNote', {
+    enumerable: false,
+    configurable: true,
+    value: 'hidden',
+  })
+  else if (fault === 'task-symbol') copy.result.value.task[Symbol('secret')] = 'symbol'
   else if (fault === 'root-extra') copy.extra = 1
   else if (fault === 'result-extra') copy.result.extra = true
   return copy
@@ -293,12 +338,15 @@ try {
   const binding = source.sourceInput.voiceBinding
   const catalog = await catalogModule.namespace.openFixtureTaskCatalog({ sandbox })
 
-  const birthOne = async (key) => {
-    const draft = JSON.parse(JSON.stringify(binding.taskDraft))
+  const birthFrom = async (heading, key, mutateDraft) => {
+    const src = heading ? ex(heading) : source
+    const bind = src.sourceInput.voiceBinding
+    const draft = JSON.parse(JSON.stringify(bind.taskDraft))
     delete draft.taskId
+    if (mutateDraft) mutateDraft(draft)
     const reserved = await catalog.value.reserve({
       schemaVersion: 1,
-      scopeId: binding.expectation.scopeId,
+      scopeId: bind.expectation.scopeId,
       idempotencyKey: key,
       draft,
       observedAt: '2026-10-27T00:00:00.000Z',
@@ -306,12 +354,13 @@ try {
     if (!reserved.ok) throw new Error('birth failed: ' + reserved.errors[0].code)
     const snapshot = JSON.parse(fsReal.readFileSync(root + '/audio-task-catalog-v1.json', 'utf8'))
     const entry = snapshot.entries[snapshot.entries.length - 1]
-    const input = JSON.parse(JSON.stringify(source))
+    const input = JSON.parse(JSON.stringify(src))
     input.sourceInput.voiceBinding.taskDraft.taskId = entry.record.taskId
     input.sourceInput.voiceBinding.taskDraft.source.ref = entry.record.source.ref
     if (scenario.context) input.context.scenario = scenario.context
-    return { scopeId: binding.expectation.scopeId, taskId: entry.record.taskId, input }
+    return { scopeId: bind.expectation.scopeId, taskId: entry.record.taskId, input }
   }
+  const birthOne = (key) => birthFrom(null, key)
 
   const mode = scenario.mode || 'single'
   const firstBirth = await birthOne(scenario.key || 'key:fixture-worker')
@@ -351,6 +400,68 @@ try {
     const secondFrame = { schemaVersion: 1, scopeId: secondBirth.scopeId, taskId: secondBirth.taskId, input: secondBirth.input }
     record('task-b', await opened.value.run(secondFrame))
     record('task-a-get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+  } else if (mode === 'sweep') {
+    const sweep = []
+    const sweepRun = async (label, b, input) => {
+      const manager = await owner()
+      const engineBefore = counts.engine
+      const bytesBefore = readText(root + '/audio-task-owner-v1.json')
+      const first = await manager.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId, input })
+      const engineAfterFirst = counts.engine
+      const bytesAfterFirst = readText(root + '/audio-task-owner-v1.json')
+      const modified = JSON.parse(JSON.stringify(input))
+      if (modified.context) modified.context.requestId = 'request:fixture-repeat'
+      const second = await manager.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId, input: modified })
+      const bytesAfterSecond = readText(root + '/audio-task-owner-v1.json')
+      sweep.push({
+        label,
+        outcome: first.ok ? first.value.outcome : 'ERR:' + first.errors[0].code,
+        ownerState: first.ok ? first.value.ownerState : 'ERR',
+        reason: first.ok ? first.value.reason : 'ERR',
+        secondOutcome: second.ok ? second.value.outcome : 'ERR:' + second.errors[0].code,
+        engineBefore,
+        engineAfterFirst,
+        engineAfterSecond: counts.engine,
+        bytesStable: bytesAfterFirst !== null && bytesAfterFirst === bytesAfterSecond,
+      })
+    }
+    for (const name of ['SUCCESS', 'OFFLINE', 'MODEL_MISSING', 'TIMEOUT', 'CANCEL_REQUESTED', 'CANCEL_CONFIRMED', 'UNKNOWN']) {
+      const b = await birthOne('key:fixture-sweep-' + name.toLowerCase())
+      const input = JSON.parse(JSON.stringify(b.input))
+      input.context.scenario = name
+      await sweepRun(name, b, input)
+    }
+    const rightsBirth = await birthFrom(null, 'key:fixture-sweep-rights', (draft) => {
+      draft.rights.state = 'UNVERIFIED'
+    })
+    const rightsInput = JSON.parse(JSON.stringify(rightsBirth.input))
+    rightsInput.sourceInput.voiceBinding.taskDraft.rights.state = 'UNVERIFIED'
+    await sweepRun('BLOCK_RIGHTS', rightsBirth, rightsInput)
+    const missingBirth = await birthOne('key:fixture-sweep-missing')
+    const missingInput = JSON.parse(JSON.stringify(missingBirth.input))
+    missingInput.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    await sweepRun('BLOCK_SOURCE', missingBirth, missingInput)
+    const readinessBirth = await birthOne('key:fixture-sweep-readiness')
+    const readinessInput = JSON.parse(JSON.stringify(readinessBirth.input))
+    readinessInput.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
+    await sweepRun('BLOCK_READINESS', readinessBirth, readinessInput)
+    const ttsBirth = await birthFrom('## 8.', 'key:fixture-sweep-tts')
+    await sweepRun('BLOCK_TTS', ttsBirth, JSON.parse(JSON.stringify(ttsBirth.input)))
+    record('sweep', { ok: true, value: { sweep } })
+  } else if (mode === 'twoInputs') {
+    const opened = await owner()
+    const blocked = JSON.parse(JSON.stringify(firstBirth.input))
+    blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    record('blocked', await opened.value.run({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId, input: blocked }))
+    const engineAfterBlocked = counts.engine
+    const bytesAfterBlocked = readText(root + '/audio-task-owner-v1.json')
+    const executable = JSON.parse(JSON.stringify(firstBirth.input))
+    executable.sourceInput.artifactLibrary.artifacts[0].availability = 'PRESENT'
+    record('executable', await opened.value.run({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId, input: executable }))
+    const bytesAfterExecutable = readText(root + '/audio-task-owner-v1.json')
+    record('counts', { ok: true, value: { engineAfterBlocked, engineAfterExecutable: counts.engine, stored: bytesAfterBlocked !== null, bytesStable: bytesAfterBlocked !== null && bytesAfterBlocked === bytesAfterExecutable } })
+    const again = await owner()
+    record('reread', again.ok ? await again.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }) : again)
   } else {
     const opened = await owner()
     if (!opened.ok) {
@@ -386,6 +497,8 @@ try {
     counts,
     faultAt,
     hits,
+    legalBirthValid,
+    getterCalls: getterCalls.count,
     results,
     ownerRaw,
     ownerPhase: ownerPhase(),
@@ -800,15 +913,19 @@ test('T01 fresh birth association: claim rename, engine boundary and FINAL confi
     assert.equal(run.value.outcome, 'RECORDED')
   })
 
-  // (a) The real CLAIMED rename happened, then the birth file is corrupted: engine must stay 0.
+  // (a) The claim was confirmed, then the birth file is corrupted: engine must stay 0. The first
+  // catalog read after the claim rename is the store's own post-rename confirmation; the second is
+  // the owner's post-claim gate, so `skip: 1` targets the confirmed-claim checkpoint.
   const corrupt = runOwnerWorker({
     key: 'key:fixture-t01-claim-corrupt',
-    fsFault: { call: 'lstatSync', match: CATALOG_FILE, when: 'claimOnDisk', action: 'corrupt-birth' },
+    fsFault: { call: 'lstatSync', match: CATALOG_FILE, when: 'claimOnDisk', skip: 1, action: 'corrupt-birth' },
     followUp: true,
   })
   assert.equal(corrupt.counts.fsFaults, 1)
   assert.equal(corrupt.counts.engine, 0)
+  assert.equal(corrupt.counts.ownerRenames, 1)
   assert.equal(corrupt.faultAt.ownerPhase, 'CLAIMED')
+  assert.equal(corrupt.faultAt.engine, 0)
   expectOwnerError(workerResult(corrupt, 'run'), 'STORE_INVALID', '$')
   assert.equal(corrupt.ownerPhase, 'CLAIMED')
   assert.equal(corrupt.ownerRaw.entries[0].phase, 'CLAIMED')
@@ -1202,6 +1319,24 @@ function nest(count) {
   return value
 }
 
+/* Same measurement as the original B12 control in test/task-fixture-record.test.mjs. */
+function depthOf(value) {
+  const seen = new Set()
+  const walk = (current, depth) => {
+    if (current === null || typeof current !== 'object' || seen.has(current)) return depth
+    seen.add(current)
+    let max = depth
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)
+      if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) continue
+      const child = walk(descriptor.value, depth + 1)
+      if (child > max) max = child
+    }
+    return max
+  }
+  return walk(value, 0)
+}
+
 test('T06 input boundary, no re-run after a stored conclusion and full graph isolation', async () => {
   // Depth boundary is the shared input boundary, proven at exactly depth 12 / 13.
   assert.equal(copyFixtureInput(nest(12)).ok, true)
@@ -1291,5 +1426,246 @@ test('T06 input boundary, no re-run after a stored conclusion and full graph iso
     assert.equal(repeat.value.outcome, 'EXISTING')
     assert.equal(repeat.value.ownerState, 'NO_EXECUTION')
     assert.equal(ownerBytes(sandbox).equals(bytesAfterFirst), true)
+  })
+})
+
+/* ------------------------------------------------------------------ E01 */
+
+test('E01 the owner write transaction re-checks the birth association before the FINAL rename', async () => {
+  const svc = example('## 7.')
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, svc, 'key:fixture-e01-control')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const run = await owner.value.run(runFrame(b))
+    assert.equal(run.value.outcome, 'RECORDED')
+    assert.equal(readJson(sandbox, OWNER_FILE).revision, 2)
+  })
+
+  // The change happens after the FINAL temp file's real fsync and before its rename.
+  const worker = runOwnerWorker({
+    key: 'key:fixture-e01',
+    fsFault: { call: 'fsyncSync', match: 'audio-task-owner-v1.', skip: 1, action: 'legal-birth-change' },
+    followUp: true,
+  })
+  assert.equal(worker.counts.fsFaults, 1)
+  assert.equal(worker.legalBirthValid, true)
+  assert.equal(worker.faultAt.call, 'fsyncSync')
+  assert.equal(worker.faultAt.engine, 1)
+  assert.equal(worker.faultAt.ownerPhase, 'CLAIMED')
+  assert.equal(worker.faultAt.ownerRenames, 1)
+  expectOwnerError(workerResult(worker, 'run'), 'STORE_CHANGED', '$')
+  // The FINAL rename never happened, so the confirmed CLAIMED bytes stay untouched.
+  assert.equal(worker.counts.ownerRenames, 1)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+  assert.equal(worker.ownerRaw.revision, 1)
+  assert.equal(worker.ownerRaw.entries[0].phase, 'CLAIMED')
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.catalogEntries, 1)
+  expectOwnerError(workerResult(worker, 'followup-open'), 'OWNER_UNKNOWN', '$')
+})
+
+/* ------------------------------------------------------------------ E02 */
+
+test('E02 an association failure locks the shared capability for owner and catalog handles', async () => {
+  const svc = example('## 7.')
+  await withSandbox(async (sandbox) => {
+    const buds = await twoBirths(sandbox)
+    const existingCatalog = buds.first.handle
+    const catalogBefore = catalogBytes(sandbox)
+    const snapshot = baseSnapshot(buds)
+    snapshot.entries[0].birthIdentityHash = 'a'.repeat(64)
+    const bytes = writeRawOwner(sandbox, snapshot)
+    const opened = await openFixtureTaskOwner({ sandbox })
+    expectOwnerError(opened, 'BIRTH_INVALID', '$')
+    assert.equal(ownerBytes(sandbox).equals(bytes), true)
+    // The failed factory read itself is the first owner read; later owner reads are locked too.
+    expectOwnerError(await openFixtureTaskOwner({ sandbox }), 'OWNER_UNKNOWN', '$')
+    // Existing catalog handle: no further read and no new id.
+    const catalogGet = await existingCatalog.get({ schemaVersion: 1, scopeId: buds.first.scopeId, taskId: buds.first.taskId })
+    assert.equal(catalogGet.ok, false)
+    assert.equal(catalogGet.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+    const reserve = await existingCatalog.reserve({})
+    assert.equal(reserve.ok, false)
+    assert.equal(reserve.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+    // A brand new catalog and a brand new owner factory are locked too.
+    const newCatalog = await openFixtureTaskCatalog({ sandbox })
+    assert.equal(newCatalog.ok, false)
+    assert.equal(newCatalog.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+    expectOwnerError(await openFixtureTaskOwner({ sandbox }), 'OWNER_UNKNOWN', '$')
+    assert.equal(catalogBytes(sandbox).equals(catalogBefore), true)
+    assert.equal(readJson(sandbox, CATALOG_FILE).entries.length, 2)
+    assert.equal(ownerBytes(sandbox).equals(bytes), true)
+  })
+
+  // A legitimate NOT_FOUND must not lock the store.
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, svc, 'key:fixture-e02-notfound')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    expectOwnerError(await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: 'task:fixture-' + 'a'.repeat(32) }), 'NOT_FOUND', '$')
+    const catalog = await openFixtureTaskCatalog({ sandbox })
+    assert.equal(catalog.ok, true)
+    const read = await catalog.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId })
+    assert.equal(read.ok, true)
+    assert.equal(read.value.task.taskId, b.taskId)
+  })
+})
+
+/* ------------------------------------------------------------------ E03 */
+
+test('E03 the task projection sub-object is descriptor-guarded before comparison', async () => {
+  const svc = example('## 7.')
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, svc, 'key:fixture-e03-control')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const run = await owner.value.run(runFrame(b))
+    assert.equal(run.ok, true)
+    assert.equal(run.value.outcome, 'RECORDED')
+    assert.equal(readJson(sandbox, OWNER_FILE).entries[0].completion.kind, 'SIMULATED')
+  })
+
+  for (const engineFault of ['task-getter', 'task-hidden', 'task-symbol']) {
+    const worker = runOwnerWorker({ key: 'key:fixture-e03-' + engineFault, engineFault, followUp: true })
+    assert.equal(worker.counts.engine, 1, engineFault)
+    // The real projection getter is never invoked by the guard.
+    assert.equal(worker.getterCalls, 0, engineFault)
+    expectOwnerError(workerResult(worker, 'run'), 'EXECUTION_UNKNOWN', '$')
+    assert.equal(worker.ownerRaw.entries[0].phase, 'CLAIMED', engineFault)
+    assert.equal(worker.ownerRaw.revision, 1, engineFault)
+    assert.equal(worker.ownerPhase, 'CLAIMED', engineFault)
+    const later = workerResult(worker, 'followup-run')
+    assert.equal(later.value.outcome, 'EXISTING', engineFault)
+    assert.equal(later.value.ownerState, 'UNKNOWN', engineFault)
+    assert.equal(worker.counts.engine, 1, engineFault)
+  }
+})
+
+/* ------------------------------------------------------------------ E04 */
+
+test('E04 a birth-registry failure after the real FINAL rename keeps the bytes and locks all handles', async () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-e04',
+    fsFault: { call: 'lstatSync', match: CATALOG_FILE, when: 'diskFinal' },
+    followUp: true,
+  })
+  assert.equal(worker.counts.fsFaults, 1)
+  assert.equal(worker.faultAt.ownerPhase, 'FINAL')
+  assert.equal(worker.faultAt.ownerRenames, 2)
+  assert.equal(worker.faultAt.engine, 1)
+  expectOwnerError(workerResult(worker, 'run'), 'WRITE_UNKNOWN', '$')
+  assert.equal(worker.counts.ownerRenames, 2)
+  assert.equal(worker.ownerPhase, 'FINAL')
+  assert.equal(worker.ownerRaw.revision, 2)
+  assert.equal(worker.ownerRaw.entries[0].phase, 'FINAL')
+  assert.equal(worker.counts.engine, 1)
+  expectOwnerError(workerResult(worker, 'followup-open'), 'OWNER_UNKNOWN', '$')
+})
+
+/* ------------------------------------------------------------------ E05 */
+
+test('E05 legal input changes never re-run, and the original seven scenarios/blocked cases stay at one engine call', async () => {
+  // Independent control: the changed input really is executable through the real existing engine.
+  const svc = example('## 7.')
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, svc, 'key:fixture-e05-control')
+    const blocked = clone(b.input)
+    blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    const blockedOut = runExistingFixtureTaskOnce({ scopeId: b.scopeId, record: b.record, input: blocked })
+    assert.equal(blockedOut.result.ok, true)
+    assert.equal(blockedOut.result.value.phase, 'BLOCKED')
+    assert.equal(blockedOut.result.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    const executable = clone(b.input)
+    executable.sourceInput.artifactLibrary.artifacts[0].availability = 'PRESENT'
+    const executableOut = runExistingFixtureTaskOnce({ scopeId: b.scopeId, record: b.record, input: executable })
+    assert.equal(executableOut.result.ok, true)
+    assert.equal(executableOut.result.value.phase, 'SIMULATED')
+    assert.equal(executableOut.record.state, 'ARTIFACT_READY')
+  })
+
+  // Same Task: the stored NO_EXECUTION survives the now-executable input, with zero new engine calls.
+  const twoInputs = runOwnerWorker({ key: 'key:fixture-e05-twoinputs', mode: 'twoInputs' })
+  const blockedRun = workerResult(twoInputs, 'blocked')
+  assert.equal(blockedRun.value.ownerState, 'NO_EXECUTION')
+  assert.equal(blockedRun.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+  const counts = workerResult(twoInputs, 'counts').value
+  assert.equal(counts.engineAfterBlocked, 1)
+  assert.equal(counts.engineAfterExecutable, 1)
+  assert.equal(counts.bytesStable, true)
+  const executableRun = workerResult(twoInputs, 'executable')
+  assert.equal(executableRun.value.outcome, 'EXISTING')
+  assert.equal(executableRun.value.ownerState, 'NO_EXECUTION')
+  assert.equal(executableRun.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+  const reread = workerResult(twoInputs, 'reread')
+  assert.equal(reread.value.outcome, 'FOUND')
+  assert.equal(reread.value.ownerState, 'NO_EXECUTION')
+
+  // All seven RVC contexts plus the four legal blocked cases: one engine call each, repeats add 0.
+  const sweepWorker = runOwnerWorker({ key: 'key:fixture-e05-sweep', mode: 'sweep' })
+  const sweep = workerResult(sweepWorker, 'sweep').value.sweep
+  assert.equal(sweep.length, 11)
+  assert.equal(sweepWorker.counts.engine, 11)
+  for (const item of sweep) {
+    assert.equal(item.secondOutcome, 'EXISTING', item.label)
+    assert.equal(item.engineAfterFirst, item.engineBefore + 1, item.label)
+    assert.equal(item.engineAfterSecond, item.engineAfterFirst, item.label)
+    assert.equal(item.bytesStable, true, item.label)
+  }
+  const byLabel = Object.fromEntries(sweep.map((item) => [item.label, item]))
+  assert.deepEqual(
+    Object.keys(byLabel).sort(),
+    ['BLOCK_READINESS', 'BLOCK_RIGHTS', 'BLOCK_SOURCE', 'BLOCK_TTS', 'CANCEL_CONFIRMED', 'CANCEL_REQUESTED', 'MODEL_MISSING', 'OFFLINE', 'SUCCESS', 'TIMEOUT', 'UNKNOWN'],
+  )
+  for (const name of ['SUCCESS', 'OFFLINE', 'MODEL_MISSING', 'TIMEOUT', 'CANCEL_REQUESTED', 'CANCEL_CONFIRMED', 'UNKNOWN']) {
+    assert.equal(byLabel[name].ownerState, 'SIMULATED', name)
+  }
+  assert.equal(byLabel.SUCCESS.reason, null)
+  for (const blockedLabel of ['BLOCK_RIGHTS', 'BLOCK_SOURCE']) {
+    assert.equal(byLabel[blockedLabel].ownerState, 'NO_EXECUTION', blockedLabel)
+    assert.equal(byLabel[blockedLabel].reason, 'TASK_FIXTURE_SOURCE_BLOCKED', blockedLabel)
+  }
+  assert.equal(byLabel.BLOCK_TTS.ownerState, 'NO_EXECUTION')
+  assert.equal(byLabel.BLOCK_TTS.reason, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+  assert.equal(byLabel.BLOCK_READINESS.ownerState, 'NO_EXECUTION')
+  assert.equal(byLabel.BLOCK_READINESS.reason, 'TASK_FIXTURE_READINESS_BLOCKED')
+
+  // The original legal depth-12 TTS input (the existing B12 control) passes the owner wrapper
+  // unchanged, while depth 13 is refused by the same shared copy budget before any engine call.
+  await withSandbox(async (sandbox) => {
+    const tts = example('## 8.')
+    assert.equal(depthOf(tts), 12)
+    const b = await birth(sandbox, tts, 'key:fixture-e05-depth12')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const run = await owner.value.run(runFrame(b))
+    assert.equal(run.ok, true, JSON.stringify(run))
+    assert.equal(run.value.ownerState, 'NO_EXECUTION')
+    assert.equal(run.value.reason, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+    const deep = clone(b.input)
+    deep.sourceInput.artifactLibrary.deepProbe = nest(10)
+    assert.equal(depthOf(deep) > 12, true)
+    expectOwnerError(
+      await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId, input: deep }),
+      'RESOURCE_LIMIT',
+      'input',
+    )
+  })
+
+  // The caller's mutable input is neither frozen nor rewritten by a real owner run.
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, svc, 'key:fixture-e05-mutable')
+    const mutable = clone(b.input)
+    const collect = (value, out) => {
+      if (value === null || typeof value !== 'object' || out.includes(value)) return out
+      out.push(value)
+      for (const key of Reflect.ownKeys(value)) collect(value[key], out)
+      return out
+    }
+    const objects = collect(mutable, [])
+    const frozenBefore = objects.map((value) => Object.isFrozen(value))
+    const jsonBefore = JSON.stringify(mutable)
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const run = await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId, input: mutable })
+    assert.equal(run.value.outcome, 'RECORDED')
+    assert.equal(JSON.stringify(mutable), jsonBefore)
+    assert.deepEqual(objects.map((value) => Object.isFrozen(value)), frozenBefore)
+    assert.equal(frozenBefore.includes(true), false)
   })
 })

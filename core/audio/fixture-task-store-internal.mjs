@@ -525,6 +525,63 @@ export function parseOwnerSnapshot(bytes) {
   return { revision: snapshot.revision, entries }
 }
 
+/* ------------------------------- owner association gate (08-D-C) ----------------------------- */
+
+function sameImmutable(finalRecord, birthRecord) {
+  return (
+    finalRecord.taskId === birthRecord.taskId &&
+    finalRecord.feature === birthRecord.feature &&
+    finalRecord.taskType === birthRecord.taskType &&
+    finalRecord.source.kind === birthRecord.source.kind &&
+    finalRecord.source.ref === birthRecord.source.ref &&
+    finalRecord.voiceProfileId === birthRecord.voiceProfileId &&
+    finalRecord.rights.state === birthRecord.rights.state &&
+    finalRecord.deliveryRequested === birthRecord.deliveryRequested &&
+    finalRecord.observedAt === birthRecord.observedAt
+  )
+}
+
+/** The one immutable-identity rule, shared by the association gate and the engine adapter guard. */
+export function sameOwnerImmutable(finalRecord, birthRecord) {
+  return sameImmutable(finalRecord, birthRecord)
+}
+
+/** Every owner entry must resolve to its catalog birth entry and to the same immutable identity. */
+function checkOwnerAssociations(snapshot, catalog) {
+  for (const entry of snapshot.entries) {
+    const birth = catalog.entries.find(
+      (item) => item.scopeId === entry.scopeId && item.record.taskId === entry.taskId,
+    )
+    if (!birth) raiseStore('BIRTH_INVALID', '$')
+    if (identityHashOf(birth.record) !== entry.birthIdentityHash) raiseStore('BIRTH_INVALID', '$')
+    if (entry.phase === 'CLAIMED') {
+      if (stableStringify(entry.record) !== stableStringify(birth.record)) raiseStore('BIRTH_INVALID', '$')
+      continue
+    }
+    if (!sameImmutable(entry.record, birth.record)) raiseStore('BIRTH_INVALID', '$')
+    if (entry.completion.kind === 'NO_EXECUTION' && stableStringify(entry.record) !== stableStringify(birth.record)) {
+      raiseStore('BIRTH_INVALID', '$')
+    }
+  }
+}
+
+/**
+ * One association implementation, reused by the owner module's checkpoints and by the owner write
+ * transaction itself (current read, pre-rename read, post-rename confirmation). It performs real
+ * bounded reads of both fixed files and never accepts a caller-supplied validator. An association
+ * failure locks the shared capability so no other handle of the same sandbox can keep writing.
+ */
+export function verifyOwnerAssociations(state, snapshot) {
+  const catalog = openCatalogFile(state, STORE_DOMAINS.OWNER).read()
+  try {
+    checkOwnerAssociations(snapshot, catalog)
+  } catch (error) {
+    lockStore(state)
+    throw error
+  }
+  return catalog
+}
+
 /* ------------------------------------- the two fixed files ------------------------------------ */
 
 const CATALOG_SPEC = Object.freeze({
@@ -538,6 +595,7 @@ const OWNER_SPEC = Object.freeze({
   name: OWNER_FILE_NAME,
   maxBytes: MAX_OWNER_BYTES,
   maxEntries: MAX_OWNER_ENTRIES,
+  associations: true,
   parse: (bytes) => parseOwnerSnapshot(bytes),
 })
 
@@ -680,6 +738,10 @@ function openStoreFile(state, spec, unknownKey) {
     return { missing: false, revision: parsed.revision, entries: parsed.entries, digest: raw.digest, snapshot: parsed }
   }
 
+  const associationsGate = (snapshot) => {
+    if (spec.associations === true) verifyOwnerAssociations(state, snapshot)
+  }
+
   function write(bytes, baseDigest, expectedRevision) {
     if (bytes.length > spec.maxBytes) raiseStore('RESOURCE_LIMIT', '$')
 
@@ -687,7 +749,8 @@ function openStoreFile(state, spec, unknownKey) {
     const root = state.sandbox.root
     const fileTarget = target()
 
-    readVerified(baseDigest)
+    const current = readVerified(baseDigest)
+    associationsGate(current.snapshot)
 
     const tempName = spec.name.replace(/\.json$/, '') + '.' + crypto.randomBytes(16).toString('hex') + '.tmp'
     const tempPath = path.join(root, tempName)
@@ -816,6 +879,11 @@ function openStoreFile(state, spec, unknownKey) {
         throw error
       }
 
+      // Pre-rename association gate: the exact bytes about to be committed are parsed and the
+      // latest birth registry is read again. A birth change between the temp fsync and the rename
+      // stops the commit here, so the confirmed CLAIMED bytes stay on disk.
+      associationsGate(spec.parse(bytes))
+
       renameAttempted = true
       try {
         fs.renameSync(tempPath, fileTarget)
@@ -837,6 +905,10 @@ function openStoreFile(state, spec, unknownKey) {
         if (!readBack.bytes.equals(bytes)) raiseStore('STORE_INVALID', '$')
         const verified = spec.parse(readBack.bytes)
         if (verified.revision !== expectedRevision) raiseStore('STORE_INVALID', '$')
+        // Post-rename association gate: after the real rename the birth association is re-checked
+        // against freshly read bytes. A failure here is a storage-unknown outcome, never a made-up
+        // rollback: the actual FINAL bytes stay untouched and the capability stays locked.
+        associationsGate(verified)
         checkSandbox(state)
         file.confirmedDigest = sha256(bytes)
         return verified.revision

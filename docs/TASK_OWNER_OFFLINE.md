@@ -58,6 +58,8 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 | 门禁3 engine 后 | engine 返回、最终提交前 | 不写 FINAL，保留 CLAIMED 墓碑，按实际来源报错并锁闭 |
 | 门禁4 提交后 | 真实 FINAL rename 之后 | 保留盘上实际字节，`WRITE_UNKNOWN` + 共享锁，不回滚伪造 CLAIMED |
 
+**写事务内门禁（F01 v1.1）。** 除 owner 模块的检查点之外，owner 固定文件的**真实写事务**也在三处通过同一受限有界读取复核出生登记与**全部** owner 条目关联，而不是只把旧 catalog 对象传回比较：`current`（写入口读自身文件后）、`pre`（临时文件真实 fsync 与回读完成之后、真正 rename **之前**，校验即将提交的字节）、`post`（真实 rename 后回读确认时）。`pre` 失败即停止提交：不执行 FINAL rename，盘上保持已确认的 `CLAIMED` 字节，按实际来源报 `STORE_CHANGED`/`STORE_INVALID`/`BIRTH_INVALID` 并共享锁闭；`post` 失败按存储未知处理（保留实际字节 + `WRITE_UNKNOWN`）。关联校验只有一份实现（`verifyOwnerAssociations`），由 owner 模块检查点与写事务共用；关联失败会锁闭同一 capability，因此既有/新的 owner 与 catalog handle 后续都不能继续执行或写入，而合法的 `NOT_FOUND`/错 scope 不会触发全库锁闭。私有持锁路径不重入公开队列。
+
 | 情形 | 处理 |
 |---|---|
 | claim 写入 rename 前失败且可确认未提交 | `WRITE_REJECTED`，engine 0；后续明确新 run（同 cap 新 handle）可重新走完整检查，内部没有自动重试 |
@@ -69,7 +71,7 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 `RECORDED` 只用于首次**可信 FINAL 已确认**。同一墓碑之后的 `run`/`get` 仍返回 11 键安全投影：`EXISTING`/`FOUND` + `ownerState=UNKNOWN` + `reason=TASK_OWNER_EXECUTION_UNKNOWN`，engine 新增 0。三种 UNKNOWN 互相独立：Task UNKNOWN（`task.state=UNKNOWN`）、owner 执行 UNKNOWN（无可信 FINAL）、存储 UNKNOWN（`WRITE_UNKNOWN`/损坏 + 共享锁）。
 
-**可信返回协议（08-D-C-F01）。** engine 完全不变；owner 侧只做薄适配守卫：私有根恰 `record`/`result`，result 根成功信封恰 `ok`/`value`，value 恰旧 13 键且版本/phase/`messageZh`/`states` 类型正确、`mockOnly=true`、`realOperationAllowed=false`、`submitAllowed=false`、`automaticRetryAllowed=false`；record 再走原唯一 `validateAudioTaskRecord`、出生不可变字段与投递门禁，并与 `projectAudioTask(record)` 的真实结果做**完整结构等价**比较（不只看 TaskId/phase）；BLOCKED 只接受四个固定 reason 且 record 必须等于出生 record，SIMULATED 只接受合法 reason 集合与状态集。缺键、坏形状、访问器/异常、相似但非法值一律视为不可用结果，不回显未知值。
+**可信返回协议（08-D-C-F01）。** engine 完全不变；owner 侧只做薄适配守卫：私有根恰 `record`/`result`，result 根成功信封恰 `ok`/`value`，value 恰旧 13 键且版本/phase/`messageZh`/`states` 类型正确、`mockOnly=true`、`realOperationAllowed=false`、`submitAllowed=false`、`automaticRetryAllowed=false`；record 再走原唯一 `validateAudioTaskRecord`、出生不可变字段与投递门禁，并与 `projectAudioTask(record)` 的真实结果做**完整结构等价**比较（不只看 TaskId/phase）；BLOCKED 只接受四个固定 reason 且 record 必须等于出生 record，SIMULATED 只接受合法 reason 集合与状态集。缺键、坏形状、访问器/异常、相似但非法值一律视为不可用结果，不回显未知值。`value.task` 在比较前先按真实 `projectAudioTask` 键集做 **data-descriptor 守卫**：必须是 plain 对象、恰好全部自有可枚举 data 属性、无 accessor/hidden/Symbol/额外键，随后只比较安全拷贝；因此 `task.state` 的 getter 不会被调用（调用 0 次），hidden 与 Symbol 键也会被拒绝而不是被 `Object.keys`/`JSON.stringify` 丢掉。
 
 **内部存储封闭（08-D-C-F01）。** `fixture-task-store-internal.mjs` 只绑定两个固定文件及其预算/错误域/已知 Schema：调用方只能选择 `catalog`/`owner` 两个内部操作与两个错误域，不能传文件名、预算或 parse 回调；非法域在任何读写前拒绝（0 读 0 写 0 caller parser），不会创建第三个正式文件或逃逸 root。此为本模块内部契约封口，不表示 Node 私有模块能限制同权限恶意 JS 直接使用 `fs`。
 
@@ -460,7 +462,7 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 ## 12. 测试与证据
 
-`test/task-owner.test.mjs`（15 项）覆盖 050 的 C01–C08、C10 与 051 的 T01–T06；C09–C12 为回归/文档/CI/PR 项，本次据实重跑。T01–T03 的 engine/fs 故障注入只存在于测试文件内的独立 worker（同一 VM module graph，catalog facade 与 owner 共享同一 store 实例/队列/锁/摘要），产品无注入接口。原 catalog 45（44 pass + 1 本环境 EPERM skip）、D-B 28、旧 runner 20 保持。
+`test/task-owner.test.mjs`（20 项）覆盖 050 的 C01–C08、C10、051 的 T01–T06 与 052 的 E01–E05；C09–C12 为回归/文档/CI/PR 项，本次据实重跑。T01–T03 的 engine/fs 故障注入只存在于测试文件内的独立 worker（同一 VM module graph，catalog facade 与 owner 共享同一 store 实例/队列/锁/摘要），产品无注入接口。原 catalog 45（44 pass + 1 本环境 EPERM skip）、D-B 28、旧 runner 20 保持。
 
 | ID | 状态 | 本次证据来源 |
 |---|---|---|
@@ -472,9 +474,9 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 | C06 | 已证（更正） | 13 类不可用 engine 返回 → 首次固定 `EXECUTION_UNKNOWN`、CLAIMED 墓碑、后续 UNKNOWN、总 engine 1；最终普通失败同 |
 | C07 | 已证（复用） | 空/坏 JSON/版本/多键/revision/确认后外改；整库拒绝、不修复、不采用 |
 | C08 | 已证（复用） | 3 导出、14 码、11 键、descriptor、深冻、无路径/正文泄漏 |
-| C09 | 已证（本轮） | 专项 `catalog+record+runner+owner` 108/107 pass/1 platform skip/0 fail；旧断言未删弱 |
+| C09 | 已证（本轮） | 专项 `catalog+record+runner+owner` 113/112 pass/1 platform skip/0 fail；旧断言未删弱 |
 | C10 | 已证（复用） | 文档 4 个完整 JSON 原样执行（reserve/成功/阻断/读取） |
-| C11 | 已证（本轮） | 全量 `node --test` 653/651 pass/0 fail/2 platform skip；build 未变；语法与 client 同步 |
+| C11 | 已证（本轮） | 全量 `node --test` 658/656 pass/0 fail/2 platform skip；build 未变；语法与 client 同步 |
 | C12 | 已证（本轮） | 原 PR33 追加提交、未合并、完整报告与真实回执 |
 | T01 | 已证（新增） | claim 真实 rename 后出生坏盘 → engine0/`STORE_INVALID`/锁；engine 后合法出生外改 → 不写 FINAL/`STORE_CHANGED`/锁；真实 FINAL rename 后确认失败 → 实际字节保留/`WRITE_UNKNOWN`/全锁；工厂坏关联 → `BIRTH_INVALID` |
 | T02 | 已证（新增） | 真 FINAL 控制 + 真实 engine 后仅改投影/flag/缺字段/版本/states/访问器/根多键 → 全部 `EXECUTION_UNKNOWN` + CLAIMED、总 engine 1 |
@@ -482,5 +484,10 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 | T04 | 已证（新增） | 第三 name/spec/caller parser/缺 domain → `INTERNAL_FAILURE`、0 读 0 parser、无第三文件；两固定文件与其固定域正常 |
 | T05 | 已证（新增） | 合法 CLAIMED 控制；同 scope 重复/跨 scope/错 birth hash/非法 FINAL 状态与 reason/revision/缺关联/未知 phase/CLAIMED 带 completion → 整库拒绝不修复；32 条合法、33 条 `RESOURCE_LIMIT`；128 KiB 合法、128 KiB+1 拒绝 |
 | T06 | 已证（新增） | depth12 合法/depth13 拒绝/过宽数组拒绝（engine 0、无 owner 文件）；输出与输入图不共享、两次结果不共享、输入冻结态不变；已阻断任务改可执行后 engine 新增 0、盘字节不变 |
+| E01 | 已证（新增） | 正常子对象控制；FINAL temp 真实 fsync 后、rename 前对出生做**经原 parser 确认合法**的 `observedAt` 改动（`legalBirthValid=true`、命中 1）→ `STORE_CHANGED`、总 owner rename 仅 claim 1、盘上 CLAIMED/revision 1、共享锁、engine 1；不靠“下一次 get 才报错” |
+| E02 | 已证（新增） | 仅坏 `birthIdentityHash`（schema 合法）→ 工厂 `BIRTH_INVALID` 且同 cap 已锁：既有 catalog handle 的 get/reserve、新 catalog、新 owner 工厂全部 `*_UNKNOWN`，catalog 字节/条目数与 owner 字节不变、无新 ID；合法 `NOT_FOUND` 对照不锁全库 |
+| E03 | 已证（新增） | 真实引擎先运行；仅把 `task.state` 改成返回原值的 getter / 加 hidden 键 / 加 Symbol 键 → getter 实际调用 **0** 次、首次固定 `EXECUTION_UNKNOWN`、CLAIMED 无 FINAL、后续 `EXISTING`+UNKNOWN、总 engine 1 |
+| E04 | 已证（新增） | 真实 FINAL 已落盘后对 **catalog 出生文件**注入一次故障（不是 owner 自身 lstat）→ 命中 1、`faultAt.ownerRenames=2`、盘上 FINAL/revision 2 保留、`WRITE_UNKNOWN`、新工厂 `OWNER_UNKNOWN`、engine 不重跑 |
+| E05 | 已证（新增） | `ABSENT→PRESENT` 变化先用真实 existing engine 独立证明“改后合法可执行”（SIMULATED/ARTIFACT_READY），再同 Task 重复 run → `EXISTING`/原 `NO_EXECUTION`/盘字节不变/engine 新增 0；7 个 context + 4 类合法阻断共 11 例，逐一“首次 +1、重复 +0”；原 B12 深度 12 合法 TTS 完整 input 穿 owner 包装仍接受、depth13 `RESOURCE_LIMIT`；调用方可变输入逐对象冻结态与 JSON 前后不变 |
 
 平台限制：本环境 hardlink/symlink 相关旧断言按既定 EPERM skip 记录，不据此修改产品拒链策略。本文档不预填未执行的通过数。
