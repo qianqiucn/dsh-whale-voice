@@ -44,8 +44,12 @@ matching; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via
 **M `df4e4b7`** (report 0022). Plan 08-B adds a strict Fixture source-Artifact library and one
 resolver (`core/audio/source-artifacts.mjs`, S01–S22 / 25 tests) that reuses the 08-A binding once
 and checks TTS text or RVC input-audio metadata against the same request; it is **`OFFLINE`** /
-`FIXTURE_ONLY` / `NOT_INTEGRATED`. None delivers TTS dispatch, real adapters, real byte/codec/hash
-verification or any send path. Phase 4B-2B-2b
+`FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #28 at **M `3182ca1`** (report 0024). Plan 08-C
+adds one synchronous composition (`core/audio/task-fixture-runner.mjs`, C01–C20 / 20 tests) from the
+source check to the 06-D gate, at most one RVC Fixture dispatch and the existing AudioTask actions;
+success ends at `ARTIFACT_READY` only, with no save/delivery/send. It is **`OFFLINE`** /
+`FIXTURE_ONLY` / `NOT_INTEGRATED`. None delivers real adapters, real byte/codec/hash verification,
+save/delivery or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require
 separate authorization; Voice Sender final independent safety verification remains required before
 real sending. See [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
