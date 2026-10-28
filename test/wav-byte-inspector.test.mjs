@@ -485,6 +485,53 @@ test('W06 input and output safety: carriers, descriptors and immutability', () =
   assert.equal(detachedView.byteLength, 0)
   expectError(inspectCarrier(detachedView), 'INVALID_BYTES', 'bytes')
 
+  // A plain attached empty view is an invalid container, and no user code runs even when its
+  // backing buffer shadows `constructor` with a throwing getter.
+  let shadowedConstructorCalls = 0
+  const shadowedBuffer = new ArrayBuffer(0)
+  Object.defineProperty(shadowedBuffer, 'constructor', {
+    configurable: true,
+    get() {
+      shadowedConstructorCalls += 1
+      throw new Error('sentinel constructor')
+    },
+  })
+  assert.equal(shadowedBuffer.byteLength, 0)
+  assert.equal(Object.getOwnPropertyDescriptor(shadowedBuffer, 'constructor').get instanceof Function, true)
+  expectError(inspectCarrier(new Uint8Array(shadowedBuffer)), 'INVALID_CONTAINER', '$')
+  assert.equal(shadowedConstructorCalls, 0)
+
+  // The constructor -> @@species chain is never walked: the constructor getter, the species getter
+  // and the species constructor all stay at zero calls.
+  let chainConstructorCalls = 0
+  let chainSpeciesCalls = 0
+  let chainConstructCalls = 0
+  const SpeciesArrayBuffer = class extends ArrayBuffer {
+    constructor(length) {
+      super(length)
+      chainConstructCalls += 1
+    }
+  }
+  const fakeConstructor = function fakeConstructor() {}
+  Object.defineProperty(fakeConstructor, Symbol.species, {
+    configurable: true,
+    get() {
+      chainSpeciesCalls += 1
+      return SpeciesArrayBuffer
+    },
+  })
+  const chainedBuffer = new ArrayBuffer(0)
+  Object.defineProperty(chainedBuffer, 'constructor', {
+    configurable: true,
+    get() {
+      chainConstructorCalls += 1
+      return fakeConstructor
+    },
+  })
+  expectError(inspectCarrier(new Uint8Array(chainedBuffer)), 'INVALID_CONTAINER', '$')
+  assert.equal(chainConstructorCalls, 0)
+  assert.equal(chainSpeciesCalls, 0)
+  assert.equal(chainConstructCalls, 0)
   // A successful and a failed call never share a mutable object; both graphs are frozen and fresh.
   const firstSuccess = inspect(good)
   const secondSuccess = inspect(Uint8Array.from(good))

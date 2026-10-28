@@ -103,12 +103,28 @@ const VIEW_BYTE_OFFSET = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'b
 const ARRAY_BUFFER_BYTE_LENGTH = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get
 const ARRAY_BUFFER_RESIZABLE = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable').get
 const ARRAY_BUFFER_MAX = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'maxByteLength').get
-const ARRAY_BUFFER_SLICE = ArrayBuffer.prototype.slice
+/**
+ * Detachment probe that never consults the caller's `constructor`, `Symbol.species`, iterator or any
+ * other property: the platform `detached` getter reads the internal slot only, and the fallback is
+ * an intrinsic zero-range view over the already-confirmed native backing buffer. Both are
+ * species-free, so shadowed constructor/species getters and user constructors are never executed.
+ */
+const ARRAY_BUFFER_DETACHED = (() => {
+  const descriptor = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'detached')
+  return descriptor && typeof descriptor.get === 'function' ? descriptor.get : null
+})()
 
-/** A detached backing buffer reports zeroed slots, so probe it before treating an empty view as legal. */
 function isDetachedBuffer(buffer) {
+  if (ARRAY_BUFFER_DETACHED !== null) {
+    try {
+      return ARRAY_BUFFER_DETACHED.call(buffer) === true
+    } catch {
+      return true
+    }
+  }
   try {
-    ARRAY_BUFFER_SLICE.call(buffer, 0, 0)
+    // Intrinsic %TypedArray% construction over an ArrayBuffer reads only internal slots.
+    new Uint8Array(buffer, 0, 0)
     return false
   } catch {
     return true
