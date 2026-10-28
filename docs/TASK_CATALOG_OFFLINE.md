@@ -92,22 +92,25 @@ SHA256 仅用于规范身份比较/检测意外变化，**不是签名或防恶�
 
 - 每个读写事务核 `isTrustedSandbox`、root/marker `lstat`/`realpath`、root 仍在原 `tempRoot`、marker 常规文件且 `kind/id` 匹配、root dev/ino 可用时一致；
 - 正式/临时目标必须为 root 内常规文件，无 symlink/junction/目录/多硬链接（`nlink>1`）；禁止跟随目标链接；
-- 读取用打开后实际字节上限核对（最多 128KiB+1 后拒绝），严格 UTF-8 解码后 JSON 解析；不先无界读再限制；
+- 所有读取走**真实 fd 有界读**：打开后 `fstat` 核对身份/长度，按固定缓冲分段 `readSync`，正式库最多实际读 **128 KiB+1**、marker 最多 **4 KiB+1**；禁止 `readFileSync` 或无界读取后再限长；严格 UTF-8 解码后 JSON 解析；
+- 读事务结束（open/get/EXISTING）再核一次 root/marker 与目标身份；失败按 UNKNOWN 锁闭，不返回正常结果；
 - 权限/不存在/链接/大小错误不把实际路径带出。
 
-同 cap 首次合法读取建立原始文件摘要（或不存在标志）；后续即使外部改成合法 Schema，只要与共享已确认摘要不符 → `STORE_CHANGED`，共享停止写，不默默采用外部覆盖。提交前重读比较；同 cap 自己确认成功后才更新共享摘要。磁盘坏结构优先 `STORE_INVALID`，不自动修复或覆盖。
+同 cap 首次合法读取建立原始文件摘要（或不存在标志）。后续内容**先做编码/JSON/完整 Schema/record/身份 hash 验证**：坏结构/编码/record 固定 `STORE_INVALID`、预算超限 `RESOURCE_LIMIT`；只有合法快照与已确认摘要不同才 `STORE_CHANGED`。后两者都会共享停止写入，不默默采用外部覆盖；提交前重读比较；同 cap 自己确认成功后才更新共享摘要。磁盘坏结构不自动修复或覆盖。
 
 这里只保证本模块同 cap/同进程协作；**未实现跨进程锁/CAS/恢复**，不宣称抵抗同权限恶意进程的全部 TOCTOU 或 Windows 断电原子性。
 
 ### 6.1 提交、写入不确定与不重试
 
-只有真正新键且校验全部通过才写。形成旧 entries + 一条的完整新快照；写前确认条目/字节预算。root 内独占 `wx` 创建随机模块生成的临时文件（`audio-task-catalog-v1.<32hex>.tmp`），写完、文件 fsync、关闭，再 rename 替换固定正式文件，重新打开并完整验证且字节摘要与预期一致后才返回 `CREATED`/更新共享确认摘要。不把 rename 成功、mtime、stat 或 JSON 能 parse 当确认写入。
+只有真正新键且校验全部通过才写。形成旧 entries + 一条的完整新快照；写前确认条目/字节预算。root 内独占 `wx` 创建随机模块生成的临时文件（`audio-task-catalog-v1.<32hex>.tmp`），**按 `fs.writeSync` 实际返回数循环续写直到严格写完**（正数短写续写；0/负数/非整数/超余量/抛错在 rename 前拒绝）；随后 fsync、关闭，再以有界 fd 读核对临时文件身份与完整字节，才进入 rename。rename 后再次核 root/marker、目标身份与完整回读，全部一致才返回 `CREATED`/更新共享确认摘要。不把 rename 成功、mtime、stat 或 JSON 能 parse 当确认写入。
 
-未尝试 rename 时的安全分类：root/marker 失效 `SANDBOX_INVALID`、外改 `STORE_CHANGED`（锁闭）、坏库 `STORE_INVALID`、超限 `RESOURCE_LIMIT`；仅本操作临时文件创建/写/fsync/close 等普通 I/O 失败 → `WRITE_REJECTED`（不锁闭，可正常重试）。仅可删除已确认属于本操作且仍为 root 内同一常规文件的临时文件。
+临时文件清理只针对**本操作 `wx` 成功创建并取得 fd 身份**的同一常规文件：清理前重新核 root/身份/dev-ino/nlink/root 内；`EEXIST` 先存文件、被外部替换的文件都不得删除或提交；身份不可确认时保留并停止。未创建成功/未取得身份一律不 unlink。
 
-rename **一旦尝试**后任何异常（rename 抛错、回读/字节/内容/身份失败）→ `WRITE_UNKNOWN`，共享锁闭所有新 reserve；不自动回滚、覆盖、重新 rename、删除正式文件或重跑创建。之后 `reserve/get/open` 统一 `CATALOG_UNKNOWN`，不提供 clear/reset/recover 接口，新 handle 也不能绕过。分类优先级：rename 已尝试后，任何根身份/存储结构/摘要/回读失败均优先 `WRITE_UNKNOWN`。
+未尝试 rename 时的安全分类：root/marker 失效 `SANDBOX_INVALID`、外改 `STORE_CHANGED`（锁闭）、坏库 `STORE_INVALID`、超限 `RESOURCE_LIMIT`；仅本操作临时文件创建/写/fsync/close 等普通 I/O 失败 → `WRITE_REJECTED`（不锁闭，可正常重试）。
 
-成功 fsync+rename+回读也仅是隔离环境当前可确认保存，**不承诺目录 fsync/断电耐久性**；没有自动重试创建/恢复旧 UNKNOWN 执行。这里的 UNKNOWN 写入状态不是 `Task.state=UNKNOWN`。
+rename **一旦尝试**后任何异常（rename 抛错、根/marker/目标身份、size、编码/Schema、摘要、close 或回读失败）→ `WRITE_UNKNOWN`，共享锁闭所有新 reserve；不自动回滚、覆盖、重新 rename、删除正式文件或重跑创建。之后 `reserve/get/open` 统一 `CATALOG_UNKNOWN`，不提供 clear/reset/recover 接口，新 handle 也不能绕过。分类优先级：rename 已尝试后，任何根身份/存储结构/摘要/回读失败均优先 `WRITE_UNKNOWN`。
+
+成功 fsync+rename+回读也仅是隔离环境当前可确认保存，**不承诺目录 fsync/断电耐久性或“全部边界已验/原子安全”**；没有自动重试创建/恢复旧 UNKNOWN 执行。这里的 UNKNOWN 写入状态不是 `Task.state=UNKNOWN`。
 
 ## 7. TTS创建示例
 

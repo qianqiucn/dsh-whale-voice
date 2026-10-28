@@ -434,7 +434,7 @@ test('D09 an injected random id collision never overwrites and different scopes 
   })
 })
 
-test('D10 sandbox root, marker and linked/directory targets are rejected', async () => {
+test('D10 sandbox root, marker and directory targets are rejected', async () => {
   await withSandbox(async (sandbox) => {
     const opened = await openFixtureTaskCatalog({ sandbox })
     assert.equal(opened.ok, true)
@@ -456,27 +456,31 @@ test('D10 sandbox root, marker and linked/directory targets are rejected', async
     fs.mkdirSync(catalogPath(sandbox))
     expectError(await openFixtureTaskCatalog({ sandbox }), 'STORE_INVALID', '$')
   })
+})
 
+test('D10a a symlink catalog target is rejected when the platform allows creating it', async (t) => {
   await withSandbox(async (sandbox) => {
     const decoy = path.join(sandbox.root, 'decoy.json')
     fs.writeFileSync(decoy, '{}')
     try {
       fs.symlinkSync(decoy, catalogPath(sandbox), 'file')
     } catch (error) {
-      if (error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'ENOTSUP') return
-      throw error
+      t.skip('platform refused symlink creation: ' + error.code)
+      return
     }
     expectError(await openFixtureTaskCatalog({ sandbox }), 'STORE_INVALID', '$')
   })
+})
 
+test('D10b a multi-hardlink catalog target is rejected when the platform allows creating it', async (t) => {
   await withSandbox(async (sandbox) => {
     const decoy = path.join(sandbox.root, 'hardlink-source.json')
     fs.writeFileSync(decoy, '{}')
     try {
       fs.linkSync(decoy, catalogPath(sandbox))
     } catch (error) {
-      if (error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'ENOTSUP') return
-      throw error
+      t.skip('platform refused hardlink creation: ' + error.code)
+      return
     }
     expectError(await openFixtureTaskCatalog({ sandbox }), 'STORE_INVALID', '$')
   })
@@ -549,21 +553,30 @@ test('D12 temporary write/fsync failures are WRITE_REJECTED without losing the o
   })
 })
 
-test('D12b the confirmed order is temp write, fsync, close, rename then read-back', async () => {
+test('D12b the confirmed order is temp write, fsync, close, rename then bounded read-back', async () => {
   await withCatalog(async (sandbox, handle) => {
     const log = []
+    const tempFds = new Set()
+    const targetFds = new Set()
     const realOpen = fs.openSync
     const realWrite = fs.writeSync
     const realFsync = fs.fsyncSync
     const realClose = fs.closeSync
     const realRename = fs.renameSync
-    const realRead = fs.readFileSync
-    const realSha = crypto.createHash
+    const realReadSync = fs.readSync
 
     try {
       fs.openSync = (...args) => {
-        if (String(args[0]).endsWith('.tmp')) log.push('open-temp')
-        return realOpen(...args)
+        const fd = realOpen(...args)
+        const target = String(args[0])
+        if (target.endsWith('.tmp')) {
+          log.push('open-temp')
+          tempFds.add(fd)
+        } else if (target.endsWith(CATALOG_FILE)) {
+          log.push('open-catalog')
+          targetFds.add(fd)
+        }
+        return fd
       }
       fs.writeSync = (...args) => {
         log.push('write')
@@ -574,18 +587,21 @@ test('D12b the confirmed order is temp write, fsync, close, rename then read-bac
         return realFsync(...args)
       }
       fs.closeSync = (...args) => {
-        log.push('close')
+        if (tempFds.has(args[0])) {
+          log.push('close-temp')
+          tempFds.delete(args[0])
+        }
+        if (targetFds.has(args[0])) targetFds.delete(args[0])
         return realClose(...args)
       }
       fs.renameSync = (...args) => {
         log.push('rename')
         return realRename(...args)
       }
-      fs.readFileSync = (...args) => {
-        if (String(args[0]).endsWith(CATALOG_FILE)) log.push('read-catalog')
-        return realRead(...args)
+      fs.readSync = (...args) => {
+        if (targetFds.has(args[0])) log.push('read-catalog')
+        return realReadSync(...args)
       }
-      crypto.createHash = realSha
       const result = await handle.reserve(reserveInput())
       assert.equal(result.ok, true)
     } finally {
@@ -595,13 +611,13 @@ test('D12b the confirmed order is temp write, fsync, close, rename then read-bac
         [fs, 'fsyncSync', realFsync],
         [fs, 'closeSync', realClose],
         [fs, 'renameSync', realRename],
-        [fs, 'readFileSync', realRead],
+        [fs, 'readSync', realReadSync],
       ])
     }
 
     const writeIndex = log.indexOf('write')
     const fsyncIndex = log.indexOf('fsync')
-    const closeIndex = log.indexOf('close')
+    const closeIndex = log.indexOf('close-temp')
     const renameIndex = log.indexOf('rename')
     const readAfterRename = log.indexOf('read-catalog', renameIndex + 1)
     assert.ok(writeIndex >= 0 && fsyncIndex > writeIndex && closeIndex > fsyncIndex && renameIndex > closeIndex)
@@ -609,58 +625,415 @@ test('D12b the confirmed order is temp write, fsync, close, rename then read-bac
   })
 })
 
-test('D13 a failed rename or failed read-back is WRITE_UNKNOWN and locks every handle', async () => {
-  for (const mode of ['rename-throw', 'read-back-corrupt']) {
-    await withSandbox(async (sandbox) => {
-      const opened = await openFixtureTaskCatalog({ sandbox })
-      const first = await opened.value.reserve(reserveInput())
-      assert.equal(first.ok, true)
-      const bytes = fs.readFileSync(catalogPath(sandbox))
+test('D13 a failed rename or post-rename read-back mismatch is WRITE_UNKNOWN and locks', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const bytes = fs.readFileSync(catalogPath(sandbox))
 
-      const realRename = fs.renameSync
-      const realRead = fs.readFileSync
-      let armed = false
-      let corrupt = false
+    const realRename = fs.renameSync
+    let renameCalls = 0
+    try {
+      fs.renameSync = () => {
+        renameCalls += 1
+        throw new Error('injected-rename-failure')
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-unknown' })),
+        'WRITE_UNKNOWN',
+        '$',
+      )
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-unknown-2' })),
+        'CATALOG_UNKNOWN',
+        '$',
+      )
+      expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'CATALOG_UNKNOWN', '$')
+    } finally {
+      fs.renameSync = realRename
+    }
+    assert.equal(renameCalls, 1)
+    const reopened = await openFixtureTaskCatalog({ sandbox })
+    expectError(reopened, 'CATALOG_UNKNOWN', '$')
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(bytes))
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const oldBytes = fs.readFileSync(catalogPath(sandbox))
+
+    const realRename = fs.renameSync
+    const corrupt = Buffer.from('{"schemaVersion":1,"revision":1,"entries":[]}', 'utf8')
+    let renameCalls = 0
+    try {
+      fs.renameSync = (...args) => {
+        renameCalls += 1
+        const result = realRename(...args)
+        // The rename succeeded; the environment then corrupts the committed file before the
+        // module's post-commit read-back. The module must not claim the old file is unchanged.
+        fs.writeFileSync(catalogPath(sandbox), corrupt)
+        return result
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-post-rename-bad' })),
+        'WRITE_UNKNOWN',
+        '$',
+      )
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-bad' })),
+        'CATALOG_UNKNOWN',
+        '$',
+      )
+    } finally {
+      fs.renameSync = realRename
+    }
+    assert.equal(renameCalls, 1)
+    const reopened = await openFixtureTaskCatalog({ sandbox })
+    expectError(reopened, 'CATALOG_UNKNOWN', '$')
+    // Rename already replaced the file; the actual disk state is the corrupted content, and the
+    // module neither rewrote nor rolled it back.
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(corrupt))
+    assert.notDeepEqual(fs.readFileSync(catalogPath(sandbox)), oldBytes)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// F01–F05: storage-boundary regressions from the 035 review.
+// ---------------------------------------------------------------------------------------------
+
+test('F01 catalog and marker reads are bounded by real fd reads, not by stat size', async () => {
+  await withSandbox(async (sandbox) => {
+    fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(525024, 0x20))
+    const realReadSync = fs.readSync
+    let bytesRead = 0
+    try {
+      fs.readSync = (...args) => {
+        const read = realReadSync(...args)
+        bytesRead += read
+        return read
+      }
+      expectError(await openFixtureTaskCatalog({ sandbox }), 'RESOURCE_LIMIT', '$')
+    } finally {
+      fs.readSync = realReadSync
+    }
+    assert.ok(bytesRead <= 128 * 1024 + 1, 'read bytes ' + bytesRead)
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    assert.equal(opened.ok, true)
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+
+    // The stat/fstat call reports a tiny file while the actual file is large: the fd read still
+    // stops at the 128 KiB+1 ceiling.
+    const realFstat = fs.fstatSync
+    const realReadSync = fs.readSync
+    let fstatCalls = 0
+    let bytesRead = 0
+    try {
+      fs.fstatSync = (...args) => {
+        const stat = realFstat(...args)
+        fstatCalls += 1
+        if (fstatCalls === 1) {
+          const copy = Object.create(stat)
+          Object.defineProperty(copy, 'size', { value: 0 })
+          return copy
+        }
+        return stat
+      }
+      fs.readSync = (...args) => {
+        const read = realReadSync(...args)
+        bytesRead += read
+        return read
+      }
+      fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(256 * 1024, 0x20))
+      expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'RESOURCE_LIMIT', '$')
+    } finally {
+      fs.fstatSync = realFstat
+      fs.readSync = realReadSync
+    }
+    assert.ok(bytesRead <= 128 * 1024 + 1, 'read bytes ' + bytesRead)
+  })
+
+  await withSandbox(async (sandbox) => {
+    const longMarker = JSON.stringify({ kind: 'whale-voice-isolated-sandbox', id: 'x', pad: 'a'.repeat(5000) })
+    fs.writeFileSync(sandbox.marker, longMarker)
+    expectError(await openFixtureTaskCatalog({ sandbox }), 'SANDBOX_INVALID', '$')
+  })
+})
+
+test('F02 post-commit and read-end identity failures are WRITE_UNKNOWN and lock the capability', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const markerBefore = fs.readFileSync(sandbox.marker)
+
+    const realRename = fs.renameSync
+    let renameCalls = 0
+    try {
+      fs.renameSync = (...args) => {
+        const result = realRename(...args)
+        renameCalls += 1
+        fs.writeFileSync(sandbox.marker, JSON.stringify({ kind: 'whale-voice-isolated-sandbox', id: 'changed' }))
+        return result
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-marker-changed' })),
+        'WRITE_UNKNOWN',
+        '$',
+      )
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-marker-changed-2' })),
+        'CATALOG_UNKNOWN',
+        '$',
+      )
+      expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'CATALOG_UNKNOWN', '$')
+    } finally {
+      fs.renameSync = realRename
+    }
+    assert.equal(renameCalls, 1)
+    const reopened = await openFixtureTaskCatalog({ sandbox })
+    expectError(reopened, 'CATALOG_UNKNOWN', '$')
+    // Restoring the marker must not clear the shared lock.
+    fs.writeFileSync(sandbox.marker, markerBefore)
+    expectError(await openFixtureTaskCatalog({ sandbox }), 'CATALOG_UNKNOWN', '$')
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+
+    const targetFds = new Set()
+    const realOpen = fs.openSync
+    const realReadSync = fs.readSync
+    let mutated = false
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]).endsWith(CATALOG_FILE)) targetFds.add(fd)
+        return fd
+      }
+      fs.readSync = (...args) => {
+        const read = realReadSync(...args)
+        if (!mutated && targetFds.has(args[0])) {
+          mutated = true
+          fs.writeFileSync(sandbox.marker, JSON.stringify({ kind: 'whale-voice-isolated-sandbox', id: 'read-mutated' }))
+        }
+        return read
+      }
+      expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'WRITE_UNKNOWN', '$')
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-read-locked' })),
+        'CATALOG_UNKNOWN',
+        '$',
+      )
+    } finally {
+      fs.openSync = realOpen
+      fs.readSync = realReadSync
+    }
+  })
+})
+
+test('F03 only the operation own temporary file is cleaned; sentinel and replacements survive', async () => {
+  await withSandbox(async (sandbox) => {
+    const realRandom = crypto.randomBytes
+    const fixed = 'c'.repeat(32)
+    const tempName = 'audio-task-catalog-v1.' + fixed + '.tmp'
+    try {
+      crypto.randomBytes = () => Buffer.from(fixed, 'hex')
+      const sentinelPath = path.join(sandbox.root, tempName)
+      const sentinel = Buffer.from('sentinel-must-survive', 'utf8')
+      fs.writeFileSync(sentinelPath, sentinel)
+
+      const opened = await openFixtureTaskCatalog({ sandbox })
+      expectError(await opened.value.reserve(reserveInput()), 'WRITE_REJECTED', '$')
+      assert.ok(fs.existsSync(sentinelPath))
+      assert.ok(fs.readFileSync(sentinelPath).equals(sentinel))
+    } finally {
+      crypto.randomBytes = realRandom
+    }
+  })
+
+  await withSandbox(async (sandbox) => {
+    const realRandom = crypto.randomBytes
+    const fixed = 'd'.repeat(32)
+    const tempName = 'audio-task-catalog-v1.' + fixed + '.tmp'
+    const tempPath = path.join(sandbox.root, tempName)
+    const replacement = Buffer.from('replacement-not-ours', 'utf8')
+    const seeded = makeRecord(ttsDraft(), 'task:fixture-' + 'a'.repeat(32))
+    writeSnapshot(sandbox, snapshotOf([makeEntry(seeded)]))
+    try {
+      crypto.randomBytes = () => Buffer.from(fixed, 'hex')
+      const opened = await openFixtureTaskCatalog({ sandbox })
+      assert.equal(opened.ok, true)
+      const oldBytes = fs.readFileSync(catalogPath(sandbox))
+
+      const realWrite = fs.writeSync
+      let replaced = false
       try {
-        if (mode === 'rename-throw') {
-          fs.renameSync = () => {
-            throw new Error('injected-rename-failure')
+        fs.writeSync = (...args) => {
+          const written = realWrite(...args)
+          if (!replaced) {
+            replaced = true
+            fs.rmSync(tempPath, { force: true })
+            fs.writeFileSync(tempPath, replacement)
           }
-        } else {
-          fs.renameSync = (...args) => {
-            const result = realRename(...args)
-            armed = true
-            return result
-          }
-          fs.readFileSync = (...args) => {
-            if (armed && !corrupt && String(args[0]).endsWith(CATALOG_FILE)) {
-              corrupt = true
-              return Buffer.from('{"schemaVersion":1,"revision":1,"entries":[]}', 'utf8')
-            }
-            return realRead(...args)
-          }
+          return written
         }
         expectError(
-          await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-unknown' })),
-          'WRITE_UNKNOWN',
+          await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-temp-replaced' })),
+          'STORE_CHANGED',
           '$',
         )
-        expectError(
-          await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-unknown-2' })),
-          'CATALOG_UNKNOWN',
-          '$',
-        )
-        expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'CATALOG_UNKNOWN', '$')
       } finally {
-        fs.renameSync = realRename
-        fs.readFileSync = realRead
+        fs.writeSync = realWrite
       }
+      assert.ok(fs.existsSync(tempPath))
+      assert.ok(fs.readFileSync(tempPath).equals(replacement))
+      assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(oldBytes))
+    } finally {
+      crypto.randomBytes = realRandom
+    }
+  })
+})
 
-      const reopened = await openFixtureTaskCatalog({ sandbox })
-      expectError(reopened, 'CATALOG_UNKNOWN', '$')
-      if (mode === 'rename-throw') assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(bytes))
-    })
-  }
+test('F04 short writes are completed before commit; zero/invalid returns never rename', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+
+    const realWrite = fs.writeSync
+    let writeCalls = 0
+    let renameCalls = 0
+    const realRename = fs.renameSync
+    try {
+      fs.writeSync = (...args) => {
+        writeCalls += 1
+        const slice = args[1].subarray(args[2], args[2] + Math.min(16, args[3]))
+        return realWrite(args[0], slice, 0, slice.length, args[4])
+      }
+      fs.renameSync = (...args) => {
+        renameCalls += 1
+        return realRename(...args)
+      }
+      const created = await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-short-writes' }))
+      assert.equal(created.ok, true)
+      assert.equal(created.value.outcome, 'CREATED')
+      assert.ok(writeCalls > 1)
+      assert.equal(renameCalls, 1)
+      const snapshot = readSnapshot(sandbox)
+      assert.equal(snapshot.revision, 2)
+      assert.equal(snapshot.entries.length, 2)
+    } finally {
+      fs.writeSync = realWrite
+      fs.renameSync = realRename
+    }
+
+    const before = fs.readFileSync(catalogPath(sandbox))
+    const realWriteZero = fs.writeSync
+    let renameZero = 0
+    try {
+      fs.writeSync = () => 0
+      fs.renameSync = (...args) => {
+        renameZero += 1
+        return realRename(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-zero-write' })),
+        'WRITE_REJECTED',
+        '$',
+      )
+    } finally {
+      fs.writeSync = realWriteZero
+      fs.renameSync = realRename
+    }
+    assert.equal(renameZero, 0)
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+
+    const realWritePartial = fs.writeSync
+    let stage = 0
+    let renamePartial = 0
+    try {
+      fs.writeSync = (...args) => {
+        stage += 1
+        if (stage === 1) {
+          const slice = args[1].subarray(args[2], args[2] + 16)
+          return realWritePartial(args[0], slice, 0, slice.length, args[4])
+        }
+        throw new Error('injected-partial-then-throw')
+      }
+      fs.renameSync = (...args) => {
+        renamePartial += 1
+        return realRename(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-partial-throw' })),
+        'WRITE_REJECTED',
+        '$',
+      )
+    } finally {
+      fs.writeSync = realWritePartial
+      fs.renameSync = realRename
+    }
+    assert.equal(renamePartial, 0)
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+  })
+})
+
+test('F05 corruption after a confirmed snapshot is STORE_INVALID before STORE_CHANGED', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    fs.writeFileSync(catalogPath(sandbox), Buffer.from('{bad json', 'utf8'))
+    expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'STORE_INVALID', '$')
+    expectError(
+      await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-invalid' })),
+      'CATALOG_UNKNOWN',
+      '$',
+    )
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    fs.writeFileSync(catalogPath(sandbox), Buffer.from([0xff, 0xfe, 0x00]))
+    expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'STORE_INVALID', '$')
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(128 * 1024 + 1, 0x20))
+    expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'RESOURCE_LIMIT', '$')
+    expectError(
+      await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-overflow' })),
+      'CATALOG_UNKNOWN',
+      '$',
+    )
+  })
+
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    fs.rmSync(catalogPath(sandbox))
+    expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'STORE_CHANGED', '$')
+    expectError(
+      await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-delete' })),
+      'CATALOG_UNKNOWN',
+      '$',
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------------------------
