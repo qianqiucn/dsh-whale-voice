@@ -407,6 +407,46 @@ test('F04 SAVED and BLOCKED_RIGHTS round out the initial-state and legal-block b
   }
 })
 
+test('R03 missing scope, zero-getter counting and real deep-freeze checks', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-r03')
+  try {
+    expectError(runExistingFixtureTaskOnce({ record: ctx.record, input: ctx.input }).result, 'INVALID_INPUT', '$')
+
+    let getterCalls = 0
+    const frame = { record: ctx.record, input: ctx.input }
+    Object.defineProperty(frame, 'scopeId', {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        return SCOPE
+      },
+    })
+    expectError(runExistingFixtureTaskOnce(frame).result, 'INVALID_INPUT', '$')
+    assert.equal(getterCalls, 0)
+
+    const before = JSON.stringify(ctx.input)
+    const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: ctx.input })
+    expectSimulated(out.result)
+    assert.equal(JSON.stringify(ctx.input), before)
+    assert.equal(Object.isFrozen(ctx.input), false)
+    assert.equal(Object.isFrozen(ctx.record), false)
+    const seen = new Set()
+    const assertFrozenDeep = (value) => {
+      if (value === null || typeof value !== 'object' || seen.has(value)) return
+      seen.add(value)
+      assert.equal(Object.isFrozen(value), true)
+      for (const key of Reflect.ownKeys(value)) {
+        assertFrozenDeep(Object.getOwnPropertyDescriptor(value, key).value)
+      }
+    }
+    assertFrozenDeep(out.result)
+    assertFrozenDeep(out.record)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
 test('B14 repeating the same CREATED snapshot can simulate again; no claimed state is invented', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b14')

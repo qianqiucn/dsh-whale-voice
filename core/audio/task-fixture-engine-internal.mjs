@@ -269,6 +269,36 @@ function applyAction(record, action) {
   return { ok: true, value: applied.value }
 }
 
+function validRecordSuccessShape(value) {
+  return (
+    isPlainObject(value) &&
+    isPlainObject(value.source) &&
+    typeof value.source.kind === 'string' &&
+    typeof value.source.ref === 'string' &&
+    typeof value.taskId === 'string' &&
+    typeof value.state === 'string' &&
+    typeof value.feature === 'string' &&
+    typeof value.taskType === 'string' &&
+    typeof value.voiceProfileId === 'string' &&
+    typeof value.deliveryRequested === 'boolean' &&
+    isPlainObject(value.rights) &&
+    typeof value.rights.state === 'string' &&
+    isPlainObject(value.cancel) &&
+    isPlainObject(value.delivery)
+  )
+}
+
+function validDraftSuccessShape(value) {
+  return (
+    isPlainObject(value) &&
+    isPlainObject(value.source) &&
+    typeof value.source.kind === 'string' &&
+    typeof value.source.ref === 'string' &&
+    isPlainObject(value.rights) &&
+    typeof value.rights.state === 'string'
+  )
+}
+
 /** The only physical validateAudioTaskRecord call; rejectKey separates legal refusal from bad protocol. */
 function validateRecord(record, rejectKey) {
   let validated
@@ -281,7 +311,7 @@ function validateRecord(record, rejectKey) {
     return { errorKey: 'DEPENDENCY_FAILURE' }
   }
   if (validated.ok === false) return { errorKey: rejectKey }
-  if (!isPlainObject(validated.value)) return { errorKey: 'DEPENDENCY_FAILURE' }
+  if (!validRecordSuccessShape(validated.value)) return { errorKey: 'DEPENDENCY_FAILURE' }
   return { ok: true, value: validated.value }
 }
 
@@ -648,7 +678,7 @@ function validateExisting(owner, input) {
     return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
   }
   if (normalized.ok === false) return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
-  if (!isPlainObject(normalized.value)) return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
+  if (!validDraftSuccessShape(normalized.value)) return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
 
   if (!isPlainObject(voiceBinding.expectation)) return { ok: false, key: 'INVALID_INPUT', path: '$' }
   if (voiceBinding.expectation.scopeId !== owner.scopeId) {

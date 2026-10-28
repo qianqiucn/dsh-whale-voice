@@ -95,6 +95,7 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 - 最终 record 合法拒绝 → `TASK_TRANSITION_REJECTED/$`；抛错/坏协议 → `DEPENDENCY_FAILURE/$`。
 - 混合坏输入按上述固定顺序命中，不由外层 catch 覆盖；record=null，零 Fake/create/transition。
 - 已知例外：特定 `ok:true, value=42` 在旧 M 会落到 TRANSITION，本步按 040 §8 明确收紧为 DEPENDENCY；不宣称所有恶意依赖返回逐值等于旧 M。
+- 坏成功协议：`ok:true` 但 `value` 为空对象、缺 `source`、`source=42` 等残缺形状，在读取内部字段前判为 `DEPENDENCY_FAILURE/$`；合法 `ok:false` 仍按阶段返回输入/来源/归约拒绝。
 
 ## 9. 未来中文流程与三恢复（尚未实现 GUI）
 

@@ -60,8 +60,7 @@ execution, delivery or cross-process recovery. Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
 initial record with original TaskId/scope/`observedAt` without a second create, while the full record
-stays private and the old public envelope is unchanged. New D-B tests 15; full suite
-**625 / 623 pass / 2 platform skips / 0 fail**. It is **`OFFLINE`** / `FIXTURE_ONLY` /
+stays private and the old public envelope is unchanged. New D-B tests 16; full suite **626 / 624 pass / 2 platform skips / 0 fail**. It is **`OFFLINE`** / `FIXTURE_ONLY` /
 `NOT_INTEGRATED` and adds no persistent claim, cross-call idempotency, recovery, Host/GUI or real
 generation. None
 delivers real adapters, real byte/codec/hash verification,
