@@ -33,13 +33,26 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 08-D-A branch:** `feature/plan08d-task-catalog` adds `core/audio/task-catalog.mjs` — an
+  isolated persistent catalog over the trusted temporary sandbox that stores only initial
+  `CREATED`/`BLOCKED_RIGHTS` records, issues owner `task:fixture-<32hex>` ids and prevents duplicate
+  creation by `(scopeId, idempotencyKey)` (three exports, 15 fixed codes, D01–D20 + F01–F05 +
+  R01–R03 + S01–S03 + C03a–C03h / 45 tests, 44 pass + 1 platform skip). One fixed bounded file,
+  per-capability queue, bounded fd reads, full short-write completion, atomic
+  temp+fsync+rename+read-back, post-commit identity checks, close-failure phase propagation, one
+  close per open lease, cleanup trust-failure classification, one-shot cleanup eligibility,
+  temporary-file ownership behind a full trust gate, corruption-before-change priority and
+  `WRITE_UNKNOWN` locking; the 035–038 storage-boundary repairs are included, pending re-review.
+  No execution, save, delivery or cross-process recovery. `OFFLINE` / `FIXTURE_ONLY` /
+  `NOT_INTEGRATED`. Full suite **610 / 608 pass / 2 platform skips / 0 fail**, UI **24/24**.
 - **Plan 08-C branch:** `feature/plan08c-task-fixture-runner` adds `core/audio/task-fixture-runner.mjs`
   — one synchronous composition of the 08-B source check, the 06-D pure readiness gate, at most one
   existing RVC Fixture dispatch and the existing AudioTask v1 create/transition/validate/project
   actions (three pure exports, 14 fixed codes, C01–C20 / 20 tests). Success ends at the existing
   `ARTIFACT_READY` with a Fake reference only; TTS stays an explicit unsupported block; no bytes,
-  save, Relay, queue, GUI or Host route. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. Full suite
-  **565 / 564 pass / 1 platform skip / 0 fail**, UI **24/24**.
+  save, Relay, queue, GUI or Host route. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; merged via
+  PR #29 at **M `b9f663c`** (report 0026). Full suite **565 / 564 pass / 1 platform skip / 0 fail**,
+  UI **24/24**.
 - **Plan 08-B branch:** `feature/plan08b-source-artifacts` adds `core/audio/source-artifacts.mjs` — a
   strict Fixture source-Artifact library plus one resolver that reuses the 08-A voice binding exactly
   once and compares TTS text (code-unit strict) or RVC input-audio metadata (four fields) with the same
@@ -73,10 +86,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #24 merged at **M `ad25bc6`**
   (report 0013); no real provider, adapter, model, synthesis, scheduling or send capability.
   The older TTS-A bullets below are historical.
-- **main HEAD:** `3182ca13db538e28c363c0eb8b35e55ca53c2964` (merge of PR #28); verify live with
-  `git rev-parse origin/main`. The earlier `df4e4b7` was the PR #27 baseline, `a1bdcbb` the PR #26
-  baseline, `b9336fb` the PR #25 baseline and `bf9cf66` the PR #15 baseline; the older
-  `pre-pr3-8-integration` backup tag is `b552ac0`.
+- **main HEAD:** `b9f663c9e732e319a0920a3e02737400ee4cf0f2` (merge of PR #29); verify live with
+  `git rev-parse origin/main`. The earlier `3182ca1` was the PR #28 baseline, `df4e4b7` the PR #27
+  baseline, `a1bdcbb` the PR #26 baseline, `b9336fb` the PR #25 baseline and `bf9cf66` the PR #15
+  baseline; the older `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production
