@@ -129,6 +129,7 @@ let hits = 0
 let faultAt = null
 let legalBirthValid = null
 const getterCalls = { count: 0 }
+let lastBirthPayload = null
 let root = ''
 const fdPaths = new Map()
 
@@ -183,6 +184,22 @@ function whenMatches(when) {
   return false
 }
 
+function applyFileAction(fault) {
+  if (fault.action === 'corrupt-birth') {
+    fsReal.writeFileSync(root + '/audio-task-catalog-v1.json', '{bad')
+    return true
+  }
+  if (fault.action === 'legal-birth-add') {
+    legalBirthAdd()
+    return true
+  }
+  if (fault.action === 'legal-birth-change') {
+    legalBirthChange()
+    return true
+  }
+  return false
+}
+
 const fsProxy = new Proxy({}, {
   get(_target, prop) {
     const original = fsReal[prop]
@@ -194,26 +211,34 @@ const fsProxy = new Proxy({}, {
       if (fault && prop === fault.call && file.includes(fault.match) && whenMatches(fault.when)) {
         hits += 1
         if (counts.fsFaults === 0 && hits === (fault.skip || 0) + 1) {
+          if (fault.after === true) {
+            // The real call runs first and its real result is returned; only after a real success does
+            // the injected action happen. A real failure propagates untouched (no second call, no mask).
+            const real = original.apply(fsReal, args)
+            counts.fsFaults += 1
+            faultAt = {
+              call: prop,
+              engine: counts.engine,
+              ownerPhase: ownerPhase(),
+              ownerRenames: counts.ownerRenames,
+              afterRealCall: true,
+              realCallOk: true,
+              args0: String(args[0]).slice(-24),
+            }
+            applyFileAction(fault)
+            if (prop === 'openSync' && typeof real === 'number') fdPaths.set(real, String(args[0]))
+            return real
+          }
           counts.fsFaults += 1
           faultAt = {
             call: prop,
             engine: counts.engine,
             ownerPhase: ownerPhase(),
             ownerRenames: counts.ownerRenames,
+            afterRealCall: false,
             args0: String(args[0]).slice(-24),
           }
-          if (fault.action === 'corrupt-birth') {
-            fsReal.writeFileSync(root + '/audio-task-catalog-v1.json', '{bad')
-            return original.apply(fsReal, args)
-          }
-          if (fault.action === 'legal-birth-add') {
-            legalBirthAdd()
-            return original.apply(fsReal, args)
-          }
-          if (fault.action === 'legal-birth-change') {
-            legalBirthChange()
-            return original.apply(fsReal, args)
-          }
+          if (applyFileAction(fault)) return original.apply(fsReal, args)
           const error = new Error('injected fs fault')
           error.code = 'EIO'
           throw error
@@ -344,14 +369,16 @@ try {
     const draft = JSON.parse(JSON.stringify(bind.taskDraft))
     delete draft.taskId
     if (mutateDraft) mutateDraft(draft)
-    const reserved = await catalog.value.reserve({
+    const payload = {
       schemaVersion: 1,
       scopeId: bind.expectation.scopeId,
       idempotencyKey: key,
       draft,
       observedAt: '2026-10-27T00:00:00.000Z',
-    })
+    }
+    const reserved = await catalog.value.reserve(payload)
     if (!reserved.ok) throw new Error('birth failed: ' + reserved.errors[0].code)
+    lastBirthPayload = payload
     const snapshot = JSON.parse(fsReal.readFileSync(root + '/audio-task-catalog-v1.json', 'utf8'))
     const entry = snapshot.entries[snapshot.entries.length - 1]
     const input = JSON.parse(JSON.stringify(src))
@@ -400,6 +427,49 @@ try {
     const secondFrame = { schemaVersion: 1, scopeId: secondBirth.scopeId, taskId: secondBirth.taskId, input: secondBirth.input }
     record('task-b', await opened.value.run(secondFrame))
     record('task-a-get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+  } else if (mode === 'finalFaultHandles') {
+    // Two owner handles and one catalog handle are obtained and proven usable *before* the fault.
+    const first = await owner()
+    const second = await owner()
+    const preGet = await catalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId })
+    const preReserve = await catalog.value.reserve(JSON.parse(JSON.stringify(lastBirthPayload)))
+    record('pre', {
+      ok: true,
+      value: {
+        ownerHandles: first.ok && second.ok,
+        catalogGet: preGet.ok,
+        reserveOutcome: preReserve.ok ? preReserve.value.outcome : 'ERR:' + preReserve.errors[0].code,
+      },
+    })
+    record('run', await first.value.run(frame))
+    const ownerBytesAfterFault = readText(root + '/audio-task-owner-v1.json')
+    const catalogBytesAfterFault = readText(root + '/audio-task-catalog-v1.json')
+    const engineAfterFault = counts.engine
+    const renamesAfterFault = counts.ownerRenames
+    record('post-owner-1-run', await first.value.run(frame))
+    record('post-owner-1-get', await first.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+    record('post-owner-2-run', await second.value.run(frame))
+    record('post-owner-2-get', await second.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+    record('post-catalog-get', await catalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+    record('post-catalog-reserve', await catalog.value.reserve(JSON.parse(JSON.stringify(lastBirthPayload))))
+    record('post-new-catalog', await catalogModule.namespace.openFixtureTaskCatalog({ sandbox }))
+    record('post-new-owner', await ownerModule.namespace.openFixtureTaskOwner({ sandbox }))
+    const ownerTextAfter = readText(root + '/audio-task-owner-v1.json')
+    const catalogTextAfter = readText(root + '/audio-task-catalog-v1.json')
+    record('invariants', {
+      ok: true,
+      value: {
+        ownerBytesSame: ownerBytesAfterFault === ownerTextAfter,
+        catalogBytesSame: catalogBytesAfterFault === catalogTextAfter,
+        catalogEntries: JSON.parse(catalogTextAfter).entries.length,
+        ownerRevision: JSON.parse(ownerTextAfter).revision,
+        ownerEntryPhase: JSON.parse(ownerTextAfter).entries[0].phase,
+        engine: counts.engine,
+        engineUnchanged: counts.engine === engineAfterFault,
+        ownerRenames: counts.ownerRenames,
+        renamesUnchanged: counts.ownerRenames === renamesAfterFault,
+      },
+    })
   } else if (mode === 'sweep') {
     const sweep = []
     const sweepRun = async (label, b, input) => {
@@ -1441,15 +1511,17 @@ test('E01 the owner write transaction re-checks the birth association before the
     assert.equal(readJson(sandbox, OWNER_FILE).revision, 2)
   })
 
-  // The change happens after the FINAL temp file's real fsync and before its rename.
+  // The change happens *after* the FINAL temp file's real fsync returns successfully.
   const worker = runOwnerWorker({
     key: 'key:fixture-e01',
-    fsFault: { call: 'fsyncSync', match: 'audio-task-owner-v1.', skip: 1, action: 'legal-birth-change' },
+    fsFault: { call: 'fsyncSync', match: 'audio-task-owner-v1.', skip: 1, after: true, action: 'legal-birth-change' },
     followUp: true,
   })
   assert.equal(worker.counts.fsFaults, 1)
   assert.equal(worker.legalBirthValid, true)
   assert.equal(worker.faultAt.call, 'fsyncSync')
+  assert.equal(worker.faultAt.afterRealCall, true)
+  assert.equal(worker.faultAt.realCallOk, true)
   assert.equal(worker.faultAt.engine, 1)
   assert.equal(worker.faultAt.ownerPhase, 'CLAIMED')
   assert.equal(worker.faultAt.ownerRenames, 1)
@@ -1541,23 +1613,55 @@ test('E03 the task projection sub-object is descriptor-guarded before comparison
 
 /* ------------------------------------------------------------------ E04 */
 
-test('E04 a birth-registry failure after the real FINAL rename keeps the bytes and locks all handles', async () => {
+test('E04 a birth-registry failure after the real FINAL rename keeps the bytes and locks all existing and new handles', async () => {
   const worker = runOwnerWorker({
     key: 'key:fixture-e04',
+    mode: 'finalFaultHandles',
     fsFault: { call: 'lstatSync', match: CATALOG_FILE, when: 'diskFinal' },
-    followUp: true,
   })
   assert.equal(worker.counts.fsFaults, 1)
   assert.equal(worker.faultAt.ownerPhase, 'FINAL')
   assert.equal(worker.faultAt.ownerRenames, 2)
   assert.equal(worker.faultAt.engine, 1)
   expectOwnerError(workerResult(worker, 'run'), 'WRITE_UNKNOWN', '$')
-  assert.equal(worker.counts.ownerRenames, 2)
+
+  // The handles were obtained and proven usable before the fault.
+  const pre = workerResult(worker, 'pre').value
+  assert.equal(pre.ownerHandles, true)
+  assert.equal(pre.catalogGet, true)
+  assert.equal(pre.reserveOutcome, 'EXISTING')
+
+  // After the same fault, both existing owner handles are locked for run and get.
+  for (const label of ['post-owner-1-run', 'post-owner-1-get', 'post-owner-2-run', 'post-owner-2-get']) {
+    expectOwnerError(workerResult(worker, label), 'OWNER_UNKNOWN', '$')
+  }
+  // The existing catalog handle is locked for a legal get and for the same legal reserve request.
+  const catalogGet = workerResult(worker, 'post-catalog-get')
+  assert.equal(catalogGet.ok, false)
+  assert.equal(catalogGet.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+  const catalogReserve = workerResult(worker, 'post-catalog-reserve')
+  assert.equal(catalogReserve.ok, false)
+  assert.equal(catalogReserve.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+  // New factories of both domains are locked too.
+  const newCatalog = workerResult(worker, 'post-new-catalog')
+  assert.equal(newCatalog.ok, false)
+  assert.equal(newCatalog.errors[0].code, TASK_CATALOG_ERRORS.CATALOG_UNKNOWN)
+  expectOwnerError(workerResult(worker, 'post-new-owner'), 'OWNER_UNKNOWN', '$')
+
+  // Nothing was written, repaired or re-run: real FINAL bytes, one entry, one engine call, two renames.
+  const invariants = workerResult(worker, 'invariants').value
+  assert.equal(invariants.ownerBytesSame, true)
+  assert.equal(invariants.catalogBytesSame, true)
+  assert.equal(invariants.catalogEntries, 1)
+  assert.equal(invariants.ownerRevision, 2)
+  assert.equal(invariants.ownerEntryPhase, 'FINAL')
+  assert.equal(invariants.engine, 1)
+  assert.equal(invariants.engineUnchanged, true)
+  assert.equal(invariants.ownerRenames, 2)
+  assert.equal(invariants.renamesUnchanged, true)
   assert.equal(worker.ownerPhase, 'FINAL')
   assert.equal(worker.ownerRaw.revision, 2)
   assert.equal(worker.ownerRaw.entries[0].phase, 'FINAL')
-  assert.equal(worker.counts.engine, 1)
-  expectOwnerError(workerResult(worker, 'followup-open'), 'OWNER_UNKNOWN', '$')
 })
 
 /* ------------------------------------------------------------------ E05 */

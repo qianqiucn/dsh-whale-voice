@@ -462,7 +462,7 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 ## 12. 测试与证据
 
-`test/task-owner.test.mjs`（20 项）覆盖 050 的 C01–C08、C10、051 的 T01–T06 与 052 的 E01–E05；C09–C12 为回归/文档/CI/PR 项，本次据实重跑。T01–T03 的 engine/fs 故障注入只存在于测试文件内的独立 worker（同一 VM module graph，catalog facade 与 owner 共享同一 store 实例/队列/锁/摘要），产品无注入接口。原 catalog 45（44 pass + 1 本环境 EPERM skip）、D-B 28、旧 runner 20 保持。
+`test/task-owner.test.mjs`（20 项）覆盖 050 的 C01–C08、C10、051 的 T01–T06 与 052 的 E01–E05；C09–C12 为回归/文档/CI/PR 项，本次据实重跑。v1.2 只更正 E01 的真实注入顺序（after 真实 fsync 成功）并补齐 E04 故障前已有两个 owner + 一个 catalog handle 的可用控制与故障后各操作/新工厂的锁闭断言；0048 的“E01–E06 全部闭合”与 E04“全锁”表述以本表为准（0048 文件未改动）。T01–T03 的 engine/fs 故障注入只存在于测试文件内的独立 worker（同一 VM module graph，catalog facade 与 owner 共享同一 store 实例/队列/锁/摘要），产品无注入接口。原 catalog 45（44 pass + 1 本环境 EPERM skip）、D-B 28、旧 runner 20 保持。
 
 | ID | 状态 | 本次证据来源 |
 |---|---|---|
@@ -484,10 +484,10 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 | T04 | 已证（新增） | 第三 name/spec/caller parser/缺 domain → `INTERNAL_FAILURE`、0 读 0 parser、无第三文件；两固定文件与其固定域正常 |
 | T05 | 已证（新增） | 合法 CLAIMED 控制；同 scope 重复/跨 scope/错 birth hash/非法 FINAL 状态与 reason/revision/缺关联/未知 phase/CLAIMED 带 completion → 整库拒绝不修复；32 条合法、33 条 `RESOURCE_LIMIT`；128 KiB 合法、128 KiB+1 拒绝 |
 | T06 | 已证（新增） | depth12 合法/depth13 拒绝/过宽数组拒绝（engine 0、无 owner 文件）；输出与输入图不共享、两次结果不共享、输入冻结态不变；已阻断任务改可执行后 engine 新增 0、盘字节不变 |
-| E01 | 已证（新增） | 正常子对象控制；FINAL temp 真实 fsync 后、rename 前对出生做**经原 parser 确认合法**的 `observedAt` 改动（`legalBirthValid=true`、命中 1）→ `STORE_CHANGED`、总 owner rename 仅 claim 1、盘上 CLAIMED/revision 1、共享锁、engine 1；不靠“下一次 get 才报错” |
+| E01 | 已证（v1.2 顺序更正） | 正常子对象控制；第二次 owner temp 真实 `fsyncSync` **成功返回之后**才做出生 `observedAt` 合法改动（`afterRealCall=true`/`realCallOk=true`/`legalBirthValid=true`、命中 1）→ rename 前停提交：`STORE_CHANGED`、总 owner rename 仅 claim 1（FINAL rename 0）、盘上 CLAIMED/revision 1、共享锁、engine 1 |
 | E02 | 已证（新增） | 仅坏 `birthIdentityHash`（schema 合法）→ 工厂 `BIRTH_INVALID` 且同 cap 已锁：既有 catalog handle 的 get/reserve、新 catalog、新 owner 工厂全部 `*_UNKNOWN`，catalog 字节/条目数与 owner 字节不变、无新 ID；合法 `NOT_FOUND` 对照不锁全库 |
 | E03 | 已证（新增） | 真实引擎先运行；仅把 `task.state` 改成返回原值的 getter / 加 hidden 键 / 加 Symbol 键 → getter 实际调用 **0** 次、首次固定 `EXECUTION_UNKNOWN`、CLAIMED 无 FINAL、后续 `EXISTING`+UNKNOWN、总 engine 1 |
-| E04 | 已证（新增） | 真实 FINAL 已落盘后对 **catalog 出生文件**注入一次故障（不是 owner 自身 lstat）→ 命中 1、`faultAt.ownerRenames=2`、盘上 FINAL/revision 2 保留、`WRITE_UNKNOWN`、新工厂 `OWNER_UNKNOWN`、engine 不重跑 |
+| E04 | 已证（v1.2 全 handle 补证） | 故障前取得并证明可用：2 个 owner handle + 1 个 catalog handle（同一合法 payload 的 `reserve` 返回 `EXISTING`）；真实 FINAL 已落盘后对 **catalog 出生文件**注入一次故障（命中 1、`ownerRenames=2`）→ `WRITE_UNKNOWN`、盘上 FINAL/revision 2 保留；故障后两个已有 owner 的 run/get 均 `OWNER_UNKNOWN`，已有 catalog 的 get 与同一合法 reserve 均 `CATALOG_UNKNOWN`，新 catalog/owner 工厂各域 UNKNOWN；两文件字节/条目、engine 1、owner rename 2 全部不变 |
 | E05 | 已证（新增） | `ABSENT→PRESENT` 变化先用真实 existing engine 独立证明“改后合法可执行”（SIMULATED/ARTIFACT_READY），再同 Task 重复 run → `EXISTING`/原 `NO_EXECUTION`/盘字节不变/engine 新增 0；7 个 context + 4 类合法阻断共 11 例，逐一“首次 +1、重复 +0”；原 B12 深度 12 合法 TTS 完整 input 穿 owner 包装仍接受、depth13 `RESOURCE_LIMIT`；调用方可变输入逐对象冻结态与 JSON 前后不变 |
 
 平台限制：本环境 hardlink/symlink 相关旧断言按既定 EPERM skip 记录，不据此修改产品拒链策略。本文档不预填未执行的通过数。
