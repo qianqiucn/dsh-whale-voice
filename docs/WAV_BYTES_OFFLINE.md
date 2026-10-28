@@ -25,7 +25,7 @@ inspectFixtureWavBytes(input)   // 同步纯入口
 
 根输入**恰两自有可枚举 data 字段**：`{ schemaVersion: 1, bytes: <真实 Uint8Array，含 Buffer> }`。普通或 null 原型根允许；未知键、隐藏键、Symbol 键、accessor（getter 不执行）、缺字段均安全拒绝，错误不回显未知键名。
 
-`bytes` 必须是真的 `Uint8Array`（含 `Buffer`）：通过受信任 intrinsic 读取 brand、`buffer`、`byteOffset`、`byteLength`，**不信任**调用方覆盖的 `length`/`byteLength`/`constructor`/迭代器。拒绝 Proxy、伪造原型、数组、字符串/base64、`DataView` 及其他 typed array、`SharedArrayBuffer`、已 detached 或 resizable 的 backing buffer。视图上的额外属性不参与语义且不会被调用。
+`bytes` 必须是真的 `Uint8Array`（含 `Buffer`）：通过受信任 intrinsic 读取 brand、`buffer`、`byteOffset`、`byteLength`，**不信任**调用方覆盖的 `length`/`byteLength`/`constructor`/迭代器。拒绝 Proxy、伪造原型、数组、字符串/base64、`DataView` 及其他 typed array、`SharedArrayBuffer`、已 detached（固定 `WAV_BYTES_INVALID_BYTES`/`bytes`）或 resizable 的 backing buffer；真正的普通空 `Uint8Array` 是无效容器（`WAV_BYTES_INVALID_CONTAINER`/`$`），不被误判为载体问题。视图上的额外属性不参与语义且不会被调用。
 
 先核视图自身长度与字节预算，再从**该视图确切 offset/length** 复制到自有固定 `Uint8Array`；`subarray`/`Buffer` 池视图只复制自己那一段，前后私有字节不进长度与 hash。后续格式检查、samples、SHA256 全部基于这份自有副本；不改、不冻结调用方视图或其底层 buffer，也不返回任何可变字节引用。
 
@@ -106,10 +106,10 @@ inspectFixtureWavBytes({ schemaVersion: 1, bytes })
 
 ## 9. 与旧源合同的关系（W07）
 
-把人工 mono 整毫秒 Fixture 的四个实测值（`durationMs`/`byteLength`/`sampleRate`/`channels`）填入既有合法 SVC 源/request Fixture 的同一四字段后，旧 `resolveFixtureTaskSource` 仍实际 `FIXTURE_SOURCE_LINKED`；只改一处 metadata 的合法负控实际 `SOURCE_ARTIFACTS_SOURCE_AUDIO_MISMATCH`。旧模块零改；该比较只证明同元数据，不证明 Fake 引用归属、权利或成品已保存。**分数时长不能 round 塞进旧整数合同**（例如 0.3125 ms 不是 1 ms）。
+把人工 mono 整毫秒 Fixture 的四个实测值（`durationMs`/`byteLength`/`sampleRate`/`channels`）填入既有合法 SVC 源/request Fixture 的同一四字段后，旧 `resolveFixtureTaskSource` 仍实际 `FIXTURE_SOURCE_LINKED`；只改一处 metadata 的合法负控实际 `SOURCE_ARTIFACT_SOURCE_AUDIO_MISMATCH`。旧模块零改；该比较只证明同元数据，不证明 Fake 引用归属、权利或成品已保存。**分数时长不能 round 塞进旧整数合同**（例如 0.3125 ms 不是 1 ms）。
 
 ## 10. 测试与证据
 
-`test/wav-byte-inspector.test.mjs` 覆盖 W01–W08：真实正常/载体（Buffer、普通视图、subarray 前后哨兵、同名遮蔽 getter 0 次、调用方字节与冻结态不变）、完整 RIFF（两顺序、前中后未知 chunk、odd pad、缺 pad/截断/巨大声明/尾随矛盾/重复或缺失 fmt-data/空 data、128/129 chunk 边界与零长度未知 chunk）、格式与算术（六 rate、1–2ch、PCM16、整帧、blockAlign/byteRate 矛盾、裸 PCM/RIFX/RF64/float/其他 profile）、资源界线（字节预算 +1 与 exact-limit 控制、时长 300000 ms 与 +1 帧、分数时长不 round）、实测指标与字面 SHA256 向量（静音、正负满幅计数、改一个 data 字节或 unknown-chunk pad 即整体 hash 变化）、输入/输出安全（Shared/resizable/detached、Proxy、伪造原型、其他 typed array、DataView、数组/字符串、根隐藏/Symbol/accessor 与 getter 0 次、输出全图冻结且与输入不共享、常量冻结、无二进制回显）、旧源合同兼容、文档示例原样执行与无 `fs`/网络/进程/时钟/随机依赖。
+`test/wav-byte-inspector.test.mjs` 覆盖 W01–W08（v1.1 补：真实 detached 载体分类、按公开入口实际送达的原生载体、恰好 50 MiB 的**合法成功**控制、七个内层 chunk 代表——内层头/payload 截断、odd payload 缺 pad、巨大 chunkSize、duplicate-data、missing-fmt、missing-data，每个都保证 RIFF 声明长度与实际字节自洽）：真实正常/载体（Buffer、普通视图、subarray 前后哨兵、同名遮蔽 getter 0 次、调用方字节与冻结态不变）、完整 RIFF（两顺序、前中后未知 chunk、odd pad、缺 pad/截断/巨大声明/尾随矛盾/重复或缺失 fmt-data/空 data、128/129 chunk 边界与零长度未知 chunk）、格式与算术（六 rate、1–2ch、PCM16、整帧、blockAlign/byteRate 矛盾、裸 PCM/RIFX/RF64/float/其他 profile）、资源界线（字节预算 +1 与 exact-limit 控制、时长 300000 ms 与 +1 帧、分数时长不 round）、实测指标与字面 SHA256 向量（静音、正负满幅计数、改一个 data 字节或 unknown-chunk pad 即整体 hash 变化）、输入/输出安全（Shared/resizable/detached、Proxy、伪造原型、其他 typed array、DataView、数组/字符串、根隐藏/Symbol/accessor 与 getter 0 次、输出全图冻结且与输入不共享、常量冻结、无二进制回显）、旧源合同兼容、文档示例原样执行与无 `fs`/网络/进程/时钟/随机依赖。
 
 测试全部在人工内存字节上构造，不下载/读取私人或真实媒体，不播放/录音/调用模型。本文档不预填未执行的通过数。

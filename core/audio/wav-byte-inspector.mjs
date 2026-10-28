@@ -103,6 +103,17 @@ const VIEW_BYTE_OFFSET = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'b
 const ARRAY_BUFFER_BYTE_LENGTH = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get
 const ARRAY_BUFFER_RESIZABLE = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable').get
 const ARRAY_BUFFER_MAX = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'maxByteLength').get
+const ARRAY_BUFFER_SLICE = ArrayBuffer.prototype.slice
+
+/** A detached backing buffer reports zeroed slots, so probe it before treating an empty view as legal. */
+function isDetachedBuffer(buffer) {
+  try {
+    ARRAY_BUFFER_SLICE.call(buffer, 0, 0)
+    return false
+  } catch {
+    return true
+  }
+}
 
 /**
  * Read the real native slots of a Uint8Array (including Buffer) through trusted intrinsics only.
@@ -138,6 +149,7 @@ function nativeView(value) {
   }
   if (resizable === true) return null
   if (!Number.isInteger(maxLength) || maxLength !== bufferLength) return null
+  if (bufferLength === 0 && isDetachedBuffer(buffer)) return null
   if (byteOffset + byteLength > bufferLength) return null
   if (byteLength > 0 && bufferLength === 0) return null
   return { buffer, byteLength, byteOffset }

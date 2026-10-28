@@ -24,6 +24,18 @@ function tag(list, text) {
   for (const char of text) list.push(char.charCodeAt(0))
 }
 
+function setU32(target, offset, value) {
+  target[offset] = value & 0xff
+  target[offset + 1] = (value >> 8) & 0xff
+  target[offset + 2] = (value >> 16) & 0xff
+  target[offset + 3] = (value >>> 24) & 0xff
+}
+
+function fixRiffSize(bytes) {
+  setU32(bytes, 4, bytes.length - 8)
+  return bytes
+}
+
 function chunk(list, id, payload) {
   tag(list, id)
   u32(list, payload.length)
@@ -249,6 +261,61 @@ test('W02 complete RIFF walk: orders, unknown chunks, odd pad and every structur
   }
   assert.equal(inspect(buildWav({ samples: quiet, before: makeChunks(126) })).ok, true)
   expectError(inspect(buildWav({ samples: quiet, before: makeChunks(127) })), 'RESOURCE_LIMIT')
+
+  // R3: seven inner chunk representatives. Each file keeps RIFF size == length - 8, so the outer
+  // length gate cannot be the reason for the refusal, and each has a legal control first.
+  const fmtPayload = []
+  u16(fmtPayload, 1)
+  u16(fmtPayload, 1)
+  u32(fmtPayload, 16000)
+  u32(fmtPayload, 32000)
+  u16(fmtPayload, 2)
+  u16(fmtPayload, 16)
+  const assemble = (chunks) => {
+    const body = []
+    for (const entry of chunks) chunk(body, entry.id, entry.payload)
+    const file = []
+    tag(file, 'RIFF')
+    u32(file, body.length + 4)
+    tag(file, 'WAVE')
+    for (const byte of body) file.push(byte)
+    return new Uint8Array(file)
+  }
+  const legalInner = assemble([{ id: 'fmt ', payload: fmtPayload }, { id: 'data', payload: [0, 0, 0, 0] }])
+  assert.equal(inspect(legalInner).ok, true)
+
+  // 1. inner chunk header truncated (6 trailing bytes form an incomplete 8-byte header)
+  const headerTruncated = fixRiffSize(Uint8Array.from([...legalInner, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66]))
+  expectError(inspect(headerTruncated), 'INVALID_CONTAINER', '$')
+
+  // 2. inner payload truncated (data declares 8 bytes but only 4 remain)
+  const eightByteData = assemble([{ id: 'fmt ', payload: fmtPayload }, { id: 'data', payload: [0, 0, 0, 0, 0, 0, 0, 0] }])
+  const payloadTruncated = fixRiffSize(eightByteData.slice(0, eightByteData.length - 4))
+  expectError(inspect(payloadTruncated), 'INVALID_CONTAINER', '$')
+
+  // 3. odd-size payload without its pad byte at the end of the file
+  const oddFile = assemble([{ id: 'fmt ', payload: fmtPayload }, { id: 'data', payload: [0, 0] }, { id: 'odd ', payload: [1] }])
+  const missingPad = fixRiffSize(oddFile.slice(0, oddFile.length - 1))
+  expectError(inspect(missingPad), 'INVALID_CONTAINER', '$')
+
+  // 4. huge chunkSize declaration with a short real payload
+  const hugeSize = Uint8Array.from(legalInner)
+  // data chunk header starts after RIFF(12) + fmt(8+16); its size field is at offset 40.
+  setU32(hugeSize, 40, 0x00ffffff)
+  fixRiffSize(hugeSize)
+  expectError(inspect(hugeSize), 'INVALID_CONTAINER', '$')
+
+  // 5. duplicate data
+  const duplicateData = assemble([{ id: 'fmt ', payload: fmtPayload }, { id: 'data', payload: [0, 0] }, { id: 'data', payload: [0, 0] }])
+  expectError(inspect(duplicateData), 'INVALID_CONTAINER', '$')
+
+  // 6. missing fmt
+  const missingFmt = assemble([{ id: 'data', payload: [0, 0] }])
+  expectError(inspect(missingFmt), 'INVALID_CONTAINER', '$')
+
+  // 7. missing data
+  const missingData = assemble([{ id: 'fmt ', payload: fmtPayload }])
+  expectError(inspect(missingData), 'INVALID_CONTAINER', '$')
 })
 
 /* ------------------------------------------------- W03 ------------------------------------- */
@@ -282,17 +349,50 @@ test('W04 resource boundaries: byte budget, exact-limit control and exact durati
   const overResult = inspect(over)
   expectError(overResult, 'RESOURCE_LIMIT', 'bytes')
 
-  // Exactly at the byte budget the request is not rejected by the byte limit itself: the header is
-  // valid and the failure comes from the duration/chunk budget, proving the boundary.
-  const exact = new Uint8Array(limit)
-  exact.set(monoOneMs(), 0)
-  exact[4] = (limit - 8) & 0xff
-  exact[5] = ((limit - 8) >> 8) & 0xff
-  exact[6] = ((limit - 8) >> 16) & 0xff
-  exact[7] = ((limit - 8) >>> 24) & 0xff
-  const exactResult = inspect(exact)
-  assert.equal(exactResult.ok, false)
-  assert.notEqual(exactResult.errors[0].path, 'bytes')
+  // A legal complete WAV of exactly maxByteLength: 44-byte header (RIFF+fmt+data header) plus
+  // 52,428,756 data bytes at 48 kHz stereo PCM16 -> 13,107,189 frames -> 273066.4375 ms, inside the
+  // 300000 ms budget. This is the real exact-limit success control (allocated directly, not pushed).
+  const legalLimit = new Uint8Array(limit)
+  const legalDataSize = limit - 44
+  legalLimit.set([0x52, 0x49, 0x46, 0x46], 0)
+  legalLimit[4] = (limit - 8) & 0xff
+  legalLimit[5] = ((limit - 8) >> 8) & 0xff
+  legalLimit[6] = ((limit - 8) >> 16) & 0xff
+  legalLimit[7] = ((limit - 8) >>> 24) & 0xff
+  legalLimit.set([0x57, 0x41, 0x56, 0x45], 8)
+  legalLimit.set([0x66, 0x6d, 0x74, 0x20], 12)
+  const putU32 = (target, offset, value) => {
+    target[offset] = value & 0xff
+    target[offset + 1] = (value >> 8) & 0xff
+    target[offset + 2] = (value >> 16) & 0xff
+    target[offset + 3] = (value >>> 24) & 0xff
+  }
+  const putU16 = (target, offset, value) => {
+    target[offset] = value & 0xff
+    target[offset + 1] = (value >> 8) & 0xff
+  }
+  putU32(legalLimit, 16, 16)
+  putU16(legalLimit, 20, 1)
+  putU16(legalLimit, 22, 2)
+  putU32(legalLimit, 24, 48000)
+  putU32(legalLimit, 28, 48000 * 4)
+  putU16(legalLimit, 32, 4)
+  putU16(legalLimit, 34, 16)
+  legalLimit.set([0x64, 0x61, 0x74, 0x61], 36)
+  putU32(legalLimit, 40, legalDataSize)
+  const legalOut = inspect(legalLimit)
+  assert.equal(legalOut.ok, true, JSON.stringify(legalOut))
+  assert.equal(legalOut.value.byteLength, limit)
+  assert.equal(legalOut.value.dataByteLength, legalDataSize)
+  assert.equal(legalOut.value.frameCount, 13107189)
+  assert.equal(legalOut.value.sampleRate, 48000)
+  assert.equal(legalOut.value.channels, 2)
+  assert.equal(legalOut.value.durationMs, 273066.4375)
+  assert.equal(legalOut.value.peak, 0)
+  assert.equal(legalOut.value.mockOnly, true)
+  assert.equal(legalOut.value.realOperationAllowed, false)
+  // The same size with an inconsistent RIFF declaration is still refused by the outer length gate,
+  // which is a rejection contrast, not a legal exact-limit success.
 
   // Exactly 300000 ms is legal, one more frame is not; fractional durations are not rounded.
   const framesAtLimit = (300000 * 16000) / 1000
@@ -354,28 +454,52 @@ test('W06 input and output safety: carriers, descriptors and immutability', () =
   expectError(inspectRoot({ schemaVersion: 1, bytes: good, extra: 1 }), 'INVALID_INPUT', '<unknown-key>')
   expectError(inspectRoot({ schemaVersion: 2, bytes: good }), 'UNSUPPORTED_VERSION', 'schemaVersion')
   expectError(inspectRoot(null), 'INVALID_INPUT', '$')
-  expectError(inspect({ schemaVersion: 1, bytes: 'RIFF' }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: Array.from(good) }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: Buffer.from(good).toString('base64') }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: new DataView(good.buffer) }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: new Uint16Array(4) }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: new Proxy(good, {}) }), 'INVALID_BYTES', 'bytes')
-  expectError(inspect({ schemaVersion: 1, bytes: Object.create(Uint8Array.prototype) }), 'INVALID_BYTES', 'bytes')
+  // Each carrier is passed at the level the public entry expects, so the real native object arrives.
+  const inspectCarrier = (bytes) => inspectRoot({ schemaVersion: 1, bytes })
+  expectError(inspectCarrier('RIFF'), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(Array.from(good)), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(Buffer.from(good).toString('base64')), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(new DataView(good.buffer)), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(new Uint16Array(4)), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(new Proxy(good, {})), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(Object.create(Uint8Array.prototype)), 'INVALID_BYTES', 'bytes')
+  expectError(inspectCarrier(new Uint8Array(0)), 'INVALID_CONTAINER', '$')
 
   if (typeof SharedArrayBuffer === 'function') {
-    const shared = new Uint8Array(new SharedArrayBuffer(76))
+    const sharedBuffer = new SharedArrayBuffer(76)
+    const shared = new Uint8Array(sharedBuffer)
     shared.set(good)
-    expectError(inspect({ schemaVersion: 1, bytes: shared }), 'INVALID_BYTES', 'bytes')
+    assert.equal(shared.buffer instanceof SharedArrayBuffer, true)
+    expectError(inspectCarrier(shared), 'INVALID_BYTES', 'bytes')
   }
   const resizable = new ArrayBuffer(76, { maxByteLength: 152 })
   const resizableView = new Uint8Array(resizable)
   resizableView.set(good)
-  expectError(inspect({ schemaVersion: 1, bytes: resizableView }), 'INVALID_BYTES', 'bytes')
+  assert.equal(resizable.resizable, true)
+  expectError(inspectCarrier(resizableView), 'INVALID_BYTES', 'bytes')
   const detachedBuffer = new ArrayBuffer(76)
   const detachedView = new Uint8Array(detachedBuffer)
   detachedView.set(good)
   structuredClone(detachedBuffer, { transfer: [detachedBuffer] })
-  expectError(inspect({ schemaVersion: 1, bytes: detachedView }), 'INVALID_BYTES', 'bytes')
+  assert.equal(detachedBuffer.byteLength, 0)
+  assert.equal(detachedView.byteLength, 0)
+  expectError(inspectCarrier(detachedView), 'INVALID_BYTES', 'bytes')
+
+  // A successful and a failed call never share a mutable object; both graphs are frozen and fresh.
+  const firstSuccess = inspect(good)
+  const secondSuccess = inspect(Uint8Array.from(good))
+  assert.notEqual(firstSuccess, secondSuccess)
+  assert.notEqual(firstSuccess.value, secondSuccess.value)
+  const firstFailure = inspectCarrier('RIFF')
+  const secondFailure = inspectCarrier('RIFF')
+  assert.notEqual(firstFailure, secondFailure)
+  assert.notEqual(firstFailure.errors, secondFailure.errors)
+  assert.notEqual(firstFailure.errors[0], secondFailure.errors[0])
+  assert.equal(Object.isFrozen(firstSuccess), true)
+  assert.equal(Object.isFrozen(firstSuccess.value), true)
+  assert.equal(Object.isFrozen(firstFailure), true)
+  assert.equal(Object.isFrozen(firstFailure.errors[0]), true)
+  assert.equal(JSON.stringify(firstSuccess), JSON.stringify(secondSuccess))
 
   // Root hidden key, Symbol key and accessors are refused without running the getter.
   const hidden = { schemaVersion: 1, bytes: good }
