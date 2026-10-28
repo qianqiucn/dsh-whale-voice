@@ -79,3 +79,29 @@ if (out.result.ok) {
 - 不读目录、不读文件、不接触生产配置或真实音频。
 - 不改变 08-A/B/C/D-A 的既有协议、目录 Schema 或 Task 合同。
 - 未集成 DSH Host/GUI，未连接真实模型/微信/Sender。
+
+## 8. 预检顺序与错误分类
+
+固定顺序（先完整预检，再共用源/准入流程）：
+
+```text
+frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → input 根形状/schemaVersion
+→ scope 形状 → record 旧 validator → 初始状态/字段 → 安全取得 draft 并旧规范化
+→ expectation/scope 与八领域等价 → 共用 source/context/readiness
+```
+
+- 合法 record 拒绝 → `INVALID_INPUT/$`；record validator 抛错/坏协议 → `DEPENDENCY_FAILURE/$`。
+- 合法 draft 拒绝 → `SOURCE_INPUT_INVALID/sourceInput`；draft validator 抛错/坏协议 → `DEPENDENCY_FAILURE/$`。
+- 最终 record 合法拒绝 → `TASK_TRANSITION_REJECTED/$`；抛错/坏协议 → `DEPENDENCY_FAILURE/$`。
+- 混合坏输入按上述固定顺序命中，不由外层 catch 覆盖；record=null，零 Fake/create/transition。
+- 已知例外：特定 `ok:true, value=42` 在旧 M 会落到 TRANSITION，本步按 040 §8 明确收紧为 DEPENDENCY；不宣称所有恶意依赖返回逐值等于旧 M。
+
+## 9. 未来中文流程与三恢复（尚未实现 GUI）
+
+未来正常流程应是“从任务列表打开原任务 → 检查素材与依赖 → 明确开始 → 显示同一任务进度/结果”，不能创建第二 Task 欺骗用户。当前没有页面、按钮或持久恢复。
+
+三类恢复文案（未来 UX 约束，本轮未实现）：
+
+- 素材已过期或权利变化：“素材当前不可用，请重新选择有权使用的素材；原任务不会自动重新执行。”
+- 记录/关联不一致：“任务信息暂时无法核对，请返回任务列表检查；系统不会替换任务编号。”
+- 已运行/结果未知：“该任务已开始或结果尚未确认，系统不会自动再执行。”取消请求不冒充已停止。

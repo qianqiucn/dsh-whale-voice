@@ -269,19 +269,19 @@ function applyAction(record, action) {
   return { ok: true, value: applied.value }
 }
 
-/** The only physical validateAudioTaskRecord call. */
-function validateRecord(record) {
+/** The only physical validateAudioTaskRecord call; rejectKey separates legal refusal from bad protocol. */
+function validateRecord(record, rejectKey) {
   let validated
   try {
     validated = validateAudioTaskRecord(record)
   } catch {
-    return { errorKey: 'INVALID_INPUT' }
+    return { errorKey: 'DEPENDENCY_FAILURE' }
   }
   if (!validated || typeof validated !== 'object' || typeof validated.ok !== 'boolean') {
     return { errorKey: 'DEPENDENCY_FAILURE' }
   }
-  if (validated.ok === false) return { errorKey: 'INVALID_INPUT' }
-  if (!isPlainObject(validated.value)) return { errorKey: 'INVALID_INPUT' }
+  if (validated.ok === false) return { errorKey: rejectKey }
+  if (!isPlainObject(validated.value)) return { errorKey: 'DEPENDENCY_FAILURE' }
   return { ok: true, value: validated.value }
 }
 
@@ -500,7 +500,7 @@ function runFlow(payload, existingRecord) {
     states.push(record.state)
   }
 
-  const finalRecord = validateRecord(record)
+  const finalRecord = validateRecord(record, 'TASK_TRANSITION_REJECTED')
   if (!finalRecord.ok) return privateResult(null, fail(finalRecord.errorKey, '$'))
   const finalProjection = taskProjection(finalRecord.value)
   if (!finalProjection.ok) return privateResult(null, fail(finalProjection.errorKey, '$'))
@@ -597,9 +597,6 @@ function sameDraftDomain(left, right) {
 
 function validateExisting(owner, input) {
   if (!isPlainObject(owner)) return { ok: false, key: 'INVALID_INPUT', path: '$' }
-  if (typeof owner.scopeId !== 'string' || !SCOPE_PATTERN.test(owner.scopeId)) {
-    return { ok: false, key: 'INVALID_INPUT', path: '$' }
-  }
   if (!isPlainObject(input)) return { ok: false, key: 'INVALID_INPUT', path: '$' }
   const surface = keySurface(input, RESOLVER_KEYS)
   if (surface === 'unknown') return { ok: false, key: 'INVALID_INPUT', path: '<unknown-key>' }
@@ -608,21 +605,12 @@ function validateExisting(owner, input) {
     return { ok: false, key: 'UNSUPPORTED_VERSION', path: 'schemaVersion' }
   }
 
-  if (!isPlainObject(input.sourceInput)) return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
-  if (!isPlainObject(input.sourceInput.voiceBinding)) {
-    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
-  }
-  const voiceBinding = input.sourceInput.voiceBinding
-  if (!isPlainObject(voiceBinding.expectation)) return { ok: false, key: 'INVALID_INPUT', path: '$' }
-  if (voiceBinding.expectation.scopeId !== owner.scopeId) {
+  if (typeof owner.scopeId !== 'string' || !SCOPE_PATTERN.test(owner.scopeId)) {
     return { ok: false, key: 'INVALID_INPUT', path: '$' }
   }
-  if (!isPlainObject(voiceBinding.taskDraft)) {
-    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
-  }
 
-  const validated = validateRecord(owner.record)
-  if (!validated.ok) return { ok: false, key: 'INVALID_INPUT', path: '$' }
+  const validated = validateRecord(owner.record, 'INVALID_INPUT')
+  if (!validated.ok) return { ok: false, key: validated.errorKey, path: '$' }
   const record = validated.value
   if (!INITIAL_STATES.has(record.state)) {
     return { ok: false, key: 'TASK_TRANSITION_REJECTED', path: '$' }
@@ -642,14 +630,29 @@ function validateExisting(owner, input) {
     return { ok: false, key: 'TASK_TRANSITION_REJECTED', path: '$' }
   }
 
+  if (!isPlainObject(input.sourceInput) || !isPlainObject(input.sourceInput.voiceBinding)) {
+    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
+  }
+  const voiceBinding = input.sourceInput.voiceBinding
+  if (!isPlainObject(voiceBinding.taskDraft)) {
+    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
+  }
+
   let normalized
   try {
     normalized = validateAudioTaskDraft(voiceBinding.taskDraft)
   } catch {
-    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
+    return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
   }
-  if (!normalized || normalized.ok !== true || !isPlainObject(normalized.value)) {
-    return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
+  if (!normalized || typeof normalized !== 'object' || typeof normalized.ok !== 'boolean') {
+    return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
+  }
+  if (normalized.ok === false) return { ok: false, key: 'SOURCE_INPUT_INVALID', path: 'sourceInput' }
+  if (!isPlainObject(normalized.value)) return { ok: false, key: 'DEPENDENCY_FAILURE', path: '$' }
+
+  if (!isPlainObject(voiceBinding.expectation)) return { ok: false, key: 'INVALID_INPUT', path: '$' }
+  if (voiceBinding.expectation.scopeId !== owner.scopeId) {
+    return { ok: false, key: 'INVALID_INPUT', path: '$' }
   }
   if (!sameDraftDomain(draftFields(normalized.value), draftFields(record))) {
     return { ok: false, key: 'INVALID_INPUT', path: '$' }

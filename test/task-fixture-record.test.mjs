@@ -339,6 +339,74 @@ test('B13 inputs are not frozen or mutated; private record is fresh/frozen and t
   }
 })
 
+test('F01 six mixed invalid inputs keep the fixed precheck order', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-f01')
+  try {
+    const version = clone(ctx.input)
+    version.schemaVersion = 2
+    expectError(runExistingFixtureTaskOnce({ scopeId: 'bad-scope', record: ctx.record, input: version }).result, 'UNSUPPORTED_VERSION', 'schemaVersion')
+
+    const unknown = clone(ctx.input)
+    unknown.extra = 1
+    expectError(runExistingFixtureTaskOnce({ scopeId: 'bad-scope', record: ctx.record, input: unknown }).result, 'INVALID_INPUT', '<unknown-key>')
+
+    const processing = advance(ctx.record, [{ type: 'BEGIN_PROCESS' }])
+    const noDraft = clone(ctx.input)
+    noDraft.sourceInput.voiceBinding.taskDraft = null
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: processing, input: noDraft }).result, 'TASK_TRANSITION_REJECTED', '$')
+
+    const badRecord = clone(ctx.record)
+    delete badRecord.taskId
+    const noSource = clone(ctx.input)
+    noSource.sourceInput = null
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: badRecord, input: noSource }).result, 'INVALID_INPUT', '$')
+
+    const wrongScope = clone(ctx.input)
+    wrongScope.sourceInput.voiceBinding.expectation.scopeId = 'scope:fixture-other'
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: processing, input: wrongScope }).result, 'TASK_TRANSITION_REJECTED', '$')
+
+    const badDraft = clone(ctx.input)
+    badDraft.sourceInput.voiceBinding.taskDraft.feature = 'broken'
+    badDraft.sourceInput.voiceBinding.expectation.scopeId = 'scope:fixture-other'
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: badDraft }).result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('F04 SAVED and BLOCKED_RIGHTS round out the initial-state and legal-block branches', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-f04-saved')
+  try {
+    const saved = advance(ctx.record, [
+      { type: 'BEGIN_PROCESS' },
+      { type: 'ATTACH_FAKE_ARTIFACT', artifactRef: 'artifact:fixture-fake-saved' },
+      { type: 'MARK_SAVED' },
+    ])
+    assert.equal(saved.state, 'SAVED')
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: saved, input: ctx.input }).result, 'TASK_TRANSITION_REJECTED', '$')
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+
+  const blocked = await makeExisting(example, 'key:fixture-f04-br', (draft) => {
+    draft.rights.state = 'UNVERIFIED'
+  })
+  try {
+    const input = clone(blocked.input)
+    input.sourceInput.voiceBinding.taskDraft.rights.state = 'UNVERIFIED'
+    const ready = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: blocked.record, input })
+    assert.equal(ready.result.ok, true)
+    assert.equal(ready.result.value.phase, 'BLOCKED')
+    assert.equal(ready.result.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(ready.record.taskId, blocked.record.taskId)
+    assert.equal(ready.record.state, 'BLOCKED_RIGHTS')
+  } finally {
+    removeConfigSandbox(blocked.sandbox)
+  }
+})
+
 test('B14 repeating the same CREATED snapshot can simulate again; no claimed state is invented', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b14')
