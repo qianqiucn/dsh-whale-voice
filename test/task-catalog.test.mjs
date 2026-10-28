@@ -1993,10 +1993,17 @@ test('D18 the module only imports the old create/validate/project Task functions
   assert.match(source, /createAudioTaskRecord/)
   assert.match(source, /validateAudioTaskRecord/)
   assert.match(source, /projectAudioTask/)
+  assert.match(source, /fixture-task-store-internal\.mjs/)
   assert.doesNotMatch(source, /transitionAudioTask\s*\(|runFixtureAudioTaskOnce\s*\(|dispatchRvcFakeOnce\s*\(|negotiateReadyFixtureProvider\s*\(/)
   assert.doesNotMatch(source, /node:http|node:https|child_process|\bfetch\s*\(|\bspawn\s*\(/)
-  assert.match(source, /import fs from 'node:fs'/)
-  assert.match(source, /import crypto from 'node:crypto'/)
+  // The verified filesystem transaction machinery now lives in the private shared store module.
+  const storeSource = fs.readFileSync(path.resolve('core/audio/fixture-task-store-internal.mjs'), 'utf8')
+  assert.match(storeSource, /import fs from 'node:fs'/)
+  assert.match(storeSource, /import crypto from 'node:crypto'/)
+  assert.doesNotMatch(storeSource, /transitionAudioTask\s*\(|runFixtureAudioTaskOnce\s*\(|dispatchRvcFakeOnce\s*\(|negotiateReadyFixtureProvider\s*\(/)
+  assert.doesNotMatch(storeSource, /node:http|node:https|child_process|\bfetch\s*\(|\bspawn\s*\(/)
+  assert.equal(source.includes('runExistingFixtureTaskOnce'), false)
+  assert.equal(storeSource.includes('runExistingFixtureTaskOnce'), false)
 })
 
 function extractReserveExample(doc, heading) {

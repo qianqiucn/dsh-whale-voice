@@ -56,7 +56,26 @@ completion, atomic temp+fsync+rename+read-back, post-commit identity checks, clo
 propagation, one close per open lease, cleanup trust-failure classification, one-shot cleanup
 eligibility and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`
 (035–038 storage-boundary repairs included, merged via PR #30 at **M `2090943`**, report 0032) and has no
-execution, delivery or cross-process recovery. Plan 08-D-B
+execution, delivery or cross-process recovery. Plan 08-D-C
+adds a persistent owner (`core/audio/task-owner.mjs`) over one private extracted shared store
+(`core/audio/fixture-task-store-internal.mjs`): one real catalog birth task is claimed atomically,
+the original existing-record engine runs at most once, its immutable identity is revalidated and a
+`FINAL` record with `SIMULATED`/`NO_EXECUTION` is saved; repeats only read and a confirmed claim
+without a trusted FINAL is reported as owner `UNKNOWN`. Plan 08-D-C-F01 then closes the residual
+gates: fresh restricted birth/association re-reads at the factory, `run`/`get` and the
+after-claim/after-engine/after-FINAL checkpoints (a broken or externally changed birth file stops
+the engine instead of being found by the next `get`), a thin engine adapter that requires the frozen
+13-key envelope, the four fixed safety flags and **complete equality with the real
+`projectAudioTask`**, the fixed first-attempt `TASK_OWNER_EXECUTION_UNKNOWN` (later reads report the
+safe UNKNOWN projection), and a private store that only exposes the two fixed files (no caller
+name/budget/parser, no third file). The v1.1 close-out moves the association rule into the real owner
+write transaction (current read, pre-rename check of the exact bytes, post-rename confirmation), so a
+legal birth change after the FINAL temp fsync and before its rename stops the commit and keeps the
+confirmed CLAIMED bytes, and an association failure locks the capability for owner and catalog
+handles alike. `value.task` is descriptor-guarded before comparison (no getter invocation, no
+hidden/Symbol key loss). D-C owner tests 20 (C01–C08, C10, T01–T06, E01–E05); specialty 113
+(112 pass + 1 platform skip); full suite **658 / 656 pass / 2 platform skips / 0 fail**;
+`OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR not merged. Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
 initial record with original TaskId/scope/`observedAt` without a second create, while the full record

@@ -139,3 +139,15 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 **与 0043 的据实更正（不回写历史）：** 0043 把“输入侧删除字段得到的真实合法 `ok:false`”与“成功 payload 缺必需字段”混同，且 `throw` 在真实 validator 调用之前注入；本轮改为**先真实委托 + 独立合法拒绝探针 + 成功 payload 真 delete** 三源分列，并把同一 8 类 proof 覆盖到 existing/draft/public 的 final 入口。0043 的“全部原可执行项 PASS / 真删除成功根字段”属过度表述，历史报告与回执保留、不覆盖。
 
 未覆盖/明确保留：真实音频字节、模型推理、GPU/设备、持久 claim/跨进程恢复、Host/GUI、微信发送与真实用户链路；本步仍是 **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**。
+
+## 11. 与 08-D-C 持久 owner 的关系（新增）
+
+本模块的 `runExistingFixtureTaskOnce` 仍是唯一 existing-record 执行入口，行为不变。Plan 08-D-C 在其上增加一个**同进程、同 trusted sandbox capability** 的持久 owner（`core/audio/task-owner.mjs`）：
+
+- 先以 catalog 出生登记的真实完整初始 record 原子写入 `CLAIMED`，再调用本入口**至多一次**；
+- 调用前后 owner 都在同一 capability 上重新读取出生登记并重做全部关联门禁；出生文件损坏或合法外改时本入口调用数为 0，不会把旧出生对象当作永远有效；
+- 只有返回的完整 record 通过原 `validateAudioTaskRecord`、不可变身份（taskId/feature/taskType/source/voiceProfileId/rights/deliveryRequested/observedAt）与出生一致、phase/状态合法，且与本模块真实 `projectAudioTask` 结果完整结构等价时才保存 `FINAL`；薄适配守卫只校验本入口冻结的 13 键信封与固定安全标志，不复制旧状态机；
+- 已确认 claim 但无可信 FINAL（engine throw、坏协议、record=null、最终提交未确认）时首次返回固定 `TASK_OWNER_EXECUTION_UNKNOWN` 并保留 CLAIMED 墓碑；后续 run/get 只读该墓碑为 `ownerState=UNKNOWN`，不再调用本入口；
+- 因此“同一 CREATED 快照再次调用仍可能再次模拟”的旧限制在 owner 路径上被持久 claim 与只读重复所取代，而**本模块自身仍是同步纯函数**，不持久、不防重。
+
+两模块都仍是 `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`；不接 Host/GUI、真实模型/音频/设备/投递，也没有跨进程恢复。
