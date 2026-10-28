@@ -33,12 +33,20 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 08-C branch:** `feature/plan08c-task-fixture-runner` adds `core/audio/task-fixture-runner.mjs`
+  — one synchronous composition of the 08-B source check, the 06-D pure readiness gate, at most one
+  existing RVC Fixture dispatch and the existing AudioTask v1 create/transition/validate/project
+  actions (three pure exports, 14 fixed codes, C01–C20 / 20 tests). Success ends at the existing
+  `ARTIFACT_READY` with a Fake reference only; TTS stays an explicit unsupported block; no bytes,
+  save, Relay, queue, GUI or Host route. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. Full suite
+  **565 / 564 pass / 1 platform skip / 0 fail**, UI **24/24**.
 - **Plan 08-B branch:** `feature/plan08b-source-artifacts` adds `core/audio/source-artifacts.mjs` — a
   strict Fixture source-Artifact library plus one resolver that reuses the 08-A voice binding exactly
   once and compares TTS text (code-unit strict) or RVC input-audio metadata (four fields) with the same
   request (four pure exports, 18 fixed codes, S01–S22 / 25 tests). `OFFLINE` / `FIXTURE_ONLY` /
-  `NOT_INTEGRATED`; no bytes/codec/hash/peak, dispatch, task transition, queue, GUI or Host route.
-  Full suite **545 / 544 pass / 1 platform skip / 0 fail**, UI **24/24**.
+  `NOT_INTEGRATED`; merged via PR #28 at **M `3182ca1`** (report 0024); no bytes/codec/hash/peak,
+  dispatch, task transition, queue, GUI or Host route. Full suite **545 / 544 pass / 1 platform skip /
+  0 fail**, UI **24/24**.
 - **Plan 08-A branch:** `feature/plan08a-voice-assets` adds `core/audio/voice-assets.mjs` — a strict
   Fixture shared-voice-asset library plus an explicit Provider binding resolver over the existing
   AudioTaskDraft v1 and 06-B negotiation (four pure exports, 27 fixed codes, V01–V26 / 28 tests).
@@ -65,10 +73,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   **431 / 430 pass / 1 platform skip / 0 fail**, UI **24/24**. PR #24 merged at **M `ad25bc6`**
   (report 0013); no real provider, adapter, model, synthesis, scheduling or send capability.
   The older TTS-A bullets below are historical.
-- **main HEAD:** `df4e4b7ff9fc14d3659652fb1a98f76518eeafbd` (merge of PR #27); verify live with
-  `git rev-parse origin/main`. The earlier `a1bdcbb` was the PR #26 baseline, `b9336fb` the PR #25
-  baseline and `bf9cf66` the PR #15 baseline; the older `pre-pr3-8-integration` backup tag is
-  `b552ac0`.
+- **main HEAD:** `3182ca13db538e28c363c0eb8b35e55ca53c2964` (merge of PR #28); verify live with
+  `git rev-parse origin/main`. The earlier `df4e4b7` was the PR #27 baseline, `a1bdcbb` the PR #26
+  baseline, `b9336fb` the PR #25 baseline and `bf9cf66` the PR #15 baseline; the older
+  `pre-pr3-8-integration` backup tag is `b552ac0`.
 - **Current development branch:** `feature/tts-provider-neutral-contract` (TTS-A audit + pure
   provider contract/registry/v2 migration design + isolated tests), branched from `main` at
   `bf9cf66`. TTS-A is design/`OFFLINE`; no real provider, Host route, credential store or production
