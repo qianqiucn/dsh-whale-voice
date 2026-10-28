@@ -506,31 +506,33 @@ function readCatalog(state) {
 }
 
 function tempCleanupAllowed(state, tempPath, tempIdentity) {
-  if (!tempIdentity) return false
+  if (!tempIdentity) return 'not-owned'
   try {
     checkSandbox(state)
   } catch {
-    return false
+    return 'blocked'
   }
   try {
     const stat = fs.lstatSync(tempPath)
-    if (!stat.isFile() || stat.isSymbolicLink()) return false
-    if (typeof stat.nlink === 'number' && stat.nlink > 1) return false
-    if (!sameIdentity(stat, tempIdentity)) return false
+    if (!stat.isFile() || stat.isSymbolicLink()) return 'not-owned'
+    if (typeof stat.nlink === 'number' && stat.nlink > 1) return 'not-owned'
+    if (!sameIdentity(stat, tempIdentity)) return 'not-owned'
     const real = fs.realpathSync(tempPath)
-    if (!isInside(state.sandbox.root, real)) return false
-    return true
+    if (!isInside(state.sandbox.root, real)) return 'not-owned'
+    return 'ok'
   } catch {
-    return false
+    return 'blocked'
   }
 }
 
 function cleanupOwnTemp(state, tempPath, tempIdentity) {
-  if (!tempCleanupAllowed(state, tempPath, tempIdentity)) return
+  const status = tempCleanupAllowed(state, tempPath, tempIdentity)
+  if (status !== 'ok') return status
   try {
     fs.unlinkSync(tempPath)
+    return 'unlinked'
   } catch {
-    // best effort for this operation's own temporary file only
+    return 'failed'
   }
 }
 
@@ -581,6 +583,12 @@ function writeCatalog(state, snapshot, baseDigest) {
   let fd = null
   let tempIdentity = null
   let renameAttempted = false
+  let cleanupBlocked = false
+  const attemptCleanup = () => {
+    if (cleanupBlocked || tempIdentity === null) return
+    const status = cleanupOwnTemp(state, tempPath, tempIdentity)
+    if (status !== 'unlinked') cleanupBlocked = true
+  }
   try {
     try {
       fd = fs.openSync(tempPath, 'wx', 0o600)
@@ -605,8 +613,15 @@ function writeCatalog(state, snapshot, baseDigest) {
         offset += written
       }
       fs.fsyncSync(fd)
-      fs.closeSync(fd)
+      // The write lease is revoked before the only close attempt: a close that throws
+      // (after possibly releasing the descriptor) must never be retried in the catch/finally.
+      const closing = fd
       fd = null
+      try {
+        fs.closeSync(closing)
+      } catch {
+        raise('WRITE_REJECTED', '$')
+      }
     } catch (error) {
       if (fd !== null) {
         try {
@@ -617,8 +632,13 @@ function writeCatalog(state, snapshot, baseDigest) {
         fd = null
       }
       // A lost sandbox/marker takes precedence and forbids automatic cleanup.
-      checkSandbox(state)
-      cleanupOwnTemp(state, tempPath, tempIdentity)
+      try {
+        checkSandbox(state)
+      } catch (sandboxError) {
+        cleanupBlocked = true
+        throw sandboxError
+      }
+      attemptCleanup()
       if (error instanceof CatalogFailure) throw error
       raise('WRITE_REJECTED', '$')
     }
@@ -632,14 +652,20 @@ function writeCatalog(state, snapshot, baseDigest) {
         closeKey: 'WRITE_REJECTED',
       })
     } catch (error) {
-      checkSandbox(state)
-      cleanupOwnTemp(state, tempPath, tempIdentity)
+      try {
+        checkSandbox(state)
+      } catch (sandboxError) {
+        cleanupBlocked = true
+        throw sandboxError
+      }
+      attemptCleanup()
       if (error instanceof CatalogFailure && error.key === 'WRITE_REJECTED') throw error
       lockUnknown(state)
       raise('STORE_CHANGED', '$')
     }
     if (!sameIdentity(tempRead.identity, tempIdentity) || tempRead.bytes.length !== bytes.length || !tempRead.bytes.equals(bytes)) {
       // The path no longer names this operation's file: never commit or delete it.
+      cleanupBlocked = true
       lockUnknown(state)
       raise('STORE_CHANGED', '$')
     }
@@ -650,9 +676,9 @@ function writeCatalog(state, snapshot, baseDigest) {
     } catch (error) {
       try {
         checkSandbox(state)
-        cleanupOwnTemp(state, tempPath, tempIdentity)
+        attemptCleanup()
       } catch {
-        // the sandbox failure already classifies this attempt
+        cleanupBlocked = true
       }
       throw error
     }
@@ -694,7 +720,7 @@ function writeCatalog(state, snapshot, baseDigest) {
         // ignore close failure after a classified result
       }
     }
-    if (!renameAttempted) cleanupOwnTemp(state, tempPath, tempIdentity)
+    if (!renameAttempted) attemptCleanup()
   }
 }
 

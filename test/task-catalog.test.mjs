@@ -1280,6 +1280,122 @@ test('R02 a lost sandbox on the cleanup path reports SANDBOX_INVALID and unlinks
   })
 })
 
+test('S01 a write-fd close throws once and is never retried on a reused descriptor', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const before = fs.readFileSync(catalogPath(sandbox))
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    const realRename = fs.renameSync
+    const sentinel = path.join(sandbox.root, 'sentinel-reuse.bin')
+    let failFd = null
+    let sentinelFd = null
+    let closeCalls = 0
+    let renameCalls = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]).endsWith('.tmp') && args[1] === 'wx') failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd) {
+          closeCalls += 1
+          realClose(fd)
+          // Force descriptor reuse: any retry of the old fd would close this sentinel.
+          sentinelFd = realOpen(sentinel, 'w')
+          throw new Error('injected-write-close')
+        }
+        return realClose(fd)
+      }
+      fs.renameSync = (...args) => {
+        renameCalls += 1
+        return realRename(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-write-close-reuse' })),
+        'WRITE_REJECTED',
+        '$',
+      )
+      assert.equal(closeCalls, 1)
+      assert.equal(renameCalls, 0)
+      assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+      assert.notEqual(sentinelFd, null)
+      assert.doesNotThrow(() => fs.fstatSync(sentinelFd))
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+      fs.renameSync = realRename
+      if (sentinelFd !== null) realClose(sentinelFd)
+      fs.rmSync(sentinel, { force: true })
+    }
+  })
+})
+
+test('S02 a failed cleanup trust check is final for that write operation', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const before = fs.readFileSync(catalogPath(sandbox))
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    const realWrite = fs.writeSync
+    const realUnlink = fs.unlinkSync
+    const markerFds = new Set()
+    let armed = false
+    let markerCloses = 0
+    let unlinks = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]) === sandbox.marker) markerFds.add(fd)
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (markerFds.has(fd)) {
+          markerFds.delete(fd)
+          if (armed) {
+            markerCloses += 1
+            if (markerCloses === 2) {
+              realClose(fd)
+              throw new Error('injected-cleanup-marker-close')
+            }
+          }
+        }
+        return realClose(fd)
+      }
+      fs.writeSync = (...args) => {
+        realWrite(...args)
+        armed = true
+        throw new Error('injected-write')
+      }
+      fs.unlinkSync = (...args) => {
+        unlinks += 1
+        return realUnlink(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-cleanup-once' })),
+        'WRITE_REJECTED',
+        '$',
+      )
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+      fs.writeSync = realWrite
+      fs.unlinkSync = realUnlink
+    }
+    assert.equal(unlinks, 0)
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+    assert.ok(fs.readdirSync(sandbox.root).filter((name) => name.endsWith('.tmp')).length >= 1)
+  })
+})
+
+
 test('R03 the write-path current and pre re-reads fully validate before comparing digests', async () => {
   const MAX = 128 * 1024
   const legalExtra = () => {
@@ -1297,13 +1413,13 @@ test('R03 the write-path current and pre re-reads fully validate before comparin
   }
 
   const mutations = [
-    { name: 'bad-json', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), '{bad json'), code: 'STORE_INVALID', verify: (sandbox) => assert.equal(fs.readFileSync(catalogPath(sandbox), 'utf8'), '{bad json') },
-    { name: 'bad-utf8', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), Buffer.from([0xff, 0xfe])), code: 'STORE_INVALID' },
-    { name: 'bad-owner', apply: (sandbox) => writeSnapshot(sandbox, badOwner()), code: 'STORE_INVALID' },
-    { name: 'bad-hash', apply: (sandbox) => writeSnapshot(sandbox, badHash()), code: 'STORE_INVALID' },
-    { name: 'oversized', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(MAX + 1, 0x20)), code: 'RESOURCE_LIMIT' },
-    { name: 'deleted', apply: (sandbox) => fs.rmSync(catalogPath(sandbox), { force: true }), code: 'STORE_CHANGED', verify: (sandbox) => assert.equal(fs.existsSync(catalogPath(sandbox)), false) },
-    { name: 'legal-new-snapshot', apply: (sandbox) => writeSnapshot(sandbox, legalExtra()), code: 'STORE_CHANGED' },
+    { name: 'bad-json', code: 'STORE_INVALID', apply: (sandbox, ctx) => { fs.writeFileSync(catalogPath(sandbox), '{bad json'); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
+    { name: 'bad-utf8', code: 'STORE_INVALID', apply: (sandbox, ctx) => { fs.writeFileSync(catalogPath(sandbox), Buffer.from([0xff, 0xfe])); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
+    { name: 'bad-owner', code: 'STORE_INVALID', apply: (sandbox, ctx) => { writeSnapshot(sandbox, badOwner()); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
+    { name: 'bad-hash', code: 'STORE_INVALID', apply: (sandbox, ctx) => { writeSnapshot(sandbox, badHash()); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
+    { name: 'oversized', code: 'RESOURCE_LIMIT', apply: (sandbox, ctx) => { fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(MAX + 1, 0x20)); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
+    { name: 'deleted', code: 'STORE_CHANGED', apply: (sandbox, ctx) => { fs.rmSync(catalogPath(sandbox), { force: true }); ctx.bytes = null } },
+    { name: 'legal-new-snapshot', code: 'STORE_CHANGED', apply: (sandbox, ctx) => { writeSnapshot(sandbox, legalExtra()); ctx.bytes = fs.readFileSync(catalogPath(sandbox)) } },
   ]
 
   for (const stage of ['current', 'pre']) {
@@ -1318,6 +1434,7 @@ test('R03 the write-path current and pre re-reads fully validate before comparin
         let catalogLstats = 0
         let mutated = false
         let renameCalls = 0
+        const ctx = {}
         try {
           fs.lstatSync = (...args) => {
             const file = String(args[0])
@@ -1326,7 +1443,7 @@ test('R03 the write-path current and pre re-reads fully validate before comparin
               const targetIndex = stage === 'current' ? 4 : 6
               if (!mutated && catalogLstats === targetIndex) {
                 mutated = true
-                mutation.apply(sandbox)
+                mutation.apply(sandbox, ctx)
               }
             }
             return realLstat(...args)
@@ -1342,7 +1459,11 @@ test('R03 the write-path current and pre re-reads fully validate before comparin
           fs.renameSync = realRename
         }
         assert.equal(renameCalls, 0, stage + '/' + mutation.name)
-        if (mutation.verify) mutation.verify(sandbox)
+        if (ctx.bytes === null) {
+          assert.equal(fs.existsSync(catalogPath(sandbox)), false, stage + '/' + mutation.name)
+        } else {
+          assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(ctx.bytes), stage + '/' + mutation.name)
+        }
         expectError(
           await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-' + mutation.name })),
           'CATALOG_UNKNOWN',

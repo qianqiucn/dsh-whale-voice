@@ -37,13 +37,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   isolated persistent catalog over the trusted temporary sandbox that stores only initial
   `CREATED`/`BLOCKED_RIGHTS` records, issues owner `task:fixture-<32hex>` ids and prevents duplicate
   creation by `(scopeId, idempotencyKey)` (three exports, 15 fixed codes, D01–D20 + F01–F05 +
-  R01–R03 / 35 tests, 34 pass + 1 platform skip). One fixed bounded file, per-capability queue,
-  bounded fd reads, full short-write completion, atomic temp+fsync+rename+read-back, post-commit
-  identity checks, close-failure phase propagation, temporary-file ownership behind a full trust
-  gate, corruption-before-change priority and `WRITE_UNKNOWN` locking; the 035 F01–F05 and 036
-  R01–R03 storage-boundary repairs are included, pending re-review. No execution, save, delivery
-  or cross-process recovery. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. Full suite
-  **600 / 598 pass / 2 platform skips / 0 fail**, UI **24/24**.
+  R01–R03 + S01–S03 / 37 tests, 36 pass + 1 platform skip). One fixed bounded file, per-capability
+  queue, bounded fd reads, full short-write completion, atomic temp+fsync+rename+read-back,
+  post-commit identity checks, close-failure phase propagation, one close per open lease,
+  irreversible cleanup eligibility, temporary-file ownership behind a full trust gate,
+  corruption-before-change priority and `WRITE_UNKNOWN` locking; the 035–037 storage-boundary
+  repairs are included, pending re-review. No execution, save, delivery or cross-process
+  recovery. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. Full suite **602 / 600 pass / 2 platform
+  skips / 0 fail**, UI **24/24**.
 - **Plan 08-C branch:** `feature/plan08c-task-fixture-runner` adds `core/audio/task-fixture-runner.mjs`
   — one synchronous composition of the 08-B source check, the 06-D pure readiness gate, at most one
   existing RVC Fixture dispatch and the existing AudioTask v1 create/transition/validate/project
