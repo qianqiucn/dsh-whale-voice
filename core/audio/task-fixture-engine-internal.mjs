@@ -272,6 +272,7 @@ function applyAction(record, action) {
 function validRecordSuccessShape(value) {
   return (
     isPlainObject(value) &&
+    value.schemaVersion === TASK_FIXTURE_SCHEMA_VERSION &&
     isPlainObject(value.source) &&
     typeof value.source.kind === 'string' &&
     typeof value.source.ref === 'string' &&
@@ -291,9 +292,15 @@ function validRecordSuccessShape(value) {
 function validDraftSuccessShape(value) {
   return (
     isPlainObject(value) &&
+    value.schemaVersion === TASK_FIXTURE_SCHEMA_VERSION &&
     isPlainObject(value.source) &&
     typeof value.source.kind === 'string' &&
     typeof value.source.ref === 'string' &&
+    typeof value.taskId === 'string' &&
+    typeof value.feature === 'string' &&
+    typeof value.taskType === 'string' &&
+    typeof value.voiceProfileId === 'string' &&
+    typeof value.deliveryRequested === 'boolean' &&
     isPlainObject(value.rights) &&
     typeof value.rights.state === 'string'
   )
