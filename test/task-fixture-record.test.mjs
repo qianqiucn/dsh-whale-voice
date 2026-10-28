@@ -628,6 +628,53 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
   }
 })
 
+test('F01 legal collision: a natural Fake output equal to the synchronized task source ref hits the dedicated gate', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const base = await makeExisting(example, 'key:fixture-legal-collision-base')
+  let coll = null
+  try {
+    const baseOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: base.record, input: base.input })
+    assert.equal(baseOut.result.ok, true)
+    const outputRef = baseOut.result.value.execution.dispatch.result.artifactRef
+    assert.notEqual(outputRef, base.record.source.ref)
+
+    coll = await makeExisting(example, 'key:fixture-legal-collision', (draft) => {
+      draft.source.ref = outputRef
+    })
+    const collRecord = coll.record
+    const collInput = clone(coll.input)
+    collInput.sourceInput.voiceBinding.taskDraft.source.ref = outputRef
+    collInput.sourceInput.voiceBinding.negotiation.request.sourceAudioRef = outputRef
+    collInput.sourceInput.artifactLibrary.artifacts[0].artifactRef = outputRef
+
+    const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: collRecord, input: collInput })
+    assert.equal(out.result.ok, false)
+    assert.equal(out.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
+    assert.equal(out.record, null)
+
+    const frame = { scopeId: SCOPE, record: collRecord, input: collInput }
+    const worker = runWorker('normal', frame, new URL('../core/audio/', import.meta.url).href)
+    assert.equal(worker.result.ok, false)
+    assert.equal(worker.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
+    assert.equal(worker.record, null)
+    assert.equal(worker.counts.source, 1)
+    assert.equal(worker.counts.gate, 1)
+    assert.equal(worker.counts.dispatch, 1)
+    assert.equal(worker.counts.create, 0)
+    assert.equal(worker.counts.transition, 0)
+
+    const unsynced = clone(collInput)
+    unsynced.sourceInput.voiceBinding.negotiation.request.sourceAudioRef = base.record.source.ref
+    expectBlocked(
+      runExistingFixtureTaskOnce({ scopeId: SCOPE, record: collRecord, input: unsynced }).result,
+      'TASK_FIXTURE_SOURCE_BLOCKED',
+    )
+  } finally {
+    removeConfigSandbox(base.sandbox)
+    if (coll !== null) removeConfigSandbox(coll.sandbox)
+  }
+})
+
 test('B14 repeating the same CREATED snapshot can simulate again; no claimed state is invented', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b14')

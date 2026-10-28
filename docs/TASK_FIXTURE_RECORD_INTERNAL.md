@@ -97,6 +97,7 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 - 已知例外：特定 `ok:true, value=42` 在旧 M 会落到 TRANSITION，本步按 040 §8 明确收紧为 DEPENDENCY；不宣称所有恶意依赖返回逐值等于旧 M。
 - 坏成功协议：`ok:true` 但 `value` 为空对象、缺 `source`、`source=42` 等残缺形状，在读取内部字段前判为 `DEPENDENCY_FAILURE/$`；合法 `ok:false` 仍按阶段返回输入/来源/归约拒绝。成功根字段 schemaVersion/taskId/feature/taskType/voiceProfileId/deliveryRequested/source/rights 缺失或类型错误同样按 DEPENDENCY 处理。
 - 自动测试含 test-only `vm.SourceTextModule` worker：正常 existing 输出与 native 深等且 source1/gate1/dispatch1/create0；legacy create1；阻断/UNKNOWN 零 dispatch/create/transition；validator throw、缺 schemaVersion/taskId/deliveryRequested 与输出引用碰撞均命中 DEPENDENCY/INVALID_TASK_RESULT。其余 T03 分支见报告。
+- 合法碰撞：catalog record source、taskDraft source、negotiation request.sourceAudioRef 与 artifactLibrary ref 同步为自然 Fake 输出引用时，source/validator 通过并到达专用 `artifactRef === source.ref` 门禁，返回 `INVALID_TASK_RESULT`；不同步 ref 仍是 SOURCE_BLOCKED 对照。
 
 ## 9. 未来中文流程与三恢复（尚未实现 GUI）
 
