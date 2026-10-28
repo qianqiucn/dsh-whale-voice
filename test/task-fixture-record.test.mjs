@@ -509,6 +509,18 @@ const validateDraft = (...args) => {
 const dispatch = (...args) => {
   counts.dispatch += 1
   const result = deps.ready.dispatchReadyRvcFakeOnce(...args)
+  if (mode === 'result-missing-field' && faultHit === 0) {
+    faultHit += 1
+    const copy = structuredClone(result)
+    delete copy.value.dispatch.result.durationMs
+    return copy
+  }
+  if (mode === 'result-type-bad' && faultHit === 0) {
+    faultHit += 1
+    const copy = structuredClone(result)
+    copy.value.dispatch.result.status = 42
+    return copy
+  }
   if (mode === 'identity-bad' && faultHit === 0) {
     faultHit += 1
     const copy = structuredClone(result)
@@ -637,6 +649,16 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
     assert.equal(identity.result.ok, false)
     assert.equal(identity.counts.dispatch, 1)
     assert.equal(identity.counts.transition, 0)
+
+    for (const mode of ['result-missing-field', 'result-type-bad']) {
+      const bad = runWorker(mode, frame, base)
+      assert.equal(bad.faultHit, 1, mode)
+      assert.equal(bad.record, null, mode)
+      assert.equal(bad.result.ok, false, mode)
+      assert.equal(bad.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT', mode)
+      assert.equal(bad.counts.dispatch, 1, mode)
+      assert.equal(bad.counts.transition, 0, mode)
+    }
 
     const saved = advance(ctx.record, [
       { type: 'BEGIN_PROCESS' },
@@ -772,6 +794,27 @@ test('F03 remaining: cross-scope artifact, deep input and deep owner partitions'
     const blockedContext = clone(ctx.input)
     blockedContext.context = { requestId: 'request:fixture-1' }
     expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: blockedContext }).result, 'INVALID_CONTEXT', 'context')
+
+    const gpu = clone(ctx.input)
+    gpu.readiness.instances[0].resources.profile = 'GPU_FIXTURE'
+    gpu.readiness.instances[0].resources.gpu = 'UNAVAILABLE'
+    expectBlocked(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: gpu }).result, 'TASK_FIXTURE_READINESS_BLOCKED')
+
+    const linked = clone(ctx.input)
+    linked.sourceInput.voiceBinding.taskDraft.feature = 'voice-bubbles'
+    linked.sourceInput.voiceBinding.taskDraft.taskType = 'TTS'
+    linked.sourceInput.voiceBinding.taskDraft.source.kind = 'TEXT_REF'
+    linked.sourceInput.voiceBinding.taskDraft.source.ref = 'artifact:fixture-text-1'
+    const linkedOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: linked })
+    assert.equal(linkedOut.result.ok, false)
+    assert.equal(linkedOut.record, null)
+
+    const okFrame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+    const okOut = runExistingFixtureTaskOnce(okFrame)
+    assert.equal(okOut.result.ok, true)
+    assert.notEqual(okOut.result.value.sourceCheck, ctx.input.sourceInput)
+    assert.notEqual(okOut.result.value.readiness, ctx.input.readiness)
+    assert.notEqual(okOut.result.value.task, ctx.record)
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
