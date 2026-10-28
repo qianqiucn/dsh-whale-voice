@@ -56,7 +56,13 @@ completion, atomic temp+fsync+rename+read-back, post-commit identity checks, clo
 propagation, one close per open lease, cleanup trust-failure classification, one-shot cleanup
 eligibility and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`
 (035–038 storage-boundary repairs included, merged via PR #30 at **M `2090943`**, report 0032) and has no
-execution, delivery or cross-process recovery. Plan 08-D-B
+execution, delivery or cross-process recovery. Plan 08-D-C
+adds a persistent owner (`core/audio/task-owner.mjs`) over one private extracted shared store
+(`core/audio/fixture-task-store-internal.mjs`): one real catalog birth task is claimed atomically,
+the original existing-record engine runs at most once, its immutable identity is revalidated and a
+`FINAL` record with `SIMULATED`/`NO_EXECUTION` is saved; repeats only read and a confirmed claim
+without a trusted FINAL is reported as owner `UNKNOWN`. D-C tests 9; full suite **647 / 645 pass / 2 platform skips / 0 fail**;
+`OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR not merged. Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
 initial record with original TaskId/scope/`observedAt` without a second create, while the full record

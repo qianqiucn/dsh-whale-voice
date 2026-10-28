@@ -224,3 +224,13 @@ removeConfigSandbox(sandbox)
 行为测试位于 `test/task-catalog.test.mjs`，使用原 `createConfigSandbox()` 创建真实 OS 临时目录，覆盖 D01–D20 + F01–F05 + R01–R03 + S01–S03 + C03a–C03h：创建/幂等/冲突/scope 隔离、同 cap 并发、重开与伪造 cap、落盘 schema 与 owner ID、32 条与 128KiB 边界、ID 碰撞、路径/链接/标记拒绝、外改锁闭、写入顺序与 WRITE_REJECTED/WRITE_UNKNOWN 故障注入、有界读/标记增长、提交后与读事务末身份失败、清理所有权、短写续写、损坏优先、close 失败按阶段分类、写 fd 关闭至多一次且不重关复用 fd、清理信任失败分类与一次性检查、current/pre 全量重验及 14 类实际磁盘断言、getter/Proxy/复制预算、fresh/frozen、文档 JSON 原样执行等。测试结束只删除自己创建的已验证 sandbox。
 
 故障注入只在测试进程内临时包装本任务使用的真实 `fs`/`crypto` 函数并在 finally 恢复，不修改公开 API、环境开关或生产目录；平台不支持的链接测试按实情 skip。实际执行计数与结果记录在交付报告与 CI 中，本文档不预填未经执行的通过数。
+
+## 14. 与 08-D-C owner 的关系（新增）
+
+自 Plan 08-D-C 起，本目录仍是**唯一 TaskId 签发者与出生登记**：`audio-task-catalog-v1.json`、schemaVersion 1、revision=entries.length、只存 `CREATED`/`BLOCKED_RIGHTS`、原三个公开导出/15 个错误码/安全投影与全部原故障分类都不变，也不向 v1 写入 claim 或最终 record。
+
+- 已验的文件事务 machinery（有界 fd 读、严格 UTF-8/JSON/Schema、信任/路径/身份检查、短写续写、fsync/关闭、临时回读、rename 后身份确认、一次性清理资格、共享未知锁）已提取到私有共享模块 `core/audio/fixture-task-store-internal.mjs`，本目录与 owner 共用**同一套**实现，不再复制第二份；每个固定文件分别记录已确认摘要，队列与锁按 capability 共享。
+- 新 owner 通过该私有共享模块读取本目录的出生条目（`scopeId`+`taskId`），作为不可变的创建证据；不迁移/复制旧目录、不双写 current record、不重新 reserve 或换 ID。
+- 本目录的公开行为、错误码、预算与平台 skip 断言保持不变；对应回归见 `test/task-catalog.test.mjs`（45 项，原平台链接 skip 如实保留）。
+
+运行与持久化语义见 [TASK_OWNER_OFFLINE.md](TASK_OWNER_OFFLINE.md)。

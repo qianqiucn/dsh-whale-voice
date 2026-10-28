@@ -33,6 +33,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## 2. Git baseline
 
+- **Plan 08-D-C branch:** `feature/plan08d-task-owner` adds `core/audio/fixture-task-store-internal.mjs` (one private shared store: catalog file + owner file, per-capability serial queue and shared unknown lock, per-file confirmed digests) and `core/audio/task-owner.mjs` (`TASK_OWNER_SCHEMA_VERSION`, frozen `TASK_OWNER_ERRORS` with 14 codes, `openFixtureTaskOwner({sandbox})` -> frozen `{run, get}`). One accepted attempt per catalog birth task: atomic `CLAIMED` snapshot of the real birth record, one existing-record engine call, validated immutable identity, `FINAL` snapshot with `SIMULATED`/`NO_EXECUTION` completion and revision weights 1/2; repeats/reopen only read, confirmed-claim tombstones report owner `UNKNOWN`, corrupt/externally changed stores are rejected without repair. D-C tests 9; full suite **647 / 645 pass / 2 platform skips / 0 fail**, UI **24/24** (same UI tree; CI re-runs it). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR open, not merged.
 - **Plan 08-D-B branch:** `feature/plan08d-record-reuse` adds the single internal engine
   `core/audio/task-fixture-engine-internal.mjs` (four exports) and turns `task-fixture-runner.mjs`
   into a compatibility facade. `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a
