@@ -49,12 +49,13 @@ adds one synchronous composition (`core/audio/task-fixture-runner.mjs`, C01–C2
 source check to the 06-D gate, at most one RVC Fixture dispatch and the existing AudioTask actions;
 success ends at `ARTIFACT_READY` only, with no save/delivery/send. It is **`OFFLINE`** /
 `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #29 at **M `b9f663c`** (report 0026). Plan 08-D-A
-adds an isolated persistent task catalog (`core/audio/task-catalog.mjs`, D01–D20 + F01–F05 / 28
-tests) that persists only initial `CREATED`/`BLOCKED_RIGHTS` records, issues owner ids and
-deduplicates by scope/key with bounded fd reads, full short-write completion, atomic
-temp+fsync+rename+read-back, post-commit identity checks and `WRITE_UNKNOWN` locking; it is
-**`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED` (035 storage-boundary repairs included, pending
-re-review) and has no execution, delivery or cross-process recovery. None
+adds an isolated persistent task catalog (`core/audio/task-catalog.mjs`, D01–D20 + F01–F05 +
+R01–R03 / 35 tests) that persists only initial `CREATED`/`BLOCKED_RIGHTS` records, issues owner ids
+and deduplicates by scope/key with bounded fd reads, full short-write completion, atomic
+temp+fsync+rename+read-back, post-commit identity checks, close-failure phase propagation, cleanup
+trust gate and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`
+(035/036 storage-boundary repairs included, pending re-review) and has no execution, delivery or
+cross-process recovery. None
 delivers real adapters, real byte/codec/hash verification,
 save/delivery or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require

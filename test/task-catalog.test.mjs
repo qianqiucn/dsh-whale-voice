@@ -1037,6 +1037,323 @@ test('F05 corruption after a confirmed snapshot is STORE_INVALID before STORE_CH
 })
 
 // ---------------------------------------------------------------------------------------------
+// R01–R03: post-close propagation, cleanup trust gate and full write-path re-validation.
+// ---------------------------------------------------------------------------------------------
+
+test('R01a a normal catalog read whose close throws is SANDBOX_INVALID, never FOUND', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const created = await opened.value.reserve(reserveInput())
+    assert.equal(created.ok, true)
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    let failFd = null
+    let closeCalls = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]).endsWith(CATALOG_FILE)) failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd) {
+          closeCalls += 1
+          realClose(fd)
+          throw new Error('injected-close-after-close')
+        }
+        return realClose(fd)
+      }
+      const got = await opened.value.get(getInput({ taskId: created.value.task.taskId }))
+      expectError(got, 'SANDBOX_INVALID', '$')
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+    }
+    assert.equal(closeCalls, 1)
+  })
+})
+
+test('R01b a marker read whose close throws is SANDBOX_INVALID', async () => {
+  await withSandbox(async (sandbox) => {
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    let failFd = null
+    let closeCalls = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]) === sandbox.marker) failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd) {
+          closeCalls += 1
+          realClose(fd)
+          throw new Error('injected-marker-close')
+        }
+        return realClose(fd)
+      }
+      expectError(await openFixtureTaskCatalog({ sandbox }), 'SANDBOX_INVALID', '$')
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+    }
+    assert.equal(closeCalls, 1)
+  })
+})
+
+test('R01c a temporary-file verification close failure is WRITE_REJECTED with rename=0', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const before = fs.readFileSync(catalogPath(sandbox))
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    const realRename = fs.renameSync
+    let failFd = null
+    let closeCalls = 0
+    let thrown = false
+    let renameCalls = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]).endsWith('.tmp') && args[1] === 'r') failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd && !thrown) {
+          thrown = true
+          closeCalls += 1
+          realClose(fd)
+          throw new Error('injected-temp-close')
+        }
+        return realClose(fd)
+      }
+      fs.renameSync = (...args) => {
+        renameCalls += 1
+        return realRename(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-temp-close' })),
+        'WRITE_REJECTED',
+        '$',
+      )
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+      fs.renameSync = realRename
+    }
+    assert.equal(closeCalls, 1)
+    assert.equal(renameCalls, 0)
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+    // WRITE_REJECTED does not lock the capability.
+    const retry = await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-temp-close' }))
+    assert.equal(retry.ok, true)
+    assert.equal(retry.value.outcome, 'CREATED')
+  })
+})
+
+test('R01d a post-rename read-back close failure is WRITE_UNKNOWN and locks the capability', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    const realRename = fs.renameSync
+    let renamed = false
+    let failFd = null
+    let closeCalls = 0
+    let renameCalls = 0
+    try {
+      fs.renameSync = (...args) => {
+        const result = realRename(...args)
+        renamed = true
+        renameCalls += 1
+        return result
+      }
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (renamed && String(args[0]).endsWith(CATALOG_FILE)) failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd) {
+          closeCalls += 1
+          realClose(fd)
+          throw new Error('injected-post-rename-close')
+        }
+        return realClose(fd)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-post-close' })),
+        'WRITE_UNKNOWN',
+        '$',
+      )
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-post-close-2' })),
+        'CATALOG_UNKNOWN',
+        '$',
+      )
+      expectError(await opened.value.get(getInput({ taskId: first.value.task.taskId })), 'CATALOG_UNKNOWN', '$')
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+      fs.renameSync = realRename
+    }
+    assert.equal(closeCalls, 1)
+    assert.equal(renameCalls, 1)
+    expectError(await openFixtureTaskCatalog({ sandbox }), 'CATALOG_UNKNOWN', '$')
+  })
+})
+
+test('R01e a direct close throw is not retried; the test releases the captured fd only', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const created = await opened.value.reserve(reserveInput())
+    assert.equal(created.ok, true)
+
+    const realOpen = fs.openSync
+    const realClose = fs.closeSync
+    let failFd = null
+    let closeCalls = 0
+    try {
+      fs.openSync = (...args) => {
+        const fd = realOpen(...args)
+        if (String(args[0]).endsWith(CATALOG_FILE)) failFd = fd
+        return fd
+      }
+      fs.closeSync = (fd) => {
+        if (fd === failFd) {
+          closeCalls += 1
+          throw new Error('injected-close-direct')
+        }
+        return realClose(fd)
+      }
+      expectError(await opened.value.get(getInput({ taskId: created.value.task.taskId })), 'SANDBOX_INVALID', '$')
+    } finally {
+      fs.openSync = realOpen
+      fs.closeSync = realClose
+    }
+    assert.equal(closeCalls, 1)
+    if (failFd !== null) realClose(failFd) // test-side release of the still-open descriptor
+  })
+})
+
+test('R02 a lost sandbox on the cleanup path reports SANDBOX_INVALID and unlinks nothing', async () => {
+  await withSandbox(async (sandbox) => {
+    const opened = await openFixtureTaskCatalog({ sandbox })
+    const first = await opened.value.reserve(reserveInput())
+    assert.equal(first.ok, true)
+    const before = fs.readFileSync(catalogPath(sandbox))
+
+    const realWrite = fs.writeSync
+    const realUnlink = fs.unlinkSync
+    let unlinks = 0
+    try {
+      fs.writeSync = (...args) => {
+        realWrite(...args)
+        fs.writeFileSync(sandbox.marker, JSON.stringify({ kind: 'whale-voice-isolated-sandbox', id: 'changed' }))
+        throw new Error('injected-write-with-lost-marker')
+      }
+      fs.unlinkSync = (...args) => {
+        unlinks += 1
+        return realUnlink(...args)
+      }
+      expectError(
+        await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-cleanup-trust' })),
+        'SANDBOX_INVALID',
+        '$',
+      )
+    } finally {
+      fs.writeSync = realWrite
+      fs.unlinkSync = realUnlink
+    }
+    assert.equal(unlinks, 0)
+    assert.ok(fs.readFileSync(catalogPath(sandbox)).equals(before))
+    const tempLeft = fs.readdirSync(sandbox.root).filter((name) => name.endsWith('.tmp'))
+    assert.ok(tempLeft.length >= 1)
+  })
+})
+
+test('R03 the write-path current and pre re-reads fully validate before comparing digests', async () => {
+  const MAX = 128 * 1024
+  const legalExtra = () => {
+    const record = makeRecord(ttsDraft({ source: { kind: 'TEXT_REF', ref: 'artifact:fixture-text-9' } }), 'task:fixture-' + 'b'.repeat(32))
+    return snapshotOf([
+      makeEntry(makeRecord(ttsDraft(), 'task:fixture-' + 'a'.repeat(32)), SCOPE, KEY),
+      makeEntry(record, SCOPE, 'key:fixture-legal-extra'),
+    ])
+  }
+  const badOwner = () => snapshotOf([makeEntry(makeRecord(ttsDraft(), 'task:foreign'))])
+  const badHash = () => {
+    const entry = makeEntry(makeRecord(ttsDraft(), 'task:fixture-' + 'c'.repeat(32)))
+    entry.identityHash = 'f'.repeat(64)
+    return snapshotOf([entry])
+  }
+
+  const mutations = [
+    { name: 'bad-json', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), '{bad json'), code: 'STORE_INVALID', verify: (sandbox) => assert.equal(fs.readFileSync(catalogPath(sandbox), 'utf8'), '{bad json') },
+    { name: 'bad-utf8', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), Buffer.from([0xff, 0xfe])), code: 'STORE_INVALID' },
+    { name: 'bad-owner', apply: (sandbox) => writeSnapshot(sandbox, badOwner()), code: 'STORE_INVALID' },
+    { name: 'bad-hash', apply: (sandbox) => writeSnapshot(sandbox, badHash()), code: 'STORE_INVALID' },
+    { name: 'oversized', apply: (sandbox) => fs.writeFileSync(catalogPath(sandbox), Buffer.alloc(MAX + 1, 0x20)), code: 'RESOURCE_LIMIT' },
+    { name: 'deleted', apply: (sandbox) => fs.rmSync(catalogPath(sandbox), { force: true }), code: 'STORE_CHANGED', verify: (sandbox) => assert.equal(fs.existsSync(catalogPath(sandbox)), false) },
+    { name: 'legal-new-snapshot', apply: (sandbox) => writeSnapshot(sandbox, legalExtra()), code: 'STORE_CHANGED' },
+  ]
+
+  for (const stage of ['current', 'pre']) {
+    for (const mutation of mutations) {
+      await withSandbox(async (sandbox) => {
+        const opened = await openFixtureTaskCatalog({ sandbox })
+        const base = await opened.value.reserve(reserveInput())
+        assert.equal(base.ok, true)
+
+        const realLstat = fs.lstatSync
+        const realRename = fs.renameSync
+        let catalogLstats = 0
+        let mutated = false
+        let renameCalls = 0
+        try {
+          fs.lstatSync = (...args) => {
+            const file = String(args[0])
+            if (file.endsWith(CATALOG_FILE)) {
+              catalogLstats += 1
+              const targetIndex = stage === 'current' ? 4 : 6
+              if (!mutated && catalogLstats === targetIndex) {
+                mutated = true
+                mutation.apply(sandbox)
+              }
+            }
+            return realLstat(...args)
+          }
+          fs.renameSync = (...args) => {
+            renameCalls += 1
+            return realRename(...args)
+          }
+          const result = await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-stage-' + mutation.name }))
+          expectError(result, mutation.code, '$')
+        } finally {
+          fs.lstatSync = realLstat
+          fs.renameSync = realRename
+        }
+        assert.equal(renameCalls, 0, stage + '/' + mutation.name)
+        if (mutation.verify) mutation.verify(sandbox)
+        expectError(
+          await opened.value.reserve(reserveInput({ idempotencyKey: 'key:fixture-after-' + mutation.name })),
+          'CATALOG_UNKNOWN',
+          '$',
+        )
+      })
+    }
+  }
+})
+
+// ---------------------------------------------------------------------------------------------
 // D14–D18: hostile input, values, static surface and documentation.
 // ---------------------------------------------------------------------------------------------
 

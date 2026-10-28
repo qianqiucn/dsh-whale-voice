@@ -93,10 +93,11 @@ SHA256 仅用于规范身份比较/检测意外变化，**不是签名或防恶�
 - 每个读写事务核 `isTrustedSandbox`、root/marker `lstat`/`realpath`、root 仍在原 `tempRoot`、marker 常规文件且 `kind/id` 匹配、root dev/ino 可用时一致；
 - 正式/临时目标必须为 root 内常规文件，无 symlink/junction/目录/多硬链接（`nlink>1`）；禁止跟随目标链接；
 - 所有读取走**真实 fd 有界读**：打开后 `fstat` 核对身份/长度，按固定缓冲分段 `readSync`，正式库最多实际读 **128 KiB+1**、marker 最多 **4 KiB+1**；禁止 `readFileSync` 或无界读取后再限长；严格 UTF-8 解码后 JSON 解析；
+- 每个 fd 的 `closeSync` 失败都向调用方传播，不吞掉：rename 前普通库/marker 读取关闭失败 → `SANDBOX_INVALID`（不得 FOUND/EXISTING/CREATED）；临时完整性验证关闭失败 → `WRITE_REJECTED`（rename=0）；rename 已尝试后任何关闭失败 → `WRITE_UNKNOWN`。每个 fd 至多关闭一次，不在异常后盲重关；
 - 读事务结束（open/get/EXISTING）再核一次 root/marker 与目标身份；失败按 UNKNOWN 锁闭，不返回正常结果；
 - 权限/不存在/链接/大小错误不把实际路径带出。
 
-同 cap 首次合法读取建立原始文件摘要（或不存在标志）。后续内容**先做编码/JSON/完整 Schema/record/身份 hash 验证**：坏结构/编码/record 固定 `STORE_INVALID`、预算超限 `RESOURCE_LIMIT`；只有合法快照与已确认摘要不同才 `STORE_CHANGED`。后两者都会共享停止写入，不默默采用外部覆盖；提交前重读比较；同 cap 自己确认成功后才更新共享摘要。磁盘坏结构不自动修复或覆盖。
+同 cap 首次合法读取建立原始文件摘要（或不存在标志）。初读、write 入口 current、rename 前 pre、提交后回读**复用同一完整有界/严格 UTF-8/JSON/Schema/旧 record/ownerID/identityHash/去重/预算验证路径**：坏结构/编码/record/hash 优先 `STORE_INVALID`、超限 `RESOURCE_LIMIT`；只有合法快照与已确认/本操作 baseDigest 不同才 `STORE_CHANGED`。current/pre 遇到外改、损坏或超限共享停写，当次保留正确错误，后续 `CATALOG_UNKNOWN`；不更新摘要、不采用外部快照、不自动修库/写回/rename。磁盘坏结构不自动修复或覆盖。
 
 这里只保证本模块同 cap/同进程协作；**未实现跨进程锁/CAS/恢复**，不宣称抵抗同权限恶意进程的全部 TOCTOU 或 Windows 断电原子性。
 
@@ -104,7 +105,7 @@ SHA256 仅用于规范身份比较/检测意外变化，**不是签名或防恶�
 
 只有真正新键且校验全部通过才写。形成旧 entries + 一条的完整新快照；写前确认条目/字节预算。root 内独占 `wx` 创建随机模块生成的临时文件（`audio-task-catalog-v1.<32hex>.tmp`），**按 `fs.writeSync` 实际返回数循环续写直到严格写完**（正数短写续写；0/负数/非整数/超余量/抛错在 rename 前拒绝）；随后 fsync、关闭，再以有界 fd 读核对临时文件身份与完整字节，才进入 rename。rename 后再次核 root/marker、目标身份与完整回读，全部一致才返回 `CREATED`/更新共享确认摘要。不把 rename 成功、mtime、stat 或 JSON 能 parse 当确认写入。
 
-临时文件清理只针对**本操作 `wx` 成功创建并取得 fd 身份**的同一常规文件：清理前重新核 root/身份/dev-ino/nlink/root 内；`EEXIST` 先存文件、被外部替换的文件都不得删除或提交；身份不可确认时保留并停止。未创建成功/未取得身份一律不 unlink。
+临时文件清理只针对**本操作 `wx` 成功创建并取得 fd 身份**的同一常规文件：清理前**先通过完整 trusted cap/root/marker 受限读取检查**，再核 root/身份/dev-ino/nlink/root 内；`EEXIST` 先存文件、被外部替换的文件都不得删除或提交；身份不可确认时保留并停止。root/marker 失效或清理安全复核/close 失败时 **unlink=0**，保留自有临时文件，不修复 marker、不扫目录、不删除已有/替换文件；未创建成功/未取得身份一律不 unlink。
 
 未尝试 rename 时的安全分类：root/marker 失效 `SANDBOX_INVALID`、外改 `STORE_CHANGED`（锁闭）、坏库 `STORE_INVALID`、超限 `RESOURCE_LIMIT`；仅本操作临时文件创建/写/fsync/close 等普通 I/O 失败 → `WRITE_REJECTED`（不锁闭，可正常重试）。
 
@@ -220,6 +221,6 @@ removeConfigSandbox(sandbox)
 
 ## 13. 测试与证据
 
-行为测试位于 `test/task-catalog.test.mjs`，使用原 `createConfigSandbox()` 创建真实 OS 临时目录，覆盖 D01–D20：创建/幂等/冲突/scope 隔离、同 cap 并发、重开与伪造 cap、落盘 schema 与 owner ID、32 条与 128KiB 边界、ID 碰撞、路径/链接/标记拒绝、外改锁闭、写入顺序与 WRITE_REJECTED/WRITE_UNKNOWN 故障注入、getter/Proxy/复制预算、fresh/frozen、文档 JSON 原样执行等。测试结束只删除自己创建的已验证 sandbox。
+行为测试位于 `test/task-catalog.test.mjs`，使用原 `createConfigSandbox()` 创建真实 OS 临时目录，覆盖 D01–D20 + F01–F05 + R01–R03：创建/幂等/冲突/scope 隔离、同 cap 并发、重开与伪造 cap、落盘 schema 与 owner ID、32 条与 128KiB 边界、ID 碰撞、路径/链接/标记拒绝、外改锁闭、写入顺序与 WRITE_REJECTED/WRITE_UNKNOWN 故障注入、有界读/标记增长、提交后与读事务末身份失败、清理所有权、短写续写、损坏优先、close 失败按阶段分类、清理前完整信任闸门、current/pre 全量重验、getter/Proxy/复制预算、fresh/frozen、文档 JSON 原样执行等。测试结束只删除自己创建的已验证 sandbox。
 
 故障注入只在测试进程内临时包装本任务使用的真实 `fs`/`crypto` 函数并在 finally 恢复，不修改公开 API、环境开关或生产目录；平台不支持的链接测试按实情 skip。实际执行计数与结果记录在交付报告与 CI 中，本文档不预填未经执行的通过数。

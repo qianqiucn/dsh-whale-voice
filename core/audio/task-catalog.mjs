@@ -228,6 +228,8 @@ function readBoundedPath(state, target, maxBytes, options) {
   if (!isInside(root, real)) raise(failKey, '$')
 
   let fd = null
+  let failure = null
+  let result = null
   try {
     fd = fs.openSync(target, 'r')
     const opened = fs.fstatSync(fd)
@@ -239,24 +241,26 @@ function readBoundedPath(state, target, maxBytes, options) {
     if (!sameIdentity(opened, ended) || ended.size !== bytes.length) raise(failKey, '$')
     const after = fs.lstatSync(target)
     if (!sameIdentity(opened, after)) raise(failKey, '$')
-    return {
+    result = {
       missing: false,
       bytes,
       digest: sha256(bytes),
       identity: { dev: opened.dev, ino: opened.ino },
     }
   } catch (error) {
-    if (error instanceof CatalogFailure) throw error
-    raise(failKey, '$')
-  } finally {
-    if (fd !== null) {
-      try {
-        fs.closeSync(fd)
-      } catch {
-        // the caller classifies a close failure as SANDBOX/WRITE_UNKNOWN; the fd is abandoned
-      }
+    failure = error instanceof CatalogFailure ? error : new CatalogFailure(failKey, '$')
+  }
+  if (fd !== null) {
+    const closing = fd
+    fd = null
+    try {
+      fs.closeSync(closing)
+    } catch {
+      if (failure === null) failure = new CatalogFailure(options.closeKey || failKey, '$')
     }
   }
+  if (failure !== null) throw failure
+  return result
 }
 
 function checkSandbox(state) {
@@ -297,6 +301,7 @@ function checkSandbox(state) {
   const markerRead = readBoundedPath(state, sandbox.marker, MAX_MARKER_BYTES, {
     failKey: 'SANDBOX_INVALID',
     sizeKey: 'SANDBOX_INVALID',
+    closeKey: 'SANDBOX_INVALID',
   })
   if (markerRead.missing) raise('SANDBOX_INVALID', '$')
   const text = markerRead.bytes.toString('utf8')
@@ -419,6 +424,7 @@ function readCatalogFile(state) {
   return readBoundedPath(state, target, MAX_BYTES, {
     failKey: 'STORE_INVALID',
     sizeKey: 'RESOURCE_LIMIT',
+    closeKey: 'SANDBOX_INVALID',
     allowMissing: true,
   })
 }
@@ -502,6 +508,11 @@ function readCatalog(state) {
 function tempCleanupAllowed(state, tempPath, tempIdentity) {
   if (!tempIdentity) return false
   try {
+    checkSandbox(state)
+  } catch {
+    return false
+  }
+  try {
     const stat = fs.lstatSync(tempPath)
     if (!stat.isFile() || stat.isSymbolicLink()) return false
     if (typeof stat.nlink === 'number' && stat.nlink > 1) return false
@@ -523,6 +534,38 @@ function cleanupOwnTemp(state, tempPath, tempIdentity) {
   }
 }
 
+/** Full validation re-read used by the write path (current and pre-commit). */
+function readVerifiedCatalog(state, baseDigest) {
+  let raw
+  try {
+    raw = readCatalogFile(state)
+  } catch (error) {
+    if (error instanceof CatalogFailure && (error.key === 'STORE_INVALID' || error.key === 'RESOURCE_LIMIT')) {
+      lockUnknown(state)
+    }
+    throw error
+  }
+  if (raw.missing) {
+    if (baseDigest !== null) {
+      lockUnknown(state)
+      raise('STORE_CHANGED', '$')
+    }
+    return { missing: true, revision: 0, entries: [], digest: null }
+  }
+  let parsed
+  try {
+    parsed = validateSnapshot(parseSnapshot(raw.bytes))
+  } catch (error) {
+    lockUnknown(state)
+    throw error
+  }
+  if (raw.digest !== baseDigest) {
+    lockUnknown(state)
+    raise('STORE_CHANGED', '$')
+  }
+  return { missing: false, revision: parsed.revision, entries: parsed.entries, digest: raw.digest }
+}
+
 function writeCatalog(state, snapshot, baseDigest) {
   const bytes = Buffer.from(JSON.stringify(snapshot), 'utf8')
   if (bytes.length > MAX_BYTES || snapshot.entries.length > MAX_ENTRIES) raise('RESOURCE_LIMIT', '$')
@@ -531,12 +574,7 @@ function writeCatalog(state, snapshot, baseDigest) {
   const root = state.sandbox.root
   const target = path.join(root, CATALOG_FILE)
 
-  const current = readCatalogFile(state)
-  const currentDigest = current.missing ? null : current.digest
-  if (currentDigest !== baseDigest) {
-    lockUnknown(state)
-    raise('STORE_CHANGED', '$')
-  }
+  readVerifiedCatalog(state, baseDigest)
 
   const tempName = CATALOG_FILE.replace(/\.json$/, '') + '.' + crypto.randomBytes(16).toString('hex') + '.tmp'
   const tempPath = path.join(root, tempName)
@@ -578,6 +616,8 @@ function writeCatalog(state, snapshot, baseDigest) {
         }
         fd = null
       }
+      // A lost sandbox/marker takes precedence and forbids automatic cleanup.
+      checkSandbox(state)
       cleanupOwnTemp(state, tempPath, tempIdentity)
       if (error instanceof CatalogFailure) throw error
       raise('WRITE_REJECTED', '$')
@@ -589,9 +629,12 @@ function writeCatalog(state, snapshot, baseDigest) {
       tempRead = readBoundedPath(state, tempPath, MAX_BYTES, {
         failKey: 'STORE_INVALID',
         sizeKey: 'RESOURCE_LIMIT',
+        closeKey: 'WRITE_REJECTED',
       })
     } catch (error) {
+      checkSandbox(state)
       cleanupOwnTemp(state, tempPath, tempIdentity)
+      if (error instanceof CatalogFailure && error.key === 'WRITE_REJECTED') throw error
       lockUnknown(state)
       raise('STORE_CHANGED', '$')
     }
@@ -601,13 +644,17 @@ function writeCatalog(state, snapshot, baseDigest) {
       raise('STORE_CHANGED', '$')
     }
 
-    checkSandbox(state)
-    const pre = readCatalogFile(state)
-    const preDigest = pre.missing ? null : pre.digest
-    if (preDigest !== baseDigest) {
-      cleanupOwnTemp(state, tempPath, tempIdentity)
-      lockUnknown(state)
-      raise('STORE_CHANGED', '$')
+    let pre
+    try {
+      pre = readVerifiedCatalog(state, baseDigest)
+    } catch (error) {
+      try {
+        checkSandbox(state)
+        cleanupOwnTemp(state, tempPath, tempIdentity)
+      } catch {
+        // the sandbox failure already classifies this attempt
+      }
+      throw error
     }
 
     renameAttempted = true
