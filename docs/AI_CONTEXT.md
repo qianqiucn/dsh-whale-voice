@@ -39,7 +39,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   complete initial `CREATED`/`BLOCKED_RIGHTS` record with its original TaskId/scope/`observedAt`;
   it never calls create, never reconstructs a record from the projection and never persists a
   claim. Internal `{record, result}` keeps the full record private; the public 13-key envelope and
-  three legacy exports are unchanged. D-B tests 19; full suite **629 / 627 pass / 2 platform skips / 0 fail**, UI **24/24**. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no cross-call idempotency,
+  three legacy exports are unchanged. The F01 v1.6 evidence close-out keeps product code read-only
+  and splits the test-only worker **entry** (existing / internal draft / actual public) from the
+  injected **fault**, deriving the `final` record-validator call index from the real entry; it adds
+  the three-stage legal-refusal vs bad-protocol matrix, measured `depth12`/13 partition bounds, the
+  legal cross-scope voice library (`VOICE_ASSET_PROFILE_UNAVAILABLE`), legal eight-domain identity
+  controls, the `REMOTE` readiness policy, full-graph output isolation and the gate/dispatch vs
+  RVC-result error split. D-B tests 27; full suite **637 / 635 pass / 2 platform skips / 0 fail**,
+  UI **24/24** (same UI tree; CI re-runs it on the new head). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #32 still OPEN, no cross-call idempotency,
   recovery, Host/GUI or real generation.
 - **Plan 08-D-A branch:** `feature/plan08d-task-catalog` adds `core/audio/task-catalog.mjs` — an
   isolated persistent catalog over the trusted temporary sandbox that stores only initial

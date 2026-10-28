@@ -95,9 +95,12 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 - 最终 record 合法拒绝 → `TASK_TRANSITION_REJECTED/$`；抛错/坏协议 → `DEPENDENCY_FAILURE/$`。
 - 混合坏输入按上述固定顺序命中，不由外层 catch 覆盖；record=null，零 Fake/create/transition。
 - 已知例外：特定 `ok:true, value=42` 在旧 M 会落到 TRANSITION，本步按 040 §8 明确收紧为 DEPENDENCY；不宣称所有恶意依赖返回逐值等于旧 M。
-- 坏成功协议：`ok:true` 但 `value` 为空对象、缺 `source`、`source=42` 等残缺形状，在读取内部字段前判为 `DEPENDENCY_FAILURE/$`；合法 `ok:false` 仍按阶段返回输入/来源/归约拒绝。成功根字段 schemaVersion/taskId/feature/taskType/voiceProfileId/deliveryRequested/source/rights 缺失或类型错误同样按 DEPENDENCY 处理。
-- 自动测试含 test-only `vm.SourceTextModule` worker：正常 existing 输出与 native 深等且 source1/gate1/dispatch1/create0；legacy create1；阻断/UNKNOWN 零 dispatch/create/transition；validator throw、缺 schemaVersion/taskId/deliveryRequested 与输出引用碰撞均命中 DEPENDENCY/INVALID_TASK_RESULT。其余 T03 分支见报告。
-- 合法碰撞：catalog record source、taskDraft source、negotiation request.sourceAudioRef 与 artifactLibrary ref 同步为自然 Fake 输出引用时，source/validator 通过并到达专用 `artifactRef === source.ref` 门禁，返回 `INVALID_TASK_RESULT`；不同步 ref 仍是 SOURCE_BLOCKED 对照。
+- 坏成功协议：`ok:true` 但 `value` 为空对象、标量 `42`、缺 `source`、`source=42` 等残缺形状，在读取内部字段前判为 `DEPENDENCY_FAILURE/$`；合法 `ok:false` 仍按阶段返回输入/来源/归约拒绝。成功根字段 schemaVersion/taskId/feature/taskType/voiceProfileId/deliveryRequested/source/rights 缺失或类型错误同样按 DEPENDENCY 处理；`undefined` 赋值（schemaVersion/taskId/deliveryRequested）是与真实 `delete` 分开的类型控制。
+- 三阶段协议用同一张有限表：`legal-delete-*` 通过**原 validator 真实返回 `ok:false`** 证明合法拒绝（初始 record→INVALID_INPUT、draft→SOURCE_INPUT_INVALID、最终 record→TASK_TRANSITION_REJECTED），`throw`/`null`/`ok` 非布尔/`value=42`/空对象/缺 source/source=42 证明坏协议→DEPENDENCY。最终 record 失败断言发生在纯 BEGIN/ATTACH 之后：`transition=2`、`dispatch=1`，不存在归约前 transition0 的假拒绝。
+- 自动测试含 test-only `vm.SourceTextModule` worker：entry（existing / 内部 draft / 实际 public）与 fault（target+kind）**分开配置**，`final` 调用序号按实际入口推导（existing 第 2 次、draft/public 第 1 次），不再用互斥 mode 硬套第 2 次。正常 existing 输出与 native 深等且 source1/gate1/dispatch1/create0/transition2/validateRecord2/validateDraft1/rvcCalls1/rvcOk1；legacy/public create1 且 private record 不离开门面。
+- 合法碰撞：catalog record source、taskDraft source、negotiation request.sourceAudioRef 与 artifactLibrary ref 四引用同步为自然 Fake 输出引用时，source/validator 通过并到达专用 `artifactRef === source.ref` 门禁，返回 `INVALID_TASK_RESULT`（faultHit=0、rvcCalls1/rvcOk1、无二次 dispatch）；不同步 ref 仍是 SOURCE_BLOCKED 对照（dispatch0/transition0），worker 与 native 深等。
+- 外层关联：gate↔dispatch 的 instanceId/candidateId/category/readiness.instanceId 变异 → `DEPENDENCY_FAILURE/$`，`dispatch1` 且 `rvcCalls0`（在 RVC 结果 validator 之前拒绝）；结果侧 requestId/targetModelId 变异与缺 `durationMs`/`status=42` → `INVALID_TASK_RESULT/$`，`rvcCalls1/rvcOk0`、`dispatch1`、`transition0`、无附着保存。两类错误码不统一。
+- 初始状态零调用：SAVED/UNKNOWN/PROCESSING 等在 Fake 前拒绝（source/gate/Fake/create/transition/dispatch 全 0，record=null）；源阻断（artifactId availability=ABSENT）legacy create0，准入阻断 legacy create1、dispatch0；六混合预检（版本、未知根键、缺 draft、坏 record+缺源、异 scope、坏 draft+异 scope）的共用依赖调用全 0，仅按顺序出现初始 record/draft validator 计数。
 
 ## 9. 未来中文流程与三恢复（尚未实现 GUI）
 
@@ -108,3 +111,28 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 - 素材已过期或权利变化：“素材当前不可用，请重新选择有权使用的素材；原任务不会自动重新执行。”
 - 记录/关联不一致：“任务信息暂时无法核对，请返回任务列表检查；系统不会替换任务编号。”
 - 已运行/结果未知：“该任务已开始或结果尚未确认，系统不会自动再执行。”取消请求不冒充已停止。
+
+## 10. 逐项覆盖矩阵（B01–B16 与边界组）
+
+下列映射均为**行为测试**：真实解析/状态逻辑 + 真实 Core 响应结构驱动，不是源码字符串断言。测试文件为 `test/task-fixture-record.test.mjs`，产品/旧测试/目录 Schema 未改。
+
+| 组 | 覆盖点 | 测试证据（函数/断言） |
+|---|---|---|
+| B01 | 旧门面 13 键信封不变、无 record/observedAt 泄漏 | `B01`：`runFixtureAudioTaskOnce` 键序、与 draft 入口 `result` 深等 |
+| B02 | 已有 record 复用不产生第二条目录项 | `B02`：目录 hash/revision 不变、taskId/observedAt 保留 |
+| B03 | 七场景状态机与投影一致 | `B03`：SUCCESS/OFFLINE/MODEL_MISSING/TIMEOUT/CANCEL_*/UNKNOWN 的 phase/state/states |
+| B04 | 本次 now 只用于当前检查 | `B04`：后续 now 不替换 observedAt；过期源阻断 |
+| B05 | scope 关联与合法异 scope | `B05`（frame/expectation 三态拒绝）、`B05 legal cross-scope`：`profiles` 与其绑定 `assets` 同步移 `scope:fixture-other` 后**原库 validator 先 ok=true**，原库→合法 `BLOCKED`、内层 `VOICE_ASSET_PROFILE_UNAVAILABLE`、TaskId 保留；只改 profile 仍是结构非法 |
+| B06 | 身份八域与规范合法性 | `B06`（非法组合→draft validator `ok:false`→`SOURCE_INPUT_INVALID/sourceInput`）；`B06 legal`：taskId / 联动 feature-taskType-source.kind / source.ref / voiceProfileId / rights.state / deliveryRequested 逐个**先 `validateAudioTaskDraft` ok=true**，再命中 record 比较 `INVALID_INPUT/$`；schemaVersion 固定 1 |
+| B07 | 投影/缺字段/未知键/版本不可冒充 record | `B07` |
+| B08 | 非初始状态在 Fake 前拒绝 | `B08` + `B10` worker 计数 |
+| B09 | 源/准入/TTS/REMOTE 阻断 | `B09`（CPU 阻断、TTS 未实现）；`B09 overlay`：源 `availability=ABSENT` 先得合法 `BLOCKED/SOURCE_ARTIFACT_SOURCE_MISSING`，坏 context→`INVALID_CONTEXT/context`、坏 readiness→`READINESS_INVALID/readiness`；`manifest.resources.local=false` 时 CPU/GPU 即使 `UNAVAILABLE` 仍是 `requiredResource=REMOTE`/`FIXTURE_READY`（保留 `TTS_MANIFEST`）；`installation=ABSENT`→合法 `BLOCKED/PROVIDER_READINESS_INSTALLATION_MISSING`、engine `READINESS_BLOCKED` |
+| B10 | 阻断计数与六混合优先级 | `F01` 六组合 + `B10` worker：SAVED/UNKNOWN 全零、dispatch0、record=null；legacy 源阻断 create0、准入阻断 create1、dispatch0；六混合共用依赖全 0 |
+| B11 | 外层关联与坏结果分段 | `B11`：instanceId/candidateId/category/readiness.instanceId→`DEPENDENCY_FAILURE/$` 且 `rvcCalls0`；requestId/targetModelId/缺 durationMs/status=42→`INVALID_TASK_RESULT/$` 且 `rvcCalls1/rvcOk0`、`dispatch1`、`transition0`；`F01 legal collision` 四引用同步 |
+| B12 | 结构边界、精确分区深度、hidden/null 原型/循环 | `B12`（getter/Symbol/Proxy/32 键）；`B12 measured`：先**测量**真实深度——合法 TTS 输入 `depth12` 被接受、`nested(13)` 拒 `RESOURCE_LIMIT`、`nested(12)` 过预算后按形状拒；owner 分区 `{scopeId,record}` 实测 13 拒、12 过；hidden 键、循环→`INVALID_INPUT`；深 null 原型合法输入可执行 |
+| B13 | 冻结、fresh 与全图隔离 | `B13` 根级；`B13 full-graph`：执行前记录实际输入/record 的对象集合、每个对象冻结状态与 JSON；执行后 wrapper 与 `{record,result}` 全图对象**全部冻结**、与输入/record 集合**零交集**、输入 JSON 与冻结状态不变；两次运行输出对象集合互不相交 |
+| B14 | 同 CREATED 快照可再次纯模拟、不发明 claim | `B14` |
+| B16 | 内部文档边界与状态标签 | `B16`：内部/OFFLINE/NOT_INTEGRATED/不持久/不宣称等标记 |
+| 三阶段/final 两入口 | 合法拒绝与坏协议分组 | `T02`：`legal-delete-*` 走原 validator 真实 `ok:false`；throw/null/坏 ok/42/空对象/缺 source/source=42 → `DEPENDENCY_FAILURE/$`；final 在纯 BEGIN/ATTACH 之后（transition2/dispatch1），draft 与实际 public 入口分别命中自身 final 调用 |
+
+未覆盖/明确保留：真实音频字节、模型推理、GPU/设备、持久 claim/跨进程恢复、Host/GUI、微信发送与真实用户链路；本步仍是 **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**。

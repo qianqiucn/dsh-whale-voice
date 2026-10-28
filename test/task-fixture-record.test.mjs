@@ -16,12 +16,15 @@ import {
   AUDIO_TASK_STATE_LIST,
   projectAudioTask,
   transitionAudioTask,
+  validateAudioTaskDraft,
   validateAudioTaskRecord,
 } from '../core/audio/task-contract.mjs'
+import { validateVoiceAssetLibrary } from '../core/audio/voice-assets.mjs'
 
 const SCOPE = 'scope:fixture-demo'
 const NOW = '2026-10-27T00:00:00.000Z'
 const FILE = 'audio-task-catalog-v1.json'
+const AUDIO_BASE = new URL('../core/audio/', import.meta.url).href
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -57,6 +60,27 @@ function expectSimulated(result) {
   assert.equal(result.value.phase, 'SIMULATED')
 }
 
+/** Fixed error envelope: exactly one issue with only code/path/reason and no echoed input. */
+function assertNoEcho(result, label) {
+  assert.equal(result.ok, false, label)
+  assert.equal(result.errors.length, 1, label)
+  assert.deepEqual(Object.keys(result.errors[0]).sort(), ['code', 'path', 'reason'], label)
+  const text = JSON.stringify(result)
+  for (const marker of [
+    'injected',
+    'Error:',
+    'stack',
+    'taskDraft',
+    'artifactLibrary',
+    'profiles',
+    'voiceBinding',
+    'negotiation',
+    'observedAt',
+  ]) {
+    assert.equal(text.includes(marker), false, label + ' leaked ' + marker)
+  }
+}
+
 async function makeExisting(example, key, mutateDraft) {
   const sandbox = createConfigSandbox()
   const opened = await openFixtureTaskCatalog({ sandbox })
@@ -89,6 +113,71 @@ function advance(record, actions) {
     current = result.value
   }
   return current
+}
+
+/** Max structural depth, measured through own data descriptors only (no getter is invoked). */
+function depthOf(value) {
+  const seen = new Set()
+  const walk = (current, depth) => {
+    if (current === null || typeof current !== 'object' || seen.has(current)) return depth
+    seen.add(current)
+    let max = depth
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)
+      if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) continue
+      const child = walk(descriptor.value, depth + 1)
+      if (child > max) max = child
+    }
+    return max
+  }
+  return walk(value, 0)
+}
+
+/** A plain nested chain: nested(n) is n `{child: value}` objects around a null leaf. */
+function nested(n) {
+  let value = null
+  for (let index = 0; index < n; index += 1) value = { child: value }
+  return value
+}
+
+/** Every own data-property object of the whole graph, with its frozen state and JSON projection. */
+function collectGraph(value) {
+  const objects = new Set()
+  const frozen = new Map()
+  const seen = new Set()
+  const walk = (current) => {
+    if (current === null || typeof current !== 'object' || seen.has(current)) return
+    seen.add(current)
+    objects.add(current)
+    frozen.set(current, Object.isFrozen(current))
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key)
+      if (descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value')) walk(descriptor.value)
+    }
+  }
+  walk(value)
+  return { objects, frozen, json: JSON.stringify(value) }
+}
+
+function nullProtoClone(value) {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(nullProtoClone)
+  const output = Object.create(null)
+  for (const key of Object.keys(value)) output[key] = nullProtoClone(value[key])
+  return output
+}
+
+function draftOf(record) {
+  return {
+    schemaVersion: record.schemaVersion,
+    taskId: record.taskId,
+    feature: record.feature,
+    taskType: record.taskType,
+    source: { kind: record.source.kind, ref: record.source.ref },
+    voiceProfileId: record.voiceProfileId,
+    deliveryRequested: record.deliveryRequested,
+    rights: { state: record.rights.state },
+  }
 }
 
 test('B02 an existing TTS/SVC record is reused without creating a second catalog entry', async () => {
@@ -187,32 +276,115 @@ test('B05 frame/expectation scope mismatches are rejected before any Fake', asyn
   }
 })
 
-test('B06 every draft/record identity domain is compared, delivery defaults false', async () => {
+test('B05 a legal cross-scope voice library blocks the source and keeps the original record', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b05-legal')
+  try {
+    const library = clone(ctx.input.sourceInput.voiceBinding.library)
+    library.profiles[0].scopeId = 'scope:fixture-other'
+    library.assets[0].scopeId = 'scope:fixture-other'
+    const libraryCheck = validateVoiceAssetLibrary(library)
+    assert.equal(libraryCheck.ok, true)
+
+    const input = clone(ctx.input)
+    input.sourceInput.voiceBinding.library = clone(library)
+    const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input })
+    expectBlocked(out.result, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(out.result.value.sourceCheck.decision, 'BLOCKED')
+    assert.equal(out.result.value.sourceCheck.source, null)
+    assert.equal(out.result.value.sourceCheck.voiceBinding.reason, 'VOICE_ASSET_PROFILE_UNAVAILABLE')
+    assert.deepEqual(out.result.value.states, [ctx.record.state])
+    assert.equal(out.result.value.task.taskId, ctx.record.taskId)
+    assert.equal(out.record.taskId, ctx.record.taskId)
+
+    // Moving only the profile leaves the library structurally invalid: that older control stays structural.
+    const single = clone(ctx.input)
+    single.sourceInput.voiceBinding.library.profiles[0].scopeId = 'scope:fixture-other'
+    assert.equal(validateVoiceAssetLibrary(single.sourceInput.voiceBinding.library).ok, false)
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: single }).result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('B06 every illegal draft/record identity domain is rejected before any Fake', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b06')
   try {
-    const mutations = [
-      (d) => { d.feature = 'other' },
-      (d) => { d.taskType = 'TTS' },
-      (d) => { d.source.kind = 'TEXT_REF' },
-      (d) => { d.source.ref = 'artifact:other' },
-      (d) => { d.voiceProfileId = 'voice:other' },
-      (d) => { d.rights.state = 'UNVERIFIED' },
-      (d) => { d.schemaVersion = 2 },
-      (d) => { d.taskId = 'task:fixture-' + 'f'.repeat(32) },
-      (d) => { d.deliveryRequested = true },
+    const record = ctx.record
+    const illegal = [
+      ['feature alone', (d) => { d.feature = 'other' }],
+      ['taskType alone', (d) => { d.taskType = 'TTS' }],
+      ['source.kind alone', (d) => { d.source.kind = 'TEXT_REF' }],
+      ['schemaVersion 2', (d) => { d.schemaVersion = 2 }],
+      ['taskId pattern', (d) => { d.taskId = 'not-a-task-id' }],
+      ['voiceProfileId pattern', (d) => { d.voiceProfileId = 'not-a-voice' }],
+      ['rights enum', (d) => { d.rights.state = 'NOPE' }],
     ]
-    for (const mutate of mutations) {
+    for (const [label, mutate] of illegal) {
+      const draft = draftOf(record)
+      mutate(draft)
+      assert.equal(validateAudioTaskDraft(draft).ok, false, label)
       const input = clone(ctx.input)
       mutate(input.sourceInput.voiceBinding.taskDraft)
-      const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input })
-      assert.equal(out.result.ok, false)
-      assert.equal(out.record, null)
+      const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record, input })
+      expectError(out.result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+      assert.equal(out.record, null, label)
     }
     const deliveryless = clone(ctx.input)
     delete deliveryless.sourceInput.voiceBinding.taskDraft.deliveryRequested
-    const ok = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: deliveryless })
+    const ok = runExistingFixtureTaskOnce({ scopeId: SCOPE, record, input: deliveryless })
     expectSimulated(ok.result)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('B06 legal normalized identity controls reach the record comparison, not the draft validator', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b06-legal')
+  try {
+    const record = ctx.record
+    const legal = [
+      ['taskId', (d) => { d.taskId = 'task:fixture-b06-other' }],
+      ['linked feature/taskType/source.kind', (d) => { d.feature = 'voice-bubbles'; d.taskType = 'TTS'; d.source.kind = 'TEXT_REF' }],
+      ['source.ref', (d) => { d.source.ref = 'artifact:other-ref' }],
+      ['voiceProfileId', (d) => { d.voiceProfileId = 'voice:other' }],
+      ['rights.state', (d) => { d.rights.state = 'UNVERIFIED' }],
+      ['deliveryRequested', (d) => { d.deliveryRequested = true }],
+    ]
+    for (const [label, mutate] of legal) {
+      const draft = draftOf(record)
+      mutate(draft)
+      const normalized = validateAudioTaskDraft(draft)
+      assert.equal(normalized.ok, true, label)
+      assert.notEqual(validateAudioTaskDraft(draftOf(record)).ok, false, label)
+
+      const input = clone(ctx.input)
+      mutate(input.sourceInput.voiceBinding.taskDraft)
+      const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record, input })
+      expectError(out.result, 'INVALID_INPUT', '$')
+      assert.equal(out.record, null, label)
+    }
+
+    // schemaVersion has exactly one legal value: a different version can only be a draft refusal.
+    const versioned = draftOf(record)
+    versioned.schemaVersion = 1
+    assert.equal(validateAudioTaskDraft(versioned).ok, true)
+    versioned.schemaVersion = 2
+    assert.equal(validateAudioTaskDraft(versioned).ok, false)
+
+    // The corrected attribution: a legal linked TTS-shaped draft validates OK and then fails only identity.
+    const linked = draftOf(record)
+    linked.feature = 'voice-bubbles'
+    linked.taskType = 'TTS'
+    linked.source.kind = 'TEXT_REF'
+    const linkedCheck = validateAudioTaskDraft(linked)
+    assert.equal(linkedCheck.ok, true)
+    assert.equal(linkedCheck.value.feature, 'voice-bubbles')
+    assert.equal(linkedCheck.value.taskType, 'TTS')
+    assert.equal(linkedCheck.value.source.kind, 'TEXT_REF')
+    assert.equal(linkedCheck.value.taskId, record.taskId)
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
@@ -296,6 +468,53 @@ test('B09 legal source/readiness/TTS blocks keep the original full record', asyn
   }
 })
 
+test('B09 a legal source block stays structural for a bad context/readiness and the REMOTE policy stays reachable', async () => {
+  const svc = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(svc, 'key:fixture-b09-overlay')
+  try {
+    const absent = clone(ctx.input)
+    absent.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    const blocked = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: absent })
+    expectBlocked(blocked.result, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(blocked.result.value.sourceCheck.reason, 'SOURCE_ARTIFACT_SOURCE_MISSING')
+    assert.equal(blocked.record.taskId, ctx.record.taskId)
+
+    const badContext = clone(absent)
+    badContext.context = { requestId: 'request:fixture-1' }
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: badContext }).result, 'INVALID_CONTEXT', 'context')
+
+    const badReadiness = clone(absent)
+    badReadiness.readiness.instances[0].resources.gpu = 'NOT_A_STATE'
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: badReadiness }).result, 'READINESS_INVALID', 'readiness')
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+
+  const tts = extractExample('## 8. TTS阻断示例')
+  const ctx2 = await makeExisting(tts, 'key:fixture-b09-remote')
+  try {
+    const remote = clone(ctx2.input)
+    remote.sourceInput.voiceBinding.negotiation.registry.instances[0].manifest.resources.local = false
+    remote.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
+    remote.readiness.instances[0].resources.gpu = 'UNAVAILABLE'
+    const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx2.record, input: remote })
+    expectBlocked(out.result, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+    assert.equal(out.result.value.readiness.decision, 'FIXTURE_READY')
+    assert.equal(out.result.value.readiness.observation.requiredResource, 'REMOTE')
+    assert.equal(out.result.value.task.state, 'CREATED')
+
+    const missing = clone(ctx2.input)
+    missing.readiness.instances[0].installation = 'ABSENT'
+    const absentOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx2.record, input: missing })
+    expectBlocked(absentOut.result, 'TASK_FIXTURE_READINESS_BLOCKED')
+    assert.equal(absentOut.result.value.readiness.reason, 'PROVIDER_READINESS_INSTALLATION_MISSING')
+    assert.equal(absentOut.record.taskId, ctx2.record.taskId)
+    assert.deepEqual(absentOut.result.value.states, ['CREATED'])
+  } finally {
+    removeConfigSandbox(ctx2.sandbox)
+  }
+})
+
 test('B12 the shallow frame rejects accessors/Symbols/Proxy and keeps partition budgets', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b12')
@@ -327,6 +546,57 @@ test('B12 the shallow frame rejects accessors/Symbols/Proxy and keeps partition 
   }
 })
 
+test('B12 measured partition boundary: depth 12 accepted, depth 13 rejected, legal input depth 12', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b12-precise')
+  const tts = extractExample('## 8. TTS阻断示例')
+  const ctx2 = await makeExisting(tts, 'key:fixture-b12-tts')
+  try {
+    assert.equal(depthOf(ctx.input), 8)
+    assert.equal(depthOf(ctx2.input), 12)
+    const legalTts = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx2.record, input: ctx2.input })
+    expectBlocked(legalTts.result, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+
+    const input13 = nested(13)
+    assert.equal(depthOf(input13), 13)
+    const tooDeep = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: input13 })
+    expectError(tooDeep.result, 'RESOURCE_LIMIT', '$')
+    assert.equal(tooDeep.record, null)
+
+    const input12 = nested(12)
+    assert.equal(depthOf(input12), 12)
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: input12 }).result, 'INVALID_INPUT', '<unknown-key>')
+
+    const record12 = nested(12)
+    const owner13 = { scopeId: SCOPE, record: record12 }
+    assert.equal(depthOf(owner13), 13)
+    const ownerTooDeep = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: record12, input: ctx.input })
+    expectError(ownerTooDeep.result, 'RESOURCE_LIMIT', '$')
+    assert.equal(ownerTooDeep.record, null)
+
+    const record11 = nested(11)
+    assert.equal(depthOf({ scopeId: SCOPE, record: record11 }), 12)
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: record11, input: ctx.input }).result, 'INVALID_INPUT', '$')
+
+    const hidden = clone(ctx.input)
+    Object.defineProperty(hidden, 'extra', { value: 1, enumerable: false, configurable: true })
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: hidden }).result, 'INVALID_INPUT', '$')
+
+    const cyclic = clone(ctx.input)
+    cyclic.self = cyclic
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: cyclic }).result, 'INVALID_INPUT', '$')
+
+    const nullProto = nullProtoClone(ctx.input)
+    assert.equal(Object.getPrototypeOf(nullProto), null)
+    const nullOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: nullProto })
+    expectSimulated(nullOut.result)
+    assert.equal(nullOut.record.taskId, ctx.record.taskId)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+    removeConfigSandbox(ctx2.sandbox)
+  }
+})
+
 test('B13 inputs are not frozen or mutated; private record is fresh/frozen and the public envelope stays record-free', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-b13')
@@ -341,6 +611,44 @@ test('B13 inputs are not frozen or mutated; private record is fresh/frozen and t
     assert.equal(JSON.stringify(out.result).includes(ctx.record.taskId), true)
     const second = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: ctx.input })
     assert.notEqual(second.record, out.record)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('B13 full-graph isolation: wrapper/output all frozen, no shared object with the actual input, repeat runs disjoint', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b13-graph')
+  try {
+    const before = collectGraph(ctx.input)
+    const recordBefore = collectGraph(ctx.record)
+    assert.equal(Object.isFrozen(ctx.input), false)
+    assert.equal(Object.isFrozen(ctx.record), false)
+
+    const first = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: ctx.input })
+    expectSimulated(first.result)
+    assert.equal(Object.isFrozen(first), true)
+
+    const afterInput = collectGraph(ctx.input)
+    assert.equal(afterInput.json, before.json)
+    assert.deepEqual([...afterInput.frozen.entries()].map(([, frozen]) => frozen).sort(), [...before.frozen.entries()].map(([, frozen]) => frozen).sort())
+    assert.equal(collectGraph(ctx.record).json, recordBefore.json)
+
+    const firstGraph = collectGraph(first)
+    for (const object of firstGraph.objects) {
+      assert.equal(Object.isFrozen(object), true)
+      assert.equal(before.objects.has(object), false)
+      assert.equal(recordBefore.objects.has(object), false)
+    }
+
+    const second = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: ctx.input })
+    expectSimulated(second.result)
+    const secondGraph = collectGraph(second)
+    for (const object of secondGraph.objects) {
+      assert.equal(Object.isFrozen(object), true)
+      assert.equal(firstGraph.objects.has(object), false)
+      assert.equal(before.objects.has(object), false)
+    }
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
@@ -440,22 +748,20 @@ test('R03 missing scope, zero-getter counting and real deep-freeze checks', asyn
     assert.equal(JSON.stringify(ctx.record), beforeRecord)
     assert.equal(Object.isFrozen(ctx.input), false)
     assert.equal(Object.isFrozen(ctx.record), false)
-    const seen = new Set()
-    const assertFrozenDeep = (value) => {
-      if (value === null || typeof value !== 'object' || seen.has(value)) return
-      seen.add(value)
-      assert.equal(Object.isFrozen(value), true)
-      for (const key of Reflect.ownKeys(value)) {
-        assertFrozenDeep(Object.getOwnPropertyDescriptor(value, key).value)
-      }
-    }
-    assertFrozenDeep(out.result)
-    assertFrozenDeep(out.record)
+    const outGraph = collectGraph(out)
+    for (const object of outGraph.objects) assert.equal(Object.isFrozen(object), true)
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
 })
 
+/*
+ * Test-only worker. It loads the real engine inside a vm module graph so dependency calls can be
+ * counted and one controlled fault can be injected. Entry selection (existing / draft / public) is
+ * independent from the fault target and fault name; the "final" record-validator call is derived
+ * from the entry that actually runs it (existing has an initial validation, draft/public do not).
+ * Nothing here changes product code, and the public entry only ever reports its public envelope.
+ */
 const WORKER_SCRIPT = (base) => `
 import vm from 'node:vm'
 import fs from 'node:fs'
@@ -470,71 +776,92 @@ const deps = {
   task: await load('task-contract.mjs'),
   gateway: await load('../svc/rvc-fake-gateway.mjs'),
 }
-const mode = process.env.WORKER_MODE || 'normal'
-const frame = JSON.parse(process.env.WORKER_FRAME)
+const entry = process.env.WORKER_ENTRY || 'existing'
+const fault = JSON.parse(process.env.WORKER_FAULT || 'null')
+const frame = JSON.parse(process.env.WORKER_FRAME || 'null')
 const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0, rvcCalls: 0, rvcOk: 0 }
+const finalRecordCall = entry === 'existing' ? 2 : 1
 let faultHit = 0
-const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
+let faultAt = null
+const clone = (value) => JSON.parse(JSON.stringify(value))
+const dropped = (value, field) => { const copy = clone(value); delete copy[field]; return copy }
+function claim(target, call) {
+  if (faultHit !== 0 || fault === null || fault.target !== target) return null
+  let wanted = 1
+  if (fault.call === 'final') wanted = target === 'record' ? finalRecordCall : 1
+  else if (fault.call === 'first') wanted = 1
+  else if (typeof fault.call === 'number') wanted = fault.call
+  if (call !== wanted) return null
+  faultHit += 1
+  faultAt = { target: target, call: call }
+  return fault.kind
+}
+function mutatedSuccess(kind, result) {
+  const shape = kind.slice('success-'.length)
+  if (shape === '42') return { ok: true, value: 42 }
+  if (shape === 'empty') return { ok: true, value: {} }
+  const value = { ...result.value }
+  if (shape === 'missing-source') delete value.source
+  else if (shape === 'source-42') value.source = 42
+  else if (shape === 'schema-undefined') value.schemaVersion = undefined
+  else if (shape === 'taskid-undefined') value.taskId = undefined
+  else if (shape === 'delivery-undefined') value.deliveryRequested = undefined
+  else throw new Error('unknown success shape ' + shape)
+  return { ...result, value: value }
+}
+function protocolFault(kind, result) {
+  if (kind === 'null') return null
+  if (kind === 'not-boolean') return { ok: 'yes', value: null }
+  if (kind === 'scalar-result') return 42
+  return mutatedSuccess(kind, result)
+}
 const realValidateRecord = deps.task.validateAudioTaskRecord
 const realValidateDraft = deps.task.validateAudioTaskDraft
 const validateRecord = (...args) => {
   counts.validateRecord += 1
+  const kind = claim('record', counts.validateRecord)
+  if (kind === 'throw') throw new Error('injected record throw')
+  if (kind !== null && kind.indexOf('legal-delete-') === 0) {
+    return realValidateRecord(dropped(args[0], kind.slice('legal-delete-'.length)))
+  }
   const result = realValidateRecord(...args)
   if (result && result.ok === true) counts.validatorOk += 1
-  if (mode === 'final-record-throw' && counts.validateRecord === 2 && faultHit === 0) {
-    faultHit += 1
-    throw new Error('injected final record throw')
-  }
-  if (mode === 'record-throw' && faultHit === 0) { faultHit += 1; throw new Error('injected record throw') }
-  if (mode === 'record-missing-schema' && faultHit === 0 && result && result.ok === true) {
-    faultHit += 1
-    return { ...result, value: { ...result.value, schemaVersion: undefined } }
-  }
-  return result
+  if (kind === null) return result
+  return protocolFault(kind, result)
 }
 const validateDraft = (...args) => {
   counts.validateDraft += 1
+  const kind = claim('draft', counts.validateDraft)
+  if (kind === 'throw') throw new Error('injected draft throw')
+  if (kind !== null && kind.indexOf('legal-delete-') === 0) {
+    return realValidateDraft(dropped(args[0], kind.slice('legal-delete-'.length)))
+  }
   const result = realValidateDraft(...args)
-  if (mode === 'draft-throw' && faultHit === 0) { faultHit += 1; throw new Error('injected draft throw') }
-  if (mode === 'draft-missing-taskId' && faultHit === 0 && result && result.ok === true) {
-    faultHit += 1
-    return { ...result, value: { ...result.value, taskId: undefined } }
-  }
-  if (mode === 'draft-missing-delivery' && faultHit === 0 && result && result.ok === true) {
-    faultHit += 1
-    return { ...result, value: { ...result.value, deliveryRequested: undefined } }
-  }
-  return result
+  if (kind === null) return result
+  return protocolFault(kind, result)
 }
+const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
 const dispatch = (...args) => {
   counts.dispatch += 1
   const result = deps.ready.dispatchReadyRvcFakeOnce(...args)
-  if (mode === 'result-missing-field' && faultHit === 0) {
-    faultHit += 1
-    const copy = structuredClone(result)
-    delete copy.value.dispatch.result.durationMs
-    return copy
-  }
-  if (mode === 'result-type-bad' && faultHit === 0) {
-    faultHit += 1
-    const copy = structuredClone(result)
-    copy.value.dispatch.result.status = 42
-    return copy
-  }
-  if (mode === 'identity-bad' && faultHit === 0) {
-    faultHit += 1
-    const copy = structuredClone(result)
-    copy.value.dispatch.instanceId = 'instance:other'
-    return copy
-  }
-  if (mode === 'collision' && faultHit === 0) {
-    faultHit += 1
-    const copy = structuredClone(result)
-    copy.value.dispatch.result.artifactRef = frame.record.source.ref
-    copy.value.dispatch.result.status = 'SUCCEEDED_FAKE'
-    return copy
-  }
-  return result
+  const kind = claim('dispatch', counts.dispatch)
+  if (kind === null) return result
+  if (kind === 'throw') throw new Error('injected dispatch throw')
+  const copy = structuredClone(result)
+  const execution = copy.value
+  if (kind === 'missing-field') execution.dispatch.result.durationMs = undefined
+  else if (kind === 'type-bad') execution.dispatch.result.status = 42
+  else if (kind === 'request-bad') execution.dispatch.result.requestId = 'request:fixture-other'
+  else if (kind === 'model-bad') execution.dispatch.result.targetModelId = 'rvc-model:fixture-other'
+  else if (kind === 'identity-bad') execution.dispatch.instanceId = 'instance:other'
+  else if (kind === 'candidate-bad') execution.dispatch.candidateId = 'candidate:other'
+  else if (kind === 'category-bad') execution.dispatch.category = 'TTS'
+  else if (kind === 'readiness-instance-bad') execution.readiness.instanceId = 'instance:other'
+  else if (kind === 'collision') {
+    execution.dispatch.result.artifactRef = frame.record.source.ref
+    execution.dispatch.result.status = 'SUCCEEDED_FAKE'
+  } else throw new Error('unknown dispatch fault ' + kind)
+  return copy
 }
 const validateRvc = (...args) => {
   counts.rvcCalls += 1
@@ -591,128 +918,370 @@ await facade.link(async (specifier, referencing) => {
   }, { identifier: url })
 })
 await facade.evaluate()
-const out = mode === 'legacy'
+const out = entry === 'draft'
   ? engine.namespace.runDraftFixtureTaskOnce(frame.input)
-  : mode === 'public'
-    ? { record: null, result: facade.namespace.runFixtureAudioTaskOnce(frame.input) }
+  : entry === 'public'
+    ? { result: facade.namespace.runFixtureAudioTaskOnce(frame.input) }
     : engine.namespace.runExistingFixtureTaskOnce(frame)
-console.log(JSON.stringify({ counts, faultHit, record: out.record, result: out.result }))
+console.log(JSON.stringify({
+  entry: entry,
+  counts: counts,
+  faultHit: faultHit,
+  faultAt: faultAt,
+  exposesPrivateRecord: out.record !== undefined,
+  record: out.record === undefined ? null : out.record,
+  result: out.result,
+}))
 `
 
-function runWorker(mode, payload, base) {
+function runWorker(entry, fault, payload, base = AUDIO_BASE) {
   const script = WORKER_SCRIPT(base)
   const output = execFileSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], {
-    env: { ...process.env, WORKER_MODE: mode, WORKER_FRAME: JSON.stringify(payload) },
+    env: {
+      ...process.env,
+      WORKER_ENTRY: entry,
+      WORKER_FAULT: JSON.stringify(fault),
+      WORKER_FRAME: JSON.stringify(payload),
+    },
     encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: 32 * 1024 * 1024,
   })
   return JSON.parse(output.trim())
 }
 
-test('T01/T02/T03 worker: native counts, validator fault, root-field fault and collision', async () => {
+const NORMAL_COUNTS = Object.freeze({
+  source: 1,
+  gate: 1,
+  dispatch: 1,
+  create: 0,
+  transition: 2,
+  validateRecord: 2,
+  validateDraft: 1,
+  validatorOk: 2,
+  rvcCalls: 1,
+  rvcOk: 1,
+})
+
+const DRAFT_COUNTS = Object.freeze({
+  source: 1,
+  gate: 1,
+  dispatch: 1,
+  create: 1,
+  transition: 2,
+  validateRecord: 1,
+  validateDraft: 0,
+  validatorOk: 1,
+  rvcCalls: 1,
+  rvcOk: 1,
+})
+
+function expectDependencyFailure(run, label) {
+  assert.equal(run.result.ok, false, label)
+  assert.equal(run.result.errors.length, 1, label)
+  assert.equal(run.result.errors[0].code, 'TASK_FIXTURE_DEPENDENCY_FAILURE', label)
+  assert.equal(run.result.errors[0].path, '$', label)
+  assert.equal(run.faultHit, 1, label)
+  if (run.exposesPrivateRecord) assert.equal(run.record, null, label)
+}
+
+test('T01 worker: native counts, entry separation and the actual public envelope', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-t01')
   try {
     const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
-    const native = runExistingFixtureTaskOnce(frame)
-    const nativeJson = JSON.parse(JSON.stringify(native))
-    const base = new URL('../core/audio/', import.meta.url).href
+    const native = JSON.parse(JSON.stringify(runExistingFixtureTaskOnce(frame)))
 
-    const normal = runWorker('normal', frame, base)
-    assert.deepEqual(normal.record, nativeJson.record)
-    assert.deepEqual(normal.result, nativeJson.result)
-    assert.deepEqual(normal.counts, {
-      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1, validatorOk: 2, rvcCalls: 1, rvcOk: 1,
-    })
+    const normal = runWorker('existing', null, frame)
+    assert.deepEqual(normal.record, native.record)
+    assert.deepEqual(normal.result, native.result)
+    assert.deepEqual(normal.counts, NORMAL_COUNTS)
+    assert.equal(normal.faultHit, 0)
+    assert.equal(normal.exposesPrivateRecord, true)
 
-    for (const mode of ['record-throw', 'draft-throw', 'record-missing-schema', 'draft-missing-taskId', 'draft-missing-delivery']) {
-      const fault = runWorker(mode, frame, base)
-      assert.equal(fault.faultHit, 1, mode)
-      assert.equal(fault.record, null, mode)
-      assert.equal(fault.result.ok, false, mode)
-      assert.equal(fault.result.errors[0].code, 'TASK_FIXTURE_DEPENDENCY_FAILURE', mode)
-      assert.equal(fault.result.errors[0].path, '$', mode)
+    const legacy = runWorker('draft', null, { input: ctx.input })
+    const nativeLegacy = JSON.parse(JSON.stringify(runDraftFixtureTaskOnce(ctx.input)))
+    assert.deepEqual(legacy.result, nativeLegacy.result)
+    assert.deepEqual(legacy.record, nativeLegacy.record)
+    assert.deepEqual(legacy.counts, DRAFT_COUNTS)
+
+    const publicRun = runWorker('public', null, { input: ctx.input })
+    assert.deepEqual(publicRun.result, JSON.parse(JSON.stringify(runFixtureAudioTaskOnce(ctx.input))))
+    assert.deepEqual(publicRun.counts, DRAFT_COUNTS)
+    assert.equal(publicRun.exposesPrivateRecord, false)
+    assert.equal(JSON.stringify(publicRun.result).includes('observedAt'), false)
+    assert.equal(JSON.stringify(publicRun.result).includes('"record"'), false)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('T02 stage protocol matrix: legal refusal vs bad protocol at record/draft/final, both final entries', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-t02')
+  try {
+    const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+
+    const initialLegal = runWorker('existing', { target: 'record', kind: 'legal-delete-schemaVersion', call: 'first' }, frame)
+    assert.equal(initialLegal.faultHit, 1)
+    assert.deepEqual(initialLegal.faultAt, { target: 'record', call: 1 })
+    expectError(initialLegal.result, 'INVALID_INPUT', '$')
+    assert.equal(initialLegal.record, null)
+    assert.equal(initialLegal.counts.validateRecord, 1)
+    assert.equal(initialLegal.counts.validateDraft, 0)
+    assert.equal(initialLegal.counts.source, 0)
+    assert.equal(initialLegal.counts.gate, 0)
+    assert.equal(initialLegal.counts.dispatch, 0)
+    assert.equal(initialLegal.counts.transition, 0)
+    assertNoEcho(initialLegal.result, 'initial legal refusal')
+
+    const draftLegal = runWorker('existing', { target: 'draft', kind: 'legal-delete-taskId', call: 'first' }, frame)
+    assert.equal(draftLegal.faultHit, 1)
+    expectError(draftLegal.result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+    assert.equal(draftLegal.record, null)
+    assert.equal(draftLegal.counts.validateRecord, 1)
+    assert.equal(draftLegal.counts.validateDraft, 1)
+    assert.equal(draftLegal.counts.dispatch, 0)
+    assert.equal(draftLegal.counts.transition, 0)
+    assertNoEcho(draftLegal.result, 'draft legal refusal')
+
+    const stages = [
+      { entry: 'existing', finalCall: 2, create: 0 },
+      { entry: 'draft', finalCall: 1, create: 1 },
+      { entry: 'public', finalCall: 1, create: 1 },
+    ]
+    for (const stage of stages) {
+      const payload = stage.entry === 'existing' ? frame : { input: ctx.input }
+      const run = runWorker(stage.entry, { target: 'record', kind: 'legal-delete-deliveryRequested', call: 'final' }, payload)
+      assert.equal(run.faultHit, 1, stage.entry)
+      assert.deepEqual(run.faultAt, { target: 'record', call: stage.finalCall }, stage.entry)
+      expectError(run.result, 'TASK_TRANSITION_REJECTED', '$')
+      assert.equal(run.counts.transition, 2, stage.entry)
+      assert.equal(run.counts.dispatch, 1, stage.entry)
+      assert.equal(run.counts.create, stage.create, stage.entry)
+      assert.equal(run.counts.rvcCalls, 1, stage.entry)
+      assert.equal(run.counts.rvcOk, 1, stage.entry)
+      if (run.exposesPrivateRecord) assert.equal(run.record, null, stage.entry)
+      assertNoEcho(run.result, 'final legal refusal ' + stage.entry)
     }
 
-    const collision = runWorker('collision', frame, base)
-    assert.equal(collision.faultHit, 1)
-    assert.equal(collision.record, null)
-    assert.equal(collision.result.ok, false)
-    assert.equal(collision.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
-    assert.equal(collision.counts.dispatch, 1)
-    assert.equal(collision.counts.rvcCalls, 1)
-    assert.equal(collision.counts.rvcOk, 0)
-
-    const identity = runWorker('identity-bad', frame, base)
-    assert.equal(identity.faultHit, 1)
-    assert.equal(identity.record, null)
-    assert.equal(identity.result.ok, false)
-    assert.equal(identity.counts.dispatch, 1)
-    assert.equal(identity.counts.transition, 0)
-
-    for (const mode of ['result-missing-field', 'result-type-bad']) {
-      const bad = runWorker(mode, frame, base)
-      assert.equal(bad.faultHit, 1, mode)
-      assert.equal(bad.record, null, mode)
-      assert.equal(bad.result.ok, false, mode)
-      assert.equal(bad.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT', mode)
-      assert.equal(bad.counts.dispatch, 1, mode)
-      assert.equal(bad.counts.transition, 0, mode)
+    const recordInitialFaults = ['throw', 'null', 'not-boolean', 'scalar-result', 'success-42', 'success-empty', 'success-missing-source', 'success-source-42']
+    for (const kind of recordInitialFaults) {
+      const run = runWorker('existing', { target: 'record', kind, call: 'first' }, frame)
+      expectDependencyFailure(run, 'initial record ' + kind)
+      assert.equal(run.counts.dispatch, 0, kind)
+      assert.equal(run.counts.transition, 0, kind)
+      assert.equal(run.counts.validateDraft, 0, kind)
+      assertNoEcho(run.result, 'initial record ' + kind)
     }
+
+    const recordUndefinedFaults = ['success-schema-undefined', 'success-taskid-undefined', 'success-delivery-undefined']
+    for (const kind of recordUndefinedFaults) {
+      const run = runWorker('existing', { target: 'record', kind, call: 'final' }, frame)
+      expectDependencyFailure(run, 'final record ' + kind)
+      assert.equal(run.counts.transition, 2, kind)
+      assert.equal(run.counts.dispatch, 1, kind)
+      assertNoEcho(run.result, 'final record ' + kind)
+    }
+
+    const draftFaults = ['throw', 'null', 'not-boolean', 'scalar-result', 'success-42', 'success-empty', 'success-missing-source', 'success-source-42']
+    for (const kind of draftFaults) {
+      const run = runWorker('existing', { target: 'draft', kind, call: 'first' }, frame)
+      expectDependencyFailure(run, 'draft ' + kind)
+      assert.equal(run.counts.validateDraft, 1, kind)
+      assert.equal(run.counts.dispatch, 0, kind)
+      assert.equal(run.counts.transition, 0, kind)
+      assertNoEcho(run.result, 'draft ' + kind)
+    }
+
+    const draftUndefinedFaults = ['success-taskid-undefined', 'success-delivery-undefined']
+    for (const kind of draftUndefinedFaults) {
+      expectDependencyFailure(runWorker('existing', { target: 'draft', kind, call: 'first' }, frame), 'draft ' + kind)
+    }
+
+    for (const entry of ['draft', 'public']) {
+      for (const kind of ['throw', 'null', 'scalar-result']) {
+        const run = runWorker(entry, { target: 'record', kind, call: 'final' }, { input: ctx.input })
+        expectDependencyFailure(run, entry + ' final ' + kind)
+        assert.equal(run.counts.transition, 2, entry + kind)
+        assert.equal(run.counts.dispatch, 1, entry + kind)
+        assertNoEcho(run.result, entry + ' final ' + kind)
+      }
+    }
+
+    const dispatchThrow = runWorker('existing', { target: 'dispatch', kind: 'throw', call: 1 }, frame)
+    expectDependencyFailure(dispatchThrow, 'dispatch throw')
+    assert.equal(dispatchThrow.counts.dispatch, 1)
+    assert.equal(dispatchThrow.counts.transition, 0)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('B10 worker counts: legacy/still-blocked initial states and six mixed prechecks call nothing extra', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b10')
+  try {
+    const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+
+    const blockedInput = clone(ctx.input)
+    blockedInput.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
+    const blocked = runWorker('existing', null, { scopeId: SCOPE, record: ctx.record, input: blockedInput })
+    expectBlocked(blocked.result, 'TASK_FIXTURE_READINESS_BLOCKED')
+    assert.equal(blocked.counts.dispatch, 0)
+    assert.equal(blocked.counts.create, 0)
+    assert.equal(blocked.counts.transition, 0)
+    assert.equal(blocked.counts.source, 1)
+
+    const unknownRecord = advance(ctx.record, [{ type: 'BEGIN_PROCESS' }, { type: 'MARK_UNKNOWN' }])
+    const unknown = runWorker('existing', null, { scopeId: SCOPE, record: unknownRecord, input: ctx.input })
+    expectError(unknown.result, 'TASK_TRANSITION_REJECTED', '$')
+    assert.equal(unknown.record, null)
+    assert.equal(unknown.counts.source, 0)
+    assert.equal(unknown.counts.gate, 0)
+    assert.equal(unknown.counts.create, 0)
+    assert.equal(unknown.counts.transition, 0)
+    assert.equal(unknown.counts.dispatch, 0)
+    assert.equal(unknown.counts.validateRecord, 1)
+    assert.equal(unknown.counts.validateDraft, 0)
 
     const saved = advance(ctx.record, [
       { type: 'BEGIN_PROCESS' },
       { type: 'ATTACH_FAKE_ARTIFACT', artifactRef: 'artifact:fixture-fake-saved' },
       { type: 'MARK_SAVED' },
     ])
-    const savedRun = runWorker('normal', { scopeId: SCOPE, record: saved, input: ctx.input }, base)
-    assert.equal(savedRun.result.ok, false)
+    const savedRun = runWorker('existing', null, { scopeId: SCOPE, record: saved, input: ctx.input })
+    expectError(savedRun.result, 'TASK_TRANSITION_REJECTED', '$')
+    assert.equal(savedRun.record, null)
     assert.equal(savedRun.counts.source, 0)
     assert.equal(savedRun.counts.gate, 0)
     assert.equal(savedRun.counts.create, 0)
     assert.equal(savedRun.counts.transition, 0)
+    assert.equal(savedRun.counts.dispatch, 0)
 
-    const legacy = runWorker('legacy', { input: ctx.input }, base)
-    const nativeLegacy = JSON.parse(JSON.stringify(runDraftFixtureTaskOnce(ctx.input)))
-    assert.deepEqual(legacy.result, nativeLegacy.result)
-    assert.deepEqual(legacy.record, nativeLegacy.record)
-    assert.equal(legacy.counts.create, 1)
-    assert.equal(legacy.counts.source, 1)
-    assert.equal(legacy.counts.gate, 1)
-    assert.equal(legacy.counts.dispatch, 1)
+    const absent = clone(ctx.input)
+    absent.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    const legacySourceBlock = runWorker('draft', null, { input: absent })
+    expectBlocked(legacySourceBlock.result, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(legacySourceBlock.counts.create, 0)
+    assert.equal(legacySourceBlock.counts.dispatch, 0)
+    assert.equal(legacySourceBlock.counts.transition, 0)
+    assert.equal(legacySourceBlock.counts.validateRecord, 0)
 
-    const publicRun = runWorker('public', { input: ctx.input }, base)
-    assert.deepEqual(publicRun.result, JSON.parse(JSON.stringify(runFixtureAudioTaskOnce(ctx.input))))
-    assert.equal(publicRun.counts.create, 1)
-    assert.equal(publicRun.counts.source, 1)
-    assert.equal(publicRun.counts.gate, 1)
-    assert.equal(publicRun.counts.dispatch, 1)
+    const legacyReadiness = clone(ctx.input)
+    legacyReadiness.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
+    const legacyGateBlock = runWorker('draft', null, { input: legacyReadiness })
+    expectBlocked(legacyGateBlock.result, 'TASK_FIXTURE_READINESS_BLOCKED')
+    assert.equal(legacyGateBlock.counts.create, 1)
+    assert.equal(legacyGateBlock.counts.dispatch, 0)
+    assert.equal(legacyGateBlock.counts.transition, 0)
 
-    const finalFault = runWorker('final-record-throw', frame, base)
-    assert.equal(finalFault.faultHit, 1)
-    assert.equal(finalFault.record, null)
-    assert.equal(finalFault.result.ok, false)
-    assert.equal(finalFault.result.errors[0].code, 'TASK_FIXTURE_DEPENDENCY_FAILURE')
-    assert.equal(finalFault.counts.transition, 2)
-    assert.equal(finalFault.counts.dispatch, 1)
+    const version = clone(ctx.input)
+    version.schemaVersion = 2
+    const mixedVersion = runWorker('existing', null, { scopeId: 'bad-scope', record: ctx.record, input: version })
+    expectError(mixedVersion.result, 'UNSUPPORTED_VERSION', 'schemaVersion')
+    assert.equal(mixedVersion.counts.validateRecord, 0)
+    assert.equal(mixedVersion.counts.validateDraft, 0)
 
-    const blockedInput = clone(ctx.input)
-    blockedInput.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
-    const blocked = runWorker('normal', { scopeId: SCOPE, record: ctx.record, input: blockedInput }, base)
-    assert.equal(blocked.result.ok, true)
-    assert.equal(blocked.result.value.phase, 'BLOCKED')
-    assert.equal(blocked.counts.dispatch, 0)
-    assert.equal(blocked.counts.create, 0)
-    assert.equal(blocked.counts.transition, 0)
+    const unknownKey = clone(ctx.input)
+    unknownKey.extra = 1
+    const mixedUnknown = runWorker('existing', null, { scopeId: 'bad-scope', record: ctx.record, input: unknownKey })
+    expectError(mixedUnknown.result, 'INVALID_INPUT', '<unknown-key>')
+    assert.equal(mixedUnknown.counts.validateRecord, 0)
 
-    const unknownRecord = advance(ctx.record, [{ type: 'BEGIN_PROCESS' }, { type: 'MARK_UNKNOWN' }])
-    const unknown = runWorker('normal', { scopeId: SCOPE, record: unknownRecord, input: ctx.input }, base)
-    assert.equal(unknown.result.ok, false)
-    assert.equal(unknown.result.errors[0].code, 'TASK_FIXTURE_TASK_TRANSITION_REJECTED')
-    assert.equal(unknown.counts.source, 0)
-    assert.equal(unknown.counts.gate, 0)
-    assert.equal(unknown.counts.create, 0)
-    assert.equal(unknown.counts.transition, 0)
+    const processing = advance(ctx.record, [{ type: 'BEGIN_PROCESS' }])
+    const noDraft = clone(ctx.input)
+    noDraft.sourceInput.voiceBinding.taskDraft = null
+    const mixedNoDraft = runWorker('existing', null, { scopeId: SCOPE, record: processing, input: noDraft })
+    expectError(mixedNoDraft.result, 'TASK_TRANSITION_REJECTED', '$')
+    assert.equal(mixedNoDraft.counts.validateRecord, 1)
+    assert.equal(mixedNoDraft.counts.validateDraft, 0)
+
+    const badRecord = clone(ctx.record)
+    delete badRecord.taskId
+    const noSource = clone(ctx.input)
+    noSource.sourceInput = null
+    const mixedNoSource = runWorker('existing', null, { scopeId: SCOPE, record: badRecord, input: noSource })
+    expectError(mixedNoSource.result, 'INVALID_INPUT', '$')
+    assert.equal(mixedNoSource.counts.validateRecord, 1)
+
+    const wrongScope = clone(ctx.input)
+    wrongScope.sourceInput.voiceBinding.expectation.scopeId = 'scope:fixture-other'
+    const mixedWrongScope = runWorker('existing', null, { scopeId: SCOPE, record: processing, input: wrongScope })
+    expectError(mixedWrongScope.result, 'TASK_TRANSITION_REJECTED', '$')
+    assert.equal(mixedWrongScope.counts.validateRecord, 1)
+    assert.equal(mixedWrongScope.counts.validateDraft, 0)
+
+    const badDraft = clone(ctx.input)
+    badDraft.sourceInput.voiceBinding.taskDraft.feature = 'broken'
+    badDraft.sourceInput.voiceBinding.expectation.scopeId = 'scope:fixture-other'
+    const mixedBadDraft = runWorker('existing', null, { scopeId: SCOPE, record: ctx.record, input: badDraft })
+    expectError(mixedBadDraft.result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+    assert.equal(mixedBadDraft.counts.validateDraft, 1)
+
+    for (const run of [mixedVersion, mixedUnknown, mixedNoDraft, mixedNoSource, mixedWrongScope, mixedBadDraft]) {
+      assert.equal(run.counts.source, 0)
+      assert.equal(run.counts.gate, 0)
+      assert.equal(run.counts.create, 0)
+      assert.equal(run.counts.transition, 0)
+      assert.equal(run.counts.dispatch, 0)
+      assert.equal(run.record, null)
+    }
+    assert.equal(frame.input.sourceInput.voiceBinding.taskDraft.taskId.length > 0, true)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('B11 gate/dispatch association faults and RVC result association keep separate fixed errors', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-b11')
+  try {
+    const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+
+    const identityFaults = ['identity-bad', 'candidate-bad', 'category-bad', 'readiness-instance-bad']
+    for (const kind of identityFaults) {
+      const run = runWorker('existing', { target: 'dispatch', kind, call: 1 }, frame)
+      expectDependencyFailure(run, kind)
+      assert.equal(run.counts.dispatch, 1, kind)
+      assert.equal(run.counts.transition, 0, kind)
+      assert.equal(run.counts.rvcCalls, 0, kind)
+      assert.equal(run.counts.rvcOk, 0, kind)
+      assertNoEcho(run.result, kind)
+    }
+
+    const resultFaults = ['request-bad', 'model-bad']
+    for (const kind of resultFaults) {
+      const run = runWorker('existing', { target: 'dispatch', kind, call: 1 }, frame)
+      assert.equal(run.faultHit, 1, kind)
+      assert.equal(run.result.ok, false, kind)
+      assert.equal(run.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT', kind)
+      assert.equal(run.result.errors[0].path, '$', kind)
+      assert.equal(run.record, null, kind)
+      assert.equal(run.counts.dispatch, 1, kind)
+      assert.equal(run.counts.rvcCalls, 1, kind)
+      assert.equal(run.counts.rvcOk, 0, kind)
+      assert.equal(run.counts.transition, 0, kind)
+      assertNoEcho(run.result, kind)
+    }
+
+    for (const kind of ['missing-field', 'type-bad']) {
+      const run = runWorker('existing', { target: 'dispatch', kind, call: 1 }, frame)
+      assert.equal(run.faultHit, 1, kind)
+      assert.equal(run.result.ok, false, kind)
+      assert.equal(run.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT', kind)
+      assert.equal(run.result.errors[0].path, '$', kind)
+      assert.equal(run.record, null, kind)
+      assert.equal(run.counts.dispatch, 1, kind)
+      assert.equal(run.counts.rvcCalls, 1, kind)
+      assert.equal(run.counts.rvcOk, 0, kind)
+      assert.equal(run.counts.transition, 0, kind)
+      assert.equal(run.counts.create, 0, kind)
+      assertNoEcho(run.result, kind)
+    }
+
+    const normal = runWorker('existing', null, frame)
+    assert.deepEqual(normal.counts, NORMAL_COUNTS)
+    assert.equal(normal.counts.rvcOk, 1)
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
@@ -737,16 +1306,26 @@ test('F01 legal collision: a natural Fake output equal to the synchronized task 
     collInput.sourceInput.voiceBinding.negotiation.request.sourceAudioRef = outputRef
     collInput.sourceInput.artifactLibrary.artifacts[0].artifactRef = outputRef
 
+    assert.equal(collRecord.source.ref, outputRef)
+    assert.equal(collInput.sourceInput.voiceBinding.taskDraft.source.ref, outputRef)
+    assert.equal(collInput.sourceInput.voiceBinding.negotiation.request.sourceAudioRef, outputRef)
+    assert.equal(collInput.sourceInput.artifactLibrary.artifacts[0].artifactRef, outputRef)
+
     const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: collRecord, input: collInput })
     assert.equal(out.result.ok, false)
     assert.equal(out.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
+    assert.equal(out.result.errors[0].path, '$')
     assert.equal(out.record, null)
+    assertNoEcho(out.result, 'legal collision native')
 
     const frame = { scopeId: SCOPE, record: collRecord, input: collInput }
-    const worker = runWorker('normal', frame, new URL('../core/audio/', import.meta.url).href)
+    const worker = runWorker('existing', null, frame)
+    assert.deepEqual(worker.result, JSON.parse(JSON.stringify(out.result)))
     assert.equal(worker.result.ok, false)
     assert.equal(worker.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
+    assert.equal(worker.result.errors[0].path, '$')
     assert.equal(worker.record, null)
+    assert.equal(worker.faultHit, 0)
     assert.equal(worker.counts.source, 1)
     assert.equal(worker.counts.gate, 1)
     assert.equal(worker.counts.dispatch, 1)
@@ -757,10 +1336,17 @@ test('F01 legal collision: a natural Fake output equal to the synchronized task 
 
     const unsynced = clone(collInput)
     unsynced.sourceInput.voiceBinding.negotiation.request.sourceAudioRef = base.record.source.ref
-    expectBlocked(
-      runExistingFixtureTaskOnce({ scopeId: SCOPE, record: collRecord, input: unsynced }).result,
-      'TASK_FIXTURE_SOURCE_BLOCKED',
-    )
+    const unsyncedNative = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: collRecord, input: unsynced })
+    expectBlocked(unsyncedNative.result, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    const unsyncedWorker = runWorker('existing', null, { scopeId: SCOPE, record: collRecord, input: unsynced })
+    assert.deepEqual(unsyncedWorker.result, JSON.parse(JSON.stringify(unsyncedNative.result)))
+    assert.deepEqual(unsyncedWorker.record, JSON.parse(JSON.stringify(unsyncedNative.record)))
+    assert.equal(unsyncedWorker.counts.source, 1)
+    assert.equal(unsyncedWorker.counts.gate, 1)
+    assert.equal(unsyncedWorker.counts.dispatch, 0)
+    assert.equal(unsyncedWorker.counts.create, 0)
+    assert.equal(unsyncedWorker.counts.transition, 0)
+    assert.equal(unsyncedWorker.counts.rvcCalls, 0)
   } finally {
     removeConfigSandbox(base.sandbox)
     if (coll !== null) removeConfigSandbox(coll.sandbox)
@@ -838,7 +1424,18 @@ test('B14 repeating the same CREATED snapshot can simulate again; no claimed sta
 
 test('B16 the new documentation states the internal-only, no-persistent-claim boundary', () => {
   const doc = fs.readFileSync('docs/TASK_FIXTURE_RECORD_INTERNAL.md', 'utf8')
-  for (const marker of ['内部', 'scopeId', 'observedAt', '不持久', '不宣称', 'OFFLINE', 'NOT_INTEGRATED']) {
+  for (const marker of [
+    '内部',
+    'scopeId',
+    'observedAt',
+    '不持久',
+    '不宣称',
+    'OFFLINE',
+    'NOT_INTEGRATED',
+    'depth12',
+    'DEPENDENCY_FAILURE',
+    'REMOTE',
+  ]) {
     assert.equal(doc.includes(marker), true, marker)
   }
 })

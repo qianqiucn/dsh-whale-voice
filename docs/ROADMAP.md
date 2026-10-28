@@ -60,7 +60,7 @@ execution, delivery or cross-process recovery. Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
 initial record with original TaskId/scope/`observedAt` without a second create, while the full record
-stays private and the old public envelope is unchanged. New D-B tests 19; full suite **629 / 627 pass / 2 platform skips / 0 fail**. It is **`OFFLINE`** / `FIXTURE_ONLY` /
+stays private and the old public envelope is unchanged. New D-B tests 27; full suite **637 / 635 pass / 2 platform skips / 0 fail**. The F01 v1.6 evidence close-out keeps product code read-only and separates the test-only worker entry from the injected fault, closing the three-stage legal-refusal/bad-protocol matrix, measured `depth12`/13 partition bounds, the legal cross-scope voice library, legal eight-domain identity controls, the `REMOTE` readiness policy, full-graph output isolation and the gate/dispatch vs RVC-result error split. It is **`OFFLINE`** / `FIXTURE_ONLY` /
 `NOT_INTEGRATED` and adds no persistent claim, cross-call idempotency, recovery, Host/GUI or real
 generation. None
 delivers real adapters, real byte/codec/hash verification,
