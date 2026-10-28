@@ -472,7 +472,7 @@ const deps = {
 }
 const mode = process.env.WORKER_MODE || 'normal'
 const frame = JSON.parse(process.env.WORKER_FRAME)
-const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0 }
+const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0, rvcCalls: 0, rvcOk: 0 }
 let faultHit = 0
 const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
 const realValidateRecord = deps.task.validateAudioTaskRecord
@@ -509,6 +509,12 @@ const validateDraft = (...args) => {
 const dispatch = (...args) => {
   counts.dispatch += 1
   const result = deps.ready.dispatchReadyRvcFakeOnce(...args)
+  if (mode === 'identity-bad' && faultHit === 0) {
+    faultHit += 1
+    const copy = structuredClone(result)
+    copy.value.dispatch.instanceId = 'instance:other'
+    return copy
+  }
   if (mode === 'collision' && faultHit === 0) {
     faultHit += 1
     const copy = structuredClone(result)
@@ -516,6 +522,12 @@ const dispatch = (...args) => {
     copy.value.dispatch.result.status = 'SUCCEEDED_FAKE'
     return copy
   }
+  return result
+}
+const validateRvc = (...args) => {
+  counts.rvcCalls += 1
+  const result = deps.gateway.validateRvcFakeResult(...args)
+  if (result && result.ok === true) counts.rvcOk += 1
   return result
 }
 const exportsByKey = {
@@ -538,7 +550,7 @@ const exportsByKey = {
   },
   'rvc-fake-gateway.mjs': {
     RVC_FAKE_SCENARIOS: deps.gateway.RVC_FAKE_SCENARIOS,
-    validateRvcFakeResult: deps.gateway.validateRvcFakeResult,
+    validateRvcFakeResult: validateRvc,
   },
 }
 const enginePath = new URL('task-fixture-engine-internal.mjs', base).href
@@ -598,7 +610,7 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
     assert.deepEqual(normal.record, nativeJson.record)
     assert.deepEqual(normal.result, nativeJson.result)
     assert.deepEqual(normal.counts, {
-      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1, validatorOk: 2,
+      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1, validatorOk: 2, rvcCalls: 1, rvcOk: 1,
     })
 
     for (const mode of ['record-throw', 'draft-throw', 'record-missing-schema', 'draft-missing-taskId', 'draft-missing-delivery']) {
@@ -616,6 +628,27 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
     assert.equal(collision.result.ok, false)
     assert.equal(collision.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
     assert.equal(collision.counts.dispatch, 1)
+    assert.equal(collision.counts.rvcCalls, 1)
+    assert.equal(collision.counts.rvcOk, 0)
+
+    const identity = runWorker('identity-bad', frame, base)
+    assert.equal(identity.faultHit, 1)
+    assert.equal(identity.record, null)
+    assert.equal(identity.result.ok, false)
+    assert.equal(identity.counts.dispatch, 1)
+    assert.equal(identity.counts.transition, 0)
+
+    const saved = advance(ctx.record, [
+      { type: 'BEGIN_PROCESS' },
+      { type: 'ATTACH_FAKE_ARTIFACT', artifactRef: 'artifact:fixture-fake-saved' },
+      { type: 'MARK_SAVED' },
+    ])
+    const savedRun = runWorker('normal', { scopeId: SCOPE, record: saved, input: ctx.input }, base)
+    assert.equal(savedRun.result.ok, false)
+    assert.equal(savedRun.counts.source, 0)
+    assert.equal(savedRun.counts.gate, 0)
+    assert.equal(savedRun.counts.create, 0)
+    assert.equal(savedRun.counts.transition, 0)
 
     const legacy = runWorker('legacy', { input: ctx.input }, base)
     const nativeLegacy = JSON.parse(JSON.stringify(runDraftFixtureTaskOnce(ctx.input)))
@@ -697,6 +730,8 @@ test('F01 legal collision: a natural Fake output equal to the synchronized task 
     assert.equal(worker.counts.dispatch, 1)
     assert.equal(worker.counts.create, 0)
     assert.equal(worker.counts.transition, 0)
+    assert.equal(worker.counts.rvcCalls, 1)
+    assert.equal(worker.counts.rvcOk, 1)
 
     const unsynced = clone(collInput)
     unsynced.sourceInput.voiceBinding.negotiation.request.sourceAudioRef = base.record.source.ref
@@ -729,6 +764,14 @@ test('F03 remaining: cross-scope artifact, deep input and deep owner partitions'
     const deepRecord = clone(ctx.record)
     deepRecord.extra = deep
     expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: deepRecord, input: ctx.input }).result, 'RESOURCE_LIMIT', '$')
+
+    const voiceScope = clone(ctx.input)
+    voiceScope.sourceInput.voiceBinding.library.profiles[0].scopeId = 'scope:fixture-other'
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: voiceScope }).result, 'SOURCE_INPUT_INVALID', 'sourceInput')
+
+    const blockedContext = clone(ctx.input)
+    blockedContext.context = { requestId: 'request:fixture-1' }
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: blockedContext }).result, 'INVALID_CONTEXT', 'context')
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
