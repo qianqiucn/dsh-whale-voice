@@ -472,7 +472,7 @@ const deps = {
 }
 const mode = process.env.WORKER_MODE || 'normal'
 const frame = JSON.parse(process.env.WORKER_FRAME)
-const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0 }
+const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0 }
 let faultHit = 0
 const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
 const realValidateRecord = deps.task.validateAudioTaskRecord
@@ -480,6 +480,11 @@ const realValidateDraft = deps.task.validateAudioTaskDraft
 const validateRecord = (...args) => {
   counts.validateRecord += 1
   const result = realValidateRecord(...args)
+  if (result && result.ok === true) counts.validatorOk += 1
+  if (mode === 'final-record-throw' && counts.validateRecord === 2 && faultHit === 0) {
+    faultHit += 1
+    throw new Error('injected final record throw')
+  }
   if (mode === 'record-throw' && faultHit === 0) { faultHit += 1; throw new Error('injected record throw') }
   if (mode === 'record-missing-schema' && faultHit === 0 && result && result.ok === true) {
     faultHit += 1
@@ -549,9 +554,24 @@ await engine.link(async (specifier, referencing) => {
   return mod
 })
 await engine.evaluate()
+const facadeUrl = new URL('task-fixture-runner.mjs', base).href
+const facade = new vm.SourceTextModule(fs.readFileSync(new URL(facadeUrl), 'utf8'), { identifier: facadeUrl })
+await facade.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === enginePath) return engine
+  const key = url.split('/').pop()
+  const exp = exportsByKey[key]
+  if (!exp) throw new Error('unexpected facade import ' + url)
+  return new vm.SyntheticModule(Object.keys(exp), function () {
+    for (const k of Object.keys(exp)) this.setExport(k, exp[k])
+  }, { identifier: url })
+})
+await facade.evaluate()
 const out = mode === 'legacy'
   ? engine.namespace.runDraftFixtureTaskOnce(frame.input)
-  : engine.namespace.runExistingFixtureTaskOnce(frame)
+  : mode === 'public'
+    ? { record: null, result: facade.namespace.runFixtureAudioTaskOnce(frame.input) }
+    : engine.namespace.runExistingFixtureTaskOnce(frame)
 console.log(JSON.stringify({ counts, faultHit, record: out.record, result: out.result }))
 `
 
@@ -578,7 +598,7 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
     assert.deepEqual(normal.record, nativeJson.record)
     assert.deepEqual(normal.result, nativeJson.result)
     assert.deepEqual(normal.counts, {
-      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1,
+      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1, validatorOk: 2,
     })
 
     for (const mode of ['record-throw', 'draft-throw', 'record-missing-schema', 'draft-missing-taskId', 'draft-missing-delivery']) {
@@ -605,6 +625,21 @@ test('T01/T02/T03 worker: native counts, validator fault, root-field fault and c
     assert.equal(legacy.counts.source, 1)
     assert.equal(legacy.counts.gate, 1)
     assert.equal(legacy.counts.dispatch, 1)
+
+    const publicRun = runWorker('public', { input: ctx.input }, base)
+    assert.deepEqual(publicRun.result, JSON.parse(JSON.stringify(runFixtureAudioTaskOnce(ctx.input))))
+    assert.equal(publicRun.counts.create, 1)
+    assert.equal(publicRun.counts.source, 1)
+    assert.equal(publicRun.counts.gate, 1)
+    assert.equal(publicRun.counts.dispatch, 1)
+
+    const finalFault = runWorker('final-record-throw', frame, base)
+    assert.equal(finalFault.faultHit, 1)
+    assert.equal(finalFault.record, null)
+    assert.equal(finalFault.result.ok, false)
+    assert.equal(finalFault.result.errors[0].code, 'TASK_FIXTURE_DEPENDENCY_FAILURE')
+    assert.equal(finalFault.counts.transition, 2)
+    assert.equal(finalFault.counts.dispatch, 1)
 
     const blockedInput = clone(ctx.input)
     blockedInput.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
@@ -672,6 +707,30 @@ test('F01 legal collision: a natural Fake output equal to the synchronized task 
   } finally {
     removeConfigSandbox(base.sandbox)
     if (coll !== null) removeConfigSandbox(coll.sandbox)
+  }
+})
+
+test('F03 remaining: cross-scope artifact, deep input and deep owner partitions', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-f03')
+  try {
+    const crossScope = clone(ctx.input)
+    crossScope.sourceInput.artifactLibrary.artifacts[0].scopeId = 'scope:fixture-other'
+    const crossOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: crossScope })
+    assert.equal(crossOut.result.ok, true)
+    assert.equal(crossOut.result.value.phase, 'BLOCKED')
+
+    let deep = {}
+    for (let i = 0; i < 13; i += 1) deep = { nested: deep }
+    const deepInput = clone(ctx.input)
+    deepInput.extra = deep
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: deepInput }).result, 'RESOURCE_LIMIT', '$')
+
+    const deepRecord = clone(ctx.record)
+    deepRecord.extra = deep
+    expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: deepRecord, input: ctx.input }).result, 'RESOURCE_LIMIT', '$')
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
   }
 })
 

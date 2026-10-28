@@ -39,7 +39,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   complete initial `CREATED`/`BLOCKED_RIGHTS` record with its original TaskId/scope/`observedAt`;
   it never calls create, never reconstructs a record from the projection and never persists a
   claim. Internal `{record, result}` keeps the full record private; the public 13-key envelope and
-  three legacy exports are unchanged. D-B tests 18; full suite **628 / 626 pass / 2 platform skips / 0 fail**, UI **24/24**. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no cross-call idempotency,
+  three legacy exports are unchanged. D-B tests 19; full suite **629 / 627 pass / 2 platform skips / 0 fail**, UI **24/24**. `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no cross-call idempotency,
   recovery, Host/GUI or real generation.
 - **Plan 08-D-A branch:** `feature/plan08d-task-catalog` adds `core/audio/task-catalog.mjs` — an
   isolated persistent catalog over the trusted temporary sandbox that stores only initial
