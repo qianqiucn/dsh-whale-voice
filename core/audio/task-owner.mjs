@@ -6,26 +6,35 @@
  *   -> atomic CLAIMED snapshot -> the existing internal existing-record engine at most once
  *   -> validated FINAL snapshot -> safe projection.
  *
- * Repeated run/get calls only read the stored conclusion; a confirmed claim without a trusted FINAL
- * stays a tombstone and is reported as owner UNKNOWN. This module keeps no queue, recovery or
- * cross-process state of its own: the serial queue, confirmed digests and the shared unknown lock
- * come from `fixture-task-store-internal.mjs`.
+ * Every dependent action is guarded by a fresh, restricted read of the two fixed store files:
+ * the factory, `run` and `get` re-read the birth registry and re-check *all* owner associations,
+ * and so do the checkpoints after the claim, after the engine returned and after the final commit.
+ * A broken or externally changed birth registry therefore stops the engine instead of being
+ * discovered by the next `get`.
+ *
+ * Repeated run/get calls only read the stored conclusion; a confirmed claim without a trusted
+ * FINAL stays an unreleasable tombstone. The first attempt that cannot be confirmed returns the
+ * fixed `TASK_OWNER_EXECUTION_UNKNOWN` error (never `ok:true`/RECORDED); later run/get calls report
+ * the same tombstone as the safe UNKNOWN projection. This module keeps no queue, recovery or
+ * cross-process state of its own: the serial queue, confirmed digests, fresh association reads and
+ * the shared unknown lock come from `fixture-task-store-internal.mjs`.
  */
 
 import { copyFixtureInput, deepFreezeFixtureValue } from './fixture-input-boundary.mjs'
 import { isTrustedSandbox } from '../config-sandbox.mjs'
 import { projectAudioTask, validateAudioTaskRecord } from './task-contract.mjs'
 import {
-  TASK_FIXTURE_ERRORS,
+  TASK_FIXTURE_SCHEMA_VERSION,
   runExistingFixtureTaskOnce,
 } from './task-fixture-engine-internal.mjs'
-import { PROVIDER_DISPATCH_ERRORS } from './provider-dispatch.mjs'
 import { RVC_FAKE_ERRORS } from '../svc/rvc-fake-gateway.mjs'
 import {
-  OWNER_FILE_NAME,
-  MAX_OWNER_BYTES,
-  MAX_OWNER_ENTRIES,
+  INITIAL_STATES,
+  OWNER_NO_EXECUTION_REASONS,
+  OWNER_SIMULATED_STATES,
+  OWNER_SNAPSHOT_SCHEMA_VERSION,
   SCOPE_PATTERN,
+  STORE_DOMAINS,
   TASK_ID_PATTERN,
   checkSandbox,
   enqueue,
@@ -35,8 +44,8 @@ import {
   isPlainObject,
   isStoreFailure,
   keySurface,
-  openStoreFile,
-  parseStoreJson,
+  lockStore,
+  openOwnerFile,
   raiseStore,
   readCatalogEntries,
   sha256,
@@ -44,7 +53,7 @@ import {
   storeReason,
 } from './fixture-task-store-internal.mjs'
 
-export const TASK_OWNER_SCHEMA_VERSION = 1
+export const TASK_OWNER_SCHEMA_VERSION = OWNER_SNAPSHOT_SCHEMA_VERSION
 
 const ERROR_KEYS = Object.freeze([
   'INVALID_INPUT',
@@ -68,32 +77,32 @@ export const TASK_OWNER_ERRORS = Object.freeze(
   Object.fromEntries(ERROR_KEYS.map((key) => [key, 'TASK_OWNER_' + key])),
 )
 
-const OWNER_FILE_SPEC = Object.freeze({
-  name: OWNER_FILE_NAME,
-  maxBytes: MAX_OWNER_BYTES,
-  maxEntries: MAX_OWNER_ENTRIES,
-  unknownKey: 'OWNER_UNKNOWN',
-  parse: (bytes) => parseOwnerSnapshot(bytes, MAX_OWNER_ENTRIES),
-})
-
 const RUN_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId', 'input']))
 const GET_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId']))
 const INPUT_KEYS = Object.freeze(new Set(['schemaVersion', 'sourceInput', 'readiness', 'context']))
-const SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entries']))
-const ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'taskId', 'birthIdentityHash', 'phase', 'record', 'completion']))
-const COMPLETION_KEYS = Object.freeze(new Set(['kind', 'reason']))
-const HASH_PATTERN = /^[0-9a-f]{64}$/
 
-const INITIAL_STATES = Object.freeze(new Set(['CREATED', 'BLOCKED_RIGHTS']))
-const SIMULATED_STATES = Object.freeze(
-  new Set(['ARTIFACT_READY', 'FAILED', 'UNKNOWN', 'CANCEL_REQUESTED', 'CANCELLED']),
+/* The existing internal engine keeps its own frozen protocol; this owner only adapts it. */
+const ENGINE_ROOT_KEYS = Object.freeze(new Set(['record', 'result']))
+const ENGINE_RESULT_KEYS = Object.freeze(new Set(['ok', 'value']))
+const ENGINE_VALUE_KEYS = Object.freeze(
+  new Set([
+    'schemaVersion',
+    'phase',
+    'reason',
+    'messageZh',
+    'sourceCheck',
+    'readiness',
+    'execution',
+    'task',
+    'states',
+    'mockOnly',
+    'realOperationAllowed',
+    'submitAllowed',
+    'automaticRetryAllowed',
+  ]),
 )
-const NO_EXECUTION_REASONS = Object.freeze([
-  TASK_FIXTURE_ERRORS.SOURCE_BLOCKED,
-  TASK_FIXTURE_ERRORS.READINESS_BLOCKED,
-  TASK_FIXTURE_ERRORS.DISPATCH_BLOCKED,
-  PROVIDER_DISPATCH_ERRORS.UNSUPPORTED_DISPATCH,
-])
+const ENGINE_PHASES = Object.freeze(new Set(['BLOCKED', 'SIMULATED']))
+const MAX_MESSAGE_LENGTH = 512
 const RVC_REASONS = Object.freeze(Object.values(RVC_FAKE_ERRORS))
 
 const MESSAGES_ZH = Object.freeze({
@@ -158,111 +167,32 @@ function unknownValue(outcome, revision, record) {
   return successValue(outcome, revision, record, 'UNKNOWN', TASK_OWNER_ERRORS.EXECUTION_UNKNOWN)
 }
 
-/* ---------------------------------- owner snapshot schema ---------------------------------- */
+/* ------------------------------- fresh association gates (R01) ------------------------------- */
 
-function ownerRecord(record, entryTaskId) {
-  let validated
-  try {
-    validated = validateAudioTaskRecord(record)
-  } catch {
-    raise('STORE_INVALID', '$')
-  }
-  if (!validated || typeof validated !== 'object' || typeof validated.ok !== 'boolean') {
-    raise('STORE_INVALID', '$')
-  }
-  if (validated.ok === false) raise('STORE_INVALID', '$')
-  const value = validated.value
-  if (!isPlainObject(value)) raise('STORE_INVALID', '$')
-  if (value.taskId !== entryTaskId) raise('STORE_INVALID', '$')
-  if (value.mockOnly !== true || value.realOperationAllowed !== false) raise('STORE_INVALID', '$')
-  if (!isPlainObject(value.delivery) || value.delivery.deliveryId !== null) raise('STORE_INVALID', '$')
-  if (value.delivery.state !== 'NOT_REQUESTED') raise('STORE_INVALID', '$')
-  return value
+function birthOf(catalog, scopeId, taskId) {
+  return catalog.entries.find((item) => item.scopeId === scopeId && item.record.taskId === taskId) || null
 }
 
-function initialOnly(record) {
-  if (!INITIAL_STATES.has(record.state)) raise('STORE_INVALID', '$')
-  if (record.outputArtifactRef !== null) raise('STORE_INVALID', '$')
-  if (!isPlainObject(record.cancel) || record.cancel.requested !== false || record.cancel.confirmed !== false) {
-    raise('STORE_INVALID', '$')
-  }
-  if (record.lastError !== null) raise('STORE_INVALID', '$')
+/**
+ * Restricted real reads of the two fixed files plus the full association gate. Nothing here is
+ * cached: `readCatalogEntries`/`openOwnerFile` re-validate the capability, re-read the bytes
+ * bounded and compare against the per-file confirmed digest, and `crossCheck` re-resolves every
+ * owner entry against the current birth registry.
+ */
+function freshAssociations(state) {
+  const catalog = readCatalogEntries(state, STORE_DOMAINS.OWNER)
+  const owner = openOwnerFile(state).read()
+  crossCheck(owner.snapshot, catalog)
+  return { catalog, owner }
 }
 
-function parseOwnerSnapshot(bytes, maxEntries) {
-  const snapshot = parseStoreJson(bytes)
-  if (!isPlainObject(snapshot)) raise('STORE_INVALID', '$')
-  if (keySurface(snapshot, SNAPSHOT_KEYS) !== 'ok') raise('STORE_INVALID', '$')
-  if (snapshot.schemaVersion !== TASK_OWNER_SCHEMA_VERSION) raise('STORE_INVALID', '$')
-  if (!Array.isArray(snapshot.entries)) raise('STORE_INVALID', '$')
-  if (snapshot.entries.length > maxEntries) raise('RESOURCE_LIMIT', '$')
-  if (!Number.isInteger(snapshot.revision) || snapshot.revision < 0) raise('STORE_INVALID', '$')
-
-  const seen = new Set()
-  let weight = 0
-  const entries = []
-  for (const entry of snapshot.entries) {
-    if (!isPlainObject(entry) || keySurface(entry, ENTRY_KEYS) !== 'ok') raise('STORE_INVALID', '$')
-    if (typeof entry.scopeId !== 'string' || !SCOPE_PATTERN.test(entry.scopeId)) raise('STORE_INVALID', '$')
-    if (typeof entry.taskId !== 'string' || !TASK_ID_PATTERN.test(entry.taskId)) raise('STORE_INVALID', '$')
-    if (typeof entry.birthIdentityHash !== 'string' || !HASH_PATTERN.test(entry.birthIdentityHash)) {
-      raise('STORE_INVALID', '$')
-    }
-    const key = entry.scopeId + '\u0000' + entry.taskId
-    if (seen.has(key)) raise('STORE_INVALID', '$')
-    seen.add(key)
-
-    const record = ownerRecord(entry.record, entry.taskId)
-    if (entry.phase === 'CLAIMED') {
-      initialOnly(record)
-      if (entry.completion !== null) raise('STORE_INVALID', '$')
-      weight += 1
-      entries.push({
-        scopeId: entry.scopeId,
-        taskId: entry.taskId,
-        birthIdentityHash: entry.birthIdentityHash,
-        phase: 'CLAIMED',
-        record,
-        completion: null,
-      })
-      continue
-    }
-    if (entry.phase !== 'FINAL') raise('STORE_INVALID', '$')
-    if (!isPlainObject(entry.completion) || keySurface(entry.completion, COMPLETION_KEYS) !== 'ok') {
-      raise('STORE_INVALID', '$')
-    }
-    const kind = entry.completion.kind
-    const reason = entry.completion.reason
-    if (kind === 'SIMULATED') {
-      if (reason !== null) raise('STORE_INVALID', '$')
-      if (!SIMULATED_STATES.has(record.state)) raise('STORE_INVALID', '$')
-      weight += 2
-      entries.push({
-        scopeId: entry.scopeId,
-        taskId: entry.taskId,
-        birthIdentityHash: entry.birthIdentityHash,
-        phase: 'FINAL',
-        record,
-        completion: Object.freeze({ kind: 'SIMULATED', reason: null }),
-      })
-      continue
-    }
-    if (kind !== 'NO_EXECUTION') raise('STORE_INVALID', '$')
-    if (!NO_EXECUTION_REASONS.includes(reason)) raise('STORE_INVALID', '$')
-    initialOnly(record)
-    weight += 2
-    entries.push({
-      scopeId: entry.scopeId,
-      taskId: entry.taskId,
-      birthIdentityHash: entry.birthIdentityHash,
-      phase: 'FINAL',
-      record,
-      completion: Object.freeze({ kind: 'NO_EXECUTION', reason }),
-    })
-  }
-  if (snapshot.revision !== weight) raise('STORE_INVALID', '$')
-  return { revision: snapshot.revision, entries }
+function requireClaimed(owner, scopeId, taskId) {
+  const entry = entryFor(owner.snapshot, scopeId, taskId)
+  if (!entry || entry.phase !== 'CLAIMED') raise('STORE_INVALID', '$')
+  return entry
 }
+
+/* --------------------------------------- association rules ---------------------------------- */
 
 function sameImmutable(finalRecord, birthRecord) {
   return (
@@ -362,81 +292,134 @@ function readOptions(options) {
 
 /* ---------------------------------------- owner file ---------------------------------------- */
 
-function ownerFile(state) {
-  return openStoreFile(state, OWNER_FILE_SPEC)
-}
-
-function readOwner(state) {
-  return ownerFile(state).read()
-}
-
-function writeOwner(state, snapshot, baseDigest) {
-  const bytes = Buffer.from(JSON.stringify(snapshot), 'utf8')
-  return ownerFile(state).write(bytes, baseDigest, snapshot.revision)
+function writeOwner(state, bytes, baseDigest, revision) {
+  return openOwnerFile(state).write(bytes, baseDigest, revision)
 }
 
 function entryFor(snapshot, scopeId, taskId) {
   return snapshot.entries.find((item) => item.scopeId === scopeId && item.taskId === taskId) || null
 }
 
-/* ----------------------------------------- one run ----------------------------------------- */
+/* ------------------------------ existing engine adapter guard (R02) ------------------------- */
 
-function interpretEngine(out, birthRecord) {
-  if (!out || typeof out !== 'object') return null
-  const result = out.result
-  const record = out.record
-  if (!result || typeof result !== 'object' || result.ok !== true) return null
-  const value = result.value
-  if (!isPlainObject(value) || !isPlainObject(record)) return null
-  let validated
+function engineObject(value, allowed) {
+  if (!isPlainObject(value)) return null
+  if (keySurface(value, allowed) !== 'ok') return null
+  const copied = {}
+  for (const key of allowed) {
+    const field = ownDataField(value, key)
+    if (!field.ok) return null
+    copied[key] = field.value
+  }
+  return copied
+}
+
+function projectOrNull(record) {
+  let projected
   try {
-    validated = validateAudioTaskRecord(record)
+    projected = projectAudioTask(record)
   } catch {
     return null
   }
-  if (!validated || validated.ok !== true) return null
+  if (!projected || typeof projected !== 'object' || typeof projected.ok !== 'boolean') return null
+  if (projected.ok !== true || !isPlainObject(projected.value)) return null
+  return projected.value
+}
+
+/**
+ * Thin adapter guard for the unchanged existing engine. It re-checks the frozen protocol shape,
+ * the fixed safety flags, the immutable birth identity, the real old validator, the complete
+ * `projectAudioTask` equality with the engine's own projection, and the legal phase/reason/state
+ * combinations. Any deviation is treated as an unusable result, never echoed back.
+ */
+function interpretEngine(out, birthRecord) {
+  try {
+    return interpretEngineUnsafe(out, birthRecord)
+  } catch {
+    return null
+  }
+}
+
+function interpretEngineUnsafe(out, birthRecord) {
+  const root = engineObject(out, ENGINE_ROOT_KEYS)
+  if (root === null) return null
+  const result = engineObject(root.result, ENGINE_RESULT_KEYS)
+  if (result === null) return null
+  if (result.ok !== true) return null
+  const value = engineObject(result.value, ENGINE_VALUE_KEYS)
+  if (value === null) return null
+
+  if (value.schemaVersion !== TASK_FIXTURE_SCHEMA_VERSION) return null
+  if (!ENGINE_PHASES.has(value.phase)) return null
+  if (value.mockOnly !== true || value.realOperationAllowed !== false) return null
+  if (value.submitAllowed !== false || value.automaticRetryAllowed !== false) return null
+  if (typeof value.messageZh !== 'string' || value.messageZh.length > MAX_MESSAGE_LENGTH) return null
+  if (!isPlainObject(value.sourceCheck) || !isPlainObject(value.readiness)) return null
+  if (value.execution !== null && !isPlainObject(value.execution)) return null
+  if (!Array.isArray(value.states) || value.states.length === 0) return null
+  for (const state of value.states) {
+    if (typeof state !== 'string') return null
+  }
+
+  let validated
+  try {
+    validated = validateAudioTaskRecord(root.record)
+  } catch {
+    return null
+  }
+  if (!validated || typeof validated !== 'object' || validated.ok !== true) return null
+  if (!isPlainObject(validated.value)) return null
   const finalRecord = validated.value
   if (!sameImmutable(finalRecord, birthRecord)) return null
+  if (finalRecord.mockOnly !== true || finalRecord.realOperationAllowed !== false) return null
+  if (!isPlainObject(finalRecord.delivery) || finalRecord.delivery.deliveryId !== null) return null
+
+  const expectedTask = projectOrNull(finalRecord)
+  if (expectedTask === null) return null
+  if (stableStringify(expectedTask) !== stableStringify(value.task)) return null
+  if (value.states[value.states.length - 1] !== finalRecord.state) return null
+
   if (value.phase === 'BLOCKED') {
-    if (!NO_EXECUTION_REASONS.includes(value.reason)) return null
+    if (!OWNER_NO_EXECUTION_REASONS.includes(value.reason)) return null
+    if (value.states.length !== 1) return null
     if (!INITIAL_STATES.has(finalRecord.state)) return null
     if (stableStringify(finalRecord) !== stableStringify(birthRecord)) return null
     return { kind: 'NO_EXECUTION', reason: value.reason, record: finalRecord }
   }
-  if (value.phase !== 'SIMULATED') return null
+
   if (value.reason !== null && !RVC_REASONS.includes(value.reason)) return null
-  if (!SIMULATED_STATES.has(finalRecord.state)) return null
+  if (!OWNER_SIMULATED_STATES.has(finalRecord.state)) return null
   if (finalRecord.delivery.state !== 'NOT_REQUESTED') return null
+  if (value.states[0] !== birthRecord.state) return null
   return { kind: 'SIMULATED', reason: null, record: finalRecord }
 }
+
+/* ----------------------------------------- one run ----------------------------------------- */
 
 async function runOnce(state, input) {
   if (state.locked) return failure('OWNER_UNKNOWN', '$')
   try {
     const request = readRun(input)
-    const catalog = readCatalogEntries(state, 'OWNER_UNKNOWN')
-    const birth = catalog.entries.find(
-      (entry) => entry.scopeId === request.scopeId && entry.record.taskId === request.taskId,
-    )
-    if (!birth) raise('NOT_FOUND', '$')
 
-    const owner = readOwner(state)
-    crossCheck(owner.snapshot, catalog)
-    const existing = entryFor(owner.snapshot, request.scopeId, request.taskId)
+    // Gate 1 (current): the birth registry and every owner association, read fresh.
+    const current = freshAssociations(state)
+    const birth = birthOf(current.catalog, request.scopeId, request.taskId)
+    if (!birth) raise('NOT_FOUND', '$')
+    const existing = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
     if (existing) {
       if (existing.phase === 'FINAL') {
         const stateName = existing.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
-        return successValue('EXISTING', owner.revision, existing.record, stateName, existing.completion.reason)
+        return successValue('EXISTING', current.owner.revision, existing.record, stateName, existing.completion.reason)
       }
-      return unknownValue('EXISTING', owner.revision, existing.record)
+      return unknownValue('EXISTING', current.owner.revision, existing.record)
     }
 
-    const claimRevision = owner.revision + 1
+    const claimRevision = current.owner.revision + 1
     const claim = {
       schemaVersion: TASK_OWNER_SCHEMA_VERSION,
       revision: claimRevision,
       entries: [
-        ...owner.snapshot.entries,
+        ...current.owner.snapshot.entries,
         {
           scopeId: request.scopeId,
           taskId: request.taskId,
@@ -448,50 +431,82 @@ async function runOnce(state, input) {
       ],
     }
     const claimBytes = Buffer.from(JSON.stringify(claim), 'utf8')
-    writeOwner(state, claim, owner.digest)
+    writeOwner(state, claimBytes, current.owner.digest, claimRevision)
     const claimDigest = sha256(claimBytes)
 
-    let engineOut
+    // Gate 2 (post-claim, pre-engine): the claim must be confirmed on disk and the birth record and
+    // all associations must still hold. A broken or externally changed registry stops the engine.
+    const afterClaim = freshAssociations(state)
+    const claimed = requireClaimed(afterClaim.owner, request.scopeId, request.taskId)
+    if (afterClaim.owner.digest !== claimDigest) raise('STORE_CHANGED', '$')
+    const freshBirth = birthOf(afterClaim.catalog, request.scopeId, request.taskId)
+    if (!freshBirth) raise('BIRTH_INVALID', '$')
+    if (stableStringify(claimed.record) !== stableStringify(freshBirth.record)) raise('BIRTH_INVALID', '$')
+
+    let engineOut = null
     try {
       engineOut = runExistingFixtureTaskOnce({
         scopeId: request.scopeId,
-        record: birth.record,
+        record: freshBirth.record,
         input: request.input,
       })
     } catch {
-      return unknownValue('RECORDED', claimRevision, birth.record)
+      // The claim stays a tombstone; the first attempt is a fixed unknown, never a plain retry.
+      return failure('EXECUTION_UNKNOWN', '$')
     }
-    const decision = interpretEngine(engineOut, birth.record)
-    if (decision === null) return unknownValue('RECORDED', claimRevision, birth.record)
+    const decision = interpretEngine(engineOut, freshBirth.record)
+    if (decision === null) return failure('EXECUTION_UNKNOWN', '$')
+
+    // Gate 3 (post-engine, pre-final): an external change must not be committed over.
+    const beforeFinal = freshAssociations(state)
+    requireClaimed(beforeFinal.owner, request.scopeId, request.taskId)
 
     const finalRevision = claimRevision + 1
-    const finalEntry = {
-      scopeId: request.scopeId,
-      taskId: request.taskId,
-      birthIdentityHash: birth.identityHash,
-      phase: 'FINAL',
-      record: decision.record,
-      completion: { kind: decision.kind, reason: decision.kind === 'SIMULATED' ? null : decision.reason },
-    }
-    const finalSnapshot = {
-      schemaVersion: TASK_OWNER_SCHEMA_VERSION,
-      revision: finalRevision,
-      entries: [...owner.snapshot.entries, finalEntry],
-    }
-    try {
-      ownerFile(state).write(Buffer.from(JSON.stringify(finalSnapshot), 'utf8'), claimDigest, finalRevision)
-    } catch (error) {
-      if (isStoreFailure(error) && error.key === 'WRITE_UNKNOWN') throw error
-      // A confirmed claim stays a tombstone: never a plain retryable WRITE_REJECTED.
-      return unknownValue('RECORDED', claimRevision, birth.record)
-    }
-    return successValue(
-      'RECORDED',
-      finalRevision,
-      decision.record,
-      decision.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION',
-      decision.reason,
+    const finalBytes = Buffer.from(
+      JSON.stringify({
+        schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+        revision: finalRevision,
+        entries: [
+          ...current.owner.snapshot.entries,
+          {
+            scopeId: request.scopeId,
+            taskId: request.taskId,
+            birthIdentityHash: freshBirth.identityHash,
+            phase: 'FINAL',
+            record: decision.record,
+            completion: { kind: decision.kind, reason: decision.kind === 'SIMULATED' ? null : decision.reason },
+          },
+        ],
+      }),
+      'utf8',
     )
+    try {
+      writeOwner(state, finalBytes, claimDigest, finalRevision)
+    } catch (error) {
+      // A rename that was already attempted keeps the shared unknown lock (WRITE_UNKNOWN). Any
+      // other confirmed-uncommitted final failure leaves the claim as a tombstone.
+      if (isStoreFailure(error) && error.key === 'WRITE_UNKNOWN') throw error
+      if (isStoreFailure(error) && error.key === 'WRITE_REJECTED') return failure('EXECUTION_UNKNOWN', '$')
+      throw error
+    }
+
+    // Gate 4 (post-final): a confirmed final commit needs fresh bytes and fresh associations.
+    // Once the real rename happened the on-disk bytes are kept as they are and the store is locked;
+    // it is never reported as a confirmed RECORDED result.
+    let confirmed = null
+    try {
+      confirmed = freshAssociations(state)
+    } catch {
+      lockStore(state)
+      raise('WRITE_UNKNOWN', '$')
+    }
+    const finalEntry = entryFor(confirmed.owner.snapshot, request.scopeId, request.taskId)
+    if (!finalEntry || finalEntry.phase !== 'FINAL' || confirmed.owner.revision !== finalRevision) {
+      lockStore(state)
+      raise('WRITE_UNKNOWN', '$')
+    }
+    const stateName = finalEntry.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
+    return successValue('RECORDED', confirmed.owner.revision, finalEntry.record, stateName, finalEntry.completion.reason)
   } catch (error) {
     return toFailure(error)
   }
@@ -501,18 +516,13 @@ async function getOnce(state, input) {
   if (state.locked) return failure('OWNER_UNKNOWN', '$')
   try {
     const request = readGet(input)
-    const catalog = readCatalogEntries(state, 'OWNER_UNKNOWN')
-    const birth = catalog.entries.find(
-      (entry) => entry.scopeId === request.scopeId && entry.record.taskId === request.taskId,
-    )
-    if (!birth) raise('NOT_FOUND', '$')
-    const owner = readOwner(state)
-    crossCheck(owner.snapshot, catalog)
-    const entry = entryFor(owner.snapshot, request.scopeId, request.taskId)
+    const current = freshAssociations(state)
+    if (!birthOf(current.catalog, request.scopeId, request.taskId)) raise('NOT_FOUND', '$')
+    const entry = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
     if (!entry) raise('NOT_FOUND', '$')
-    if (entry.phase === 'CLAIMED') return unknownValue('FOUND', owner.revision, entry.record)
+    if (entry.phase === 'CLAIMED') return unknownValue('FOUND', current.owner.revision, entry.record)
     const stateName = entry.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
-    return successValue('FOUND', owner.revision, entry.record, stateName, entry.completion.reason)
+    return successValue('FOUND', current.owner.revision, entry.record, stateName, entry.completion.reason)
   } catch (error) {
     return toFailure(error)
   }
@@ -536,7 +546,9 @@ export async function openFixtureTaskOwner(options) {
       try {
         if (state.locked) return failure('OWNER_UNKNOWN', '$')
         checkSandbox(state)
-        ownerFile(state).read()
+        // Factory gate: a usable handle is only handed out when the birth registry is readable and
+        // every existing owner entry still resolves to its birth record.
+        freshAssociations(state)
         const handle = Object.freeze({
           run: (input) => enqueue(state, () => runOnce(state, input)),
           get: (input) => enqueue(state, () => getOnce(state, input)),

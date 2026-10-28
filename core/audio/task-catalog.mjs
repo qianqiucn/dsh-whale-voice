@@ -20,7 +20,6 @@ import {
   validateAudioTaskRecord,
 } from './task-contract.mjs'
 import {
-  CATALOG_FILE_SPEC,
   checkSandbox,
   enqueue,
   getStoreState,
@@ -29,12 +28,13 @@ import {
   isPlainObject,
   isStoreFailure,
   keySurface,
-  openStoreFile,
+  openCatalogFile,
   raiseStore,
   storeReason,
   MAX_CATALOG_ENTRIES,
   SCOPE_PATTERN,
   KEY_PATTERN,
+  STORE_DOMAINS,
   TASK_ID_PATTERN,
 } from './fixture-task-store-internal.mjs'
 
@@ -189,7 +189,7 @@ function projectOrFail(record) {
 }
 
 function catalogFile(state) {
-  return openStoreFile(state, CATALOG_FILE_SPEC)
+  return openCatalogFile(state, STORE_DOMAINS.CATALOG)
 }
 
 async function reserveOnce(state, input) {

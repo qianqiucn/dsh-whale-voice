@@ -61,7 +61,14 @@ adds a persistent owner (`core/audio/task-owner.mjs`) over one private extracted
 (`core/audio/fixture-task-store-internal.mjs`): one real catalog birth task is claimed atomically,
 the original existing-record engine runs at most once, its immutable identity is revalidated and a
 `FINAL` record with `SIMULATED`/`NO_EXECUTION` is saved; repeats only read and a confirmed claim
-without a trusted FINAL is reported as owner `UNKNOWN`. D-C tests 9; full suite **647 / 645 pass / 2 platform skips / 0 fail**;
+without a trusted FINAL is reported as owner `UNKNOWN`. Plan 08-D-C-F01 then closes the residual
+gates: fresh restricted birth/association re-reads at the factory, `run`/`get` and the
+after-claim/after-engine/after-FINAL checkpoints (a broken or externally changed birth file stops
+the engine instead of being found by the next `get`), a thin engine adapter that requires the frozen
+13-key envelope, the four fixed safety flags and **complete equality with the real
+`projectAudioTask`**, the fixed first-attempt `TASK_OWNER_EXECUTION_UNKNOWN` (later reads report the
+safe UNKNOWN projection), and a private store that only exposes the two fixed files (no caller
+name/budget/parser, no third file). D-C owner tests 15 (C01–C08, C10, T01–T06); full suite **653 / 651 pass / 2 platform skips / 0 fail**;
 `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR not merged. Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete

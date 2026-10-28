@@ -230,7 +230,8 @@ removeConfigSandbox(sandbox)
 自 Plan 08-D-C 起，本目录仍是**唯一 TaskId 签发者与出生登记**：`audio-task-catalog-v1.json`、schemaVersion 1、revision=entries.length、只存 `CREATED`/`BLOCKED_RIGHTS`、原三个公开导出/15 个错误码/安全投影与全部原故障分类都不变，也不向 v1 写入 claim 或最终 record。
 
 - 已验的文件事务 machinery（有界 fd 读、严格 UTF-8/JSON/Schema、信任/路径/身份检查、短写续写、fsync/关闭、临时回读、rename 后身份确认、一次性清理资格、共享未知锁）已提取到私有共享模块 `core/audio/fixture-task-store-internal.mjs`，本目录与 owner 共用**同一套**实现，不再复制第二份；每个固定文件分别记录已确认摘要，队列与锁按 capability 共享。
-- 新 owner 通过该私有共享模块读取本目录的出生条目（`scopeId`+`taskId`），作为不可变的创建证据；不迁移/复制旧目录、不双写 current record、不重新 reserve 或换 ID。
+- 自 08-D-C-F01 起该私有模块只绑定两个固定文件：`openCatalogFile(state, domain)` 与 `openOwnerFile(state)`，文件名/字节与条目预算/错误域/已知 Schema 全部是模块常量。调用方不能传文件名、预算或 parse 回调，非法域在任何读写前拒绝（0 读 0 写 0 caller parser），因此不存在经由本模块创建第三个正式文件或逃逸 root 的路径；本目录的 `reserve`/`get` 只经 `openCatalogFile(state, 'catalog')` 读写自己的固定文件。
+- 新 owner 通过该私有共享模块读取本目录的出生条目（`scopeId`+`taskId`），作为不可变的创建证据；不迁移/复制旧目录、不双写 current record、不重新 reserve 或换 ID。owner 读取本目录时使用 owner 错误域（`OWNER_UNKNOWN`），目录自身仍报 `CATALOG_UNKNOWN`。
 - 本目录的公开行为、错误码、预算与平台 skip 断言保持不变；对应回归见 `test/task-catalog.test.mjs`（45 项，原平台链接 skip 如实保留）。
 
 运行与持久化语义见 [TASK_OWNER_OFFLINE.md](TASK_OWNER_OFFLINE.md)。

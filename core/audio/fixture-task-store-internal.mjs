@@ -2,7 +2,10 @@
  *
  * One implementation of the already verified isolated file storage, shared by the 08-D-A catalog
  * and the 08-D-C task owner. It is not a public API and not a generic file service: the two fixed
- * file names are module constants, callers can never pass a path, fs, validator or callback.
+ * file names, their byte/entry budgets, their error domains and their Schema parsers are module
+ * constants bound to two module functions (`openCatalogFile` / `openOwnerFile`). Callers cannot
+ * pass a path, file name, budget, fs, validator or parse callback, so no third file can be
+ * addressed through this module.
  *
  * Preserved from the verified catalog implementation: bounded fd reads (128 KiB+1 / 4 KiB+1),
  * strict UTF-8/JSON/Schema reads, capability/root/marker identity checks, short-write completion,
@@ -19,6 +22,8 @@ import crypto from 'node:crypto'
 import { deepFreezeFixtureValue } from './fixture-input-boundary.mjs'
 import { isInside, isTrustedSandbox, normalizePath } from '../config-sandbox.mjs'
 import { createAudioTaskRecord, validateAudioTaskRecord } from './task-contract.mjs'
+import { TASK_FIXTURE_ERRORS } from './task-fixture-engine-internal.mjs'
+import { PROVIDER_DISPATCH_ERRORS } from './provider-dispatch.mjs'
 
 export const CATALOG_FILE_NAME = 'audio-task-catalog-v1.json'
 export const OWNER_FILE_NAME = 'audio-task-owner-v1.json'
@@ -26,6 +31,12 @@ export const MAX_CATALOG_BYTES = 128 * 1024
 export const MAX_OWNER_BYTES = 128 * 1024
 export const MAX_CATALOG_ENTRIES = 32
 export const MAX_OWNER_ENTRIES = 32
+
+/** The only two error domains an internal file operation may declare. */
+export const STORE_DOMAINS = Object.freeze({
+  CATALOG: 'catalog',
+  OWNER: 'owner',
+})
 
 const MAX_MARKER_BYTES = 4 * 1024
 const READ_CHUNK = 64 * 1024
@@ -38,6 +49,20 @@ const SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entri
 const CATALOG_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'idempotencyKey', 'identityHash', 'record']))
 const CATALOG_SCHEMA_VERSION = 1
 const INITIAL_STATES = Object.freeze(new Set(['CREATED', 'BLOCKED_RIGHTS']))
+const OWNER_SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entries']))
+const OWNER_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'taskId', 'birthIdentityHash', 'phase', 'record', 'completion']))
+const OWNER_COMPLETION_KEYS = Object.freeze(new Set(['kind', 'reason']))
+const OWNER_SNAPSHOT_SCHEMA_VERSION = 1
+const OWNER_SIMULATED_STATES = Object.freeze(
+  new Set(['ARTIFACT_READY', 'FAILED', 'UNKNOWN', 'CANCEL_REQUESTED', 'CANCELLED']),
+)
+/** The four fixed reasons the existing engine may report for a legal no-execution Task. */
+const OWNER_NO_EXECUTION_REASONS = Object.freeze([
+  TASK_FIXTURE_ERRORS.SOURCE_BLOCKED,
+  TASK_FIXTURE_ERRORS.READINESS_BLOCKED,
+  TASK_FIXTURE_ERRORS.DISPATCH_BLOCKED,
+  PROVIDER_DISPATCH_ERRORS.UNSUPPORTED_DISPATCH,
+])
 const STATES = new WeakMap()
 
 /** Internal failure carrying the neutral store key; each module maps it to its own code prefix. */
@@ -303,11 +328,6 @@ function parseSnapshot(bytes) {
   return snapshot
 }
 
-/** Shared strict UTF-8/JSON parse used by the per-file schema parsers. */
-export function parseStoreJson(bytes) {
-  return parseSnapshot(bytes)
-}
-
 function canonicalInitialRecord(record) {
   let validated
   try {
@@ -398,19 +418,152 @@ export function parseCatalogSnapshot(bytes, maxEntries = MAX_CATALOG_ENTRIES) {
   return { revision: snapshot.revision, entries }
 }
 
-export const CATALOG_FILE_SPEC = Object.freeze({
+/* ------------------------------- owner snapshot schema (08-D-C) ------------------------------- */
+
+function ownerRecord(record, entryTaskId) {
+  let validated
+  try {
+    validated = validateAudioTaskRecord(record)
+  } catch {
+    raiseStore('STORE_INVALID', '$')
+  }
+  if (!validated || typeof validated !== 'object' || typeof validated.ok !== 'boolean') {
+    raiseStore('STORE_INVALID', '$')
+  }
+  if (validated.ok === false) raiseStore('STORE_INVALID', '$')
+  const value = validated.value
+  if (!isPlainObject(value)) raiseStore('STORE_INVALID', '$')
+  if (value.taskId !== entryTaskId) raiseStore('STORE_INVALID', '$')
+  if (value.mockOnly !== true || value.realOperationAllowed !== false) raiseStore('STORE_INVALID', '$')
+  if (!isPlainObject(value.delivery) || value.delivery.deliveryId !== null) raiseStore('STORE_INVALID', '$')
+  if (value.delivery.state !== 'NOT_REQUESTED') raiseStore('STORE_INVALID', '$')
+  return value
+}
+
+function initialOnly(record) {
+  if (!INITIAL_STATES.has(record.state)) raiseStore('STORE_INVALID', '$')
+  if (record.outputArtifactRef !== null) raiseStore('STORE_INVALID', '$')
+  if (!isPlainObject(record.cancel) || record.cancel.requested !== false || record.cancel.confirmed !== false) {
+    raiseStore('STORE_INVALID', '$')
+  }
+  if (record.lastError !== null) raiseStore('STORE_INVALID', '$')
+}
+
+/** Owner snapshot schema: the single copy used by the fixed owner file spec. */
+export function parseOwnerSnapshot(bytes) {
+  const snapshot = parseSnapshot(bytes)
+  if (!isPlainObject(snapshot)) raiseStore('STORE_INVALID', '$')
+  if (keySurface(snapshot, OWNER_SNAPSHOT_KEYS) !== 'ok') raiseStore('STORE_INVALID', '$')
+  if (snapshot.schemaVersion !== OWNER_SNAPSHOT_SCHEMA_VERSION) raiseStore('STORE_INVALID', '$')
+  if (!Array.isArray(snapshot.entries)) raiseStore('STORE_INVALID', '$')
+  if (snapshot.entries.length > MAX_OWNER_ENTRIES) raiseStore('RESOURCE_LIMIT', '$')
+  if (!Number.isInteger(snapshot.revision) || snapshot.revision < 0) raiseStore('STORE_INVALID', '$')
+
+  const seen = new Set()
+  let weight = 0
+  const entries = []
+  for (const entry of snapshot.entries) {
+    if (!isPlainObject(entry) || keySurface(entry, OWNER_ENTRY_KEYS) !== 'ok') raiseStore('STORE_INVALID', '$')
+    if (typeof entry.scopeId !== 'string' || !SCOPE_PATTERN.test(entry.scopeId)) raiseStore('STORE_INVALID', '$')
+    if (typeof entry.taskId !== 'string' || !TASK_ID_PATTERN.test(entry.taskId)) raiseStore('STORE_INVALID', '$')
+    if (typeof entry.birthIdentityHash !== 'string' || !HASH_PATTERN.test(entry.birthIdentityHash)) {
+      raiseStore('STORE_INVALID', '$')
+    }
+    const key = entry.scopeId + '\u0000' + entry.taskId
+    if (seen.has(key)) raiseStore('STORE_INVALID', '$')
+    seen.add(key)
+
+    const record = ownerRecord(entry.record, entry.taskId)
+    if (entry.phase === 'CLAIMED') {
+      initialOnly(record)
+      if (entry.completion !== null) raiseStore('STORE_INVALID', '$')
+      weight += 1
+      entries.push({
+        scopeId: entry.scopeId,
+        taskId: entry.taskId,
+        birthIdentityHash: entry.birthIdentityHash,
+        phase: 'CLAIMED',
+        record,
+        completion: null,
+      })
+      continue
+    }
+    if (entry.phase !== 'FINAL') raiseStore('STORE_INVALID', '$')
+    if (!isPlainObject(entry.completion) || keySurface(entry.completion, OWNER_COMPLETION_KEYS) !== 'ok') {
+      raiseStore('STORE_INVALID', '$')
+    }
+    const kind = entry.completion.kind
+    const reason = entry.completion.reason
+    if (kind === 'SIMULATED') {
+      if (reason !== null) raiseStore('STORE_INVALID', '$')
+      if (!OWNER_SIMULATED_STATES.has(record.state)) raiseStore('STORE_INVALID', '$')
+      weight += 2
+      entries.push({
+        scopeId: entry.scopeId,
+        taskId: entry.taskId,
+        birthIdentityHash: entry.birthIdentityHash,
+        phase: 'FINAL',
+        record,
+        completion: Object.freeze({ kind: 'SIMULATED', reason: null }),
+      })
+      continue
+    }
+    if (kind !== 'NO_EXECUTION') raiseStore('STORE_INVALID', '$')
+    if (!OWNER_NO_EXECUTION_REASONS.includes(reason)) raiseStore('STORE_INVALID', '$')
+    initialOnly(record)
+    weight += 2
+    entries.push({
+      scopeId: entry.scopeId,
+      taskId: entry.taskId,
+      birthIdentityHash: entry.birthIdentityHash,
+      phase: 'FINAL',
+      record,
+      completion: Object.freeze({ kind: 'NO_EXECUTION', reason }),
+    })
+  }
+  if (snapshot.revision !== weight) raiseStore('STORE_INVALID', '$')
+  return { revision: snapshot.revision, entries }
+}
+
+/* ------------------------------------- the two fixed files ------------------------------------ */
+
+const CATALOG_SPEC = Object.freeze({
   name: CATALOG_FILE_NAME,
   maxBytes: MAX_CATALOG_BYTES,
   maxEntries: MAX_CATALOG_ENTRIES,
-  unknownKey: 'CATALOG_UNKNOWN',
-  parse: (bytes) => parseCatalogSnapshot(bytes, MAX_CATALOG_ENTRIES),
+  parse: (bytes) => parseCatalogSnapshot(bytes),
 })
+
+const OWNER_SPEC = Object.freeze({
+  name: OWNER_FILE_NAME,
+  maxBytes: MAX_OWNER_BYTES,
+  maxEntries: MAX_OWNER_ENTRIES,
+  parse: (bytes) => parseOwnerSnapshot(bytes),
+})
+
+function unknownKeyFor(domain) {
+  if (domain === STORE_DOMAINS.OWNER) return 'OWNER_UNKNOWN'
+  if (domain === STORE_DOMAINS.CATALOG) return 'CATALOG_UNKNOWN'
+  // Illegal internal kind/domain: no read, no write, no caller parser. A fixed internal failure is
+  // raised before any capability or file work, so no third file can be addressed.
+  raiseStore('INTERNAL_FAILURE', '$')
+}
+
+/** The one fixed catalog file. `domain` only selects the caller module's fixed error domain. */
+export function openCatalogFile(state, domain) {
+  return openStoreFile(state, CATALOG_SPEC, unknownKeyFor(domain))
+}
+
+/** The one fixed owner file. It always reports in the owner error domain. */
+export function openOwnerFile(state) {
+  return openStoreFile(state, OWNER_SPEC, 'OWNER_UNKNOWN')
+}
 
 /**
  * One fixed store file over a shared capability state.
  * All reads re-validate the capability; the confirmed digest is tracked per file.
  */
-export function openStoreFile(state, spec) {
+function openStoreFile(state, spec, unknownKey) {
   const target = () => path.join(state.sandbox.root, spec.name)
   const file = fileState(state, spec.name)
 
@@ -445,7 +598,7 @@ export function openStoreFile(state, spec) {
   }
 
   function read() {
-    if (state.locked) raiseStore(spec.unknownKey, '$')
+    if (state.locked) raiseStore(unknownKey, '$')
     let raw
     try {
       raw = readRaw()
@@ -737,17 +890,27 @@ function cleanupOwnTemp(state, tempPath, tempIdentity) {
   }
 }
 
-/** Read the immutable birth record for one scope/taskId from the catalog file, server-side only. */
-export function readCatalogEntries(state, unknownKey) {
-  if (state.locked) raiseStore(unknownKey, '$')
-  const spec = Object.freeze({ ...CATALOG_FILE_SPEC, unknownKey })
-  return openStoreFile(state, spec).read()
+/**
+ * Read every immutable birth entry from the one fixed catalog file, server-side only.
+ * `domain` is the caller module's fixed error domain (`catalog` or `owner`).
+ */
+export function readCatalogEntries(state, domain) {
+  return openCatalogFile(state, domain).read()
 }
 
-export function readBirthRecord(state, scopeId, taskId, unknownKey) {
-  const catalog = readCatalogEntries(state, unknownKey)
+export function readBirthRecord(state, domain, scopeId, taskId) {
+  const catalog = readCatalogEntries(state, domain)
   const entry = catalog.entries.find((item) => item.scopeId === scopeId && item.record.taskId === taskId)
   return entry || null
 }
 
-export { CATALOG_SCHEMA_VERSION, INITIAL_STATES, TASK_ID_PATTERN, SCOPE_PATTERN, KEY_PATTERN }
+export {
+  CATALOG_SCHEMA_VERSION,
+  INITIAL_STATES,
+  TASK_ID_PATTERN,
+  SCOPE_PATTERN,
+  KEY_PATTERN,
+  OWNER_SNAPSHOT_SCHEMA_VERSION,
+  OWNER_NO_EXECUTION_REASONS,
+  OWNER_SIMULATED_STATES,
+}
