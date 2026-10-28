@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="355" viewBox="0 0 1280 355" role="img" aria-labelledby="title desc">
+<title id="title">鲸音生成，鲸递投递</title><desc id="desc">目标架构，尚未完整落地。鲸音Core负责生成和音频；鲸递Core吸收Sender能力，负责安全投递；WeChatAgent独立提供账号会话和授权基础。</desc>
+<defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#72c8ff"/><stop offset=".55" stop-color="#8a9bff"/><stop offset="1" stop-color="#c5a3ff"/></linearGradient>
+<linearGradient id="flow"><stop stop-color="#69bcff"/><stop offset=".5" stop-color="#829dff"/><stop offset="1" stop-color="#b59af3"/></linearGradient>
+<radialGradient id="glow"><stop stop-color="#7390ff" stop-opacity=".25"/><stop offset="1" stop-color="#7390ff" stop-opacity="0"/></radialGradient><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10" fill="#8b9dc6"/></marker></defs>
+<rect x="1" y="1" width="1278" height="353" rx="24" fill="#f3f6ff" stroke="#d4ddf2"/>
+<g font-family="'Segoe UI','Microsoft YaHei','Noto Sans CJK SC',sans-serif"><text x="38" y="47" font-size="15" font-weight="600" fill="#5b6d91">目标架构 · 尚未完整落地</text>
+<rect x="38" y="93" width="365" height="150" rx="20" fill="#ffffff" stroke="#d4ddf2"/>
+<circle cx="70" cy="125" r="12" fill="#e5ecff"/><text x="66" y="130" font-size="13" fill="#5b6d91">1</text>
+<text x="63" y="169" font-size="28" font-weight="700" fill="#17264a">鲸音 Core</text>
+<text x="63" y="199" font-size="16" fill="#5b6d91">生成语音与翻唱，管理音频和任务</text>
+<text x="63" y="224" font-size="14" fill="#5b6d91">独立生成、试听、保存的工作台</text>
+<path d="M421 168H470" fill="none" stroke="#8b9dc6" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="488" y="93" width="365" height="150" rx="20" fill="#ffffff" stroke="#d4ddf2"/>
+<circle cx="520" cy="125" r="12" fill="#e5ecff"/><text x="516" y="130" font-size="13" fill="#5b6d91">2</text>
+<text x="513" y="169" font-size="28" font-weight="700" fill="#17264a">鲸递 Core</text>
+<text x="513" y="199" font-size="16" fill="#5b6d91">核对目标与权限，完成一次安全投递</text>
+<text x="513" y="224" font-size="14" fill="#5b6d91">原 Sender 能力归入内部执行模块</text>
+<path d="M871 168H920" fill="none" stroke="#8b9dc6" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="938" y="93" width="304" height="150" rx="20" fill="#ffffff" stroke="#d4ddf2"/>
+<circle cx="970" cy="125" r="12" fill="#e5ecff"/><text x="966" y="130" font-size="13" fill="#5b6d91">3</text>
+<text x="963" y="169" font-size="28" font-weight="700" fill="#17264a">微信</text>
+<text x="963" y="199" font-size="16" fill="#5b6d91">投递到已授权的聊天</text>
+<text x="963" y="224" font-size="14" fill="#5b6d91">结果未知时，不自动重发</text>
+<rect x="488" y="268" width="754" height="48" rx="12" fill="#e5ecff"/>
+<text x="510" y="298" font-size="16" fill="#17264a">WeChatAgent 独立提供微信账号、会话与授权基础</text>
+<text x="39" y="298" font-size="15" fill="#5b6d91">只有选择投递时，才需要投递依赖。</text>
+</g></svg>

@@ -74,3 +74,10 @@ not invent earlier releases or imply production maturity.
 - This is a frontend + Mock baseline. It does not connect to a real voice backend, Qwen, Voice
   Sender or WeChatAgent, and it does not send WeChat messages.
 - No earlier tagged releases are claimed. The repository history begins with this baseline.
+
+## Repository homepage refresh
+
+- Rework the README into a plain-language Chinese project overview with dark/light theme banners,
+  reviewed isolated demo previews, an honest capability table and target Audio/Relay diagram.
+- Move developer setup and verification guidance to `docs/DEVELOPMENT.md`; document preview
+  provenance. No plugin runtime, production configuration or integration behavior changes.

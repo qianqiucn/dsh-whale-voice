@@ -1,4 +1,8 @@
-# Whale Voice Documentation Index
+# Whale Voice 文档导航
+
+[返回项目首页](../README.md) · [开发与体验说明 / Development guide](DEVELOPMENT.md) · [展示素材来源](assets/README.md)
+
+普通读者可以从项目首页查看界面、当前能力与开发方向。下面是面向开发和验收的接口、架构及历史材料。
 
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
@@ -51,4 +55,5 @@ These are retained as evidence. Their status lines describe the moment they were
 - **Generated artifact:** `client.js` is rebuilt from `client.template.js`, `pages.js`, `setup.js` and
   `client.css`; do not hand-edit it.
 - **Excluded assets:** real WeChatAgent, Voice Sender, Qwen runtime, `whale-v1` audio, model caches,
-  screenshots and runtime state are intentionally outside this repository.
+  private desktop screenshots and runtime state are intentionally outside this repository.
+  Reviewed fictional UI previews are documented in [assets/README.md](assets/README.md).
