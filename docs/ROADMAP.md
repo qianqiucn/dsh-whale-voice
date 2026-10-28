@@ -75,7 +75,8 @@ confirmed CLAIMED bytes, and an association failure locks the capability for own
 handles alike. `value.task` is descriptor-guarded before comparison (no getter invocation, no
 hidden/Symbol key loss). D-C owner tests 20 (C01–C08, C10, T01–T06, E01–E05); specialty 113
 (112 pass + 1 platform skip); full suite **658 / 656 pass / 2 platform skips / 0 fail**;
-`OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR not merged. Plan 08-D-B
+`OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR not merged. Plan 08-E-A adds a bounded, storage-free WAV byte inspector (`core/audio/wav-byte-inspector.mjs`): caller bytes enter through a native Uint8Array/Buffer slot check, only the view's own offset/length is copied, and the complete RIFF/WAVE container is walked inside 50 MiB / 300000 ms / 128-chunk budgets (PCM16, six sample rates, 1-2 channels) to produce a deep-frozen 19-key measurement (frames, unrounded duration, peak, full-scale count, whole-file SHA256) or one of 8 fixed codes. It performs no I/O, no playback or decoding and no Task/owner/store/ID/delivery action; The F01 close-out classifies a real detached carrier as `INVALID_BYTES` (empty bytes remain `INVALID_CONTAINER`) through a species-free probe with zero user-code calls, delivers the W06 carriers at the real native level, and adds a legal exactly-50 MiB success control plus seven inner chunk refusals. W01-W08 tests 8, full suite **666 / 664 pass / 2 platform skips / 0 fail**; `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, PR #34 open and unmerged.
+Plan 08-D-B
 adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
 compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
 initial record with original TaskId/scope/`observedAt` without a second create, while the full record
