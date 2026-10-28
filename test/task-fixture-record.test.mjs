@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 import {
   runDraftFixtureTaskOnce,
@@ -198,6 +199,8 @@ test('B06 every draft/record identity domain is compared, delivery defaults fals
       (d) => { d.voiceProfileId = 'voice:other' },
       (d) => { d.rights.state = 'UNVERIFIED' },
       (d) => { d.schemaVersion = 2 },
+      (d) => { d.taskId = 'task:fixture-' + 'f'.repeat(32) },
+      (d) => { d.deliveryRequested = true },
     ]
     for (const mutate of mutations) {
       const input = clone(ctx.input)
@@ -307,6 +310,10 @@ test('B12 the shallow frame rejects accessors/Symbols/Proxy and keeps partition 
 
     const proxy = new Proxy({ scopeId: SCOPE, record: ctx.record, input: ctx.input }, { ownKeys() { throw new Error('trap') } })
     expectError(runExistingFixtureTaskOnce(proxy).result, 'INVALID_INPUT', '$')
+
+    const manyKeys = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+    for (let i = 0; i < 30; i += 1) manyKeys['extra' + i] = i
+    expectError(runExistingFixtureTaskOnce(manyKeys).result, 'RESOURCE_LIMIT', '$')
 
     let deep = ctx.input
     for (let i = 0; i < 13; i += 1) deep = { nested: deep }
@@ -426,9 +433,11 @@ test('R03 missing scope, zero-getter counting and real deep-freeze checks', asyn
     assert.equal(getterCalls, 0)
 
     const before = JSON.stringify(ctx.input)
+    const beforeRecord = JSON.stringify(ctx.record)
     const out = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: ctx.input })
     expectSimulated(out.result)
     assert.equal(JSON.stringify(ctx.input), before)
+    assert.equal(JSON.stringify(ctx.record), beforeRecord)
     assert.equal(Object.isFrozen(ctx.input), false)
     assert.equal(Object.isFrozen(ctx.record), false)
     const seen = new Set()
@@ -442,6 +451,178 @@ test('R03 missing scope, zero-getter counting and real deep-freeze checks', asyn
     }
     assertFrozenDeep(out.result)
     assertFrozenDeep(out.record)
+  } finally {
+    removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+const WORKER_SCRIPT = (base) => `
+import vm from 'node:vm'
+import fs from 'node:fs'
+
+const base = ${JSON.stringify(base)}
+const load = (p) => import(new URL(p, base).href)
+const deps = {
+  input: await load('fixture-input-boundary.mjs'),
+  source: await load('source-artifacts.mjs'),
+  ready: await load('provider-readiness.mjs'),
+  dispatch: await load('provider-dispatch.mjs'),
+  task: await load('task-contract.mjs'),
+  gateway: await load('../svc/rvc-fake-gateway.mjs'),
+}
+const mode = process.env.WORKER_MODE || 'normal'
+const frame = JSON.parse(process.env.WORKER_FRAME)
+const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0 }
+let faultHit = 0
+const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
+const realValidateRecord = deps.task.validateAudioTaskRecord
+const realValidateDraft = deps.task.validateAudioTaskDraft
+const validateRecord = (...args) => {
+  counts.validateRecord += 1
+  const result = realValidateRecord(...args)
+  if (mode === 'record-throw' && faultHit === 0) { faultHit += 1; throw new Error('injected record throw') }
+  if (mode === 'record-missing-schema' && faultHit === 0 && result && result.ok === true) {
+    faultHit += 1
+    return { ...result, value: { ...result.value, schemaVersion: undefined } }
+  }
+  return result
+}
+const validateDraft = (...args) => {
+  counts.validateDraft += 1
+  const result = realValidateDraft(...args)
+  if (mode === 'draft-throw' && faultHit === 0) { faultHit += 1; throw new Error('injected draft throw') }
+  if (mode === 'draft-missing-taskId' && faultHit === 0 && result && result.ok === true) {
+    faultHit += 1
+    return { ...result, value: { ...result.value, taskId: undefined } }
+  }
+  if (mode === 'draft-missing-delivery' && faultHit === 0 && result && result.ok === true) {
+    faultHit += 1
+    return { ...result, value: { ...result.value, deliveryRequested: undefined } }
+  }
+  return result
+}
+const dispatch = (...args) => {
+  counts.dispatch += 1
+  const result = deps.ready.dispatchReadyRvcFakeOnce(...args)
+  if (mode === 'collision' && faultHit === 0) {
+    faultHit += 1
+    const copy = structuredClone(result)
+    copy.value.dispatch.result.artifactRef = frame.record.source.ref
+    copy.value.dispatch.result.status = 'SUCCEEDED_FAKE'
+    return copy
+  }
+  return result
+}
+const exportsByKey = {
+  'fixture-input-boundary.mjs': {
+    copyFixtureInput: deps.input.copyFixtureInput,
+    deepFreezeFixtureValue: deps.input.deepFreezeFixtureValue,
+  },
+  'source-artifacts.mjs': { resolveFixtureTaskSource: wrap('source', deps.source.resolveFixtureTaskSource) },
+  'provider-readiness.mjs': {
+    negotiateReadyFixtureProvider: wrap('gate', deps.ready.negotiateReadyFixtureProvider),
+    dispatchReadyRvcFakeOnce: dispatch,
+  },
+  'provider-dispatch.mjs': { PROVIDER_DISPATCH_ERRORS: deps.dispatch.PROVIDER_DISPATCH_ERRORS },
+  'task-contract.mjs': {
+    createAudioTaskRecord: wrap('create', deps.task.createAudioTaskRecord),
+    projectAudioTask: deps.task.projectAudioTask,
+    transitionAudioTask: wrap('transition', deps.task.transitionAudioTask),
+    validateAudioTaskDraft: validateDraft,
+    validateAudioTaskRecord: validateRecord,
+  },
+  'rvc-fake-gateway.mjs': {
+    RVC_FAKE_SCENARIOS: deps.gateway.RVC_FAKE_SCENARIOS,
+    validateRvcFakeResult: deps.gateway.validateRvcFakeResult,
+  },
+}
+const enginePath = new URL('task-fixture-engine-internal.mjs', base).href
+const engine = new vm.SourceTextModule(fs.readFileSync(new URL(enginePath), 'utf8'), { identifier: enginePath })
+await engine.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  const key = url.split('/').pop()
+  const exp = exportsByKey[key]
+  if (!exp) throw new Error('unexpected import ' + url)
+  const mod = new vm.SyntheticModule(Object.keys(exp), function () {
+    for (const k of Object.keys(exp)) this.setExport(k, exp[k])
+  }, { identifier: url })
+  return mod
+})
+await engine.evaluate()
+const out = mode === 'legacy'
+  ? engine.namespace.runDraftFixtureTaskOnce(frame.input)
+  : engine.namespace.runExistingFixtureTaskOnce(frame)
+console.log(JSON.stringify({ counts, faultHit, record: out.record, result: out.result }))
+`
+
+function runWorker(mode, payload, base) {
+  const script = WORKER_SCRIPT(base)
+  const output = execFileSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], {
+    env: { ...process.env, WORKER_MODE: mode, WORKER_FRAME: JSON.stringify(payload) },
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  })
+  return JSON.parse(output.trim())
+}
+
+test('T01/T02/T03 worker: native counts, validator fault, root-field fault and collision', async () => {
+  const example = extractExample('## 7. RVC完整示例')
+  const ctx = await makeExisting(example, 'key:fixture-t01')
+  try {
+    const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
+    const native = runExistingFixtureTaskOnce(frame)
+    const nativeJson = JSON.parse(JSON.stringify(native))
+    const base = new URL('../core/audio/', import.meta.url).href
+
+    const normal = runWorker('normal', frame, base)
+    assert.deepEqual(normal.record, nativeJson.record)
+    assert.deepEqual(normal.result, nativeJson.result)
+    assert.deepEqual(normal.counts, {
+      source: 1, gate: 1, dispatch: 1, create: 0, transition: 2, validateRecord: 2, validateDraft: 1,
+    })
+
+    for (const mode of ['record-throw', 'draft-throw', 'record-missing-schema', 'draft-missing-taskId', 'draft-missing-delivery']) {
+      const fault = runWorker(mode, frame, base)
+      assert.equal(fault.faultHit, 1, mode)
+      assert.equal(fault.record, null, mode)
+      assert.equal(fault.result.ok, false, mode)
+      assert.equal(fault.result.errors[0].code, 'TASK_FIXTURE_DEPENDENCY_FAILURE', mode)
+      assert.equal(fault.result.errors[0].path, '$', mode)
+    }
+
+    const collision = runWorker('collision', frame, base)
+    assert.equal(collision.faultHit, 1)
+    assert.equal(collision.record, null)
+    assert.equal(collision.result.ok, false)
+    assert.equal(collision.result.errors[0].code, 'TASK_FIXTURE_INVALID_TASK_RESULT')
+    assert.equal(collision.counts.dispatch, 1)
+
+    const legacy = runWorker('legacy', { input: ctx.input }, base)
+    const nativeLegacy = JSON.parse(JSON.stringify(runDraftFixtureTaskOnce(ctx.input)))
+    assert.deepEqual(legacy.result, nativeLegacy.result)
+    assert.deepEqual(legacy.record, nativeLegacy.record)
+    assert.equal(legacy.counts.create, 1)
+    assert.equal(legacy.counts.source, 1)
+    assert.equal(legacy.counts.gate, 1)
+    assert.equal(legacy.counts.dispatch, 1)
+
+    const blockedInput = clone(ctx.input)
+    blockedInput.readiness.instances[0].resources.cpu = 'UNAVAILABLE'
+    const blocked = runWorker('normal', { scopeId: SCOPE, record: ctx.record, input: blockedInput }, base)
+    assert.equal(blocked.result.ok, true)
+    assert.equal(blocked.result.value.phase, 'BLOCKED')
+    assert.equal(blocked.counts.dispatch, 0)
+    assert.equal(blocked.counts.create, 0)
+    assert.equal(blocked.counts.transition, 0)
+
+    const unknownRecord = advance(ctx.record, [{ type: 'BEGIN_PROCESS' }, { type: 'MARK_UNKNOWN' }])
+    const unknown = runWorker('normal', { scopeId: SCOPE, record: unknownRecord, input: ctx.input }, base)
+    assert.equal(unknown.result.ok, false)
+    assert.equal(unknown.result.errors[0].code, 'TASK_FIXTURE_TASK_TRANSITION_REJECTED')
+    assert.equal(unknown.counts.source, 0)
+    assert.equal(unknown.counts.gate, 0)
+    assert.equal(unknown.counts.create, 0)
+    assert.equal(unknown.counts.transition, 0)
   } finally {
     removeConfigSandbox(ctx.sandbox)
   }
