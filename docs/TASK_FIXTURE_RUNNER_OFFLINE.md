@@ -16,6 +16,8 @@
 
 不读时钟、不用随机数、不做 I/O/网络、不启进程、不创建队列/持久任务或跨调用状态。整根先调用一次共享 `copyFixtureInput`，所有输出用 `deepFreezeFixtureValue` 冻结。
 
+Plan 08-D-B 起，本模块是**兼容门面**：实现已迁入唯一内部 engine `core/audio/task-fixture-engine-internal.mjs`，本文件的三导出与输入/输出逐值不变；内部另有 `runDraftFixtureTaskOnce` 与仅研发可见的 `runExistingFixtureTaskOnce`。内部入口/完整 record/未来 owner 边界见 [TASK_FIXTURE_RECORD_INTERNAL.md](TASK_FIXTURE_RECORD_INTERNAL.md)，不属于本公开协议。
+
 ## 2. 输入契约
 
 根恰 4 键，全部必填：

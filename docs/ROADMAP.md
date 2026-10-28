@@ -55,8 +55,15 @@ records, issues owner ids and deduplicates by scope/key with bounded fd reads, f
 completion, atomic temp+fsync+rename+read-back, post-commit identity checks, close-failure phase
 propagation, one close per open lease, cleanup trust-failure classification, one-shot cleanup
 eligibility and `WRITE_UNKNOWN` locking; it is **`OFFLINE`** / `FIXTURE_ONLY` / `NOT_INTEGRATED`
-(035–038 storage-boundary repairs included, pending re-review) and has no execution, delivery or
-cross-process recovery. None
+(035–038 storage-boundary repairs included, merged via PR #30 at **M `2090943`**, report 0032) and has no
+execution, delivery or cross-process recovery. Plan 08-D-B
+adds the single internal engine (`core/audio/task-fixture-engine-internal.mjs`, four exports) and a
+compatibility facade; `runExistingFixtureTaskOnce({scopeId, record, input})` reuses a complete
+initial record with original TaskId/scope/`observedAt` without a second create, while the full record
+stays private and the old public envelope is unchanged. New D-B tests 13; full suite
+**623 / 621 pass / 2 platform skips / 0 fail**. It is **`OFFLINE`** / `FIXTURE_ONLY` /
+`NOT_INTEGRATED` and adds no persistent claim, cross-call idempotency, recovery, Host/GUI or real
+generation. None
 delivers real adapters, real byte/codec/hash verification,
 save/delivery or any send path. Phase 4B-2B-2b
 (Sender automation write) remains **NOT STARTED** and separate. Production config writes require

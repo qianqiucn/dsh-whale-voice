@@ -789,7 +789,7 @@ test('C16 exactly three exports, 14 codes, 13-key value and real projections', (
 })
 
 test('C17 static call graph: one source, one readiness gate, at most one dispatch, old Task only', async () => {
-  const source = await readFile(new URL('../core/audio/task-fixture-runner.mjs', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../core/audio/task-fixture-engine-internal.mjs', import.meta.url), 'utf8')
   assert.equal((source.match(/resolveFixtureTaskSource\(/g) || []).length, 1)
   assert.equal((source.match(/negotiateReadyFixtureProvider\(/g) || []).length, 1)
   assert.equal((source.match(/dispatchReadyRvcFakeOnce\(/g) || []).length, 1)
