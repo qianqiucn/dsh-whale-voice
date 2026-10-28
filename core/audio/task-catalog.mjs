@@ -583,11 +583,25 @@ function writeCatalog(state, snapshot, baseDigest) {
   let fd = null
   let tempIdentity = null
   let renameAttempted = false
+  let cleanupAttempted = false
   let cleanupBlocked = false
+  let lastCleanupStatus = null
   const attemptCleanup = () => {
-    if (cleanupBlocked || tempIdentity === null) return
+    if (cleanupAttempted) return lastCleanupStatus
+    cleanupAttempted = true
+    if (tempIdentity === null) {
+      lastCleanupStatus = 'not-owned'
+      return lastCleanupStatus
+    }
     const status = cleanupOwnTemp(state, tempPath, tempIdentity)
+    lastCleanupStatus = status
     if (status !== 'unlinked') cleanupBlocked = true
+    return status
+  }
+  const blockCleanup = () => {
+    cleanupAttempted = true
+    cleanupBlocked = true
+    lastCleanupStatus = 'blocked'
   }
   try {
     try {
@@ -635,10 +649,16 @@ function writeCatalog(state, snapshot, baseDigest) {
       try {
         checkSandbox(state)
       } catch (sandboxError) {
-        cleanupBlocked = true
+        blockCleanup()
         throw sandboxError
       }
-      attemptCleanup()
+      const cleanupStatus = attemptCleanup()
+      if (
+        cleanupStatus === 'blocked' &&
+        (!(error instanceof CatalogFailure) || error.key === 'WRITE_REJECTED')
+      ) {
+        raise('SANDBOX_INVALID', '$')
+      }
       if (error instanceof CatalogFailure) throw error
       raise('WRITE_REJECTED', '$')
     }
@@ -655,17 +675,20 @@ function writeCatalog(state, snapshot, baseDigest) {
       try {
         checkSandbox(state)
       } catch (sandboxError) {
-        cleanupBlocked = true
+        blockCleanup()
         throw sandboxError
       }
-      attemptCleanup()
+      const cleanupStatus = attemptCleanup()
+      if (cleanupStatus === 'blocked' && error instanceof CatalogFailure && error.key === 'WRITE_REJECTED') {
+        raise('SANDBOX_INVALID', '$')
+      }
       if (error instanceof CatalogFailure && error.key === 'WRITE_REJECTED') throw error
       lockUnknown(state)
       raise('STORE_CHANGED', '$')
     }
     if (!sameIdentity(tempRead.identity, tempIdentity) || tempRead.bytes.length !== bytes.length || !tempRead.bytes.equals(bytes)) {
       // The path no longer names this operation's file: never commit or delete it.
-      cleanupBlocked = true
+      blockCleanup()
       lockUnknown(state)
       raise('STORE_CHANGED', '$')
     }
@@ -676,10 +699,11 @@ function writeCatalog(state, snapshot, baseDigest) {
     } catch (error) {
       try {
         checkSandbox(state)
-        attemptCleanup()
       } catch {
-        cleanupBlocked = true
+        blockCleanup()
+        throw error
       }
+      attemptCleanup()
       throw error
     }
 

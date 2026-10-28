@@ -105,7 +105,7 @@ SHA256 仅用于规范身份比较/检测意外变化，**不是签名或防恶�
 
 只有真正新键且校验全部通过才写。形成旧 entries + 一条的完整新快照；写前确认条目/字节预算。root 内独占 `wx` 创建随机模块生成的临时文件（`audio-task-catalog-v1.<32hex>.tmp`），**按 `fs.writeSync` 实际返回数循环续写直到严格写完**（正数短写续写；0/负数/非整数/超余量/抛错在 rename 前拒绝）；随后 fsync、关闭，再以有界 fd 读核对临时文件身份与完整字节，才进入 rename。rename 后再次核 root/marker、目标身份与完整回读，全部一致才返回 `CREATED`/更新共享确认摘要。不把 rename 成功、mtime、stat 或 JSON 能 parse 当确认写入。
 
-临时文件清理只针对**本操作 `wx` 成功创建并取得 fd 身份**的同一常规文件：清理前**先通过完整 trusted cap/root/marker 受限读取检查**，再核 root/身份/dev-ino/nlink/root 内；`EEXIST` 先存文件、被外部替换的文件都不得删除或提交；身份不可确认时保留并停止。**清理资格检查一旦失败，对本次 write 操作不可恢复**：后续 catch/finally 不得补删，unlink=0。root/marker 失效或清理安全复核/close 失败时保留自有临时文件，不修复 marker、不扫目录、不删除已有/替换文件；未创建成功/未取得身份一律不 unlink。
+临时文件清理只针对**本操作 `wx` 成功创建并取得 fd 身份**的同一常规文件：清理前**先通过完整 trusted cap/root/marker 受限读取检查**，再核 root/身份/dev-ino/nlink/root 内；`EEXIST` 先存文件、被外部替换的文件都不得删除或提交；身份不可确认时保留并停止。**进入首次自动清理检查前即消耗本操作清理资格**，成功/失败/无资格/身份未知均为终结决定，后续 catch/finally 只复用结果、不再检查或 unlink。清理信任/root/marker/其 close 复核失败时：主结果为普通 `WRITE_REJECTED` 则升级 `SANDBOX_INVALID`；已有 `STORE_INVALID`/`RESOURCE_LIMIT`/`STORE_CHANGED` 保留具体错误；一律 `unlink=0`/临时保留。root/marker 失效或清理安全复核/close 失败时不修复 marker、不扫目录、不删除已有/替换文件；未创建成功/未取得身份一律不 unlink。
 
 未尝试 rename 时的安全分类：root/marker 失效 `SANDBOX_INVALID`、外改 `STORE_CHANGED`（锁闭）、坏库 `STORE_INVALID`、超限 `RESOURCE_LIMIT`；仅本操作临时文件创建/写/fsync/close 等普通 I/O 失败 → `WRITE_REJECTED`（不锁闭，可正常重试）。
 
@@ -221,6 +221,6 @@ removeConfigSandbox(sandbox)
 
 ## 13. 测试与证据
 
-行为测试位于 `test/task-catalog.test.mjs`，使用原 `createConfigSandbox()` 创建真实 OS 临时目录，覆盖 D01–D20 + F01–F05 + R01–R03 + S01–S03：创建/幂等/冲突/scope 隔离、同 cap 并发、重开与伪造 cap、落盘 schema 与 owner ID、32 条与 128KiB 边界、ID 碰撞、路径/链接/标记拒绝、外改锁闭、写入顺序与 WRITE_REJECTED/WRITE_UNKNOWN 故障注入、有界读/标记增长、提交后与读事务末身份失败、清理所有权、短写续写、损坏优先、close 失败按阶段分类、写 fd 关闭至多一次且不重关复用 fd、清理资格失败不可恢复、current/pre 全量重验及 14 类实际磁盘断言、getter/Proxy/复制预算、fresh/frozen、文档 JSON 原样执行等。测试结束只删除自己创建的已验证 sandbox。
+行为测试位于 `test/task-catalog.test.mjs`，使用原 `createConfigSandbox()` 创建真实 OS 临时目录，覆盖 D01–D20 + F01–F05 + R01–R03 + S01–S03 + C03a–C03h：创建/幂等/冲突/scope 隔离、同 cap 并发、重开与伪造 cap、落盘 schema 与 owner ID、32 条与 128KiB 边界、ID 碰撞、路径/链接/标记拒绝、外改锁闭、写入顺序与 WRITE_REJECTED/WRITE_UNKNOWN 故障注入、有界读/标记增长、提交后与读事务末身份失败、清理所有权、短写续写、损坏优先、close 失败按阶段分类、写 fd 关闭至多一次且不重关复用 fd、清理信任失败分类与一次性检查、current/pre 全量重验及 14 类实际磁盘断言、getter/Proxy/复制预算、fresh/frozen、文档 JSON 原样执行等。测试结束只删除自己创建的已验证 sandbox。
 
 故障注入只在测试进程内临时包装本任务使用的真实 `fs`/`crypto` 函数并在 finally 恢复，不修改公开 API、环境开关或生产目录；平台不支持的链接测试按实情 skip。实际执行计数与结果记录在交付报告与 CI 中，本文档不预填未经执行的通过数。
