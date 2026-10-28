@@ -503,11 +503,17 @@ test('B09 a legal source block stays structural for a bad context/readiness and 
     assert.equal(out.result.value.readiness.observation.requiredResource, 'REMOTE')
     assert.equal(out.result.value.task.state, 'CREATED')
 
-    const missing = clone(ctx2.input)
+    // REMOTE negative control: clone the already-remote input (local=false, CPU/GPU unavailable)
+    // instead of the local TTS example, so the block is proven under the REMOTE policy.
+    const missing = clone(remote)
+    assert.equal(missing.sourceInput.voiceBinding.negotiation.registry.instances[0].manifest.resources.local, false)
+    assert.equal(missing.readiness.instances[0].resources.cpu, 'UNAVAILABLE')
+    assert.equal(missing.readiness.instances[0].resources.gpu, 'UNAVAILABLE')
     missing.readiness.instances[0].installation = 'ABSENT'
     const absentOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx2.record, input: missing })
     expectBlocked(absentOut.result, 'TASK_FIXTURE_READINESS_BLOCKED')
     assert.equal(absentOut.result.value.readiness.reason, 'PROVIDER_READINESS_INSTALLATION_MISSING')
+    assert.equal(absentOut.result.value.readiness.observation.requiredResource, 'REMOTE')
     assert.equal(absentOut.record.taskId, ctx2.record.taskId)
     assert.deepEqual(absentOut.result.value.states, ['CREATED'])
   } finally {
@@ -578,6 +584,19 @@ test('B12 measured partition boundary: depth 12 accepted, depth 13 rejected, leg
     assert.equal(depthOf({ scopeId: SCOPE, record: record11 }), 12)
     expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: record11, input: ctx.input }).result, 'INVALID_INPUT', '$')
 
+    // E: one owner-partition value-budget control above 4096 values while depth, object keys and
+    // array length stay inside their own limits (the input partition stays the legal control).
+    const valueBudgetRecord = clone(ctx.record)
+    valueBudgetRecord.extra = { buckets: Array.from({ length: 17 }, () => new Array(256).fill(0)) }
+    const budgetOwner = { scopeId: SCOPE, record: valueBudgetRecord }
+    assert.ok(depthOf(budgetOwner) <= 12)
+    assert.ok(Reflect.ownKeys(valueBudgetRecord).length <= 32)
+    assert.equal(valueBudgetRecord.extra.buckets.length, 17)
+    assert.ok(valueBudgetRecord.extra.buckets.every((bucket) => bucket.length === 256))
+    const budgetOut = runExistingFixtureTaskOnce({ scopeId: SCOPE, record: valueBudgetRecord, input: ctx.input })
+    expectError(budgetOut.result, 'RESOURCE_LIMIT', '$')
+    assert.equal(budgetOut.record, null)
+
     const hidden = clone(ctx.input)
     Object.defineProperty(hidden, 'extra', { value: 1, enumerable: false, configurable: true })
     expectError(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ctx.record, input: hidden }).result, 'INVALID_INPUT', '$')
@@ -632,7 +651,12 @@ test('B13 full-graph isolation: wrapper/output all frozen, no shared object with
     const afterInput = collectGraph(ctx.input)
     assert.equal(afterInput.json, before.json)
     assert.deepEqual([...afterInput.frozen.entries()].map(([, frozen]) => frozen).sort(), [...before.frozen.entries()].map(([, frozen]) => frozen).sort())
-    assert.equal(collectGraph(ctx.record).json, recordBefore.json)
+    // E: every actual record object keeps the exact frozen state captured before the runs.
+    const recordAfterFirst = collectGraph(ctx.record)
+    assert.equal(recordAfterFirst.json, recordBefore.json)
+    for (const [object, frozen] of recordBefore.frozen) {
+      assert.equal(recordAfterFirst.frozen.get(object), frozen)
+    }
 
     const firstGraph = collectGraph(first)
     for (const object of firstGraph.objects) {
@@ -648,6 +672,11 @@ test('B13 full-graph isolation: wrapper/output all frozen, no shared object with
       assert.equal(Object.isFrozen(object), true)
       assert.equal(firstGraph.objects.has(object), false)
       assert.equal(before.objects.has(object), false)
+    }
+    const recordAfterSecond = collectGraph(ctx.record)
+    assert.equal(recordAfterSecond.json, recordBefore.json)
+    for (const [object, frozen] of recordBefore.frozen) {
+      assert.equal(recordAfterSecond.frozen.get(object), frozen)
     }
   } finally {
     removeConfigSandbox(ctx.sandbox)
@@ -779,10 +808,11 @@ const deps = {
 const entry = process.env.WORKER_ENTRY || 'existing'
 const fault = JSON.parse(process.env.WORKER_FAULT || 'null')
 const frame = JSON.parse(process.env.WORKER_FRAME || 'null')
-const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0, rvcCalls: 0, rvcOk: 0 }
+const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, validateDraft: 0, validatorOk: 0, rvcCalls: 0, rvcOk: 0, realRecordCalls: 0, realDraftCalls: 0, controlOk: 0, legalRefusalProbes: 0 }
 const finalRecordCall = entry === 'existing' ? 2 : 1
 let faultHit = 0
 let faultAt = null
+let payloadDeleted = null
 const clone = (value) => JSON.parse(JSON.stringify(value))
 const dropped = (value, field) => { const copy = clone(value); delete copy[field]; return copy }
 function claim(target, call) {
@@ -800,6 +830,13 @@ function mutatedSuccess(kind, result) {
   const shape = kind.slice('success-'.length)
   if (shape === '42') return { ok: true, value: 42 }
   if (shape === 'empty') return { ok: true, value: {} }
+  if (shape.indexOf('delete-') === 0) {
+    const field = shape.slice('delete-'.length)
+    const value = clone(result.value)
+    delete value[field]
+    payloadDeleted = { field: field, present: Object.prototype.hasOwnProperty.call(value, field), ok: true }
+    return { ok: true, value: value }
+  }
   const value = { ...result.value }
   if (shape === 'missing-source') delete value.source
   else if (shape === 'source-42') value.source = 42
@@ -817,28 +854,45 @@ function protocolFault(kind, result) {
 }
 const realValidateRecord = deps.task.validateAudioTaskRecord
 const realValidateDraft = deps.task.validateAudioTaskDraft
+/* A: the wrapper always delegates to the real validator first (original arguments), records that
+   real control, and only then injects. counts.validateRecord stays the engine call count;
+   realRecordCalls/controlOk/legalRefusalProbes keep the extra probes separate. */
 const validateRecord = (...args) => {
   counts.validateRecord += 1
-  const kind = claim('record', counts.validateRecord)
+  const call = counts.validateRecord
+  const kind = claim('record', call)
+  counts.realRecordCalls += 1
+  const real = realValidateRecord(...args)
+  if (kind === null) {
+    if (real && real.ok === true) counts.validatorOk += 1
+    return real
+  }
+  if (!real || real.ok !== true) throw new Error('fault target without a real ok control')
+  counts.controlOk += 1
   if (kind === 'throw') throw new Error('injected record throw')
-  if (kind !== null && kind.indexOf('legal-delete-') === 0) {
+  if (kind.indexOf('legal-delete-') === 0) {
+    counts.legalRefusalProbes += 1
+    counts.realRecordCalls += 1
     return realValidateRecord(dropped(args[0], kind.slice('legal-delete-'.length)))
   }
-  const result = realValidateRecord(...args)
-  if (result && result.ok === true) counts.validatorOk += 1
-  if (kind === null) return result
-  return protocolFault(kind, result)
+  return protocolFault(kind, real)
 }
 const validateDraft = (...args) => {
   counts.validateDraft += 1
-  const kind = claim('draft', counts.validateDraft)
+  const call = counts.validateDraft
+  const kind = claim('draft', call)
+  counts.realDraftCalls += 1
+  const real = realValidateDraft(...args)
+  if (kind === null) return real
+  if (!real || real.ok !== true) throw new Error('fault target without a real ok control')
+  counts.controlOk += 1
   if (kind === 'throw') throw new Error('injected draft throw')
-  if (kind !== null && kind.indexOf('legal-delete-') === 0) {
+  if (kind.indexOf('legal-delete-') === 0) {
+    counts.legalRefusalProbes += 1
+    counts.realDraftCalls += 1
     return realValidateDraft(dropped(args[0], kind.slice('legal-delete-'.length)))
   }
-  const result = realValidateDraft(...args)
-  if (kind === null) return result
-  return protocolFault(kind, result)
+  return protocolFault(kind, real)
 }
 const wrap = (key, fn) => (...args) => { counts[key] += 1; return fn(...args) }
 const dispatch = (...args) => {
@@ -928,6 +982,7 @@ console.log(JSON.stringify({
   counts: counts,
   faultHit: faultHit,
   faultAt: faultAt,
+  payloadDeleted: payloadDeleted,
   exposesPrivateRecord: out.record !== undefined,
   record: out.record === undefined ? null : out.record,
   result: out.result,
@@ -949,6 +1004,17 @@ function runWorker(entry, fault, payload, base = AUDIO_BASE) {
   return JSON.parse(output.trim())
 }
 
+const PROTOCOL_KINDS = Object.freeze([
+  'throw',
+  'null',
+  'not-boolean',
+  'scalar-result',
+  'success-42',
+  'success-empty',
+  'success-missing-source',
+  'success-source-42',
+])
+
 const NORMAL_COUNTS = Object.freeze({
   source: 1,
   gate: 1,
@@ -960,6 +1026,10 @@ const NORMAL_COUNTS = Object.freeze({
   validatorOk: 2,
   rvcCalls: 1,
   rvcOk: 1,
+  realRecordCalls: 2,
+  realDraftCalls: 1,
+  controlOk: 0,
+  legalRefusalProbes: 0,
 })
 
 const DRAFT_COUNTS = Object.freeze({
@@ -973,6 +1043,10 @@ const DRAFT_COUNTS = Object.freeze({
   validatorOk: 1,
   rvcCalls: 1,
   rvcOk: 1,
+  realRecordCalls: 1,
+  realDraftCalls: 0,
+  controlOk: 0,
+  legalRefusalProbes: 0,
 })
 
 function expectDependencyFailure(run, label) {
@@ -1015,12 +1089,19 @@ test('T01 worker: native counts, entry separation and the actual public envelope
   }
 })
 
-test('T02 stage protocol matrix: legal refusal vs bad protocol at record/draft/final, both final entries', async () => {
+test('T02 stage protocol matrix: delegated control first, legal refusal vs bad protocol, eight shared kinds at every stage', async () => {
   const example = extractExample('## 7. RVC完整示例')
   const ctx = await makeExisting(example, 'key:fixture-t02')
+  const assertDelegated = (run, label) => {
+    assert.equal(run.counts.controlOk, 1, label + ' real control')
+    assert.ok(run.counts.realRecordCalls >= run.counts.validateRecord, label + ' record delegation')
+    assert.ok(run.counts.realDraftCalls >= run.counts.validateDraft, label + ' draft delegation')
+  }
   try {
     const frame = { scopeId: SCOPE, record: ctx.record, input: ctx.input }
 
+    // Legal refusal: the original arguments are validated first (ok), then a separate probe deletes
+    // one field and gets the real ok:false — the returned refusal is never prefabricated.
     const initialLegal = runWorker('existing', { target: 'record', kind: 'legal-delete-schemaVersion', call: 'first' }, frame)
     assert.equal(initialLegal.faultHit, 1)
     assert.deepEqual(initialLegal.faultAt, { target: 'record', call: 1 })
@@ -1032,6 +1113,9 @@ test('T02 stage protocol matrix: legal refusal vs bad protocol at record/draft/f
     assert.equal(initialLegal.counts.gate, 0)
     assert.equal(initialLegal.counts.dispatch, 0)
     assert.equal(initialLegal.counts.transition, 0)
+    assertDelegated(initialLegal, 'initial legal refusal')
+    assert.equal(initialLegal.counts.legalRefusalProbes, 1)
+    assert.equal(initialLegal.counts.realRecordCalls, initialLegal.counts.validateRecord + 1)
     assertNoEcho(initialLegal.result, 'initial legal refusal')
 
     const draftLegal = runWorker('existing', { target: 'draft', kind: 'legal-delete-taskId', call: 'first' }, frame)
@@ -1042,6 +1126,9 @@ test('T02 stage protocol matrix: legal refusal vs bad protocol at record/draft/f
     assert.equal(draftLegal.counts.validateDraft, 1)
     assert.equal(draftLegal.counts.dispatch, 0)
     assert.equal(draftLegal.counts.transition, 0)
+    assertDelegated(draftLegal, 'draft legal refusal')
+    assert.equal(draftLegal.counts.legalRefusalProbes, 1)
+    assert.equal(draftLegal.counts.realDraftCalls, draftLegal.counts.validateDraft + 1)
     assertNoEcho(draftLegal.result, 'draft legal refusal')
 
     const stages = [
@@ -1060,52 +1147,96 @@ test('T02 stage protocol matrix: legal refusal vs bad protocol at record/draft/f
       assert.equal(run.counts.create, stage.create, stage.entry)
       assert.equal(run.counts.rvcCalls, 1, stage.entry)
       assert.equal(run.counts.rvcOk, 1, stage.entry)
+      assertDelegated(run, 'final legal refusal ' + stage.entry)
+      assert.equal(run.counts.legalRefusalProbes, 1, stage.entry)
       if (run.exposesPrivateRecord) assert.equal(run.record, null, stage.entry)
       assertNoEcho(run.result, 'final legal refusal ' + stage.entry)
     }
 
-    const recordInitialFaults = ['throw', 'null', 'not-boolean', 'scalar-result', 'success-42', 'success-empty', 'success-missing-source', 'success-source-42']
-    for (const kind of recordInitialFaults) {
+    for (const kind of PROTOCOL_KINDS) {
       const run = runWorker('existing', { target: 'record', kind, call: 'first' }, frame)
       expectDependencyFailure(run, 'initial record ' + kind)
+      assertDelegated(run, 'initial record ' + kind)
       assert.equal(run.counts.dispatch, 0, kind)
       assert.equal(run.counts.transition, 0, kind)
       assert.equal(run.counts.validateDraft, 0, kind)
       assertNoEcho(run.result, 'initial record ' + kind)
     }
 
-    const recordUndefinedFaults = ['success-schema-undefined', 'success-taskid-undefined', 'success-delivery-undefined']
-    for (const kind of recordUndefinedFaults) {
-      const run = runWorker('existing', { target: 'record', kind, call: 'final' }, frame)
-      expectDependencyFailure(run, 'final record ' + kind)
-      assert.equal(run.counts.transition, 2, kind)
-      assert.equal(run.counts.dispatch, 1, kind)
-      assertNoEcho(run.result, 'final record ' + kind)
-    }
-
-    const draftFaults = ['throw', 'null', 'not-boolean', 'scalar-result', 'success-42', 'success-empty', 'success-missing-source', 'success-source-42']
-    for (const kind of draftFaults) {
+    for (const kind of PROTOCOL_KINDS) {
       const run = runWorker('existing', { target: 'draft', kind, call: 'first' }, frame)
       expectDependencyFailure(run, 'draft ' + kind)
+      assertDelegated(run, 'draft ' + kind)
       assert.equal(run.counts.validateDraft, 1, kind)
       assert.equal(run.counts.dispatch, 0, kind)
       assert.equal(run.counts.transition, 0, kind)
       assertNoEcho(run.result, 'draft ' + kind)
     }
 
-    const draftUndefinedFaults = ['success-taskid-undefined', 'success-delivery-undefined']
-    for (const kind of draftUndefinedFaults) {
-      expectDependencyFailure(runWorker('existing', { target: 'draft', kind, call: 'first' }, frame), 'draft ' + kind)
+    // The same eight kinds drive the final record validator: existing 2nd call, draft/public 1st.
+    for (const stage of stages) {
+      const payload = stage.entry === 'existing' ? frame : { input: ctx.input }
+      for (const kind of PROTOCOL_KINDS) {
+        const label = 'final ' + stage.entry + ' ' + kind
+        const run = runWorker(stage.entry, { target: 'record', kind, call: 'final' }, payload)
+        expectDependencyFailure(run, label)
+        assert.deepEqual(run.faultAt, { target: 'record', call: stage.finalCall }, label)
+        assertDelegated(run, label)
+        assert.equal(run.counts.transition, 2, label)
+        assert.equal(run.counts.dispatch, 1, label)
+        assert.equal(run.counts.create, stage.create, label)
+        assert.equal(run.counts.rvcCalls, 1, label)
+        assert.equal(run.counts.rvcOk, 1, label)
+        if (run.exposesPrivateRecord) assert.equal(run.record, null, label)
+        assertNoEcho(run.result, label)
+      }
     }
 
-    for (const entry of ['draft', 'public']) {
-      for (const kind of ['throw', 'null', 'scalar-result']) {
-        const run = runWorker(entry, { target: 'record', kind, call: 'final' }, { input: ctx.input })
-        expectDependencyFailure(run, entry + ' final ' + kind)
-        assert.equal(run.counts.transition, 2, entry + kind)
-        assert.equal(run.counts.dispatch, 1, entry + kind)
-        assertNoEcho(run.result, entry + ' final ' + kind)
-      }
+    // The public entry only ever exposes its public error; the private null is proven by pairing the
+    // same fault with the internal draft entry that shares the engine.
+    for (const kind of PROTOCOL_KINDS) {
+      const publicRun = runWorker('public', { target: 'record', kind, call: 'final' }, { input: ctx.input })
+      assert.equal(publicRun.exposesPrivateRecord, false, kind)
+      assert.equal(JSON.stringify(publicRun.result).includes('observedAt'), false, kind)
+      assert.equal(JSON.stringify(publicRun.result).includes('"record"'), false, kind)
+      const paired = runWorker('draft', { target: 'record', kind, call: 'final' }, { input: ctx.input })
+      assert.equal(paired.exposesPrivateRecord, true, kind)
+      assert.equal(paired.record, null, 'paired private null ' + kind)
+      assert.deepEqual(paired.result, publicRun.result, 'paired envelope ' + kind)
+    }
+
+    const recordUndefinedFaults = ['success-schema-undefined', 'success-taskid-undefined', 'success-delivery-undefined']
+    for (const kind of recordUndefinedFaults) {
+      const run = runWorker('existing', { target: 'record', kind, call: 'final' }, frame)
+      expectDependencyFailure(run, 'final record ' + kind)
+      assertDelegated(run, 'final record ' + kind)
+      assert.equal(run.counts.transition, 2, kind)
+      assert.equal(run.counts.dispatch, 1, kind)
+      assertNoEcho(run.result, 'final record ' + kind)
+    }
+
+    const draftUndefinedFaults = ['success-taskid-undefined', 'success-delivery-undefined']
+    for (const kind of draftUndefinedFaults) {
+      const run = runWorker('existing', { target: 'draft', kind, call: 'first' }, frame)
+      expectDependencyFailure(run, 'draft ' + kind)
+      assertDelegated(run, 'draft ' + kind)
+      assertNoEcho(run.result, 'draft ' + kind)
+    }
+
+    // B: a real deleted field on the ok:true payload is not the same as an input-side legal refusal.
+    const payloadDeletes = [
+      { target: 'record', kind: 'success-delete-schemaVersion', call: 'first', field: 'schemaVersion', label: 'initial record payload' },
+      { target: 'draft', kind: 'success-delete-taskId', call: 'first', field: 'taskId', label: 'draft payload taskId' },
+      { target: 'draft', kind: 'success-delete-deliveryRequested', call: 'first', field: 'deliveryRequested', label: 'draft payload deliveryRequested' },
+    ]
+    for (const entry of payloadDeletes) {
+      const run = runWorker('existing', { target: entry.target, kind: entry.kind, call: entry.call }, frame)
+      expectDependencyFailure(run, entry.label)
+      assertDelegated(run, entry.label)
+      assert.deepEqual(run.payloadDeleted, { field: entry.field, present: false, ok: true }, entry.label)
+      assert.equal(run.counts.dispatch, 0, entry.label)
+      assert.equal(run.counts.transition, 0, entry.label)
+      assertNoEcho(run.result, entry.label)
     }
 
     const dispatchThrow = runWorker('existing', { target: 'dispatch', kind: 'throw', call: 1 }, frame)
@@ -1229,6 +1360,65 @@ test('B10 worker counts: legacy/still-blocked initial states and six mixed prech
     assert.equal(frame.input.sourceInput.voiceBinding.taskDraft.taskId.length > 0, true)
   } finally {
     removeConfigSandbox(ctx.sandbox)
+  }
+})
+
+test('D three existing legal frames keep their worker counts (existing TTS, real BLOCKED_RIGHTS, legacy TTS)', async () => {
+  const tts = extractExample('## 8. TTS阻断示例')
+  const ttsCtx = await makeExisting(tts, 'key:fixture-d48-tts')
+  const svc = extractExample('## 7. RVC完整示例')
+  const brCtx = await makeExisting(svc, 'key:fixture-d48-br', (draft) => {
+    draft.rights.state = 'UNVERIFIED'
+  })
+  try {
+    const ttsNative = JSON.parse(JSON.stringify(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: ttsCtx.record, input: ttsCtx.input })))
+    const ttsWorker = runWorker('existing', null, { scopeId: SCOPE, record: ttsCtx.record, input: ttsCtx.input })
+    assert.deepEqual(ttsWorker.result, ttsNative.result)
+    assert.deepEqual(ttsWorker.record, ttsNative.record)
+    expectBlocked(ttsWorker.result, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+    assert.equal(ttsWorker.counts.source, 1)
+    assert.equal(ttsWorker.counts.gate, 1)
+    assert.equal(ttsWorker.counts.create, 0)
+    assert.equal(ttsWorker.counts.dispatch, 0)
+    assert.equal(ttsWorker.counts.transition, 0)
+    assert.equal(ttsWorker.record.taskId, ttsCtx.record.taskId)
+
+    const brInput = clone(brCtx.input)
+    brInput.sourceInput.voiceBinding.taskDraft.rights.state = 'UNVERIFIED'
+    const brNative = JSON.parse(JSON.stringify(runExistingFixtureTaskOnce({ scopeId: SCOPE, record: brCtx.record, input: brInput })))
+    const brWorker = runWorker('existing', null, { scopeId: SCOPE, record: brCtx.record, input: brInput })
+    assert.deepEqual(brWorker.result, brNative.result)
+    assert.deepEqual(brWorker.record, brNative.record)
+    expectBlocked(brWorker.result, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(brWorker.result.value.sourceCheck.voiceBinding.reason, 'VOICE_ASSET_TASK_RIGHTS_UNCONFIRMED')
+    assert.equal(brWorker.record.state, 'BLOCKED_RIGHTS')
+    assert.equal(brWorker.record.taskId, brCtx.record.taskId)
+    assert.equal(brWorker.counts.source, 1)
+    assert.equal(brWorker.counts.gate, 1)
+    assert.equal(brWorker.counts.create, 0)
+    assert.equal(brWorker.counts.dispatch, 0)
+    assert.equal(brWorker.counts.transition, 0)
+
+    const legacyNative = JSON.parse(JSON.stringify(runDraftFixtureTaskOnce(tts)))
+    const legacyWorker = runWorker('draft', null, { input: tts })
+    assert.deepEqual(legacyWorker.result, legacyNative.result)
+    assert.deepEqual(legacyWorker.record, legacyNative.record)
+    expectBlocked(legacyWorker.result, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+    assert.equal(legacyWorker.counts.source, 1)
+    assert.equal(legacyWorker.counts.gate, 1)
+    assert.equal(legacyWorker.counts.create, 1)
+    assert.equal(legacyWorker.counts.dispatch, 0)
+    assert.equal(legacyWorker.counts.transition, 0)
+    assert.equal(legacyWorker.counts.validateRecord, 0)
+
+    const publicTts = runWorker('public', null, { input: tts })
+    assert.deepEqual(publicTts.result, JSON.parse(JSON.stringify(runFixtureAudioTaskOnce(tts))))
+    assert.equal(publicTts.counts.create, 1)
+    assert.equal(publicTts.counts.dispatch, 0)
+    assert.equal(publicTts.counts.transition, 0)
+  } finally {
+    removeConfigSandbox(ttsCtx.sandbox)
+    removeConfigSandbox(brCtx.sandbox)
   }
 })
 

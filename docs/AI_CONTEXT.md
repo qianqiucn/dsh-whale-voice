@@ -45,7 +45,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and
   the three-stage legal-refusal vs bad-protocol matrix, measured `depth12`/13 partition bounds, the
   legal cross-scope voice library (`VOICE_ASSET_PROFILE_UNAVAILABLE`), legal eight-domain identity
   controls, the `REMOTE` readiness policy, full-graph output isolation and the gate/dispatch vs
-  RVC-result error split. D-B tests 27; full suite **637 / 635 pass / 2 platform skips / 0 fail**,
+  RVC-result error split. The v1.7 patch makes every validator wrapper delegate to the real validator
+  with the original arguments first and only inject after a real `ok:true` control, separates input
+  delete / success-payload delete / `undefined` as three sources, drives the same eight protocol
+  kinds through the existing/draft/public `final` entry, and adds worker counts for three existing
+  legal frames plus `REMOTE` negative, owner value-budget and per-object record frozen-state
+  assertions. D-B tests 28; full suite **638 / 636 pass / 2 platform skips / 0 fail**,
   UI **24/24** (same UI tree; CI re-runs it on the new head). `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #32 still OPEN, no cross-call idempotency,
   recovery, Host/GUI or real generation.
 - **Plan 08-D-A branch:** `feature/plan08d-task-catalog` adds `core/audio/task-catalog.mjs` — an
