@@ -342,3 +342,11 @@ Phase 4B-2B-2b remains a separate future task and is not started.
 
 This file must be updated whenever a verified development task is completed. Status labels must be
 specific; never mark a feature "working" based only on a Mock screen or an unexecuted plan.
+
+## Repository homepage documentation
+
+The README now presents the project in plain Chinese with reviewed fictional UI previews, a
+current-capability table and a clearly marked target Audio/Relay architecture. Development setup
+and checks live in `docs/DEVELOPMENT.md`. This presentation change adds no provider, audio,
+installation, configuration-write, task-execution or delivery capability. The preview images are
+isolated demo captures, not real integration evidence.

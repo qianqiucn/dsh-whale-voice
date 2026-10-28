@@ -1,310 +1,136 @@
-# Whale Voice · 小鲸鱼语音中心
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/hero-light.svg">
+  <img alt="Whale Voice 小鲸鱼语音中心。正在开发的语音、翻唱与安全投递工作台。" src="docs/assets/hero-light.svg" width="1280">
+</picture>
 
-Whale Voice is a native [DeepSeek Harness](https://github.com/deepseek-ai) multi-engine voice plugin
-for local, cloud and custom TTS providers, with WeChat native-voice management through WeChatAgent.
-Qwen3-TTS and the private `whale-v1` voice are the current reference implementation and personal
-voice, not product defaults.
+<p align="center">
+  <strong>正在开发的 DeepSeek Harness（DSH）中文语音工作台</strong><br>
+  想让文字变成声音，让歌声有新的表达，也让每一次投递都有清楚的结果。
+</p>
 
-This repository contains the **Whale Voice frontend plugin, a read-only Core detector/config reader,
-the Phase 4B-1 isolated single-file config write foundation, the Phase 4B-2A isolated coordination
-protocol, the Phase 4B-2B-2a read-only capability/status projection and the TTS-A Provider-neutral
-design/contracts**. The working Windows voice pipeline (Voice Sender, WeChatAgent, WeChat UI
-automation, VB-CABLE, a local Qwen runtime and the private `whale-v1` reference audio) is a separate
-local system and is **not included here**.
+<p align="center">
+  <a href="#现在能用吗">现在能用吗</a> ·
+  <a href="#先看看界面">看看界面</a> ·
+  <a href="#它想帮你做什么">功能方向</a> ·
+  <a href="#接下来会做什么">开发进度</a> ·
+  <a href="docs/README.md">文档导航</a>
+</p>
 
-> **Current status: Phase 3B and Phase 4A are `INTEGRATED`; Phase 4B-2B-2a read-only
-> capability/status projection is `INTEGRATED` after real Host/GUI acceptance (full eight-page
-> coverage; see [Capability API](docs/CAPABILITY_API.md)). Phase 4B-2B-1 real-component capability
-> audit is complete and `OFFLINE` (read-only; see
-> [the audit](docs/PHASE4B2B1_COMPONENT_AUDIT.md)). Phase 4B-1/4B-2A remain `OFFLINE` isolated
-> foundations (no production write route). TTS-A Provider-neutral audit and pure contracts are
-> **DESIGN/`OFFLINE`**: no real provider is connected. Phase 4B-2B-2b write is **NOT STARTED**.
-> Remaining UI statistics/demo content is Mock.**
-> The UI does not write production voice configuration, does not install or start components, does
-> not send WeChat messages, and does not generate audio in this phase. The Phase 3B/4A Host bridge
-> was activated and visually accepted in the earlier DSH runtime; no production config write/apply
-> is implemented.
+## 现在能用吗
 
-## WeChat platform dependency
+**目前适合了解界面、参与开发和测试，还没有完成普通用户从安装到真实生成、保存、发送的完整流程。**
 
-**Whale Voice 是与 WeChatAgent 集成的 DSH 语音扩展项目。微信聊天语音功能依赖
-[sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent)，Whale Voice 本身不提供独立微信消息接入能力。**
+| 你关心的事 | 目前的情况 |
+| :--- | :--- |
+| 看看插件长什么样 | 已有八个管理页面、深浅主题和首次向导，可以查看下面的演示截图 |
+| 查看组件和配置状态 | 已接入过真实 DSH 的只读状态查询；需要受支持的宿主环境与配置 |
+| 选择引擎、关联音色和素材 | 已有离线测试基础，尚未接成普通用户可操作的完整流程 |
+| 真正生成语音或制作翻唱 | 开发中，尚未接通真实引擎 |
+| 试听、保存音频，或发到微信 | 完整流程尚未接通；演示按钮与示例记录不代表功能已可用 |
+| 一键安装、升级或修复 | 尚未提供经过完整验证的图形安装流程 |
 
-- **WeChatAgent is required** for WeChat message access, contact/group context, account/session
-  identity, DSH message bridging, existing chat authorization and the platform's send capability.
-- **Whale Voice does not reimplement a WeChat reader, account manager or bot.** It integrates
-  through `packages/adapter-wechatagent` (read-only manifest/runtime/health evidence; a full
-  event/identity adapter is not implemented).
-- **Voice Sender is a separately installed Windows component.** It owns window/chat location,
-  final identity checks, UI Automation, VB-CABLE routing, native recording/sending, emergency stop
-  and microphone recovery.
-- **TTS providers are independent** of the WeChat platform. Local and explicitly selected cloud
-  providers can be added without changing WeChatAgent.
-- **Real WeChat voice may be enabled only after** environment compatibility, authorization,
-  WeChatAgent connection, target identity and Voice Sender checks pass.
+第一次来，建议先看界面和功能方向。想运行开发版本，请阅读[开发与体验说明](docs/DEVELOPMENT.md)；里面的命令只面向参与开发的人，不是最终用户的使用方式。
 
-If WeChatAgent is missing, the plugin must still open and allow TTS provider settings and local or
-cloud preview. WeChat voice must then show:
+## 先看看界面
 
-> 尚未检测到 WeChatAgent。安装并连接 WeChatAgent 后，才能让 AI 在微信中发送语音消息。
+**下面是隔离演示环境（Mock）的真实页面截图，不是功能已上线的证明。** 图中的“已经准备好了”“在线”和示例记录均为演示文案；真实生成、试听、保存与发送尚未接通。[查看截图来源](docs/assets/README.md)。
 
-The UI must offer: check installation, open the official WeChatAgent repository, guide installation
-of a compatible version, check connection, view compatibility issues, and install Voice Sender.
-It must not enable WeChat voice or display a fake “online” WeChat state. Whale Voice never downloads
-or executes a third-party installer without confirmed provenance, permission and integrity checks.
+### 一个地方，看清组件和状态
 
-See [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) and
-[Architecture](docs/ARCHITECTURE.md).
+![Whale Voice 深色概览页面，隔离演示环境，使用虚构状态与数据](docs/assets/overview-dark.webp)
 
-## What is implemented
+概览、设置、权限、发送与安全、音色中心、情绪、活动和高级信息，已有统一的页面外观。
 
-- Native DSH client bundle (`dsh-whale-voice`) registered in the plugin sidebar and main slot.
-- Eight views: Overview, Voice Settings, Access, Send & Safety, Voice Studio, Emotions, Activity,
-  Advanced.
-- First-run setup wizard UI (four steps) and a component-management entry point.
-- Explicit no-Core / demo state: the wizard never fabricates installation or online success.
-- Read-only Core detector/config reader and DSH host bridge (`index.js`) with token-protected
-  loopback routes.
-- Phase 4B-1 isolated single-file config store (`OFFLINE`): trusted sandbox capability, strict schema,
-  HMAC revision, atomic save/rollback and a test-only API; no production write route.
-- Phase 4B-2A isolated coordination protocol (`OFFLINE`): source authority matrix, change plan,
-  journal/recovery, save-vs-apply states and Fake Runtime tests; no production adapter or route.
-- Phase 4B-2B-1 capability audit (`OFFLINE`): verified Bridge/Sender/WeChatAgent read timing, write
-  interfaces, revision/apply evidence and blockers; no production write was added. See
-  [PHASE4B2B1_COMPONENT_AUDIT.md](docs/PHASE4B2B1_COMPONENT_AUDIT.md).
-- Phase 4B-2B-2a capability/status projection (`INTEGRATED`, read-only): schema v3 Surface-level
-  read/hot-reload/restart semantics, Host GET `/capabilities` routes and frontend read-only status;
-  real DSH Host/GUI acceptance covers all eight pages; no write control.
-  See [CAPABILITY_API.md](docs/CAPABILITY_API.md).
-- TTS-A Provider-neutral audit and pure contracts (`DESIGN`/`OFFLINE`): Provider interface, candidate
-  registry, v2 config/migration proposal and isolated tests; all candidates `NOT_IMPLEMENTED`.
-  See [TTS_PROVIDER_AUDIT.md](docs/TTS_PROVIDER_AUDIT.md) and
-  [TTS_PROVIDER_ARCHITECTURE.md](docs/TTS_PROVIDER_ARCHITECTURE.md).
-- Read-only detection for WeChatAgent installation/runtime/health evidence, Voice Sender
-  installation/runtime/health evidence, and local Qwen health/model/voice.
-- Dark and light appearance, glass surfaces, blue-purple accent system, responsive layouts.
-- Mock services, permissions, activity history, diagnostics and demo settings.
-- Accessible controls, keyboard focus states, reduced-motion handling, scoped CSS.
-- Rebuildable client artifact committed for direct plugin loading.
+### 给声音一个清楚的位置
 
-## First-run setup (read-only phase)
+![Whale Voice 浅色音色中心页面，隔离演示环境，真实生成和试听尚未接通](docs/assets/studio-light.webp)
 
-`setup.js` adds the first-run flow and component manager:
+## 它想帮你做什么
 
-```text
-Overview / Advanced
-  → 首次安装向导
-      1. 连接微信助手
-      2. 安装微信语音功能
-      3. 选择小鲸鱼的声音
-      4. 完成检查
-```
+以下是正在逐步实现的目标体验：
 
-The wizard reads the trusted `window.__WHALE_SETUP__` bridge injected by the host plugin. If the
-bridge is absent, the UI shows “还需要连接 Whale Voice Core” and refuses to claim completion.
-“查看演示流程” is an explicitly labelled demo and does not install, download or send anything.
+| 想做的事 | 计划中的体验 |
+| :--- | :--- |
+| **让文字开口说话** | 选择合适的声音，输入文字，生成语音，试听后保存 |
+| **让歌声换一种表达** | 使用你有权使用的音源和模型，完成转换、混音与试听保存 |
+| **把成品安全地递出去** | 单独确认目标和权限，交给鲸递处理，清楚展示排队、发送或结果未知 |
 
-This is **Phase 2 UI plus Phase 3 read-only detection and Phase 4A read-only config** (Phase 3B
-`INTEGRATED`, Phase 4A `INTEGRATED` as of the port-57393 DSH runtime). The config snapshot reads saved
-voice/TTS/permission/sender values, exposes only counts for private permission lists, keeps active
-revision unknown, and never writes. Bridge user settings and Worker safety permits are shown as
-separate layers. Phase 4B-1 adds a merged **isolated** single-file write store with a trusted sandbox
-capability, strict schema, HMAC revision, atomic save/rollback and a test-only API; it is `OFFLINE`
-and has no production write route. Live No-Core/timeout/invalid-schema/stale GUI tests remain
-`OFFLINE`, so Phase 3B and 4A are `INTEGRATED`, not `VERIFIED`. Real installation, production
-configuration writes and cleanup remain disabled and require a separate write/apply phase. Phase 1
-findings are in [docs/SETUP_CAPABILITY_REVIEW.md](docs/SETUP_CAPABILITY_REVIEW.md); read-only results,
-configuration authority and the host activation check are in
-[docs/PHASE3_READONLY.md](docs/PHASE3_READONLY.md),
-[docs/PHASE3B_HOST_ACTIVATION.md](docs/PHASE3B_HOST_ACTIVATION.md) and
-[docs/CONFIG_SOURCES.md](docs/CONFIG_SOURCES.md).
+语音与唱歌计划使用各自的入口，共享音色、音频和任务基础。只做生成、试听或保存时，不应被要求先安装微信投递组件。
 
-The UI has been validated in the DSH desktop runtime, including large, medium and narrow windows,
-dark and light themes, and outer frame/corner behavior. Local screenshots are intentionally excluded
-from this repository because they contain the developer's private desktop and chat list.
+## 鲸音生成，鲸递投递
 
-## What is not implemented
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/core-map-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/core-map-light.svg">
+  <img alt="目标架构：鲸音Core负责生成和音频，鲸递Core整合Sender负责安全投递，WeChatAgent独立提供微信账号、会话和授权基础。尚未完整落地。" src="docs/assets/core-map-light.svg" width="1280">
+</picture>
 
-- Production write/apply Core API; Phase 4B-1 provides only an isolated test store/API.
-- Real task queue, cancellation, device restore or permission writes.
-- Real Qwen3-TTS invocation or audio preview.
-- A full WeChatAgent supported-event/identity adapter (read-only evidence adapter exists).
-- Real setup write operations: install/update/repair, component control and task recovery.
-- WeChat window discovery, chat navigation or emergency-stop controls in the frontend.
-- Group voice UI backed by real group-identity verification.
-- Cloud TTS providers, credentials or a no-GPU configured path.
-- One-click installer or packaged release.
+- **鲸音 Core**：负责语音、翻唱、音色、模型、音频和生成任务。
+- **鲸递 Core**：计划吸收原 Voice Sender 的发送能力，统一安装和管理；内部保留必要的执行隔离与安全复核。
+- **WeChatAgent**：是独立的微信平台依赖，提供微信账号、会话、身份和授权基础。
 
-Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) and the living status file
-[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+这是已经确定的**目标架构，尚未完整落地**。当前仓库仍有只读适配器，现有 Sender 尚未迁入统一鲸递组件。微信投递将继续复用 [WeChatAgent](https://github.com/sourcepro5/WeChatAgent)，不另造一套微信接入系统。
 
-## Architecture
+保存成功只表示音频已经保存。排队成功、本地观察到发送、对方收到，是不同的结果；结果未知时，不会自动重发。
 
-```text
-Current repository
-  DSH host
-    ├─ dsh-whale-voice client bundle
-    │    └─ eight views + setup wizard + scoped CSS
-    ├─ read-only Host bridge
-    │    └─ core/detect.mjs (WeChatAgent / Sender / Qwen evidence)
-    └─ Phase 4B-1/4B-2A isolated config store and coordination protocol (OFFLINE; test-only)
-         └─ core/config-sandbox.mjs, config-schema.mjs, config-store.mjs, config-coordinator.mjs
+## 接下来会做什么
 
-Target architecture (not implemented here)
-  DSH plugin UI
-    └─ Whale Voice Core: config, routing, permissions, task state
-         ├─ TTS provider registry (local Qwen, cloud providers)
-         ├─ Sender plugin adapter (Windows Voice Sender)
-         └─ WeChatAgent adapter (REQUIRED for WeChat)
-              └─ sourcepro5/WeChatAgent (external platform dependency)
-```
+| 方向 | 进度 |
+| :--- | :--- |
+| 管理界面与只读状态查询 | 已有实现及历史宿主接入验收 |
+| 引擎能力检查与模拟调度 | 已完成本阶段离线验收 |
+| 音色、素材与任务基础 | 正在开发；部分离线模块已合入，持久任务相关工作仍在完善 |
+| 普通用户的生成、试听与保存流程 | 待接通图形界面和真实引擎 |
+| 真实翻唱与微信任务入口 | 后续阶段 |
+| 统一鲸递与原 Sender 整合 | 目标已确定，工程整合待实施 |
+| 图形安装、升级与恢复 | 后续阶段 |
 
-WeChatAgent is not an optional plugin in the target design. Whale Voice may choose a different TTS
-provider, but it does not replace WeChatAgent's message, account, session or authorization layer.
+进度说明对应本次首页整理时的主线内容。详细变化以[项目状态](docs/PROJECT_STATUS.md)、[路线图](docs/ROADMAP.md)、实际代码和 PR 验收为准；部分文档保留了历史阶段记录。
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries and the planned contracts.
+## 你可能还想知道
 
-## Installation
+<details>
+<summary><strong>我不会编程，现在适合安装吗？</strong></summary>
 
-Requirements:
+目前还不适合作为日常可用的成品安装。你可以先看预览和开发进度。正式用户体验的目标是中文图形操作，无需自行编辑配置文件或运行研发命令；这个完整体验仍在建设中。
 
-- A DSH installation that supports client plugins.
-- Node.js **22.13+** for rebuilding the client bundle.
-- For **WeChat voice only**: a compatible [WeChatAgent](https://github.com/sourcepro5/WeChatAgent)
-  installation and its supported Windows WeChat environment. WeChatAgent is an external upstream
-  project, not bundled here.
-- For actual native sending: a separately installed Voice Sender and its Windows audio prerequisites.
+</details>
 
-The plugin frontend and TTS provider settings must remain usable without WeChatAgent. If
-WeChatAgent is missing or incompatible, WeChat voice stays disabled and the UI shows the documented
-installation message instead of a fake online state. The frontend wizard and **read-only Core
-detection** exist; installation and write operations do not.
+<details>
+<summary><strong>没有独立显卡，以后能用吗？</strong></summary>
 
-The plugin has no npm runtime dependencies and no install step.
+计划提供可选的本地和云端引擎。具体能运行什么，需要以各引擎完成后的设备测试为准。目前不承诺任意电脑都能本地翻唱，也不会把演示中的资源状态当成真实硬件验证。
 
-1. Place or link this directory where your DSH profile can resolve the `dsh-whale-voice` bundle.
-2. Install/enable the bundle through the DSH Plugin Manager.
-3. Rebuild the client after changing frontend source:
+</details>
 
-```powershell
-node build.mjs
-node --check client.js
-node --test
-```
+<details>
+<summary><strong>一定要用微信吗？</strong></summary>
 
-Read-only detection is configured explicitly; there is no disk-wide search. Copy
-[`core/config.example.json`](core/config.example.json) to `%DSH_HOME%\whale-voice\core.json`, or set
-`WHALE_WECHATAGENT_HOME`, `WHALE_VOICE_SENDER_HOME` and `WHALE_VOICE_QWEN_URL`. The Phase 3B/4A Host
-bridge required a host-plugin reload or DSH process restart before the UI could read real results; that
-was performed and visually accepted. A page refresh alone is insufficient.
+生成、试听和保存音频的目标流程独立于微信。只有选择微信投递时，才需要相应的 WeChatAgent、鲸递和目标授权条件。当前真实生成和投递都尚未完整接通。
 
-`client.js` is the file DSH loads; it is generated from `client.template.js`, `pages.js`, `setup.js`
-and `client.css`. The generated file is committed because it is the runtime artifact referenced by
-`package.json` (`exports["./client"]`), and the DSH plugin manager does not run a build lifecycle.
+</details>
 
-The repository does not install, start or modify Voice Sender, WeChatAgent, WeChat or Qwen.
+<details>
+<summary><strong>能直接使用任意歌声或声音模型吗？</strong></summary>
 
-## Platform limits
+需要确认素材和模型的来源、使用权、适配情况以及声音使用同意。找到一个模型或搜索到一首歌，不代表已经取得使用权。项目不会把开发者个人音色设为所有人的默认声音。
 
-- The plugin UI runs in the DSH web client and is not tied to Windows.
-- TTS provider settings and preview are intended to work without WeChatAgent.
-- The real WeChat voice pipeline additionally requires Windows, WeChatAgent, Voice Sender and a
-  local Qwen runtime. None of those are distributed in this repository.
-- WeChatAgent is the required WeChat platform dependency. Whale Voice does not provide an
-  independent WeChat message reader, account manager or bot.
-- Real voice sending is disabled in the current project state. The developer environment has
-  `voice.enabled=false`; the read-only detector does **not** read or change this switch, so the UI
-  must show it as unknown unless a future Core supplies the state.
-- Group chat automation is intentionally not opened until a stable real-group identity source is
-  verified.
+</details>
 
-## Local, cloud and custom TTS
+## 参与建设
 
-The target architecture keeps TTS providers pluggable:
+| 我想了解 | 从这里开始 |
+| :--- | :--- |
+| 开发版怎样运行、怎样测试 | [开发与体验说明](docs/DEVELOPMENT.md) |
+| 目前有哪些能力与限制 | [项目状态](docs/PROJECT_STATUS.md) |
+| 下一阶段准备做什么 | [路线图](docs/ROADMAP.md) |
+| 各模块如何分工 | [架构说明](docs/ARCHITECTURE.md) |
+| 查找接口、安全和验收材料 | [完整文档目录](docs/README.md) |
+| 反馈问题或提出建议 | [Issues](https://github.com/qianqiucn/dsh-whale-voice/issues) |
 
-- Local: Qwen3-TTS is the current reference; Piper/Kokoro/sherpa-onnx are architecture candidates
-  only.
-- Cloud: Azure/ElevenLabs and similar providers are candidates; selection is deliberate, with
-  explicit credentials, cost and privacy disclosure.
-- Custom: self-hosted HTTP TTS requires endpoint validation, authentication references and response
-  format verification.
-- SVC (Seed-VC/RVC candidates) is a separate future task type: it converts existing speech/singing
-  audio, shares the voice library/audio pipeline/task system, and is not part of the TTS registry.
-- `whale-v1` is the developer's current personal voice, not a new-user default.
+面向开发者的英文入门说明也在 [Development guide](docs/DEVELOPMENT.md)。欢迎提供清楚的复现步骤和经过脱敏的界面问题；请不要上传真实聊天、联系人、密钥、私人音频或桌面截图。
 
-TTS-A provides the audit, Provider contract, candidate registry and v2 config/migration proposal:
-[TTS Provider Audit](docs/TTS_PROVIDER_AUDIT.md) and
-[TTS Provider Architecture](docs/TTS_PROVIDER_ARCHITECTURE.md). No real provider adapter,
-credentials store or production TTS is included in this repository. No cloud provider, API key or
-vendor credential is included.
+---
 
-## Development
-
-Read [AGENTS.md](AGENTS.md) before making changes. It defines the required startup checks, branch
-workflow, testing expectations, progress-file updates and safety boundaries for coding agents.
-
-```powershell
-node build.mjs
-node --check client.js
-node --test
-npm.cmd run test:ui
-```
-
-The isolated Playwright harness covers DOM/layout/console checks with fictional fixtures; it does not
-connect to the real DSH window, Core, Sender, Qwen, WeChat or production tokens, and does not verify
-the real WeChat pipeline.
-
-## Documentation
-
-- [Documentation index](docs/README.md) — current authority, historical records and reading order.
-- [Roadmap](docs/ROADMAP.md) — P0–P9 plan and current status.
-- [Project status](docs/PROJECT_STATUS.md) — living, evidence-based status.
-- [Architecture](docs/ARCHITECTURE.md) — current and target architecture.
-- [WeChatAgent compatibility](docs/WECHATAGENT_COMPATIBILITY.md) — versions, adapter boundary,
-  missing-dependency UX and upgrade rules.
-- [Setup capability review](docs/SETUP_CAPABILITY_REVIEW.md) — Phase 1 capability audit.
-- [Setup API contract](docs/SETUP_API.md) — Core bridge, state machine, errors and security rules.
-- [Phase 3 read-only report](docs/PHASE3_READONLY.md) — detected versions, evidence and unknowns.
-- [Phase 3B Host activation plan](docs/PHASE3B_HOST_ACTIVATION.md) — 404 evidence, reload options and
-  authorization gates.
-- [Configuration sources](docs/CONFIG_SOURCES.md) — Phase 4A authority, sensitivity and saved/active rules.
-- [Isolated configuration write](docs/CONFIG_WRITE_API.md) — Phase 4B-1 single-file schema, revision, atomic save and limits.
-- [Configuration coordination](docs/CONFIG_COORDINATION.md) — Phase 4B-2A authority matrix, plan/journal/recovery and apply states.
-- [Capability / status API](docs/CAPABILITY_API.md) — Phase 4B-2B-2a schema v3, Surface-level reload semantics and read-only Host routes.
-- [UI testing](docs/UI_TESTING.md) — isolated Playwright harness, commands and safety boundaries.
-- [DSH Electron Inspector feasibility](docs/DSH_ELECTRON_INSPECTOR_FEASIBILITY.md) — supported Inspector limits and option assessment.
-- [Voice delivery backends](docs/VOICE_DELIVERY_BACKENDS.md) — native-vs-UI-automation research and decision.
-- [Native voice research](docs/NATIVE_VOICE_RESEARCH.md) — WeChatPYAPI, PadChat-SDK and WeChatAgent candidate evidence and gates.
-- [Send & Safety API](docs/SEND_SAFETY_API.md) — planned capability/status contract for the safety page.
-- [Send & Safety GUI acceptance](docs/GUI_ACCEPTANCE_SEND_SAFETY.md) — real DSH visual/UIA evidence and limitations.
-- [Repository inventory](docs/REPOSITORY_INVENTORY.md) — reviewed files and exclusions.
-- [AI context](docs/AI_CONTEXT.md) — cross-session recovery summary.
-- [Architecture decisions](docs/DECISIONS.md) — accepted decisions, rationale and rejected alternatives.
-- [Agent rules](AGENTS.md) — long-term development contract.
-- [Changelog](CHANGELOG.md) — recorded changes, not invented releases.
-- [License](LICENSE) — MIT, matching `package.json`.
-
-## Security and privacy
-
-This repository intentionally excludes:
-
-- tokens, API keys, passwords and private keys;
-- the owner's WeChat contacts, group mappings, chat text or session data;
-- Qwen model caches and `whale-v1` reference audio;
-- generated WAV/audio files and voice sending history;
-- runtime state, device snapshots and logs;
-- local desktop screenshots.
-
-The demo targets in the UI use fictional placeholders such as `private:demo-1001` and
-`演示联系人`. They are not production allow-list entries.
-
-WeChatAgent is an independent upstream project under its own license and third-party terms. Whale
-Voice does not claim authorship of WeChatAgent and does not bundle its Hook, WeChat client,
-binaries or restricted third-party components. See
-[WECHATAGENT_COMPATIBILITY.md](docs/WECHATAGENT_COMPATIBILITY.md) for the dependency and license
-boundary.
-
-## License
-
-MIT. See [LICENSE](LICENSE). No third-party source, audio or image assets are bundled beyond the
-original `icon.svg` in this repository.
+Whale Voice 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件机制开发。项目代码使用 [MIT License](LICENSE)；WeChatAgent、模型及其他第三方组件分别遵循各自的许可证与使用条件。

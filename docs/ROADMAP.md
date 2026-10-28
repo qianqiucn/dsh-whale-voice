@@ -372,3 +372,9 @@ capability audit is complete and `OFFLINE`; Phase 4B-2B-2a read-only capability/
 `INTEGRATED` after real Host/GUI acceptance; TTS-A Provider-neutral design is `DESIGN`/`OFFLINE`;
 Phase R1 is **COMPLETE**. The clean development baseline is `main` `bf9cf66` (PR #15 merge). No
 release, no public visibility and no release artifact yet.
+
+## Repository homepage readability
+
+The Chinese homepage and isolated demo screenshots explain current capabilities and planned user
+flows. The developer setup guide remains separate. This documentation work does not complete or
+advance any runtime phase, installer, provider or delivery milestone.

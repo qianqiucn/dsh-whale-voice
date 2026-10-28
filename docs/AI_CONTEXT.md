@@ -404,3 +404,10 @@ Phase 4B-1 and 4B-2A are merged but `OFFLINE`, Phase 4B-2B-1 is **AUDIT COMPLETE
 docs-sync commit; CI `40163881122` passed. Current checkpoint: **197 Node (196 pass, 1 skip) / 24 UI
 checks**, offline/contract evidence only. Merge awaits explicit user authorization; no production
 configuration or runtime behavior change.
+
+## Repository homepage presentation
+
+The root README is a Chinese, newcomer-oriented overview with explicitly labelled isolated demo
+previews and separate current/target capabilities. Developer setup and checks are in
+`docs/DEVELOPMENT.md`; screenshot provenance is in `docs/assets/README.md`. Documentation and
+visual assets only; no runtime capability or integration status changes.

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
+<title id="title">Whale Voice 小鲸鱼语音中心</title><desc id="desc">正在开发的中文语音、翻唱与安全投递工作台。尚未开放真实生成与发送。</desc>
+<defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#72c8ff"/><stop offset=".55" stop-color="#8a9bff"/><stop offset="1" stop-color="#c5a3ff"/></linearGradient>
+<linearGradient id="flow"><stop stop-color="#69bcff"/><stop offset=".5" stop-color="#829dff"/><stop offset="1" stop-color="#b59af3"/></linearGradient>
+<radialGradient id="glow"><stop stop-color="#7390ff" stop-opacity=".25"/><stop offset="1" stop-color="#7390ff" stop-opacity="0"/></radialGradient><pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#d4ddf2" opacity=".55"/></pattern></defs>
+<rect x="1" y="1" width="1278" height="438" rx="28" fill="#f3f6ff" stroke="#d4ddf2"/>
+<rect x="690" y="25" width="550" height="380" rx="22" fill="url(#dots)"/>
+<ellipse cx="1030" cy="205" rx="300" ry="210" fill="url(#glow)"/>
+<path d="M730 327C850 253 1010 406 1279 274" fill="none" stroke="url(#flow)" stroke-opacity=".18" stroke-width="46"/>
+<path d="M740 341C890 264 1060 416 1280 306" fill="none" stroke="url(#flow)" stroke-opacity=".16" stroke-width="2"/>
+<g transform="translate(60 52) scale(1.04)">
+      <rect width="64" height="64" rx="18" fill="#172447" stroke="#637cbe" stroke-opacity=".28"/>
+      <path d="M13 34c4.6-8.8 12.2-13.2 22.7-13.2 8.6 0 14.4 3.4 17.3 10.2-2.6.6-4.5 2.2-5.7 4.7-1.7-1.3-3.5-1.9-5.4-1.9-2.4 0-4.5 1-6.3 3.1-2.6 3-5.7 4.4-9.2 4.4-5.3 0-9.9-2.4-13.4-7.3Z" fill="url(#brand)"/>
+      <path d="M25 27.5c.9-2.9 3.1-4.7 6.5-5.5" fill="none" stroke="#dce9ff" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="26.5" cy="33.5" r="1.6" fill="#172447"/>
+      <path d="M43 40c2.5 1.7 4.3 4.2 5.4 7.4M47.5 36.5c3.6 2.4 6.1 6 7.5 10.8" fill="none" stroke="#a99bf5" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+<g font-family="'Segoe UI','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+<text x="145" y="79" font-size="24" font-weight="700" fill="#17264a">Whale Voice</text>
+<text x="145" y="106" font-size="17" fill="#5b6d91">小鲸鱼语音中心</text>
+<rect x="60" y="148" width="180" height="30" rx="15" fill="#e5ecff"/><circle cx="77" cy="163" r="4" fill="#b48fff"/>
+<text x="91" y="169" font-size="14" font-weight="600" fill="#17264a">开发中 · 一起造声音</text>
+<text x="57" y="243" font-size="46" font-weight="750" letter-spacing="-1" fill="#17264a">让声音的表达，</text>
+<text x="57" y="302" font-size="46" font-weight="750" letter-spacing="-1" fill="#17264a">变得更简单。</text>
+<text x="60" y="346" font-size="19" fill="#5b6d91">语音 · 翻唱 · 安全投递</text>
+<text x="60" y="395" font-size="15" fill="#5b6d91">正在构建，真实生成与发送尚未接通。</text>
+<g transform="rotate(-5 990 210)">
+<rect x="776" y="91" width="408" height="240" rx="24" fill="#ffffff" stroke="#d4ddf2"/>
+<circle cx="807" cy="119" r="4" fill="#8e9cb7"/><circle cx="822" cy="119" r="4" fill="#8e9cb7" opacity=".5"/><circle cx="837" cy="119" r="4" fill="#8e9cb7" opacity=".3"/>
+<text x="807" y="163" font-size="15" fill="#5b6d91">一点文字，一种声音，一份表达</text>
+<rect x="818" y="209.0" width="4" height="18.0" rx="2" fill="url(#brand)" opacity="0.40"/><rect x="828" y="206.9" width="4" height="22.2" rx="2" fill="url(#brand)" opacity="0.63"/><rect x="838" y="205.0" width="4" height="25.9" rx="2" fill="url(#brand)" opacity="0.83"/><rect x="848" y="205.7" width="4" height="24.6" rx="2" fill="url(#brand)" opacity="0.96"/><rect x="858" y="207.7" width="4" height="20.5" rx="2" fill="url(#brand)" opacity="1.00"/><rect x="868" y="201.1" width="4" height="33.8" rx="2" fill="url(#brand)" opacity="0.95"/><rect x="878" y="197.6" width="4" height="40.7" rx="2" fill="url(#brand)" opacity="0.81"/><rect x="888" y="202.4" width="4" height="31.2" rx="2" fill="url(#brand)" opacity="0.60"/><rect x="898" y="202.9" width="4" height="30.2" rx="2" fill="url(#brand)" opacity="0.44"/><rect x="908" y="190.0" width="4" height="56.0" rx="2" fill="url(#brand)" opacity="0.67"/><rect x="918" y="187.8" width="4" height="60.4" rx="2" fill="url(#brand)" opacity="0.85"/><rect x="928" y="201.4" width="4" height="33.3" rx="2" fill="url(#brand)" opacity="0.97"/><rect x="938" y="194.4" width="4" height="47.2" rx="2" fill="url(#brand)" opacity="1.00"/><rect x="948" y="179.2" width="4" height="77.6" rx="2" fill="url(#brand)" opacity="0.93"/><rect x="958" y="183.4" width="4" height="69.3" rx="2" fill="url(#brand)" opacity="0.78"/><rect x="968" y="205.3" width="4" height="25.4" rx="2" fill="url(#brand)" opacity="0.57"/><rect x="978" y="188.3" width="4" height="59.4" rx="2" fill="url(#brand)" opacity="0.47"/><rect x="988" y="178.6" width="4" height="78.9" rx="2" fill="url(#brand)" opacity="0.70"/><rect x="998" y="189.1" width="4" height="57.8" rx="2" fill="url(#brand)" opacity="0.88"/><rect x="1008" y="207.4" width="4" height="21.3" rx="2" fill="url(#brand)" opacity="0.98"/><rect x="1018" y="190.7" width="4" height="54.6" rx="2" fill="url(#brand)" opacity="0.99"/><rect x="1028" y="188.7" width="4" height="58.6" rx="2" fill="url(#brand)" opacity="0.91"/><rect x="1038" y="199.3" width="4" height="37.4" rx="2" fill="url(#brand)" opacity="0.75"/><rect x="1048" y="205.5" width="4" height="24.9" rx="2" fill="url(#brand)" opacity="0.53"/><rect x="1058" y="198.7" width="4" height="38.7" rx="2" fill="url(#brand)" opacity="0.50"/><rect x="1068" y="200.2" width="4" height="35.6" rx="2" fill="url(#brand)" opacity="0.73"/><rect x="1078" y="206.1" width="4" height="23.7" rx="2" fill="url(#brand)" opacity="0.90"/><rect x="1088" y="206.8" width="4" height="22.4" rx="2" fill="url(#brand)" opacity="0.99"/><rect x="1098" y="205.2" width="4" height="25.5" rx="2" fill="url(#brand)" opacity="0.99"/><rect x="1108" y="206.5" width="4" height="23.0" rx="2" fill="url(#brand)" opacity="0.89"/><rect x="1118" y="208.5" width="4" height="18.9" rx="2" fill="url(#brand)" opacity="0.72"/>
+<path d="M807 277H1150" stroke="#d4ddf2"/>
+<text x="808" y="306" font-size="14" fill="#5b6d91">WHALE AUDIO</text>
+<rect x="1048" y="288" width="103" height="27" rx="13.5" fill="#e5ecff"/><text x="1068" y="307" font-size="13" fill="#17264a">声音的未来</text>
+</g>
+<rect x="1070" y="59" width="118" height="34" rx="17" fill="#ffffff" stroke="#d4ddf2"/><text x="1091" y="81" font-size="14" fill="#5b6d91">DSH 插件</text>
+</g></svg>
