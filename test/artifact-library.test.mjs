@@ -11,6 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -23,6 +24,7 @@ import {
   ARTIFACT_LIBRARY_SCHEMA_VERSION,
   openFixtureArtifactLibrary,
 } from '../core/audio/artifact-library.mjs'
+import { artifactIdentityHash } from '../core/audio/fixture-artifact-store-internal.mjs'
 import { inspectFixtureWavBytes } from '../core/audio/wav-byte-inspector.mjs'
 import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
 
@@ -180,19 +182,25 @@ function storedEntry({
 } = {}) {
   const inspected = inspectFixtureWavBytes({ schemaVersion: 1, bytes })
   assert.equal(inspected.ok, true)
+  const rights = { state: 'GRANTED', proofRef }
   return {
     artifactRef,
     scopeId,
     requestKey,
-    identityHash: sha256(Buffer.from(scopeId + '\u0000' + requestKey + '\u0000' + sha256(bytes))),
+    // The real shared identity algorithm: a hand-built pack must be legal before it is mutated.
+    identityHash: artifactIdentityHash(scopeId, requestKey, inspected.value.sha256, expiresAt, rights),
     origin: 'FIXTURE_IMPORT',
     createdAt,
     expiresAt,
-    rights: { state: 'GRANTED', proofRef },
+    rights,
     inspection: inspected.value,
     payload: Buffer.from(bytes).toString('base64'),
     deletedAt: null,
   }
+}
+
+function tombstoneOf(stored, deletedAt = '2026-10-29T00:30:00.000Z') {
+  return { ...stored, payload: null, deletedAt }
 }
 
 function patchFs(overrides) {
@@ -751,10 +759,6 @@ test('L06 invalid packs are refused without repair; confirmed corruption locks e
 
   const cases = [
     {
-      name: 'non-canonical base64',
-      mutate: (entry) => { entry.payload = entry.payload.slice(0, -2) + 'A=' },
-    },
-    {
       name: 'payload/hash mismatch',
       mutate: (entry) => { entry.payload = Buffer.from(wavBytes(8)).toString('base64') },
     },
@@ -826,6 +830,78 @@ test('L06 invalid packs are refused without repair; confirmed corruption locks e
       const fresh = await openFixtureArtifactLibrary({ sandbox: other })
       expectError(fresh, 'LIBRARY_UNKNOWN', '$')
     })
+  })
+})
+
+/* ============================================= L06 R1/R4 ===================================== */
+
+test('L06 R1 identity association: legal manual pack is FOUND, identityHash-only change is STORE_INVALID', async () => {
+  // Legal STORED baseline built with the real shared identity algorithm.
+  await withSandbox(async (sandbox) => {
+    const entry = storedEntry()
+    fs.writeFileSync(
+      packPath(sandbox),
+      JSON.stringify({ schemaVersion: 1, sandboxId: sandbox.id, revision: 1, entries: [entry] }),
+    )
+    const library = await open(sandbox)
+    const found = expectOutcome(await library.get(readRequest(entry.artifactRef)), 'FOUND')
+    assert.equal(found.artifact.inspection.sha256, entry.inspection.sha256)
+  })
+
+  // Legal DELETED baseline.
+  await withSandbox(async (sandbox) => {
+    const entry = tombstoneOf(storedEntry())
+    fs.writeFileSync(
+      packPath(sandbox),
+      JSON.stringify({ schemaVersion: 1, sandboxId: sandbox.id, revision: 2, entries: [entry] }),
+    )
+    const library = await open(sandbox)
+    expectOutcome(await library.get(readRequest(entry.artifactRef)), 'DELETED')
+  })
+
+  // Only the identityHash changed: both schema branches are corrupt and are never repaired.
+  for (const kind of ['STORED', 'DELETED']) {
+    await withSandbox(async (sandbox) => {
+      const base = storedEntry()
+      const entry = kind === 'STORED' ? { ...base } : tombstoneOf(base)
+      entry.identityHash = '0'.repeat(64)
+      const snapshot = {
+        schemaVersion: 1,
+        sandboxId: sandbox.id,
+        revision: kind === 'STORED' ? 1 : 2,
+        entries: [entry],
+      }
+      fs.writeFileSync(packPath(sandbox), JSON.stringify(snapshot))
+      const before = readPackBytes(sandbox)
+      const opened = await openFixtureArtifactLibrary({ sandbox })
+      expectError(opened, 'STORE_INVALID', '$')
+      assert.equal(Buffer.compare(readPackBytes(sandbox), before), 0, kind + ' identity mismatch must not rewrite')
+    })
+  }
+})
+
+test('L06 padded base64: same legal bytes, non-canonical re-encoding, STORE_INVALID without repair', async () => {
+  const bytes = wavBytes(16)
+  const canonical = Buffer.from(bytes).toString('base64')
+  assert.ok(canonical.endsWith('=='))
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  const tail = canonical.length - 3
+  const index = alphabet.indexOf(canonical[tail])
+  assert.equal(index % 4, 0, 'canonical padding bits must be zero')
+  const encoded = canonical.slice(0, tail) + alphabet[index + 1] + canonical.slice(tail + 1)
+  assert.notEqual(encoded, canonical)
+  assert.equal(Buffer.compare(Buffer.from(encoded, 'base64'), bytes), 0, 'the mutated text decodes to the same bytes')
+  assert.equal(Buffer.from(encoded, 'base64').toString('base64'), canonical, 're-encoding differs from the stored text')
+
+  await withSandbox(async (sandbox) => {
+    const entry = storedEntry({ bytes })
+    entry.payload = encoded
+    const snapshot = { schemaVersion: 1, sandboxId: sandbox.id, revision: 1, entries: [entry] }
+    fs.writeFileSync(packPath(sandbox), JSON.stringify(snapshot))
+    const before = readPackBytes(sandbox)
+    const opened = await openFixtureArtifactLibrary({ sandbox })
+    expectError(opened, 'STORE_INVALID', '$')
+    assert.equal(Buffer.compare(readPackBytes(sandbox), before), 0, 'a non-canonical payload is kept as found')
   })
 })
 
@@ -1054,6 +1130,77 @@ test('L08 pre-commit failures: short-write completion, write/fsync/close rejecti
   })
 })
 
+/* ============================================= L08 R2 ====================================== */
+
+test('L08b last-current window: a temp replaced before rename is STORE_CHANGED, zero rename, old pack kept', async () => {
+  await withSandbox(async (sandbox) => {
+    const library = await open(sandbox)
+    expectOutcome(await library.import(importRequest({ bytes: wavBytes(8) })), 'STORED')
+    const baseline = readPackBytes(sandbox)
+    const packFds = new Set()
+    let tempPath = null
+    let packReadCloses = 0
+    let hit = 0
+    let packRenames = 0
+    let identityBefore = null
+    let identityAfter = null
+    const restore = patchFs({
+      openSync: (original) => function patchedOpen(target, flags, ...rest) {
+        const fd = original.call(fs, target, flags, ...rest)
+        const name = String(target)
+        if (name.endsWith(PACK)) packFds.add(fd)
+        if (name.endsWith('.tmp')) tempPath = name
+        return fd
+      },
+      closeSync: (original) => function patchedClose(fd) {
+        const isPack = packFds.has(fd)
+        const result = original.apply(fs, arguments)
+        if (isPack) {
+          packFds.delete(fd)
+          packReadCloses += 1
+          if (packReadCloses === 3 && hit === 0) {
+            hit += 1
+            identityBefore = fs.statSync(tempPath)
+            const foreign = tempPath + '.foreign'
+            fs.writeFileSync(foreign, Buffer.from('foreign tmp bytes that are not this transaction'))
+            fs.renameSync(foreign, tempPath)
+            identityAfter = fs.statSync(tempPath)
+          }
+        }
+        return result
+      },
+      renameSync: (original) => function patchedRename(from, to) {
+        if (String(to).endsWith(PACK)) packRenames += 1
+        return original.apply(fs, arguments)
+      },
+    })
+    try {
+      expectError(
+        await library.import(importRequest({ requestKey: 'key:fixture-r2', bytes: wavBytes(12) })),
+        'STORE_CHANGED',
+        '$',
+      )
+    } finally {
+      restore()
+    }
+    assert.equal(hit, 1, 'the replacement must happen once, after the last current-pack read')
+    assert.equal(packReadCloses, 3)
+    assert.equal(packRenames, 0, 'no official rename may happen after the temp was replaced')
+    assert.notDeepEqual(
+      { dev: identityBefore.dev, ino: identityBefore.ino },
+      { dev: identityAfter.dev, ino: identityAfter.ino },
+      'the replacement must be a different file identity',
+    )
+    assert.notEqual(identityBefore.size, identityAfter.size)
+    assert.equal(fs.existsSync(tempPath), true, 'the foreign tmp is not deleted by this transaction')
+    assert.equal(fs.readFileSync(tempPath, 'utf8'), 'foreign tmp bytes that are not this transaction')
+    assert.equal(Buffer.compare(readPackBytes(sandbox), baseline), 0, 'the old official pack is unchanged')
+    expectError(await library.get(readRequest('artifact:fixture-bytes-' + '0'.repeat(32))), 'LIBRARY_UNKNOWN', '$')
+    const reopened = await openFixtureArtifactLibrary({ sandbox })
+    expectError(reopened, 'LIBRARY_UNKNOWN', '$')
+  })
+})
+
 /* ============================================= L09 ========================================== */
 
 test('L09 post-rename unknown: import and delete keep the real bytes, lock every handle, never retry', async () => {
@@ -1131,9 +1278,90 @@ test('L09 post-rename unknown: import and delete keep the real bytes, lock every
   })
 })
 
+/* ============================================= L09 R3 ====================================== */
+
+test('L09b delete post-commit confirmation: first error is WRITE_UNKNOWN, tombstone kept, all handles locked', async () => {
+  await withSandbox(async (sandbox) => {
+    const library = await open(sandbox)
+    const secondHandle = await open(sandbox)
+    const first = expectOutcome(await library.import(importRequest({ bytes: wavBytes(16) })), 'STORED')
+    const ref = first.artifact.artifactRef
+    expectOutcome(await library.import(importRequest({ requestKey: 'key:fixture-r3-b', bytes: wavBytes(8) })), 'STORED')
+    let committed = false
+    let markerOpens = 0
+    let faulted = false
+    let packRenames = 0
+    const restore = patchFs({
+      renameSync: (original) => function patchedRename(from, to) {
+        const result = original.apply(fs, arguments)
+        if (String(to).endsWith(PACK)) {
+          packRenames += 1
+          committed = true
+        }
+        return result
+      },
+      openSync: (original) => function patchedOpen(target, flags, ...rest) {
+        if (committed && String(target).endsWith(MARKER)) {
+          markerOpens += 1
+          if (markerOpens === 3 && !faulted) {
+            faulted = true
+            const error = new Error('injected post-commit confirmation fault')
+            error.code = 'EACCES'
+            throw error
+          }
+        }
+        return original.call(fs, target, flags, ...rest)
+      },
+    })
+    try {
+      expectError(await library.delete(deleteRequest(ref)), 'WRITE_UNKNOWN', '$')
+    } finally {
+      restore()
+    }
+    assert.equal(faulted, true, 'the fault must hit the public extra confirmation after the commit')
+    assert.equal(packRenames, 1, 'the real delete rename happened exactly once')
+    const raw = readPack(sandbox)
+    assert.equal(raw.revision, 3)
+    const tombstone = raw.entries.find((entry) => entry.artifactRef === ref)
+    assert.equal(tombstone.payload, null)
+    const stable = readPackBytes(sandbox)
+    expectError(await library.get(readRequest(ref)), 'LIBRARY_UNKNOWN', '$')
+    expectError(await secondHandle.delete(deleteRequest(ref)), 'LIBRARY_UNKNOWN', '$')
+    const reopened = await openFixtureArtifactLibrary({ sandbox })
+    expectError(reopened, 'LIBRARY_UNKNOWN', '$')
+    assert.equal(Buffer.compare(readPackBytes(sandbox), stable), 0, 'no rollback or rewrite after the unknown outcome')
+    assert.equal(packRenames, 1, 'no new rename after the unknown outcome')
+  })
+})
+
 /* ============================================= L10 ========================================== */
 
-test('L10 capability boundaries: fake caps, marker/root loss, links, cleanup trust, Task domain separation', async () => {
+/**
+ * Link capability probe: only a real platform/permission refusal becomes an explicit local SKIP;
+ * any other creation error throws and fails the run. Nothing is elevated, installed or reconfigured.
+ */
+function probeLink(kind) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-artifact-link-'))
+  try {
+    const file = path.join(dir, 'a.bin')
+    fs.writeFileSync(file, 'x')
+    if (kind === 'hard') fs.linkSync(file, path.join(dir, 'b.bin'))
+    else fs.symlinkSync(file, path.join(dir, 'b.bin'))
+    return { ok: true }
+  } catch (error) {
+    const code = error !== null && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'UNKNOWN'
+    const limited = ['EPERM', 'EACCES', 'ENOTSUP', 'ENOSYS', 'EXDEV', 'EINVAL'].includes(code)
+    if (!limited) throw error
+    return { ok: false, code }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+const HARD_LINK = probeLink('hard')
+const SYMLINK = probeLink('symlink')
+
+test('L10a capability options: exactly one own enumerable data field holding a registered cap', async () => {
   // Options are exactly one own enumerable data field `sandbox`; only a registered cap is accepted.
   const plain = { sandbox: { root: 'C:\\tmp', id: 'x' } }
   expectError(await openFixtureArtifactLibrary(plain), 'SANDBOX_INVALID', '$')
@@ -1145,7 +1373,9 @@ test('L10 capability boundaries: fake caps, marker/root loss, links, cleanup tru
     Object.defineProperty(withGetter, 'sandbox', { enumerable: true, get() { throw new Error('getter ran') } })
     expectError(await openFixtureArtifactLibrary(withGetter), 'INVALID_INPUT', '$')
   })
+})
 
+test('L10b missing marker is refused without repairing or rewriting the pack', async () => {
   await withSandbox(async (sandbox) => {
     const library = await open(sandbox)
     const imported = expectOutcome(await library.import(importRequest()), 'STORED')
@@ -1164,47 +1394,53 @@ test('L10 capability boundaries: fake caps, marker/root loss, links, cleanup tru
     const recovered = await open(sandbox)
     expectOutcome(await recovered.get(readRequest(ref)), 'FOUND')
   })
+})
 
-  await withSandbox(async (sandbox) => {
-    const library = await open(sandbox)
-    expectOutcome(await library.import(importRequest()), 'STORED')
-    const original = readPackBytes(sandbox)
-    fs.rmSync(packPath(sandbox))
-    fs.writeFileSync(packPath(sandbox), original)
-    // A hard link (nlink > 1) is not accepted as the official pack.
-    const linkPath = path.join(sandbox.root, 'pack-link.json')
-    fs.linkSync(packPath(sandbox), linkPath)
-    try {
-      expectError(await library.get(readRequest('artifact:fixture-bytes-' + '0'.repeat(32))), 'STORE_INVALID', '$')
-    } finally {
-      fs.rmSync(linkPath, { force: true })
-    }
-    assert.equal(fs.readFileSync(packPath(sandbox)).length, original.length)
-  })
+test(
+  'L10c hard link pack is refused after the link is really created',
+  { skip: HARD_LINK.ok ? false : 'hard link unsupported locally: ' + HARD_LINK.code },
+  async () => {
+    await withSandbox(async (sandbox) => {
+      const library = await open(sandbox)
+      expectOutcome(await library.import(importRequest()), 'STORED')
+      const original = readPackBytes(sandbox)
+      const linkPath = path.join(sandbox.root, 'pack-link.json')
+      fs.linkSync(packPath(sandbox), linkPath)
+      try {
+        const linked = fs.lstatSync(packPath(sandbox))
+        assert.ok(linked.nlink >= 2, 'the hard link must really exist before the refusal is asserted')
+        expectError(await library.get(readRequest('artifact:fixture-bytes-' + '0'.repeat(32))), 'STORE_INVALID', '$')
+      } finally {
+        fs.rmSync(linkPath, { force: true })
+      }
+      assert.equal(fs.readFileSync(packPath(sandbox)).length, original.length)
+    })
+  },
+)
 
-  await withSandbox(async (sandbox) => {
-    const library = await open(sandbox)
-    expectOutcome(await library.import(importRequest()), 'STORED')
-    const baseline = readPackBytes(sandbox)
-    // Symlinks may require privileges on Windows: skip honestly when the platform refuses.
-    const outside = path.join(sandbox.root, 'outside.json')
-    fs.writeFileSync(outside, baseline)
-    const linkPack = packPath(sandbox)
-    fs.rmSync(linkPack)
-    let linked = false
-    try {
+test(
+  'L10d symlink pack is refused after the symlink is really created',
+  { skip: SYMLINK.ok ? false : 'symlink unsupported locally: ' + SYMLINK.code },
+  async () => {
+    await withSandbox(async (sandbox) => {
+      const library = await open(sandbox)
+      expectOutcome(await library.import(importRequest()), 'STORED')
+      const baseline = readPackBytes(sandbox)
+      const outside = path.join(sandbox.root, 'outside.json')
+      fs.writeFileSync(outside, baseline)
+      const linkPack = packPath(sandbox)
+      fs.rmSync(linkPack)
       fs.symlinkSync(outside, linkPack)
-      linked = true
-    } catch {
-      fs.writeFileSync(linkPack, baseline)
-    }
-    if (linked) {
+      const linked = fs.lstatSync(linkPack)
+      assert.equal(linked.isSymbolicLink(), true, 'the symlink must really exist before the refusal is asserted')
       expectError(await library.get(readRequest('artifact:fixture-bytes-' + '0'.repeat(32))), 'STORE_INVALID', '$')
-    }
-    fs.rmSync(linkPack, { force: true })
-    fs.writeFileSync(linkPack, baseline)
-  })
+      fs.rmSync(linkPack, { force: true })
+      fs.writeFileSync(linkPack, baseline)
+    })
+  },
+)
 
+test('L10e cleanup trust failure: no over-deletion, old pack kept, recovery readable', async () => {
   await withSandbox(async (sandbox) => {
     const library = await open(sandbox)
     const kept = expectOutcome(await library.import(importRequest({ bytes: wavBytes(8) })), 'STORED')
@@ -1250,7 +1486,9 @@ test('L10 capability boundaries: fake caps, marker/root loss, links, cleanup tru
     const afterRestore = await open(sandbox)
     expectOutcome(await afterRestore.get(readRequest(keptRef)), 'FOUND')
   })
+})
 
+test('L10f artifact fault does not lock or rewrite the Task domain', async () => {
   await withSandbox(async (sandbox) => {
     // Artifact faults must not lock or rewrite the separate Task catalog/owner domain.
     const catalog = await openFixtureTaskCatalog({ sandbox })

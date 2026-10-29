@@ -92,13 +92,23 @@ handle 恰好四个 async 方法：`import`、`get`、`readBytes`、`delete`。
 - 写入前的读取是**有界严格读取**：UTF-8、`JSON.parse` 后与原文本完全一致的 canonical 往返
   （拒绝空白差异、重复键、键序变化、非规范转义）、精确 Schema、规范 base64，再对每个 payload
   解码并**真实调用 E-A 复验**，测量字段必须逐项一致；不能只信盘上的 hash 或扩展名。
+- 每个条目的 `identityHash` 都由库用**同一个身份算法**重算核对（scope/key、`inspection.sha256`、
+  `expiresAt`、`rights.state/proofRef`）；STORED 与 DELETED 都拒绝摘要与自身字段不一致的条目，
+  固定 `STORE_INVALID`，不修复、不重写、不靠后来调用方输入补过。
 - 写入是**单包原子替换**：校验 current digest → `wx/0600` 独占 tmp → 短写循环补全 → fsync →
-  一次 close（不重试）→ tmp 回读全等 → 紧邻重核 cap 与 current digest → 一次 rename →
+  一次 close（不重试）→ tmp 回读全等 → 紧邻重核 cap 与 current digest → **rename 前再次核对
+  已捕获 tmp 的可信路径、普通单链接、真实路径、dev/ino 与完整 bytes** → 一次 rename →
   回读身份/字节/Schema/revision 确认后才更新共享 confirmed digest。
+- 最后一次 current 读之后、rename 之前若 tmp 被替换或内容不符，固定 `STORE_CHANGED` 并锁定
+  Artifact 域：**零 rename、旧正式包字节不变**，该事务永久放弃清理这个不再归它所有的 tmp
+  （不会在 finally 重新取得资格后删除它）。
 - rename 之前可确认的 write/fsync/close 失败为 `WRITE_REJECTED`：旧正式字节不变，不自动重试，
   只清理本事务已捕获 dev/ino 的自有 tmp（且只尝试一次）。rename 已尝试或提交后不能确认的
   结果为 `WRITE_UNKNOWN`：保留实际包/墓碑、不回滚、不补写，并锁定整个 Artifact 域；所有已存在
   handle 与新工厂此后固定 `LIBRARY_UNKNOWN`。
+- 删除的提交后确认同样失败关闭：真实 delete rename 已完成且私有回读通过后，任何额外的公开
+  回读/目标不可读确认异常都先锁定 Artifact 域并固定 `WRITE_UNKNOWN`，保留真实墓碑字节，
+  不回滚、不重写、不重试；不会把所有提交前普通输入/读错误一律改成 UNKNOWN。
 
 预算（独立于 E-A 的 50 MiB 检验上限，不表示生产长音频能力）：
 
@@ -270,7 +280,11 @@ node --check core/audio/fixture-artifact-store-internal.mjs
 node --test test/artifact-library.test.mjs
 ```
 
-L01–L11 覆盖：真实存取与重开、幂等/碰撞/并发、入队前快照与原生载体、scope/权限/过期、验证
-删除与旧包恢复拒绝、坏包与 canonical 校验、三项预算与 pack 有界读、提交前短写/写/fsync/close
-故障、rename 后 UNKNOWN（导入与删除两条路径）、cap/marker/硬链接/符号链接/清理信任失败以及
-Task 域隔离。全量回归、build、语法与 client 同步由仓库常规命令另行执行。
+L01–L11 共 22 项测试（本机 21 pass / 1 platform skip / 0 fail；skip 为当前 Windows 账户禁止创建
+符号链接，属明确平台限制而非产品通过）覆盖：真实存取与重开、幂等/碰撞/并发、入队前快照与原生
+载体、scope/权限/过期、验证删除与旧包恢复拒绝、坏包与 canonical/padbits/身份关联校验、三项预算
+与 pack 有界读、提交前短写/写/fsync/close 故障、**最后 current 读后 tmp 被替换 → STORE_CHANGED
++ 零 rename + 旧包保留 + foreign tmp 不清理**、rename 后 UNKNOWN（导入与删除两条路径）、
+**删除提交后公开额外确认故障 → WRITE_UNKNOWN + 全 handle 锁**、cap/marker/硬链接/符号链接
+（平台不支持时显式 skip）/清理信任失败以及 Task 域隔离。全量回归、build、语法与 client 同步由
+仓库常规命令另行执行。

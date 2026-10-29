@@ -28,7 +28,6 @@ import {
   isStoreFailure,
   raiseStore,
   sha256,
-  stableStringify,
 } from './fixture-task-store-internal.mjs'
 import {
   ARTIFACT_MAX_DECODED_BYTES,
@@ -38,6 +37,7 @@ import {
   ARTIFACT_ORIGIN,
   ARTIFACT_SCHEMA_VERSION,
   INSPECTION_KEYS,
+  artifactIdentityHash,
   enqueueArtifact,
   getArtifactState,
   isArtifactLocked,
@@ -411,21 +411,6 @@ function bytesEnvelope(outcome, revision, artifact, source) {
   return Object.freeze({ ok: true, value: Object.freeze(value) })
 }
 
-function identityHashOf(scopeId, requestKey, byteSha256, expiresAt, rights) {
-  return sha256(
-    Buffer.from(
-      stableStringify({
-        scopeId,
-        requestKey,
-        byteSha256,
-        expiresAt,
-        rights: { state: rights.state, proofRef: rights.proofRef },
-      }),
-      'utf8',
-    ),
-  )
-}
-
 function findEntry(current, scopeId, artifactRef) {
   const found = current.entries.find((item) => item.entry.artifactRef === artifactRef)
   if (!found) return null
@@ -448,7 +433,7 @@ function importOnce(state, request) {
   try {
     const current = readArtifactPack(state)
     const byteSha256 = sha256(request.bytes)
-    const identityHash = identityHashOf(
+    const identityHash = artifactIdentityHash(
       request.scopeId,
       request.requestKey,
       byteSha256,
@@ -576,7 +561,16 @@ function deleteOnce(state, request) {
       lockArtifact(state)
       raise('WRITE_UNKNOWN', '$')
     }
-    const after = readArtifactPack(state)
+    // R3 — the delete rename is already committed and privately read back. Every extra public
+    // confirmation failure from here is an unknown outcome for the whole Artifact domain: keep the
+    // real tombstone bytes, never roll back or retry, and make every handle report LIBRARY_UNKNOWN.
+    let after
+    try {
+      after = readArtifactPack(state)
+    } catch {
+      lockArtifact(state)
+      raise('WRITE_UNKNOWN', '$')
+    }
     const visible = findEntry(after, request.scopeId, request.artifactRef)
     if (!visible || visible.stored || visible.entry.payload !== null) {
       lockArtifact(state)

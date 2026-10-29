@@ -98,6 +98,27 @@ const INSPECTION_KEY_SET = Object.freeze(new Set(INSPECTION_KEYS))
 /* ------------------------------- private state: queue / digest / lock ------------------------- */
 
 /**
+ * The one import-identity algorithm. The public import path and the pack parser both use this
+ * implementation: normalized scope/key, the SHA256 of the actual owned bytes (recorded as
+ * `inspection.sha256`), the declared expiration and the recorded Fixture rights. A stored or
+ * tombstoned entry whose `identityHash` does not match its own fields is a corrupt pack.
+ */
+export function artifactIdentityHash(scopeId, requestKey, byteSha256, expiresAt, rights) {
+  return sha256(
+    Buffer.from(
+      stableStringify({
+        scopeId,
+        requestKey,
+        byteSha256,
+        expiresAt,
+        rights: { state: rights.state, proofRef: rights.proofRef },
+      }),
+      'utf8',
+    ),
+  )
+}
+
+/**
  * One artifact state per trusted capability. It is deliberately separate from the Task store
  * state: an artifact fault locks only this domain and never writes/repairs Task files.
  */
@@ -319,6 +340,12 @@ function parseEntry(raw) {
   if (rights.state !== 'GRANTED') raiseStore('STORE_INVALID', '$')
   const inspection = inspectionShape(raw.inspection)
   if (inspection === null) raiseStore('STORE_INVALID', '$')
+  // R1: the stored identity must be exactly the identity of this entry's own fields. A pack whose
+  // identityHash was edited (or lost) is corrupt even if its scope/key/bytes/metadata still look
+  // otherwise legal; it is never repaired and never satisfied by later caller input.
+  if (artifactIdentityHash(scopeId, requestKey, inspection.sha256, raw.expiresAt, rights) !== identityHash) {
+    raiseStore('STORE_INVALID', '$')
+  }
 
   if (raw.payload === null) {
     if (canonicalIso(raw.deletedAt) === null) raiseStore('STORE_INVALID', '$')
@@ -759,6 +786,56 @@ export function writeArtifactPack(state, next, baseDigest) {
         }
         attemptCleanup()
         throw error
+      }
+
+      // R2 — the last current-pack read is finished; before the one real rename, re-confirm the
+      // captured temp itself: trusted cap/root, regular single-link file, real path inside the root,
+      // the captured dev/ino and the full expected bytes. A temp replaced by another file (or
+      // modified in place) is STORE_CHANGED with zero rename, the old official pack untouched and
+      // this transaction permanently barred from cleaning the no-longer-owned temp.
+      try {
+        checkSandbox(state)
+        const finalTmp = readBoundedPath(state, tempPath, ARTIFACT_MAX_PACK_BYTES, {
+          failKey: 'STORE_CHANGED',
+          sizeKey: 'RESOURCE_LIMIT',
+        })
+        if (
+          finalTmp.missing ||
+          !sameIdentity(finalTmp.identity, tempIdentity) ||
+          finalTmp.bytes.length !== bytes.length ||
+          !finalTmp.bytes.equals(bytes)
+        ) {
+          blockCleanup()
+          lockArtifact(state)
+          raiseStore('STORE_CHANGED', '$')
+        }
+        const finalStat = fs.lstatSync(tempPath)
+        if (!finalStat.isFile() || finalStat.isSymbolicLink()) {
+          blockCleanup()
+          lockArtifact(state)
+          raiseStore('STORE_CHANGED', '$')
+        }
+        if (typeof finalStat.nlink === 'number' && finalStat.nlink > 1) {
+          blockCleanup()
+          lockArtifact(state)
+          raiseStore('STORE_CHANGED', '$')
+        }
+        if (!sameIdentity(finalStat, tempIdentity)) {
+          blockCleanup()
+          lockArtifact(state)
+          raiseStore('STORE_CHANGED', '$')
+        }
+        const finalReal = fs.realpathSync(tempPath)
+        if (!isInside(root, finalReal)) {
+          blockCleanup()
+          lockArtifact(state)
+          raiseStore('STORE_CHANGED', '$')
+        }
+      } catch (error) {
+        blockCleanup()
+        lockArtifact(state)
+        if (isStoreFailure(error)) throw error
+        raiseStore('STORE_CHANGED', '$')
       }
 
       renameAttempted = true
