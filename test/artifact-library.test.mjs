@@ -1199,6 +1199,77 @@ test('L08b last-current window: a temp replaced before rename is STORE_CHANGED, 
     const reopened = await openFixtureArtifactLibrary({ sandbox })
     expectError(reopened, 'LIBRARY_UNKNOWN', '$')
   })
+
+  // Same replacement hook, same window, but the foreign temp is larger than the whole pack budget.
+  // The temp was written by this transaction from already-bounded bytes, so an oversize re-read here
+  // is a changed temp (STORE_CHANGED), never a new user/pack RESOURCE_LIMIT request error.
+  await withSandbox(async (sandbox) => {
+    const library = await open(sandbox)
+    expectOutcome(await library.import(importRequest({ bytes: wavBytes(8) })), 'STORED')
+    const baseline = readPackBytes(sandbox)
+    const oversized = Buffer.alloc(ARTIFACT_LIBRARY_LIMITS.maxPackBytes + 1, 0x5a)
+    const packFds = new Set()
+    let tempPath = null
+    let packReadCloses = 0
+    let hit = 0
+    let packRenames = 0
+    let identityBefore = null
+    let identityAfter = null
+    const restore = patchFs({
+      openSync: (original) => function patchedOpen(target, flags, ...rest) {
+        const fd = original.call(fs, target, flags, ...rest)
+        const name = String(target)
+        if (name.endsWith(PACK)) packFds.add(fd)
+        if (name.endsWith('.tmp')) tempPath = name
+        return fd
+      },
+      closeSync: (original) => function patchedClose(fd) {
+        const isPack = packFds.has(fd)
+        const result = original.apply(fs, arguments)
+        if (isPack) {
+          packFds.delete(fd)
+          packReadCloses += 1
+          if (packReadCloses === 3 && hit === 0) {
+            hit += 1
+            identityBefore = fs.statSync(tempPath)
+            const foreign = tempPath + '.foreign'
+            fs.writeFileSync(foreign, oversized)
+            fs.renameSync(foreign, tempPath)
+            identityAfter = fs.statSync(tempPath)
+          }
+        }
+        return result
+      },
+      renameSync: (original) => function patchedRename(from, to) {
+        if (String(to).endsWith(PACK)) packRenames += 1
+        return original.apply(fs, arguments)
+      },
+    })
+    try {
+      expectError(
+        await library.import(importRequest({ requestKey: 'key:fixture-r2-oversize', bytes: wavBytes(12) })),
+        'STORE_CHANGED',
+        '$',
+      )
+    } finally {
+      restore()
+    }
+    assert.equal(hit, 1, 'the oversize replacement must happen once, after the last current-pack read')
+    assert.equal(packReadCloses, 3)
+    assert.equal(packRenames, 0, 'an oversize foreign temp is never renamed over the official pack')
+    assert.notDeepEqual(
+      { dev: identityBefore.dev, ino: identityBefore.ino },
+      { dev: identityAfter.dev, ino: identityAfter.ino },
+      'the oversize replacement must be a different file identity',
+    )
+    assert.equal(identityAfter.size, ARTIFACT_LIBRARY_LIMITS.maxPackBytes + 1)
+    assert.equal(fs.existsSync(tempPath), true, 'the oversize foreign tmp is not deleted by this transaction')
+    assert.equal(Buffer.compare(fs.readFileSync(tempPath), oversized), 0, 'the foreign tmp keeps its exact bytes')
+    assert.equal(Buffer.compare(readPackBytes(sandbox), baseline), 0, 'the old official pack is unchanged')
+    expectError(await library.get(readRequest('artifact:fixture-bytes-' + '0'.repeat(32))), 'LIBRARY_UNKNOWN', '$')
+    const reopened = await openFixtureArtifactLibrary({ sandbox })
+    expectError(reopened, 'LIBRARY_UNKNOWN', '$')
+  })
 })
 
 /* ============================================= L09 ========================================== */

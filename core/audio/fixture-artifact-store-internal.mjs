@@ -792,12 +792,14 @@ export function writeArtifactPack(state, next, baseDigest) {
       // captured temp itself: trusted cap/root, regular single-link file, real path inside the root,
       // the captured dev/ino and the full expected bytes. A temp replaced by another file (or
       // modified in place) is STORE_CHANGED with zero rename, the old official pack untouched and
-      // this transaction permanently barred from cleaning the no-longer-owned temp.
+      // this transaction permanently barred from cleaning the no-longer-owned temp. This temp was
+      // written by this transaction from bytes already bounded to the pack budget, so an oversize
+      // re-read here proves the temp changed too: it is STORE_CHANGED, not a new user budget error.
       try {
         checkSandbox(state)
         const finalTmp = readBoundedPath(state, tempPath, ARTIFACT_MAX_PACK_BYTES, {
           failKey: 'STORE_CHANGED',
-          sizeKey: 'RESOURCE_LIMIT',
+          sizeKey: 'STORE_CHANGED',
         })
         if (
           finalTmp.missing ||

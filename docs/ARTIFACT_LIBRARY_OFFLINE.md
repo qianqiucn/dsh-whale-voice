@@ -101,7 +101,9 @@ handle 恰好四个 async 方法：`import`、`get`、`readBytes`、`delete`。
   回读身份/字节/Schema/revision 确认后才更新共享 confirmed digest。
 - 最后一次 current 读之后、rename 之前若 tmp 被替换或内容不符，固定 `STORE_CHANGED` 并锁定
   Artifact 域：**零 rename、旧正式包字节不变**，该事务永久放弃清理这个不再归它所有的 tmp
-  （不会在 finally 重新取得资格后删除它）。
+  （不会在 finally 重新取得资格后删除它）。该 tmp 由本事务按已知 bytes 写入且原 bytes 已在
+  6 MiB 包预算内，因此这次复核读到超限（例如被换成 6 MiB+1 的 foreign 文件）同样证明 tmp
+  已变化，仍固定 `STORE_CHANGED`，而不是新用户请求/正式包预算错误 `RESOURCE_LIMIT`。
 - rename 之前可确认的 write/fsync/close 失败为 `WRITE_REJECTED`：旧正式字节不变，不自动重试，
   只清理本事务已捕获 dev/ino 的自有 tmp（且只尝试一次）。rename 已尝试或提交后不能确认的
   结果为 `WRITE_UNKNOWN`：保留实际包/墓碑、不回滚、不补写，并锁定整个 Artifact 域；所有已存在
@@ -246,7 +248,7 @@ try {
 | `UNSUPPORTED_VERSION` | `schemaVersion` 不是 1 |
 | `INVALID_BYTES` | `bytes` 不是真实可用的 `Uint8Array` 视图（Proxy/伪造/分离/resizable/Shared/DataView/其他 typed array） |
 | `INVALID_WAV` | E-A 拒绝的 WAV 载体/格式/PCM 结构 |
-| `RESOURCE_LIMIT` | 单项/总量/条目数/pack 大小超预算 |
+| `RESOURCE_LIMIT` | 用户单项/总量/条目数或正式 pack 大小超预算（最后 tmp 复核的超限按 `STORE_CHANGED`） |
 | `SANDBOX_INVALID` | cap 不可信、root/marker 变化或清理信任失败 |
 | `STORE_INVALID` | 包不是合法 canonical 快照，或 payload/测量/身份不一致 |
 | `STORE_CHANGED` | 已确认的包被外部改写/删除/替换 |
@@ -284,7 +286,10 @@ L01–L11 共 22 项测试（本机 21 pass / 1 platform skip / 0 fail；skip �
 符号链接，属明确平台限制而非产品通过）覆盖：真实存取与重开、幂等/碰撞/并发、入队前快照与原生
 载体、scope/权限/过期、验证删除与旧包恢复拒绝、坏包与 canonical/padbits/身份关联校验、三项预算
 与 pack 有界读、提交前短写/写/fsync/close 故障、**最后 current 读后 tmp 被替换 → STORE_CHANGED
-+ 零 rename + 旧包保留 + foreign tmp 不清理**、rename 后 UNKNOWN（导入与删除两条路径）、
++ 零 rename + 旧包保留 + foreign tmp 不清理**（同一替换 hook 另含一个 6 MiB+1 的 foreign tmp
+代表：首错固定 `STORE_CHANGED`/`$`、命中 1 次、tmp 身份不同、正式 rename 0、旧 pack 字节不变、
+foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、rename 后 UNKNOWN（导入与删除
+两条路径）、
 **删除提交后公开额外确认故障 → WRITE_UNKNOWN + 全 handle 锁**、cap/marker/硬链接/符号链接
 （平台不支持时显式 skip）/清理信任失败以及 Task 域隔离。全量回归、build、语法与 client 同步由
 仓库常规命令另行执行。
