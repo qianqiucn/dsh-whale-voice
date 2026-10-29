@@ -103,9 +103,11 @@ inspection、不写第二套 WAV parser/hash。输入或预算拒绝时调用 0 
 19 键 measurement，并核对 `schemaVersion/format/codec/bitsPerSample`、`sampleRate/channels/
 frameCount/dataByteLength/byteLength` 与本次构造一致、`durationMs` 为同一公式结果、`peak∈[0,1]`、
 `fullScaleSampleCount` 为 `0..frameCount×channels` 的整数、`sha256` 为 64 位小写十六进制、
-`validationState='FIXTURE_WAV_CHECKED'`、四个固定布尔值与 `messageZh` 类型。任一不符、抛错、
-`ok:false`、`null` 或协议缺失，统一 `DEPENDENCY_FAILURE` / `$`，**不返回任何 bytes 或部分成功**，
-不重试、不传播原始异常。
+`validationState='FIXTURE_WAV_CHECKED'`、四个固定布尔值，且 `messageZh` 必须与原 inspector 的
+**固定中文消息严格相等**（`演示模式的WAV字节已校验；不代表使用权、生成、保存或发送。`）——仅
+“非空字符串”不够，任何其他非空文字（即使其余 18 个字段完全不变）都属于依赖协议失败。任一不符、
+抛错、`ok:false`、`null` 或协议缺失，统一 `DEPENDENCY_FAILURE` / `$`，**不返回任何 bytes 或部分
+成功**，不重试、不传播原始异常。
 
 ## 5. 返回值
 
@@ -238,6 +240,11 @@ node --check core/audio/fixture-wav-producer.mjs
 node --test test/fixture-wav-producer.test.mjs
 ```
 
-专项 `C01–C08` 覆盖：六采样率 × 两模式 × 单/双声道真实字节、三条独立字面向量、结构与首错、
-1 MiB 边界与超限不分配/0 复检、内存隔离、六类依赖故障注入、真实 08-E-B 字节链与公开面/文档
-示例。全量回归、构建、语法、UI 与精确 CI 由仓库常规命令另行执行。
+专项 `C01–C08` 覆盖：C01 实际 **14 组**（六采样率各 mono `SILENCE` + stereo `EDGE_SEQUENCE` 的
+12 组，另加 16000 的 mono `EDGE_SEQUENCE` 与 stereo `SILENCE` 两组；不是 6×2×2=24 的完整笛卡尔
+积，原“六率各至少一次”等要求已满足）、三条独立字面向量、结构与首错、1 MiB 边界（C04 五例并在
+test-only worker 中以委托真实 `Uint8Array` 的被动观测记录输出构造：两个合法例各 1×1,048,576 且
+观察对象就是返回 `bytes`，三个拒绝例 0 构造/0 复检，inspector 内部 copy 分列）、内存隔离、
+C06 七类依赖故障注入（含“非空但错误固定消息”）、真实 08-E-B 字节链与公开面/文档示例；C08 另断言
+`FIXTURE_WAV_PRODUCER_LIMITS.maxByteLength === ARTIFACT_LIBRARY_LIMITS.maxItemBytes`。全量回归、
+构建、语法、UI 与精确 CI 由仓库常规命令另行执行。

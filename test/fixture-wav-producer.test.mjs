@@ -17,7 +17,11 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
-import { ARTIFACT_LIBRARY_SCHEMA_VERSION, openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
+import {
+  ARTIFACT_LIBRARY_LIMITS,
+  ARTIFACT_LIBRARY_SCHEMA_VERSION,
+  openFixtureArtifactLibrary,
+} from '../core/audio/artifact-library.mjs'
 import * as producerModule from '../core/audio/fixture-wav-producer.mjs'
 import {
   FIXTURE_WAV_PRODUCER_ERRORS,
@@ -141,6 +145,22 @@ const producerPath = pathToFileURL(path.join(base, 'core', 'audio', 'fixture-wav
 const inspectorPath = pathToFileURL(path.join(base, 'core', 'audio', 'wav-byte-inspector.mjs')).href
 const realInspector = await import(inspectorPath)
 
+// Passive observation of real Uint8Array construction in this test-only worker. The subclass only
+// delegates to the real constructor and records which call site created the view; the real
+// inspector's own internal copy is counted separately through the insideInspector marker.
+const RealUint8Array = globalThis.Uint8Array
+let insideInspector = 0
+let outputViews = []
+let inspectorCopies = 0
+class ObservedUint8Array extends RealUint8Array {
+  constructor(...args) {
+    super(...args)
+    if (insideInspector > 0) inspectorCopies += 1
+    else outputViews.push(this)
+  }
+}
+globalThis.Uint8Array = ObservedUint8Array
+
 let producerCalls = 0
 let realCalls = 0
 let realOk = 0
@@ -148,7 +168,13 @@ let getterCalls = 0
 
 function wrapped(request) {
   producerCalls += 1
-  const out = realInspector.inspectFixtureWavBytes(request)
+  let out
+  insideInspector += 1
+  try {
+    out = realInspector.inspectFixtureWavBytes(request)
+  } finally {
+    insideInspector -= 1
+  }
   realCalls += 1
   if (out && out.ok === true) realOk += 1
   const fault = scenario.fault
@@ -172,6 +198,11 @@ function wrapped(request) {
     })
     return { ok: true, value }
   }
+  if (fault === 'message') {
+    const value = { ...out.value, messageZh: 'injected non-empty but wrong inspector message' }
+    Object.freeze(value)
+    return Object.freeze({ ok: true, value })
+  }
   throw new Error('unknown injected fault')
 }
 
@@ -191,32 +222,50 @@ await producerModule.link(async (specifier, referencing) => {
 await producerModule.evaluate()
 const produce = producerModule.namespace.produceFixtureWav
 
-const results = scenario.inputs.map((candidate) => {
-  let result
-  try {
-    result = produce(candidate)
-  } catch (error) {
-    return { threw: String(error) }
-  }
-  if (!result.ok) {
-    return {
-      ok: false,
-      errors: result.errors.map((error) => ({ code: error.code, path: error.path })),
-      hasValue: 'value' in result,
-      frozen: Object.isFrozen(result),
+let results
+try {
+  results = scenario.inputs.map((candidate) => {
+    outputViews = []
+    inspectorCopies = 0
+    let result
+    try {
+      result = produce(candidate)
+    } catch (error) {
+      return { threw: String(error), outputConstructions: outputViews.length, outputLengths: [], inspectorCopies }
     }
-  }
-  return {
-    ok: true,
-    byteLength: result.value.bytes.length,
-    sha256: result.value.inspection.sha256,
-    frameCount: result.value.inspection.frameCount,
-    bytesFrozen: Object.isFrozen(result.value.bytes),
-    envelopeFrozen: Object.isFrozen(result),
-    valueFrozen: Object.isFrozen(result.value),
-    inspectionFrozen: Object.isFrozen(result.value.inspection),
-  }
-})
+    const observed = outputViews
+    const copies = inspectorCopies
+    const outputConstructions = observed.length
+    const outputLengths = observed.map((view) => view.byteLength)
+    if (!result.ok) {
+      return {
+        ok: false,
+        errors: result.errors.map((error) => ({ code: error.code, path: error.path })),
+        hasValue: 'value' in result,
+        frozen: Object.isFrozen(result),
+        outputConstructions,
+        outputLengths,
+        inspectorCopies: copies,
+      }
+    }
+    return {
+      ok: true,
+      byteLength: result.value.bytes.length,
+      sha256: result.value.inspection.sha256,
+      frameCount: result.value.inspection.frameCount,
+      bytesFrozen: Object.isFrozen(result.value.bytes),
+      envelopeFrozen: Object.isFrozen(result),
+      valueFrozen: Object.isFrozen(result.value),
+      inspectionFrozen: Object.isFrozen(result.value.inspection),
+      outputConstructions,
+      outputLengths,
+      returnedIsObserved: outputConstructions === 1 && observed[0] === result.value.bytes,
+      inspectorCopies: copies,
+    }
+  })
+} finally {
+  globalThis.Uint8Array = RealUint8Array
+}
 process.stdout.write(JSON.stringify({ producerCalls, realCalls, realOk, getterCalls, results }))
 `
 
@@ -426,7 +475,7 @@ test('C03 structure and first error: plain five-field root, version/type/format/
 
 /* ============================================= C04 ========================================== */
 
-test('C04 budget before allocation: exactly 1 MiB controls, +1 frame and unsafe counts rejected', () => {
+test('C04 budget before allocation: five boundary cases, real output construction observed or absent', () => {
   const mono = expectSuccess(produceFixtureWav(input({ sampleRate: 16000, channels: 1, frameCount: 524266, pattern: 'SILENCE' })))
   assert.equal(mono.bytes.length, MAX)
   assert.equal(mono.inspection.frameCount, 524266)
@@ -468,6 +517,22 @@ test('C04 budget before allocation: exactly 1 MiB controls, +1 frame and unsafe 
   assert.equal(batched.results[4].ok, false)
   assert.deepEqual(batched.results[1].errors, [{ code: 'FIXTURE_WAV_PRODUCER_RESOURCE_LIMIT', path: 'frameCount' }])
   for (const result of batched.results) assert.equal('threw' in result, false, 'budget overflow must not throw')
+
+  // Passive real-construction observation in the same worker: the two legal boundary files each
+  // construct exactly one 1 MiB view that IS the returned bytes object, while the real inspector's
+  // internal copy is counted separately; the three rejects construct no output at all.
+  const [monoOk, monoOver, stereoOk, stereoOver, unsafe] = batched.results
+  for (const legal of [monoOk, stereoOk]) {
+    assert.equal(legal.outputConstructions, 1, 'exactly one output Uint8Array construction')
+    assert.deepEqual(legal.outputLengths, [MAX])
+    assert.equal(legal.returnedIsObserved, true, 'the observed view is the returned bytes object')
+    assert.ok(legal.inspectorCopies >= 1, 'the real inspector internal copy is observed separately')
+  }
+  for (const rejected of [monoOver, stereoOver, unsafe]) {
+    assert.equal(rejected.outputConstructions, 0, 'a rejected request must not construct an output')
+    assert.deepEqual(rejected.outputLengths, [])
+    assert.equal(rejected.inspectorCopies, 0)
+  }
 })
 
 /* ============================================= C05 ========================================== */
@@ -510,7 +575,7 @@ test('C05 memory isolation: independent bytes and backing stores, writable bytes
 
 /* ============================================= C06 ========================================== */
 
-test('C06 thin dependency guard: six injected inspector failures fail closed without a retry', () => {
+test('C06 thin dependency guard: seven injected inspector failures fail closed without a retry', () => {
   const request = input({ sampleRate: 22050, channels: 1, frameCount: 5, pattern: 'EDGE_SEQUENCE' })
   const control = runVm({ inputs: [request] })
   assert.equal(control.producerCalls, 1)
@@ -518,7 +583,7 @@ test('C06 thin dependency guard: six injected inspector failures fail closed wit
   assert.equal(control.realOk, 1)
   assert.equal(control.results[0].ok, true)
 
-  for (const fault of ['throw', 'okfalse', 'null', 'missing', 'mismatch', 'accessor']) {
+  for (const fault of ['throw', 'okfalse', 'null', 'missing', 'mismatch', 'accessor', 'message']) {
     const batched = runVm({ fault, inputs: [request] })
     assert.equal(batched.producerCalls, 1, 'producer calls the wrapper exactly once: ' + fault)
     assert.equal(batched.realCalls, 1, 'the wrapper delegates to the real inspector once: ' + fault)
@@ -605,6 +670,11 @@ test('C08 public surface and documented examples: four exports, frozen limits/er
   assert.deepEqual(FIXTURE_WAV_PRODUCER_LIMITS.channels, [1, 2])
   assert.deepEqual(FIXTURE_WAV_PRODUCER_LIMITS.patterns, ['SILENCE', 'EDGE_SEQUENCE'])
   assert.equal(FIXTURE_WAV_PRODUCER_LIMITS.maxByteLength, 1048576)
+  assert.equal(
+    FIXTURE_WAV_PRODUCER_LIMITS.maxByteLength,
+    ARTIFACT_LIBRARY_LIMITS.maxItemBytes,
+    'the producer cap must equal the E-B single-item budget',
+  )
   assert.equal(Object.isFrozen(FIXTURE_WAV_PRODUCER_LIMITS), true)
   assert.equal(Object.isFrozen(FIXTURE_WAV_PRODUCER_LIMITS.sampleRates), true)
   assert.deepEqual(Object.keys(FIXTURE_WAV_PRODUCER_ERRORS).sort(), [

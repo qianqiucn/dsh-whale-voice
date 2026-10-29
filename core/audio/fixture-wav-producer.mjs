@@ -36,6 +36,9 @@ const MAX_BYTE_LENGTH = FIXTURE_WAV_PRODUCER_LIMITS.maxByteLength
 const HEADER_BYTES = 44
 const EDGE_SEQUENCE = Object.freeze([-32768, -16384, 0, 16384, 32767])
 const MESSAGE_ZH = '已生成演示PCM16测试信号；不是TTS或翻唱结果，也不代表保存或发送。'
+/* The 08-E-A inspector's fixed success message: the dependency contract is exact, so any other
+ * non-empty text (even with every other measurement field unchanged) is a protocol failure. */
+const INSPECTION_MESSAGE_ZH = '演示模式的WAV字节已校验；不代表使用权、生成、保存或发送。'
 
 const REASONS = Object.freeze({
   INVALID_INPUT: 'invalid fixture input',
@@ -284,7 +287,7 @@ function inspectFinalBytes(bytes, expected) {
   if (fields.realOperationAllowed !== false) raiseDependency()
   if (fields.submitAllowed !== false) raiseDependency()
   if (fields.automaticRetryAllowed !== false) raiseDependency()
-  if (typeof fields.messageZh !== 'string' || fields.messageZh.length === 0) raiseDependency()
+  if (fields.messageZh !== INSPECTION_MESSAGE_ZH) raiseDependency()
   if (!Object.isFrozen(measurement)) raiseDependency()
   return measurement
 }
