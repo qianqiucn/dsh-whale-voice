@@ -7,6 +7,27 @@
 This index separates the **current authority** from **historical phase records**. Historical documents
 are kept for evidence and decision history; they are not a statement of current implementation.
 
+## New ChatGPT conversation handoff
+
+- [NEXT_CHATGPT_HANDOFF.md](plans/NEXT_CHATGPT_HANDOFF.md) — **start here in a new ChatGPT conversation** to recover latest planning context and active PR risks.
+- [NEXT_CHATGPT_ACTION_PLAN.md](plans/NEXT_CHATGPT_ACTION_PLAN.md) — first planning/GitHub coordination task for the next ChatGPT session. Neither document authorizes engineering or production operations.
+
+## AI collaboration and role-specific plan standard
+
+- [AGENTS.md](../AGENTS.md) — engineering/safety rules shared by DeepSeek (principal developer) and ChatGPT; explicitly describes their roles.
+- [EXECUTION_STANDARD.md](../EXECUTION_STANDARD.md) — **ChatGPT-only** plan dispatch, idea-driven reprioritization, DONE tagging, and GitHub plan-coordination standard. **Not a mandatory plan workflow for DeepSeek's ordinary code/PR work.**
+
+## Execution plans (new)
+
+- [plans/CHATGPT_LONG_TERM_MEMORY.md](plans/CHATGPT_LONG_TERM_MEMORY.md) — **ChatGPT permanent planning memory**: user expectations, detailed task writing, two-AI roles and stable product boundaries.
+- [plans/TASK_SPEC_STANDARD.md](plans/TASK_SPEC_STANDARD.md) — **required execution-ready plan quality gate**; no vague engineering task should be sent to DeepSeek.
+- [plans/TASK_SPEC_TEMPLATE.md](plans/TASK_SPEC_TEMPLATE.md) — full implementation task template with files, contracts, failure rules, tests and DoD.
+- [plans/README.md](plans/README.md) — **Whale Voice / Whale Relay execution plan registry**, ordered task dispatch, status markers and change rules.
+- [plans/CHANGELOG.md](plans/CHANGELOG.md) — dated plan reordering and completion history.
+- [plans/01-gui-coverage-closeout.md](plans/01-gui-coverage-closeout.md) — first task, already sent; subsequent plans are linked from the registry.
+
+The plans are forward-looking, not proof that features are implemented. Read the current Git/PR and acceptance evidence first.
+
 ## Current authority and contracts
 
 Read these first when resuming work:
