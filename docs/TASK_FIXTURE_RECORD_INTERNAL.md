@@ -415,6 +415,27 @@ catalog reserve。
 运行，本节当时只有三个 duration 期望向量而没有完整 frame。本轮按 067 补齐后上述四项才成立；
 0062 原文与 INDEX 历史保留、不覆盖。
 
+### 12.4.1 v1.1（068）剩余自动证据收口
+
+067 的 v1.0 收口仍有三个**仓内自动证据**缺口，v1.1 在同一测试文件内补齐，产品代码保持只读：
+
+- **E1**：`begin-reject`、`record-validate-reject`、`projection-reject` 此前只在 worker 定义、
+  未被任何 test 实际调用，且注入发生在真实目标委托之前。现在每例都先在指定阶段**恰一次真实委托**
+  并确认真实成功，才把该次结果替换为固定合法拒绝；D03 实际运行三例，`faultHits` 分别为
+  `begin/record/projection = 1`，`realTransition`、`realValidateRecord`、`realProject` 及其
+  `realOk` 逐阶段固定，`source/gate/dispatch/RVC/RVC-ok/producer/realProducer/realProducerOk`
+  各 1、`create=0`、`actions=['BEGIN_PROCESS']`；返回三键冻结根，**原始 record 严格 `null`**、
+  `production` 严格 `null`，错误为原 `TASK_FIXTURE_TASK_TRANSITION_REJECTED/$`。
+- **E2**：D04 的既有九例（六非 SUCCESS、`SOURCE_BLOCKED`、`READINESS_BLOCKED`、合法 TTS）补上
+  三键/根冻结/`production` 严格 `null`、固定 `phase`/`reason`
+  （`RVC_FAKE_OFFLINE / MODEL_NOT_AVAILABLE / TIMEOUT / CANCEL_PENDING / CANCELLED / UNKNOWN`）
+  与绝对调用数；summary 在归一化前另存 `rawRecord.hasRecordKey/recordNull/recordType`，
+  新错误与原错误用例都断言**原始 record 严格 `null`**，不再用 `recordState===null` 推断。
+- **E3**：`byteLength` / `@@toStringTag` 自有 getter 由 Uint8Array view 改注入本次 producer 输出
+  bytes 的 **ArrayBuffer 载体**（即 067 所指的旧缺陷层级），真实 producer 先成功后单点注入；
+  结果 getter 调用 0、不外抛、不误归旧码、`PROCESSING` / `transition=1`，且返回的
+  `production.bytes.buffer` 仍是同一被注入 carrier（零拷贝）。
+
 ### 12.5 限制（不变）
 
 本入口仍纯函数、无持久幂等、无跨调用防重；`PROCESSING+bytes` 不写现 owner `FINAL`；

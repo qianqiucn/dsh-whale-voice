@@ -118,6 +118,11 @@ function assertBytesRoot(out, label) {
 function assertBytesError(out, key, label) {
   assertBytesRoot(out, label)
   assert.equal(out.productionKind, 'null', label)
+  assert.equal(out.rawProduction.hasProductionKey, true, label)
+  assert.equal(out.rawProduction.productionNull, true, label)
+  assert.equal(out.rawRecord.hasRecordKey, true, label)
+  assert.equal(out.rawRecord.recordNull, true, label + ': the original record must be strictly null')
+  assert.equal(out.rawRecord.recordType, 'object', label)
   assert.equal(out.recordState, null, label)
   assert.equal(out.result.ok, false, label)
   assert.equal(out.result.errors.length, 1, label)
@@ -125,6 +130,27 @@ function assertBytesError(out, key, label) {
   assert.equal(out.result.errors[0].code, TASK_FIXTURE_BYTES_ERRORS[key], label)
   assert.equal(out.result.errors[0].path, '$', label)
   assert.equal(out.result.errors[0].reason, BYTES_REASONS[key], label)
+  assert.equal(out.resultFrozen, true, label)
+  assert.equal(out.errorsFrozen, true, label)
+  assert.equal(out.errorsEntryFrozen, true, label)
+}
+
+/** A post-bytes rejection keeps the legacy task error code but the bytes root and null contract. */
+function assertTaskRejected(out, label) {
+  assertBytesRoot(out, label)
+  assert.equal(out.productionKind, 'null', label)
+  assert.equal(out.rawProduction.hasProductionKey, true, label)
+  assert.equal(out.rawProduction.productionNull, true, label)
+  assert.equal(out.rawRecord.hasRecordKey, true, label)
+  assert.equal(out.rawRecord.recordNull, true, label + ': the original record must be strictly null')
+  assert.equal(out.rawRecord.recordType, 'object', label)
+  assert.equal(out.recordState, null, label)
+  assert.equal(out.result.ok, false, label)
+  assert.equal(out.result.errors.length, 1, label)
+  assert.deepEqual(Object.keys(out.result.errors[0]).sort(), ['code', 'path', 'reason'], label)
+  assert.equal(out.result.errors[0].code, TASK_FIXTURE_ERRORS.TASK_TRANSITION_REJECTED, label)
+  assert.equal(out.result.errors[0].path, '$', label)
+  assert.equal(out.result.errors[0].reason, 'task transition rejected', label)
   assert.equal(out.resultFrozen, true, label)
   assert.equal(out.errorsFrozen, true, label)
   assert.equal(out.errorsEntryFrozen, true, label)
@@ -198,11 +224,19 @@ const deps = {
   facade: await load('task-fixture-runner.mjs'),
 }
 
-const counts = { source: 0, gate: 0, dispatch: 0, create: 0, transition: 0, validateRecord: 0, project: 0, rvc: 0, rvcOk: 0, producer: 0, realProducer: 0, realProducerOk: 0 }
+const counts = {
+  source: 0, gate: 0, dispatch: 0, create: 0,
+  transition: 0, realTransition: 0, realTransitionOk: 0,
+  validateRecord: 0, realValidateRecord: 0, realValidateRecordOk: 0,
+  project: 0, realProject: 0, realProjectOk: 0,
+  rvc: 0, rvcOk: 0, producer: 0, realProducer: 0, realProducerOk: 0,
+}
+const faultHits = { begin: 0, record: 0, projection: 0 }
 const actions = []
 let getterCalls = 0
 let faultIntegrity = null
 let advancedLegal = null
+let injectedBuffer = null
 
 // Passive observation of real Uint8Array construction in this worker only; the engine-side and the
 // producer-side (which includes the inspector's owned copy) constructions are counted separately.
@@ -264,22 +298,34 @@ function injectProducerFault(out, kind) {
     return freezeInjected(value)
   }
   if (kind === 'byte-getter' || kind === 'byte-getter-throw') {
-    const bytes = out.value.bytes
-    Object.defineProperty(bytes, 'byteLength', {
+    // E3: the original 067 defect is an own byteLength getter on the ArrayBuffer carrier,
+    // not on the Uint8Array view. Inject exactly there and nowhere else.
+    const buffer = out.value.bytes.buffer
+    const byteLength = out.value.bytes.byteLength
+    injectedBuffer = buffer
+    Object.defineProperty(buffer, 'byteLength', {
       configurable: true,
       enumerable: true,
-      get() { getterCalls += 1; if (kind === 'byte-getter-throw') throw new Error('injected byteLength getter'); return bytes.length },
+      get() { getterCalls += 1; if (kind === 'byte-getter-throw') throw new Error('injected ArrayBuffer byteLength getter'); return byteLength },
     })
-    return freezeInjected(value)
+    const frozen = freezeInjected(value)
+    faultIntegrity.injectionLevel = 'buffer'
+    faultIntegrity.injectedOnBuffer = out.value.bytes.buffer === buffer
+    return frozen
   }
   if (kind === 'tag-getter' || kind === 'tag-getter-throw') {
-    const bytes = out.value.bytes
-    Object.defineProperty(bytes, Symbol.toStringTag, {
+    // E3: same for an own Symbol.toStringTag getter on the ArrayBuffer carrier.
+    const buffer = out.value.bytes.buffer
+    injectedBuffer = buffer
+    Object.defineProperty(buffer, Symbol.toStringTag, {
       configurable: true,
       enumerable: true,
-      get() { getterCalls += 1; if (kind === 'tag-getter-throw') throw new Error('injected tag getter'); return 'Uint8Array' },
+      get() { getterCalls += 1; if (kind === 'tag-getter-throw') throw new Error('injected ArrayBuffer tag getter'); return 'ArrayBuffer' },
     })
-    return freezeInjected(value)
+    const frozen = freezeInjected(value)
+    faultIntegrity.injectionLevel = 'buffer'
+    faultIntegrity.injectedOnBuffer = out.value.bytes.buffer === buffer
+    return frozen
   }
   throw new Error('unknown producer fault ' + kind)
 }
@@ -311,27 +357,42 @@ const validateRvc = (...args) => {
   if (out && out.ok === true) counts.rvcOk += 1
   return out
 }
+// E1: every injection first performs the single real delegation at its stage, confirms the real
+// success, and only then replaces that one result with a fixed legal rejection. The real function
+// is never called twice and the product code keeps no injection hook.
 const transition = (record, action) => {
   counts.transition += 1
   actions.push(action.type)
-  if (fault && fault.target === 'task' && fault.kind === 'begin-reject' && action.type === 'BEGIN_PROCESS') {
+  const out = deps.task.transitionAudioTask(record, action)
+  counts.realTransition += 1
+  if (out && out.ok === true) counts.realTransitionOk += 1
+  if (fault && fault.target === 'task' && fault.kind === 'begin-reject' && action.type === 'BEGIN_PROCESS' && out && out.ok === true) {
+    faultHits.begin += 1
     return { ok: false, errors: [{ code: 'AUDIO_TASK_CONFLICT', path: '$', reason: 'injected begin rejection' }] }
   }
-  return deps.task.transitionAudioTask(record, action)
+  return out
 }
 const validateRecord = (record) => {
   counts.validateRecord += 1
-  if (fault && fault.target === 'task' && fault.kind === 'record-validate-reject' && counts.validateRecord >= 2) {
-    return { ok: false, errors: [{ code: 'AUDIO_TASK_INVALID_RECORD', path: '$', reason: 'injected record rejection' }] }
+  const out = deps.task.validateAudioTaskRecord(record)
+  counts.realValidateRecord += 1
+  if (out && out.ok === true) counts.realValidateRecordOk += 1
+  if (fault && fault.target === 'task' && fault.kind === 'record-validate-reject' && counts.validateRecord >= 2 && out && out.ok === true) {
+    faultHits.record += 1
+    return { ok: false, errors: [{ code: 'AUDIO_TASK_INVALID_RECORD', path: '$', reason: 'injected final record rejection' }] }
   }
-  return deps.task.validateAudioTaskRecord(record)
+  return out
 }
 const project = (record) => {
   counts.project += 1
-  if (fault && fault.target === 'task' && fault.kind === 'projection-reject' && counts.project >= 2) {
-    return { ok: false, errors: [{ code: 'AUDIO_TASK_INVALID_RECORD', path: '$', reason: 'injected projection rejection' }] }
+  const out = deps.task.projectAudioTask(record)
+  counts.realProject += 1
+  if (out && out.ok === true) counts.realProjectOk += 1
+  if (fault && fault.target === 'task' && fault.kind === 'projection-reject' && counts.project >= 2 && out && out.ok === true) {
+    faultHits.projection += 1
+    return { ok: false, errors: [{ code: 'AUDIO_TASK_INVALID_RECORD', path: '$', reason: 'injected final projection rejection' }] }
   }
-  return deps.task.projectAudioTask(record)
+  return out
 }
 
 const exportsByKey = {
@@ -396,6 +457,17 @@ function summarize(out) {
   const record = out.record || null
   const value = out.result && out.result.ok === true ? out.result.value : null
   return {
+    // Raw pre-normalisation observations: undefined, null and an object stay distinguishable.
+    rawRecord: {
+      hasRecordKey: Object.prototype.hasOwnProperty.call(out, 'record'),
+      recordNull: out.record === null,
+      recordType: typeof out.record,
+    },
+    rawProduction: {
+      hasProductionKey: Object.prototype.hasOwnProperty.call(out, 'production'),
+      productionNull: out.production === null,
+      productionType: typeof out.production,
+    },
     rootKeys: Object.keys(out),
     rootFrozen: Object.isFrozen(out),
     hasProduction: Object.prototype.hasOwnProperty.call(out, 'production'),
@@ -425,6 +497,7 @@ function summarize(out) {
       inspectionFrozen: Object.isFrozen(out.production.inspection),
       bytesFrozen: Object.isFrozen(out.production.bytes),
       origin: out.production.origin,
+      sameBuffer: injectedBuffer === null ? null : out.production.bytes.buffer === injectedBuffer,
     } : null,
   }
 }
@@ -454,6 +527,7 @@ const payload = Object.assign({}, summary, {
   counts,
   actions,
   getterCalls,
+  faultHits,
   faultIntegrity,
   advancedLegal,
   observation: {
@@ -501,14 +575,21 @@ test('D01 real causal chain: one source/gate/dispatch/RVC/producer, one PROCESSI
       dispatch: 1,
       create: 0,
       transition: 1,
+      realTransition: 1,
+      realTransitionOk: 1,
       validateRecord: 2,
+      realValidateRecord: 2,
+      realValidateRecordOk: 2,
       project: 2,
+      realProject: 2,
+      realProjectOk: 2,
       rvc: 1,
       rvcOk: 1,
       producer: 1,
       realProducer: 1,
       realProducerOk: 1,
     })
+    assert.deepEqual(before.faultHits, { begin: 0, record: 0, projection: 0 })
     assert.deepEqual(before.actions, ['BEGIN_PROCESS'])
     assertSuccessGraph(before, 'worker success')
     assert.equal(before.production.byteLength, 88244)
@@ -640,13 +721,17 @@ test('D03 producer protocol and carrier faults: seven failures, four carrier ref
       assert.equal(out.faultIntegrity.bytesFrozen, false, kind)
     }
 
-    // R2: an own byteLength or @@toStringTag getter is never executed. Because the native slots
-    // still describe a complete legal carrier, the chosen strategy accepts it and reaches PROCESSING
-    // (including the variants whose getter body would throw).
+    // E3/R2: an own byteLength or @@toStringTag getter is installed on the produced ArrayBuffer
+    // carrier itself (the original 067 defect), not on the Uint8Array view, and is never executed.
+    // The native slots still describe a complete legal carrier, so the chosen strategy accepts it
+    // and reaches PROCESSING, including the variants whose getter body would throw.
     for (const kind of ['byte-getter', 'tag-getter', 'byte-getter-throw', 'tag-getter-throw']) {
       const out = runWorker({ frame, fault: { target: 'producer', kind } })
       assertSuccessGraph(out, kind)
       assert.equal(out.getterCalls, 0, kind + ': no own getter may run')
+      assert.equal(out.faultIntegrity.injectionLevel, 'buffer', kind)
+      assert.equal(out.faultIntegrity.injectedOnBuffer, true, kind)
+      assert.equal(out.production.sameBuffer, true, kind + ': the returned bytes keep the same carrier')
       assert.equal(out.counts.producer, 1, kind)
       assert.equal(out.counts.realProducerOk, 1, kind)
       assert.equal(out.counts.transition, 1, kind)
@@ -654,9 +739,51 @@ test('D03 producer protocol and carrier faults: seven failures, four carrier ref
       assert.equal(out.production.byteLength, 88244, kind)
     }
 
+    // E1: the three post-bytes rejections are actually executed here. Each wrapper first performs
+    // the single real delegation at its own stage, confirms that real success, and only then
+    // replaces that one result with a fixed legal rejection; no stage is delegated twice.
+    const e1Cases = [
+      {
+        kind: 'begin-reject',
+        hits: { begin: 1, record: 0, projection: 0 },
+        expected: { transition: 1, realTransition: 1, realTransitionOk: 1, validateRecord: 1, realValidateRecord: 1, realValidateRecordOk: 1, project: 1, realProject: 1, realProjectOk: 1 },
+      },
+      {
+        kind: 'record-validate-reject',
+        hits: { begin: 0, record: 1, projection: 0 },
+        expected: { transition: 1, realTransition: 1, realTransitionOk: 1, validateRecord: 2, realValidateRecord: 2, realValidateRecordOk: 2, project: 1, realProject: 1, realProjectOk: 1 },
+      },
+      {
+        kind: 'projection-reject',
+        hits: { begin: 0, record: 0, projection: 1 },
+        expected: { transition: 1, realTransition: 1, realTransitionOk: 1, validateRecord: 2, realValidateRecord: 2, realValidateRecordOk: 2, project: 2, realProject: 2, realProjectOk: 2 },
+      },
+    ]
+    for (const item of e1Cases) {
+      const out = runWorker({ frame, fault: { target: 'task', kind: item.kind } })
+      assertTaskRejected(out, item.kind)
+      assert.deepEqual(out.faultHits, item.hits, item.kind)
+      assert.equal(out.counts.source, 1, item.kind)
+      assert.equal(out.counts.gate, 1, item.kind)
+      assert.equal(out.counts.dispatch, 1, item.kind)
+      assert.equal(out.counts.rvc, 1, item.kind)
+      assert.equal(out.counts.rvcOk, 1, item.kind)
+      assert.equal(out.counts.producer, 1, item.kind)
+      assert.equal(out.counts.realProducer, 1, item.kind)
+      assert.equal(out.counts.realProducerOk, 1, item.kind)
+      assert.equal(out.counts.create, 0, item.kind)
+      assert.deepEqual(out.actions, ['BEGIN_PROCESS'], item.kind)
+      assert.equal(out.counts.transition, item.expected.transition, item.kind)
+      for (const key of Object.keys(item.expected)) {
+        assert.equal(out.counts[key], item.expected[key], item.kind + ' ' + key)
+      }
+      assert.equal(out.result.errors[0].reason, 'task transition rejected', item.kind)
+    }
+
     // Control: without a fault the same counts reach PROCESSING, so the counters are active.
     const control = runWorker({ frame })
     assertSuccessGraph(control, 'control')
+    assert.deepEqual(control.faultHits, { begin: 0, record: 0, projection: 0 })
     assert.equal(control.counts.transition, 1)
     assert.equal(control.counts.producer, 1)
   })
@@ -668,14 +795,14 @@ test('D04 non-success and legal blocks: full record/result equal the legacy entr
   const svc = extractExample()
   await withExistingFrame(svc, 'key:fixture-d04', async ({ frame }) => {
     const scenarios = [
-      { name: 'OFFLINE', mutate: (f) => { f.input.context.scenario = 'OFFLINE' }, state: 'FAILED' },
-      { name: 'MODEL_MISSING', mutate: (f) => { f.input.context.scenario = 'MODEL_MISSING' }, state: 'FAILED' },
-      { name: 'TIMEOUT', mutate: (f) => { f.input.context.scenario = 'TIMEOUT' }, state: 'UNKNOWN' },
-      { name: 'CANCEL_REQUESTED', mutate: (f) => { f.input.context.scenario = 'CANCEL_REQUESTED' }, state: 'CANCEL_REQUESTED' },
-      { name: 'CANCEL_CONFIRMED', mutate: (f) => { f.input.context.scenario = 'CANCEL_CONFIRMED' }, state: 'CANCELLED' },
-      { name: 'UNKNOWN', mutate: (f) => { f.input.context.scenario = 'UNKNOWN' }, state: 'UNKNOWN' },
-      { name: 'SOURCE_BLOCKED', mutate: (f) => { f.input.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT' }, state: 'CREATED' },
-      { name: 'READINESS_BLOCKED', mutate: (f) => { f.input.readiness.instances[0].installation = 'ABSENT' }, state: 'CREATED' },
+      { name: 'OFFLINE', mutate: (f) => { f.input.context.scenario = 'OFFLINE' }, state: 'FAILED', phase: 'SIMULATED', reason: 'RVC_FAKE_OFFLINE', dispatch: 1, rvc: 1, transition: 2 },
+      { name: 'MODEL_MISSING', mutate: (f) => { f.input.context.scenario = 'MODEL_MISSING' }, state: 'FAILED', phase: 'SIMULATED', reason: 'RVC_FAKE_MODEL_NOT_AVAILABLE', dispatch: 1, rvc: 1, transition: 2 },
+      { name: 'TIMEOUT', mutate: (f) => { f.input.context.scenario = 'TIMEOUT' }, state: 'UNKNOWN', phase: 'SIMULATED', reason: 'RVC_FAKE_TIMEOUT', dispatch: 1, rvc: 1, transition: 2 },
+      { name: 'CANCEL_REQUESTED', mutate: (f) => { f.input.context.scenario = 'CANCEL_REQUESTED' }, state: 'CANCEL_REQUESTED', phase: 'SIMULATED', reason: 'RVC_FAKE_CANCEL_PENDING', dispatch: 1, rvc: 1, transition: 2 },
+      { name: 'CANCEL_CONFIRMED', mutate: (f) => { f.input.context.scenario = 'CANCEL_CONFIRMED' }, state: 'CANCELLED', phase: 'SIMULATED', reason: 'RVC_FAKE_CANCELLED', dispatch: 1, rvc: 1, transition: 3 },
+      { name: 'UNKNOWN', mutate: (f) => { f.input.context.scenario = 'UNKNOWN' }, state: 'UNKNOWN', phase: 'SIMULATED', reason: 'RVC_FAKE_UNKNOWN', dispatch: 1, rvc: 1, transition: 2 },
+      { name: 'SOURCE_BLOCKED', mutate: (f) => { f.input.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT' }, state: 'CREATED', phase: 'BLOCKED', reason: 'TASK_FIXTURE_SOURCE_BLOCKED', dispatch: 0, rvc: 0, transition: 0 },
+      { name: 'READINESS_BLOCKED', mutate: (f) => { f.input.readiness.instances[0].installation = 'ABSENT' }, state: 'CREATED', phase: 'BLOCKED', reason: 'TASK_FIXTURE_READINESS_BLOCKED', dispatch: 0, rvc: 0, transition: 0 },
     ]
     for (const item of scenarios) {
       const variant = clone(frame)
@@ -683,6 +810,22 @@ test('D04 non-success and legal blocks: full record/result equal the legacy entr
       const bytesOut = runWorker({ frame: variant })
       const legacyOut = runWorker({ entry: 'existing', frame: variant })
       assertLegacyAgreement(bytesOut, legacyOut, item.name)
+      // E2: the existing nine cases also pin the bytes root, the strict nulls, the fixed
+      // phase/reason and the absolute call counts instead of only comparing both paths.
+      assertBytesRoot(bytesOut, item.name)
+      assert.equal(bytesOut.rawProduction.hasProductionKey, true, item.name)
+      assert.equal(bytesOut.rawProduction.productionNull, true, item.name)
+      assert.equal(bytesOut.rawProduction.productionType, 'object', item.name)
+      assert.equal(bytesOut.result.value.phase, item.phase, item.name)
+      assert.equal(bytesOut.result.value.reason, item.reason, item.name)
+      assert.equal(bytesOut.counts.source, 1, item.name)
+      assert.equal(bytesOut.counts.gate, 1, item.name)
+      assert.equal(bytesOut.counts.dispatch, item.dispatch, item.name)
+      assert.equal(bytesOut.counts.rvc, item.rvc, item.name)
+      assert.equal(bytesOut.counts.rvcOk, item.rvc, item.name)
+      assert.equal(bytesOut.counts.producer, 0, item.name)
+      assert.equal(bytesOut.counts.transition, item.transition, item.name)
+      assert.equal(legacyOut.counts.transition, item.transition, item.name)
       assert.equal(bytesOut.recordState, item.state, item.name)
       assert.deepEqual(Object.keys(bytesOut.record).sort(), [
         'cancel',
@@ -719,9 +862,16 @@ test('D04 non-success and legal blocks: full record/result equal the legacy entr
       const bytesOut = runWorker({ frame: ttsFrame })
       const legacyOut = runWorker({ entry: 'existing', frame: ttsFrame })
       assertLegacyAgreement(bytesOut, legacyOut, 'TTS')
+      assertBytesRoot(bytesOut, 'TTS')
+      assert.equal(bytesOut.rawProduction.productionNull, true, 'TTS')
       assert.equal(bytesOut.result.value.phase, 'BLOCKED')
       assert.equal(bytesOut.result.value.reason, 'PROVIDER_DISPATCH_UNSUPPORTED_DISPATCH')
+      assert.equal(bytesOut.counts.source, 1, 'TTS')
+      assert.equal(bytesOut.counts.gate, 1, 'TTS')
       assert.equal(bytesOut.counts.dispatch, 0, 'the TTS gate stops before the RVC dispatch')
+      assert.equal(bytesOut.counts.rvc, 0, 'TTS')
+      assert.equal(bytesOut.counts.transition, 0, 'TTS')
+      assert.equal(bytesOut.counts.producer, 0, 'TTS')
       assert.equal(legacyOut.counts.dispatch, 0)
       assert.equal(bytesOut.recordState, 'CREATED')
     })
@@ -742,6 +892,8 @@ test('D05 precheck and non-reentry: accessor, conflict, invalid record, rights, 
       const out = runWorker({ frame: item.frame })
       assertBytesRoot(out, 'bad frame')
       assert.equal(out.productionKind, 'null', 'bad frame')
+      assert.equal(out.rawRecord.recordNull, true, 'bad frame: original record is strictly null')
+      assert.equal(out.rawProduction.productionNull, true, 'bad frame')
       assert.equal(out.result.ok, false, 'bad frame')
       assert.equal(out.result.errors[0].code, TASK_FIXTURE_ERRORS.INVALID_INPUT, 'bad frame')
       assert.equal(out.result.errors[0].path, item.path, 'bad frame')
@@ -756,6 +908,7 @@ test('D05 precheck and non-reentry: accessor, conflict, invalid record, rights, 
     assert.equal(accessor.result.ok, false)
     assert.equal(accessor.result.errors[0].code, TASK_FIXTURE_ERRORS.INVALID_INPUT)
     assert.equal(accessor.result.errors[0].path, '$')
+    assert.equal(accessor.rawRecord.recordNull, true)
     assert.equal(accessor.getterCalls, 0, 'no frame accessor may be invoked')
     assert.equal(accessor.counts.dispatch, 0)
     assert.equal(accessor.counts.producer, 0)
@@ -766,6 +919,7 @@ test('D05 precheck and non-reentry: accessor, conflict, invalid record, rights, 
     assert.equal(conflict.result.ok, false)
     assert.equal(conflict.result.errors[0].code, TASK_FIXTURE_ERRORS.INVALID_INPUT)
     assert.equal(conflict.result.errors[0].path, '$')
+    assert.equal(conflict.rawRecord.recordNull, true)
     assert.equal(conflict.counts.dispatch, 0)
     assert.equal(conflict.counts.producer, 0)
     assert.equal(conflict.counts.transition, 0)
@@ -775,6 +929,7 @@ test('D05 precheck and non-reentry: accessor, conflict, invalid record, rights, 
     assert.equal(invalid.result.ok, false)
     assert.equal(invalid.result.errors[0].code, TASK_FIXTURE_ERRORS.INVALID_INPUT)
     assert.equal(invalid.result.errors[0].path, '$')
+    assert.equal(invalid.rawRecord.recordNull, true)
     assert.equal(invalid.counts.dispatch, 0)
     assert.equal(invalid.counts.producer, 0)
 
@@ -802,6 +957,7 @@ test('D05 precheck and non-reentry: accessor, conflict, invalid record, rights, 
     assert.equal(reentry.reentry.result.errors[0].code, TASK_FIXTURE_ERRORS.TASK_TRANSITION_REJECTED)
     assert.equal(reentry.reentry.result.errors[0].path, '$')
     assert.equal(reentry.reentry.recordState, null)
+    assert.equal(reentry.reentry.rawRecord.recordNull, true)
     assert.equal(reentry.reentry.productionKind, 'null')
     assert.deepEqual(reentry.reentry.rootKeys, ['record', 'result', 'production'])
     assert.equal(reentry.counts.producer, 1, 'no second producer call on re-entry')
