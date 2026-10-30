@@ -151,3 +151,35 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 - 因此“同一 CREATED 快照再次调用仍可能再次模拟”的旧限制在 owner 路径上被持久 claim 与只读重复所取代，而**本模块自身仍是同步纯函数**，不持久、不防重。
 
 两模块都仍是 `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`；不接 Host/GUI、真实模型/音频/设备/投递，也没有跨进程恢复。
+
+## 12. 08-E-D 受限字节入口（新增，内部）
+
+`runExistingFixtureTaskBytesOnce(frame)` 复用同一 frame 预检、`validateExisting` 与唯一 `runFlow`：
+在本次真实 Fake SUCCESS 验证及源/输出 ref 碰撞门禁之后、旧 `ATTACH_FAKE_ARTIFACT` 之前分叉，
+用本次 verified `sampleRate=44100` 与合法整数 `durationMs` 先做**整帧**检查、再做 1 MiB 输出预算，
+然后实际调用一次原 08-E-C `produceFixtureWav`；薄协议守卫成功后只执行一次原 `BEGIN_PROCESS`，
+返回私有 `{record, result, production}`（根冻结）：
+
+- `record` 为最终 `PROCESSING` 完整记录：身份/`observedAt`/源/voiceProfile/rights 原样，
+  `outputArtifactRef=null`、`hasOutput=false`，不 ATTACH、不 `MARK_SAVED`、不建第二个 Task；
+- `result` 仍为原 13 键安全信封，成功 `phase=SIMULATED`、`reason=null`、
+  `states=[CREATED, PROCESSING]`、固定中文 `演示字节已准备，尚未登记资产或保存任务。`；
+- `production` 为本次原 producer 的九键 value（含 owned/mutable bytes），失败/阻断为 `null`。
+
+新错误表 `TASK_FIXTURE_BYTES_ERRORS` 恰三码：`UNREPRESENTABLE_DURATION`、`RESOURCE_LIMIT`、
+`DEPENDENCY_FAILURE`；旧 14 码与旧入口结果不变，旧 draft/existing/public 路径 producer 调用 0 次。
+本入口只准备字节，**不接 owner/保存事务**，不代表真实 TTS/RVC、来源、权利或 ownership。
+
+以下 JSON 由 `test/task-fixture-bytes.test.mjs` 原样执行：
+
+```json
+{"name":"bytes-success","durationMs":10,"expect":"PROCESSING","byteLength":926}
+```
+
+```json
+{"name":"bytes-refused-unrepresentable","durationMs":1,"expect":"UNREPRESENTABLE_DURATION"}
+```
+
+```json
+{"name":"bytes-refused-budget","durationMs":11890,"expect":"RESOURCE_LIMIT"}
+```

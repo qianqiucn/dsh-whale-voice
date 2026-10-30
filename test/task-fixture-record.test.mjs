@@ -804,6 +804,7 @@ const deps = {
   dispatch: await load('provider-dispatch.mjs'),
   task: await load('task-contract.mjs'),
   gateway: await load('../svc/rvc-fake-gateway.mjs'),
+  producer: await load('fixture-wav-producer.mjs'),
 }
 const entry = process.env.WORKER_ENTRY || 'existing'
 const fault = JSON.parse(process.env.WORKER_FAULT || 'null')
@@ -945,6 +946,7 @@ const exportsByKey = {
     RVC_FAKE_SCENARIOS: deps.gateway.RVC_FAKE_SCENARIOS,
     validateRvcFakeResult: validateRvc,
   },
+  'fixture-wav-producer.mjs': { produceFixtureWav: deps.producer.produceFixtureWav },
 }
 const enginePath = new URL('task-fixture-engine-internal.mjs', base).href
 const engine = new vm.SourceTextModule(fs.readFileSync(new URL(enginePath), 'utf8'), { identifier: enginePath })
