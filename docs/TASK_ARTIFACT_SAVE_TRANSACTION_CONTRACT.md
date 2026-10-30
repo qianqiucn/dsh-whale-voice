@@ -1,11 +1,11 @@
-# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.4
+# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.5
 
 > **状态：`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`。**
 > 候审技术契约，不是已实现功能，不构成运行时代码授权。现有 owner 仍只有 `run`/`get`
 > （`SIMULATED`/`NO_EXECUTION`），库仍只有 `FIXTURE_IMPORT`；**没有任务保存能力**。
 >
 > 基准 `main` **M `08cf0b61acc402d619618df2ad15bce5436b0873`**；`文件:行` 以 M 为准。
-> v1.4 按 074 补齐 delta/proof、成功 schema、22 码与事实映射、固定调用路径与真实故障设计；
+> v1.5 按 075 补正字段类型/预算出处、一般输入/投影/失败协议、迁移符号表、FINAL 计数与逐代表证据；
 > 070–073 已过项与 0066–0069 原文保留。
 
 ---
@@ -48,8 +48,20 @@
    claimRevision, claimDigest, candidateRevision, recordIdentityHash, artifact, evaluatedAt`；
    **artifact 恰 8 键**：`artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection`。
    `rights` 沿原两键形状（`artifact-library:289-308`）；`inspection` 沿原 19 键严格解析及数值界限
-   （`wav-byte-inspector` 的 WAV 预算：`byteLength ≤ 1 MiB`、采样率/声道/帧数/peak[0,1]）；
-   `byteLength` 沿原 WAV 与 1 MiB 预算。
+   （`wav-byte-inspector` 的 WAV 自身上限为 50 MiB，Artifact 库单项 1 MiB，见下表）；
+   **预算出处更正**：`wav-byte-inspector` 自身上限为 **50 MiB**（`WAV_BYTE_LIMITS.maxByteLength=52428800`、300000 ms、128 chunks）；Artifact 库单项为 **1 MiB**（`fixture-artifact-store-internal:40-46`、`decodePayload:305-318`）。保存取后者更窄上限，不改任一旧预算。
+
+| 字段 | 类型/约束与权威来源 |
+|---|---|
+| `schemaVersion` | 整数常量 1，非字符串 |
+| `scopeId`/`taskId` | M Task-store `SCOPE_PATTERN`/`TASK_ID_PATTERN`（`:43-45`）；taskId = `task:fixture-` + 32 小写 hex；完整 scope 由 Task 出生解析器确定，不降成库的宽泛字符串 |
+| `birthIdentityHash`/`claimDigest`/`recordIdentityHash`/`artifact.identityHash`/`artifact.byteSha256` | 各为 64 位小写 hex；绑定规则中的实际预期比较保持 |
+| `birthObservedAt`/`evaluatedAt`/`artifact.expiresAt` | 原规范 ISO `.sssZ`；`evaluatedAt=request.now`，`expiresAt>now`；post 结果仍按 rename 已发生阶段分类 |
+| `claimRevision`/`candidateRevision` | 整数、非负、本次 claim 至少 1；current/candidate 分别满足原 32 entry/128 KiB/权重预算；candidate=claim+1，不混同 |
+| `artifactRef`/`requestKey` | 原库 `REF_PATTERN`/`KEY_PATTERN`；ref = `artifact:fixture-bytes-` + 32 小写 hex；key 沿原 1–64 合法字符 |
+| `byteLength` | 原合法 WAV 实测正整数，与 `inspection.byteLength` 相同；入库不超 `ARTIFACT_MAX_ITEM_BYTES=1 MiB` |
+| `rights` | 原严格两键 `state/proofRef`；新 STORED 要求 `GRANTED` 且合法非空 proof；完整 proof 长度 ≤128、后缀 ≤113 |
+| `inspection` | 恰原 19 键，全部类型/常量/数值关系按 M `artifact-store:274-302` 的 `inspectionShape`；fresh STORED 按原 `parseEntry` 复验真实字节及 19 字段一致（`:321-347` 及 payload 分支），不只信自报 sha |
 3. `evaluatedAt` 必须等于请求 `now`（示例 `2026-10-30T23:00:00.000Z`）；所有字段按 §2.4 左右操作数在 pre/post 核对。
 4. **一般 claimDigest** 来自“本次已确认 CLAIMED 完整快照字节”的 SHA256；下面的 791B/`e30bee44…`
    只是固定 fixture 值，**其他任务/多 entry 不得硬编码该摘要**。
@@ -86,6 +98,12 @@ SHA256 `e30bee44aef05a134df2680e39cde609b3a3a8ec541d4e872457f7ffea43f50a`（仅�
 
 ## 4. 旧方法、save 与 status 的完整 schema，22 码与事实映射
 
+### 4.0 一般输入、投影与失败协议
+
+- save 请求恰 **八键** `schemaVersion/scopeId/taskId/requestKey/now/expiresAt/rights/input`；`input` 恰 **四键** `schemaVersion/sourceInput/readiness/context`，与 M owner `run.input` 同构；原 source/readiness/context 边界不变，不由 owner 默造 READY/模型/场景/授权。
+- bytes 入口沿原**两分区 copy**：`{scopeId,record}` 与 `input` 分别经 `copyPartition`/`copyFixtureInput`，不合并预算。原界限：每次 **4096 values、depth 12、32 object keys、256 array items、8192 string code units**；plain/null 原型、数据属性/密集标准数组、无 accessor/symbol/hidden/cycle、有限数值；copy 失败固定原分类，不执行 caller getter；owner `readRun` 原检查/预算不放宽（`fixture-input-boundary.mjs` 与 engine 现有入口）。
+- 完整 Task 投影恰 **14 键**：`schemaVersion/taskId/feature/taskType/state/voiceProfileId/hasInput/hasOutput/cancelRequested/cancelConfirmed/deliveryRequested/mockOnly/realOperationAllowed/userMessageZh`，沿 M `projectAudioTask` 固定文案与演示后缀。原 11 字段成功 envelope 与 save 12 字段/EXISTING artifact=null 保持。
+- 失败根恰 `{ok:false,errors:[{code,path,reason}]}`、单错、deep-freeze、零输入回显；§4.2 未携资产的 MISSING/UNKNOWN/RIGHTS_REJECTED 行，`artifactRef` 与 `expiresAt` 一律 **null**，不靠“同上”猜字段；公开 code 使用 §4.3 完整名。
 ### 4.1 旧 run/get 与 save 成功 value
 
 - 旧 `run`/`get` 保留 M `successValue` 的 **11 字段**：`schemaVersion, outcome, revision, ownerState,
@@ -170,13 +188,13 @@ rights 拒绝不得泄露 ref/expiry。库未能 fresh 读取时不得假称 pro
 
 ### 4.4 事实映射（错误/状态之后的后续结果）
 
-| 错后事实 | run / get | save / status | factory 与其他域 |
-|---|---|---|---|
-| 无 entry、无锁、出生有效 | run 可走原 claim；get `NOT_FOUND` | save 可发起一次；status `MISSING/null` | Task/Artifact 原工厂可开 |
-| CLAIMED、无 Task 锁 | run `EXISTING/UNKNOWN`；get `FOUND/UNKNOWN`（ok:true、原 reason） | save `SAVE_UNKNOWN`；status `UNKNOWN/UNKNOWN` | catalog 原操作可用；Artifact 锁独立 |
-| 已合法 FINAL、无 Task 锁 | run `EXISTING`/get `FOUND` + 原 kind（含 SAVED） | save `EXISTING`+原 kind、artifact=null；status 按 §4.2 | catalog/owner 工厂原逻辑 |
-| Task 共享锁 | 所有 owner factory/run/get/save/status → `OWNER_UNKNOWN/$/owner unknown` | 同左，无成功 value | catalog factory/reserve/get → `CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
-| Artifact 锁、Task 无锁 | run/get/owner factory/catalog 只依 Task 事实 | CLAIMED/旧非 SAVED 先按 Task；SAVED 的 status 与真正到库门禁的新 save → `SAVE_ARTIFACT_UNKNOWN`；调用数与序列同既定 | Artifact 全方法 `LIBRARY_UNKNOWN/$/原 library reason` |
+| ID | 错后事实 | run / get | save / status | factory 与其他域 |
+|---|---|---|---|---|
+| FC | 无 entry、无锁、出生有效（run 可 claim） | run 可走原 claim；get `NOT_FOUND` | save 可发起一次；status `MISSING/null` | Task/Artifact 原工厂可开 |
+| FC | CLAIMED、无 Task 锁 | run `EXISTING/UNKNOWN`；get `FOUND/UNKNOWN`（ok:true、原 reason） | save `SAVE_UNKNOWN`；status `UNKNOWN/UNKNOWN` | catalog 原操作可用；Artifact 锁独立 |
+| FS | 已合法 FINAL、无 Task 锁 | run `EXISTING`/get `FOUND` + 原 kind（含 SAVED） | save `EXISTING`+原 kind、artifact=null；status 按 §4.2 | catalog/owner 工厂原逻辑 |
+| FT | Task 共享锁 | 所有 owner factory/run/get/save/status → `OWNER_UNKNOWN/$/owner unknown` | 同左，无成功 value | catalog factory/reserve/get → `CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
+| FA | Artifact 锁、Task 无锁 | run/get/owner factory/catalog 只依 Task 事实 | CLAIMED/旧非 SAVED 先按 Task；SAVED 的 status 与真正到库门禁的新 save → `SAVE_ARTIFACT_UNKNOWN`；调用数与序列同既定 | Artifact 全方法 `LIBRARY_UNKNOWN/$/原 library reason` |
 
 旧 Artifact 错误 reason 用其原 REASONS，不把 owner `storeReason` 用到库。
 
@@ -617,7 +635,7 @@ status 请求：
 | 9 | 构造/冻结 SaveProof | 持有 | ARTIFACT_REJECTED |
 | 10 | ATTACH/MARK_SAVED/校验 | 持有 | TASK_REJECTED |
 | 11 | `writeOwner(...,candidateRevision,proof)` 写 FINAL | 持有 | pre `WRITE_REJECTED`；post `WRITE_UNKNOWN` |
-| 12 | 联合确认 → 释放 | — | SAVE_UNKNOWN 若失败 |
+| 12 | 联合确认 → 释放 | — | 按域引用 FT 或 FS+FA；失败按 §8 发现阶段表 |
 
 线性化：库 rename `:845`、Task rename `:889`；非跨文件原子。
 
@@ -672,6 +690,20 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 
 初始化顺序：config-sandbox → base → artifact-store → Task-store → library → owner；无环、无 TDZ。
 
+**迁移符号清单（与 H4 边表及原 import 列表逐名核齐；base 导出与 Task-store 兼容出口列清）**
+
+| M 原符号 | base/Task-store 处理 | 私有闭包/调用者 |
+|---|---|---|
+| `StoreFailure`/`isStoreFailure`/`raiseStore`/`storeReason` | 原定义迁 base，Task-store 兼容重导出同一绑定/类 | 所有原 Task/catalog/library/artifact 消费者保持身份；原 `storeReason` 不替换库 REASONS |
+| `sha256`/`stableStringify`/`isPlainObject`/`keySurface`/`hasOwn` | 原定义迁 base，Task-store 兼容重导出 | 原调用保持，非新算法 |
+| `checkSandbox` | 原定义及完整依赖迁 base，Task-store 兼容重导出 | 依赖原 config-sandbox 的 `isTrustedSandbox`、`normalizePath`/`isInside`、fs、marker 读/身份检查 |
+| `readBoundedPath`/`sameIdentity`/`assertRegularStat` | 原定义迁 base 并提供 Task-store 所需内部导入；不能留下失联私有调用 | `readBoundedPath` 依赖 `readBoundedFd`/身份/路径原函数，原 close/短读/单链接等规则保留 |
+| `readBoundedFd`、`READ_CHUNK`、`MAX_MARKER_BYTES`、`MARKER_KIND` 及 `checkSandbox` 实际 marker 私有辅助 | 随原读/检查闭包迁 base、继续私有，不造新的可配 fs/路径/callback 入口 | 若有原 Task 直接使用，按真实引用显式从 base 内部导入必要符号；不从 base 反引 Task-store |
+| `normalizePath`/`isInside` | base 复用并按原签名转出 config-sandbox 同一函数，Task-store 导入相应绑定 | `isInside(parent,child)` 原序，原 config 导出不变 |
+| Task/owner/catalog 文件名、预算/`STORE_DOMAINS`、WeakMap Task 状态、parser/关联函数/唯一 writer | 留 Task-store，原导出保留 | 不迁入 base，不改变 Task 与 Artifact 共享/独立域 |
+
+新增 base 导出与 Task-store 兼容出口按上表逐名落位；不用“旧共享名”替代；不引入新 cap 品牌或持久文件。
+
 ---
 
 ## 8. 锁与失败矩阵
@@ -707,10 +739,29 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 | 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 各自 | 各自 | — | 后序分流 | 不接管 |
 | 18 | 保存后删除/过期/撤权 | FINAL 不变 | 0 | 0 | 否 | 视库 | — | status 状态 | 历史不改 |
 
-**发现阶段不能倒置**：writer 确认后、owner 联合确认前发现外改 → 按被改域加锁、当前调用失败；
-已经联合确认并成功返回后发生的外改 → 只影响**下一次** fresh 读取，不倒报上次保存失败；
-仅 Artifact 外改不自动锁 Task、历史 `get` 不回退。第 11/12/13 行区分“claim 成功 1、FINAL 0、
-Artifact 1”，不能称 Task 总 rename 0。
+**计数更正（075）**：FINAL 前拒绝/内闸门外改的第 10/11/12 行为 **claim 1、FINAL 0、Artifact 1**；第 13 行（FINAL rename 未知）的固定 after-real 代表为 **claim 1、FINAL attempt 1/success 1、Artifact 1**，泛化 rename 尝试未知与该真实已落盘代表分开表述，不能笼统写“FINAL 0”。
+
+**事实编号（供失败矩阵与测试行引用）**
+
+| ID | 事实/后续完整结果 |
+|---|---|
+| FC | Task 为 CLAIMED 且无 Task 锁：run `ok:true EXISTING/UNKNOWN`、get `ok:true FOUND/UNKNOWN`，reason=`TASK_OWNER_EXECUTION_UNKNOWN`；save 错误 `TASK_OWNER_SAVE_UNKNOWN/$/save outcome unknown`；status `ok:true UNKNOWN/UNKNOWN` 且 ref/expiry null；owner 工厂可开、catalog 原操作可用；Artifact 域另按 FA |
+| FS | Task 为合法 FINAL SAVED 且无 Task 锁：run `EXISTING/SAVED`、get `FOUND/SAVED`、save `EXISTING/SAVED` 且 artifact=null，均 ok:true；status 按 §4.2；catalog/owner 工厂原逻辑 |
+| FT | Task 共享锁：所有 owner factory/run/get/save/status 错误 `TASK_OWNER_OWNER_UNKNOWN/$/owner unknown`；catalog factory/reserve/get 错误 `TASK_CATALOG_CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
+| FA | Artifact 锁：库 factory/import/get/readBytes/delete 错误 `ARTIFACT_LIBRARY_LIBRARY_UNKNOWN/$/the artifact domain is locked after an unknown outcome`。Task 无锁时 owner factory 及 run/get 照 FC 或 FS；CLAIMED status 仍 `ok:true UNKNOWN`；SAVED 且 rights 准入后的 status 错误 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown`；save 先按已有 entry 分流（CLAIMED→FC、FINAL→FS），不重新 import |
+
+**发现阶段与两域首错（不新增功能）**
+
+| 发现事件 | 当前调用首次公开结果 | 锁/磁盘/后续 |
+|---|---|---|
+| FINAL 前真实 Task current 外改 | `TASK_OWNER_STORE_CHANGED/$/store changed`；仅关联错误的原 `BIRTH_INVALID` 分支另列 | Task 锁、foreign Task 数据保留、已确认 claim 与新资产事实保留，FT |
+| FINAL 前真实 Artifact pack 外改 | `TASK_OWNER_SAVE_ARTIFACT_REJECTED/$/artifact import rejected` | 仅 Artifact 锁、Task 仍 CLAIMED、新资产不回滚，FC+FA |
+| writer 真实返回后、owner 联合确认前，Task 正式文件被有效 foreign fixture 替换并检测到摘要变化 | `TASK_OWNER_SAVE_UNKNOWN/$/save outcome unknown`（联合阶段公开映射，底层 STORE_CHANGED 注明） | Task 锁、FINAL 曾确认后被外改、资产保留，FT |
+| 同阶段仅 Artifact 包被有效 foreign fixture 替换并检测到摘要变化 | `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown`（底层库 STORE_CHANGED 注明） | 仅 Artifact 锁、Task FINAL SAVED 已确认、资产保留，FS+FA |
+| 保存已成功返回后才外改 Task，下一次 get 发现 | 原保存结果保持成功；下一 get 首错 `TASK_OWNER_STORE_CHANGED/$/store changed` | 下一 fresh 读才 Task 锁，随后 FT，资产不回滚 |
+| 保存已成功返回后才外改 Artifact，下一次 status 以合法当前 rights 发现 | 原保存保持成功；下一 status 首错 `TASK_OWNER_STORE_CHANGED/$/store changed` | 下一 fresh 读才 Artifact 锁，随后 FS+FA；历史 get 仍 SAVED |
+| 无外改的并发 save/旧 run 交叉 | 由已有 entry FC 或 FS 串行分流，不接管，不再 engine/import | Task/Artifact 均无新增锁；每 task 最多 engine 1/import 1 |
+| 保存后合法 delete/过期/撤权，未发生存储未知 | status 分别 `ok:true DELETED/EXPIRED/RIGHTS_REJECTED/SAVED` 历史，元数据按 §4.2 | 两域均无新增锁，Task FINAL 不变；合法 delete 若自产未知则引用原库 WRITE_UNKNOWN/FA |
 
 ---
 
@@ -731,28 +782,30 @@ Artifact 1”，不能称 Task 总 rename 0。
 | 3 | task-store v2/SAVED/proof+pre/post 门禁 | `test/task-owner.test.mjs` v1/v2/proof | 1 |
 | 4 | `importInQueue` + owner save/status | `test/task-owner-save.test.mjs`（新） | 2,3 |
 
-故障代表固定设计（未来测试，不实现）：
+故障代表固定设计（未来测试，不实现）。记号：**C**=catalog 出生 baseline 规范字节；**O1**=已确认 CLAIMED；**O2**=已确认 FINAL SAVED；**A1**=唯一新 STORED 库包；**OF/AF**=原 parser 预先验证通过且与当前 digest 不同的 foreign 规范 fixture（覆盖 Task/Artifact 正式文件，保持 dev/ino）。**R=(claim,FINAL,Artifact) attempt/success**；**E/I**=本次累计 engine/import。每例同 fixture 无故障成功控制：C/O2/A1、三 R 均 1/1、E/I=1/1、两域无锁、旧 get FOUND/SAVED、重复 save EXISTING/SAVED/artifact=null、status READABLE（rights/时钟有效）。when 为测试 VM/fdPaths 观测的固定阶段，skip 在该 when 内固定 0；rename 代表另限 `args[1]` 精确正式目标与第 1/2 次。faultHits=1；attempt 与真实委托 success 均在抛 EIO 前记录（含 after 分支）。VM 只包装原 `writeOwner` 真实符号，不新增产品 DI 或 validator。
 
-| 代表 | 真实方法/目标/时点 | 命中与计数/文件结果 |
-|---|---|---|
-| claim rename 未知 | wrapper 仅匹配 `renameSync` 的 `args[1]` 为 owner 固定正式文件，第一次目标 rename；真实委托成功后记录成功并抛 EIO | fault 1；claim attempt 1/success 1、FINAL 0、Artifact 0；CLAIMED 保留/Task 锁 |
-| 库 rename 未知 | `renameSync` `args[1]` 为 artifact 正式文件；真实委托一次后抛 EIO | claim 1、Artifact attempt 1/success 1、FINAL 0；Artifact 锁，Task 仅 CLAIMED |
-| 新 STORED 后坏 proof | 测试 VM 仅包装固定 `writeOwner` 符号；真实 engine/import 成功后、仅在 FINAL 调用把 proof 复制成错 ref 的新冻结对象再转发唯一 writer | claim 1/FINAL 0/Artifact 1；pre 拒绝/无 Task 锁/孤儿保留；成功控制同输入不替换 |
-| FINAL 内 Task 外改 | `fsyncSync` 通过 fdPaths 匹配 owner 自有 tmp，阶段已新 STORED 且为 FINAL；真实 fsync 一次后替换 Task 正式文件为原 parser 通过但 digest 不同的 fixture，再走真实 fresh 门禁 | fault 1/claim 1/FINAL 0/Artifact 1；`STORE_CHANGED`/Task 锁；外改数据与新资产保留 |
-| 同位置 Artifact 外改 | 同一 FINAL tmp 真实 fsync 后，用原库严格 parser 通过且摘要不同的规范 pack 外改 Artifact 正式包；不调用公开 delete | fault 1/claim 1/FINAL 0/Artifact 1；Artifact `STORE_CHANGED`/Artifact 锁，不擅加 Task 锁 |
-| FINAL rename 未知 | `renameSync` `args[1]` 为 owner 正式文件，第二次该目标 rename；真实委托后抛 EIO | claim 1、FINAL attempt 1/success 1、Artifact 1；FINAL 真实存在/Task 锁/资产保留 |
-| writer post 确认失败 | 观察到 FINAL rename 成功后，在 post 的 `lstatSync(正式 owner)` 一次真实委托后抛 EIO（不用不存在的 readFileSync） | fault 1/claim 1/FINAL 1/Artifact 1；中性 `WRITE_UNKNOWN`、公开唯一映射、字节保留 |
-| writer 返回后联合确认失败 | `writeOwner` 包装器真实返回成功后置测试 phase 标志；随后第一次真实 owner/artifact fresh 读的 `lstatSync` 按固定目标匹配，真实委托后注入一域外改/错误 | fault 1，三 rename 均成功；按域/阶段锁与公开首错、后续按 §4.4 |
-| 成功返回后外改 | 先完成真实保存控制并成功返回，再外改一域，调用下一次 get/status | 本次保存保持成功；下一读首错/该域锁，第二读固定 UNKNOWN；仅 Artifact 外改时 Task 历史不变 |
+| 代表 | when / action（沿真实方法） | R 与 E/I | 三文件落盘 / 结果 / 后续 |
+|---|---|---|---|
+| claim rename 未知 | 第 1 次 owner 目标 rename 真实成功后 EIO；skip 0/hit 1 | R=(1/1,0/0,0/0)，E/I=0/0 | C/O1/库 baseline；Task 锁、首错 `TASK_OWNER_SAVE_UNKNOWN`，FT |
+| 库 rename 未知 | Artifact 目标 rename 真实成功后 EIO；skip 0/hit 1 | R=(1/1,0/0,1/1)，E/I=1/1 | C/O1/A1；Artifact 锁、首错 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN`，FC+FA |
+| 新 STORED 后坏 proof | 仅该 Task FINAL writeOwner，转发前复制错 ref 的新冻结 proof；无 fs fault；替换 hit 1 | R=(1/1,0/0,1/1)，E/I=1/1 | C/O1/A1；无新增锁、`TASK_OWNER_WRITE_REJECTED`，FC；控制不替换 proof |
+| FINAL 内 Task 外改 | 新 STORED 且 FINAL 自有 tmp 的 fsync 真实成功后写 OF；skip 0/hit 1 | R=(1/1,0/0,1/1)，E/I=1/1 | C/OF/A1；Task 锁、`TASK_OWNER_STORE_CHANGED`，FT |
+| 同位置 Artifact 外改 | 同一 FINAL tmp 真实 fsync 后写 AF；skip 0/hit 1，不调用公开 delete | R=(1/1,0/0,1/1)，E/I=1/1 | C/O1/AF；Artifact 锁、`TASK_OWNER_SAVE_ARTIFACT_REJECTED`，FC+FA |
+| FINAL rename 未知 | 第 2 次 owner 目标 rename 真实成功后 EIO；skip 0/hit 1 | R=(1/1,1/1,1/1)，E/I=1/1 | C/O2/A1；Task 锁、`TASK_OWNER_SAVE_UNKNOWN`，FT |
+| writer post 确认失败 | 已观测 FINAL rename 真实成功后，post 对正式 owner 的首次 lstatSync 真实成功后 EIO；skip 0/hit 1 | R=(1/1,1/1,1/1)，E/I=1/1 | C/O2/A1；中性 `WRITE_UNKNOWN`/公开 `TASK_OWNER_SAVE_UNKNOWN`，FT |
+| writer 返回后联合 Task 确认失败 | 固定 writeOwner 包装器仅在本 task FINAL 真实成功返回后置 JOINT；下一次 fresh 正式 owner lstatSync 真实成功后，在原 inode 覆盖 OF 规范字节（保持 dev/ino，禁止 rename 替换）；skip 0/hit 1 | R 三项 1/1，E/I=1/1 | C/OF/A1；当前调用 `TASK_OWNER_SAVE_UNKNOWN`、Task 锁、FT |
+| writer 返回后联合 Artifact 确认失败 | 仅本 task FINAL writeOwner 真实成功返回后 JOINT；下一次 fresh 正式 Artifact lstatSync 真实成功后，在原 inode 覆盖 AF 规范字节（保持 dev/ino，禁止 rename 替换）；skip 0/hit 1 | R 三项 1/1，E/I=1/1 | C/O2/AF；`TASK_OWNER_SAVE_ARTIFACT_UNKNOWN`、Artifact 锁、FS+FA |
+| 成功返回后 Task 外改 | 保存已成功后写 OF，下一 get 读取；无保存内 fault，外改一次 | R 三项 1/1，E/I 累计 1/1，下一 get 新增 0/0 | C/OF/A1；上次成功不变、下一 get `STORE_CHANGED`/Task 锁、随后 FT |
+| 成功返回后 Artifact 外改 | 保存成功后写 AF，下一 status 以合法当前 rights 读取；外改一次 | R 三项 1/1，E/I 累计 1/1，下一 status 新增 0/0 | C/O2/AF；上次成功不变、下一 status `STORE_CHANGED`/Artifact 锁、随后 FS+FA |
 
 - wrapper 计数必须在**真实成功委托后、故障抛出前**记录（含 after 分支）；attempt 与 success 分列。
 - M fsProxy 默认 file 取 `args[0]` 临时路径；rename 必须在 wrapper 加固定 `args[1]` 目标匹配；
   tmp 名为 `audio-task-owner-v1.<hex>.tmp`，不可拿正式文件名匹配 `args[0]`。
 - fd 读真实为 `readSync`，`fstatSync` 每次读两次且含 claim/pre/post 多轮；用 `lstatSync` + 明确 phase
   避免不确定计数；临时 fd 阶段由 fdPaths 与固定文件名/phase 确认。
-- 每代表列 when/skip（phase 唯一时 skip=0）、目标调用 1、真实成功控制、三文件磁盘内容、
-  engine/import 累计与原/新 handle/factory。其余代表（输入/合法非 SUCCESS/库拒绝/delete 排队/旧 run）
-  复用已给控制并补同等判据；不新增跨进程/真实取消/生产场景。
+- 每行 `when/skip`、目标调用 1、真实成功控制、三文件磁盘内容、E/I、原/新 handle 与 factory 结果均已在上表给值；
+  C/OF/O2 以原真实文件读取证明，不只断言状态字符串。其余代表（输入/合法非 SUCCESS/库拒绝/delete 排队/旧 run）
+  引用其现有行，不再泛化矩阵；不新增跨进程/真实取消/生产场景。
 
 ---
 
@@ -765,7 +818,7 @@ Artifact 1”，不能称 Task 总 rename 0。
 
 ## 12. 结论
 
-v1.4 恢复强制 delta 与严格 proof（11+8 键、`evaluatedAt`、一般 claimDigest），给出 save 12 键/status 6 键、
+v1.5 按 075 补正字段类型/预算、一般输入/投影/失败协议、迁移符号表与逐代表证据；v1.4 恢复强制 delta 与严格 proof（11+8 键、`evaluatedAt`、一般 claimDigest），给出 save 12 键/status 6 键、
 22 码与事实映射，固定 `writeOwner(...proof)` 调用链、`readStoredForSave` 返回、base 依赖边与 `isInside` 原序，
 并把 9 个故障代表落到真实 fs 方法/目标/时点与 attempt/success 分列计数。
 
