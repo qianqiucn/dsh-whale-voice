@@ -297,7 +297,7 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
 ## 10. 与 Task 保存候选契约的关系（PLANNED）
 
 同一 claim 保存事务的候选契约见
-[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.3
+[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.4
 （`PLANNED` / `DESIGN_REVIEW_REQUIRED`，运行时未实现）。
 
 - 本文的库合同**不变**：唯一 import 实现（七键输入）、`origin: FIXTURE_IMPORT`、`(scope, requestKey)` 幂等、

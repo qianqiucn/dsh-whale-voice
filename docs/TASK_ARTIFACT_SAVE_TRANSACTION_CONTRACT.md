@@ -1,12 +1,12 @@
-# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.3
+# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.4
 
 > **状态：`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`。**
 > 候审技术契约，不是已实现功能，不构成运行时代码授权。现有 owner 仍只有 `run`/`get`
 > （`SIMULATED`/`NO_EXECUTION`），库仍只有 `FIXTURE_IMPORT`；**没有任务保存能力**。
 >
 > 基准 `main` **M `08cf0b61acc402d619618df2ad15bce5436b0873`**；`文件:行` 以 M 为准。
-> v1.3 按 073 修订版本比较、claim 摘要、proof 绑定、旧 run/get 语义、status 规范、模块签名与失败矩阵；
-> 070–072 已过项与 0066–0068 原文保留。
+> v1.4 按 074 补齐 delta/proof、成功 schema、22 码与事实映射、固定调用路径与真实故障设计；
+> 070–073 已过项与 0066–0069 原文保留。
 
 ---
 
@@ -16,119 +16,63 @@
 |---|---|---|
 | engine | bytes 导出 `:994`、旧 existing `:971`、producer `:755`、`BEGIN_PROCESS` `:761`、PROCESSING 返回 `:769-782` | `task-fixture-engine-internal.mjs` |
 | 库 writer | fsync `:715`、最后 temp 门禁 `:800-838`、唯一 rename `:845`、post `:851-873`；`:889` 是 `INTERNAL_FAILURE` | `fixture-artifact-store-internal.mjs` |
-| Task writer | fsync `:803`、current/pre `:869-885`、rename `:889`、post `:895-918`；写前 `readVerified(baseDigest)` 外改 `:734-736`；关联坏 `:574-581` | `fixture-task-store-internal.mjs` |
-| 库外改 | fresh 读 `artifact-store:569-571` → Artifact 域锁 | 同上 |
-| owner | `run` 输入四键、`get` 三键；`run` 无 owner entry 时 claim 后执行（非 NOT_FOUND）；`get` 无 entry 为 `NOT_FOUND`（`:539-541`）；已有 entry：`run`→`EXISTING`，`get`→`FOUND` | `task-owner.mjs:80-81,415-545` |
-| owner 版本写 | FINAL `expectedRevision = claimRevision + 1`（`:480`、`:500`）；writer 的 `expectedRevision` 是**候选落盘版本**（task-store `:745`、`:907`） | 同上 |
-| owner revision | 快照 `revision = 1×CLAIMED + 2×FINAL`（`:462-524`） | task-store |
-| 固定文件/预算 | `audio-task-owner-v1.json`、128 KiB/32 条（`:29,31,33`）；`^task:fixture-[0-9a-f]{32}$`（`:45`） | 同上 |
-| 库 | 常量 `:40-46`；import 七键；proof 后缀 `{1,128}` 且总长 ≤128（实际 ≤113）；时钟 `.sssZ`；`metadataOf` 无 identityHash | `artifact-library.mjs:102,109,276-282,306,361-371` |
+| Task writer | fsync `:803`、current/pre `:869-885`、rename `:889`、post `:895-918`；写前外改 `:734-736`；关联坏 `:574-581` | `fixture-task-store-internal.mjs` |
+| owner 转发 | `writeOwner(state,bytes,baseDigest,revision)` 在 `owner:259-260`；FINAL `revision=claimRevision+1`（`:480`、`:500`） | `task-owner.mjs` |
+| run/get | `run`:80-81 四键；`get`:81 三键；无 entry 时 `run` claim 执行、`get` `NOT_FOUND`（`:539-541`）；已有 entry：`run` `EXISTING`、`get` `FOUND`；`successValue` 11 字段（`:146-164`） | 同上 |
+| revision | `1×CLAIMED + 2×FINAL`（`:462-524`） | task-store |
+| 文件/预算 | `audio-task-owner-v1.json`、128 KiB/32 条（`:29,31,33`）；`^task:fixture-[0-9a-f]{32}$`（`:45`） | 同上 |
+| 库 | 常量 `:40-46`；import 七键；proof 后缀 `{1,128}` 且总长 ≤128（实际 ≤113）；时钟 `.sssZ`；`metadataOf` 无 identityHash；rights 形状 `:289-308` | `artifact-library.mjs` |
+| isInside | 原序 `isInside(parent, child)`（`config-sandbox:24`；task-store `:226` 以 `root, real` 调用） | 两文件 |
 
 ---
 
-## 2. 版本、claim 摘要与 proof 绑定（R2-A）
+## 2. 版本、claim 摘要与强制 delta proof
 
-### 2.1 当前 claim 版本 ≠ 候选 FINAL 版本
-
-唯一 writer 的 `expectedRevision` 是**候选落盘版本**，不是当前版本；owner 写 FINAL 传 `claimRevision+1`。
-因此：
+### 2.1 current claim 版本 ≠ candidate FINAL 版本
 
 | 阶段 | 比较 |
 |---|---|
-| pre（读当前 CLAIMED） | `freshCurrent.revision === proof.claimRevision` 且 `freshCurrent.digest === proof.claimDigest === baseDigest` |
-| 候选 | `candidateRevision = claimRevision + 1`；`expectedRevision === candidateRevision`（单次本任务转 FINAL 恒 +1） |
-| post（已 rename） | 比较**本次 candidate 字节**：`sha256(bytes) === parsed candidate digest`、`parsed.revision === expectedRevision`、record/ref 一致；**不再**与 claimRevision/claimDigest 比较 |
-| 错误分流 | 读取当前快照 digest 不符 → `STORE_CHANGED`+Task 锁；仅 proof 字段/候选版本不符 → `WRITE_REJECTED`（无锁）。两者不共用同一错误 |
+| pre（读当前 CLAIMED） | `freshCurrent.revision === proof.claimRevision`；`freshCurrent.digest === proof.claimDigest === baseDigest` |
+| 候选 | `candidateRevision = claimRevision + 1`；`writeOwner`/writer 的 `expectedRevision === candidateRevision` |
+| post（已 rename） | `sha256(bytes) === parsed digest`、`parsed.revision === expectedRevision`、record/ref 一致；**不再**与 claim 比较 |
+| 错误分流 | 当前快照读取/摘要不符 → `STORE_CHANGED`+Task 锁；仅 proof 形状/候选版本不符 → `WRITE_REJECTED`（无锁） |
 
-### 2.2 可复算的 CLAIMED 示例（791 bytes）
+### 2.2 强制 delta 规则（写回主契约）
 
-按 M owner `:433-451` 的 `JSON.stringify` 与 task-contract `:496-514` 的字段顺序，示例的 CLAIMED 快照完整如下
-（`revision=1`，唯一 entry，`completion=null`）：
+1. writer 真实读取 current 与 candidate，按 **entry 差分**分类：
+   - **仅本次唯一 CLAIMED → 新增 SAVED FINAL**：必须携带本次 proof；
+   - 无 proof、错误形状、对应错任务、一次改多任务、借 proof 改写已有 SAVED：一律 **pre 拒绝**（`WRITE_REJECTED`，无锁）；
+   - 普通 CLAIMED 写入、旧 `SIMULATED`/`NO_EXECUTION` 写入、原样保留历史 SAVED：允许 **proof=null**；
+   - 库已删除不拦旧 `run` 追加其他任务；不触碰该历史、不重 import。
+2. proof 严格 **根 11 键**：`schemaVersion, scopeId, taskId, birthIdentityHash, birthObservedAt,
+   claimRevision, claimDigest, candidateRevision, recordIdentityHash, artifact, evaluatedAt`；
+   **artifact 恰 8 键**：`artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection`。
+   `rights` 沿原两键形状（`artifact-library:289-308`）；`inspection` 沿原 19 键严格解析及数值界限
+   （`wav-byte-inspector` 的 WAV 预算：`byteLength ≤ 1 MiB`、采样率/声道/帧数/peak[0,1]）；
+   `byteLength` 沿原 WAV 与 1 MiB 预算。
+3. `evaluatedAt` 必须等于请求 `now`（示例 `2026-10-30T23:00:00.000Z`）；所有字段按 §2.4 左右操作数在 pre/post 核对。
+4. **一般 claimDigest** 来自“本次已确认 CLAIMED 完整快照字节”的 SHA256；下面的 791B/`e30bee44…`
+   只是固定 fixture 值，**其他任务/多 entry 不得硬编码该摘要**。
+5. post 阶段（rename 已发生）不报 `WRITE_REJECTED`，按 writer 中性错误与 owner 公开映射分层（§8）。
 
-```json
-{
-  "schemaVersion": 1,
-  "revision": 1,
-  "entries": [
-    {
-      "scopeId": "scope:fixture-demo",
-      "taskId": "task:fixture-0123456789abcdef0123456789abcdef",
-      "birthIdentityHash": "41932dbe77a714314869e225b62f9650271eb78914e920a295259da23c4a000e",
-      "phase": "CLAIMED",
-      "record": {
-        "schemaVersion": 1,
-        "taskId": "task:fixture-0123456789abcdef0123456789abcdef",
-        "feature": "singing",
-        "taskType": "SVC",
-        "source": {
-          "kind": "AUDIO_REF",
-          "ref": "artifact:fixture-source-1"
-        },
-        "voiceProfileId": "voice:demo-hero",
-        "deliveryRequested": false,
-        "rights": {
-          "state": "CONFIRMED_FIXTURE"
-        },
-        "state": "CREATED",
-        "outputArtifactRef": null,
-        "cancel": {
-          "requested": false,
-          "confirmed": false
-        },
-        "delivery": {
-          "state": "NOT_REQUESTED",
-          "deliveryId": null
-        },
-        "lastError": null,
-        "observedAt": "2026-10-27T00:00:00.000Z",
-        "mockOnly": true,
-        "realOperationAllowed": false
-      },
-      "completion": null
-    }
-  ]
-}
-```
+### 2.3 可复算示例
 
-规范化字节为上面 JSON 的紧凑序列化（无空白），**791 bytes**，SHA256 =
-`e30bee44aef05a134df2680e39cde609b3a3a8ec541d4e872457f7ffea43f50a`；`proof.claimDigest` 必须等于该值。
-任何读者可用「`JSON.stringify(上述对象)` 的 UTF-8 字节」复算；不是任意 64hex。
+固定 fixture 的 CLAIMED 快照（`revision=1`，唯一 entry）见 §5.1；紧凑 JSON 为 **791 bytes**，
+SHA256 `e30bee44aef05a134df2680e39cde609b3a3a8ec541d4e872457f7ffea43f50a`（仅该 fixture）。
 
-### 2.3 proof 严格键面与左右操作数
-
-`SaveProof`（owner 内部，冻结，不持久）：
-
-| 键 | 类型/上限 | 来源 |
-|---|---|---|
-| `schemaVersion` | `1` | 常量 |
-| `scopeId`/`taskId` | 原 pattern | 请求 + 出生 |
-| `birthIdentityHash` | 64hex | 出生 record |
-| `birthObservedAt` | 规范 `.sssZ` | 出生 record |
-| `claimRevision` | 整数 ≥1 | 已确认 CLAIMED 快照 |
-| `claimDigest` | 64hex | 上述 791B 规范字节 |
-| `candidateRevision` | 整数 = claimRevision+1 | 本次候选 |
-| `recordIdentityHash` | 64hex | `identityHashOf(candidateRecord)` |
-| `artifact.artifactRef` | 库 ref | 本次唯一 STORED |
-| `artifact.identityHash` | 64hex | `artifactIdentityHash(scopeId,requestKey,byteSha256,expiresAt,rights)` 重算 |
-| `artifact.byteSha256`/`byteLength` | 64hex/整数 | 本次 STORED inspection |
-| `artifact.expiresAt`/`requestKey`/`rights` | 规范值 | 请求与库 entry |
-| `artifact.inspection` | **完整 19 键**（嵌入，不用引用） | 本次 STORED |
-| `evaluatedAt` | 规范 `.sssZ` = 请求 `now` | 请求 |
-
-**必须明确左右两侧**（不是“来源表自称严格”）：
+### 2.4 proof 左右操作数
 
 | 域 | 左（proof/候选） | 右（fresh 权威） | 检查点 |
 |---|---|---|---|
 | scope/task | `proof.scopeId/taskId`、candidate record | fresh 出生、当前唯一 CLAIMED、请求 | pre |
-| birth | `proof.birthIdentityHash/birthObservedAt` | fresh 出生 record 的 `identityHashOf` 与 observedAt；**另核 taskId/observedAt 字符串**，不用 hash 代替 | pre+post |
-| record | `proof.recordIdentityHash` + `sameImmutable(candidate,birth)` | `identityHashOf(candidate)`、birth 全部不可变字段（taskId/feature/taskType/source/voiceProfileId/rights.state/deliveryRequested/observedAt） | pre+post |
-| claim/candidate | `proof.claimRevision/claimDigest`、`proof.candidateRevision` | 当前 CLAIMED revision/digest；`expectedRevision`=candidate | pre |
-| actual STORED | `proof.artifact.*`（含 19 键 inspection） | 本次唯一新 STORED 的规范化字段 + fresh 严格库解析 + candidate `outputArtifactRef` | pre+post |
+| birth | `proof.birthIdentityHash/birthObservedAt` | fresh 出生 `identityHashOf` 与 observedAt；另核 taskId/observedAt 字符串 | pre+post |
+| record | `proof.recordIdentityHash` + `sameImmutable` | `identityHashOf(candidate)` + 出生全部不可变字段（taskId/feature/taskType/source/voiceProfileId/rights.state/deliveryRequested/observedAt） | pre+post |
+| claim/candidate | `claimRevision/claimDigest`、`candidateRevision` | 当前 CLAIMED revision/digest；`expectedRevision=candidateRevision` | pre |
+| actual STORED | `artifact.*`（含 19 键 inspection） | 本次唯一新 STORED 的规范字段 + fresh 严格库解析 + candidate `outputArtifactRef` | pre+post |
 
-- `recordIdentityHash` 与 `birthIdentityHash` 在 `identityOf` 算法下**可能相等**（identity 不含 state/outputArtifactRef）；
-  因此 record 绑定还必须用 `sameImmutable` + 显式 `state=SAVED`、`outputArtifactRef=artifactRef` 判定，不得只看 hash。
-- proof 生命周期：构造（import 返回后）→ 冻结 → 作为 writer 第 4 实参 → pre/post 读取 → 调用结束丢弃；不写盘。
-- post 阶段（rename 已发生）任何 proof/rights/expiry 不符 → **`WRITE_UNKNOWN`**（不是 `WRITE_REJECTED`）。
+- `recordIdentityHash` 与 `birthIdentityHash` 在 `identityOf` 算法下可能相等（identity 不含 state/ref），
+  因此 record 绑定还必须用 `sameImmutable` + 显式 `state=SAVED`、`outputArtifactRef=artifactRef` 判定。
+- 生命周期：import 返回后构造 → 冻结 → `writeOwner` 第 5 实参 → pre/post 读取 → 调用结束丢弃；不写盘。
 
 ---
 
@@ -140,78 +84,105 @@
 
 ---
 
-## 4. 四方法完整协议（R2-B）
+## 4. 旧方法、save 与 status 的完整 schema，22 码与事实映射
 
-**原则**：错误 → `{ok:false,errors:[{code,path,reason}]}`（单错、深冻结、零回显）；合法“没有/未完成/历史”
-→ `ok:true` 投影。Artifact 域锁**不改变** Task 历史 `get` 的结果。
+### 4.1 旧 run/get 与 save 成功 value
 
-### 4.1 `run`（旧方法）
+- 旧 `run`/`get` 保留 M `successValue` 的 **11 字段**：`schemaVersion, outcome, revision, ownerState,
+  reason, task, userMessageZh, mockOnly, realOperationAllowed, submitAllowed, automaticRetryAllowed`；
+  `task` 用 `projectAudioTask` 的 **14 字段**与固定演示后缀，不增字段。
+- `run` 对已有 entry 用 `EXISTING`，`get` 用 `FOUND`；CLAIMED 均是 **`ok:true` UNKNOWN 历史投影**，
+  `reason=TASK_OWNER_EXECUTION_UNKNOWN`。
+- `save` 成功 value = 上述 11 字段 **+ artifact**，恰 **12 键**：
+  - 本次 SAVED：`artifact` = `{artifactRef, byteLength, sha256, expiresAt}`，均来自本次已确认 STORED；
+  - 其余 `ok:true` 结果：`artifact=null`。
+- 已有任一合法 FINAL → `EXISTING` + 原 `ownerState`/原 `reason`，不接管、不重跑、不重读库补 metadata；
+  已有 SAVED 的当前可用性只问 `artifactStatus`。
+- 合法非 SUCCESS / 阻断 → `SIMULATED` / `NO_EXECUTION`，保留既有 Task 结论。
+- 已有 CLAIMED 的新 save → `TASK_OWNER_SAVE_UNKNOWN` 错误。
+- 无出生 → 既有 `TASK_OWNER_NOT_FOUND`；`TASK_OWNER_SAVE_PRECONDITION` 仅用于“格式已合法的本次 input
+  与出生完整身份不一致、尚未 claim”的前置拒绝，**不用于已有合法 FINAL**；claim 后 fresh 关联坏 →
+  原 `BIRTH_INVALID`/原锁。
+- 类型/字符串格式沿原边界；`mockOnly=true`，其余三个 Allowed=false；新 SAVED 中文为固定演示保存说明；
+  旧方法旧文案不改；失败根统一 `{ok:false, errors:[{code,path,reason}]}`。
 
-| 条件 | 返回 |
-|---|---|
-| 无出生 | `TASK_OWNER_NOT_FOUND` envelope |
-| 有出生、无 owner entry | 正常 claim → engine → FINAL（旧流程，可执行保存以外的旧行为） |
-| 已有 CLAIMED | `ok:true`，`outcome='EXISTING'`，`ownerState='UNKNOWN'`，`reason=TASK_OWNER_EXECUTION_UNKNOWN` |
-| 已有 FINAL `SIMULATED`/`NO_EXECUTION` | `ok:true`，`EXISTING`，`ownerState` 原值 |
-| 已有 FINAL `SAVED` | `ok:true`，`EXISTING`，`ownerState='SAVED'` |
-| 出生损坏/关联坏 | `TASK_OWNER_BIRTH_INVALID`（Task 域锁） |
-| Task 域锁 | `TASK_OWNER_OWNER_UNKNOWN` |
+### 4.2 status 完整六字段与唯一顺序
 
-### 4.2 `get`
+`ok:true` 根 `{ok,value}`，value 恰 **6 键**：`schemaVersion`(1)、`state`(六选一)、`ownerState`
+(null/SIMULATED/NO_EXECUTION/SAVED/UNKNOWN)、`artifactRef`(ref/null)、`expiresAt`(.sssZ/null)、
+`messageZh`（固定中文）。无 bytes/sha/proof/record。输入仍五键；格式错用旧 `INVALID_INPUT`（path=字段），
+版本错 `UNSUPPORTED_VERSION/schemaVersion`。
 
-同表，但：无 owner entry → `TASK_OWNER_NOT_FOUND`；已有 entry → `outcome='FOUND'`（不是 EXISTING）；
-不执行 engine；**Artifact 锁不影响** 历史 SAVED 的 `get`。
-
-### 4.3 `artifactStatus`（五键只读：`schemaVersion,scopeId,taskId,now,rights`）
-
-返回 `{ok:true,value:{schemaVersion,state,ownerState,artifactRef,expiresAt,messageZh}}`，字段存在规则：
-
-| 条件（按优先级自上而下） | state | artifactRef/expiresAt |
+| 顺序 | 判断 | 返回 |
 |---|---|---|
-| Task 域锁 | envelope `TASK_OWNER_OWNER_UNKNOWN` | — |
-| 无出生 | envelope `TASK_OWNER_NOT_FOUND` | — |
-| 无 owner entry 或非 SAVED FINAL | `MISSING` | `null`/`null` |
-| CLAIMED | `UNKNOWN`（ownerState UNKNOWN） | `null`/`null` |
-| 当前 rights 非 GRANTED 或 proof 不符 | `RIGHTS_REJECTED` | `null`/`expiresAt` |
-| 库锁/外改 | envelope `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN` 或 `STORE_CHANGED`（按库首错） | — |
-| 库 entry `DELETED` | `DELETED` | ref/expiresAt |
-| `now >= expiresAt` | `EXPIRED` | ref/expiresAt |
-| 库 entry `STORED` 且有效 | `READABLE` | ref/expiresAt |
+| 1 | Task 共享域已锁 | 错误 `TASK_OWNER_OWNER_UNKNOWN/$/owner unknown` |
+| 2 | `freshAssociations` 固定读取链抛原 `StoreFailure` | 原 `toFailure` 映射：`TASK_OWNER_+key`、`path=error.errorPath`、`reason=storeReason(key)`；保留该函数对 Task 锁的实际修改 |
+| 3 | fresh 关联校验不匹配 / 无出生 | `BIRTH_INVALID/$/birth invalid`（Task 锁）/ `NOT_FOUND/$/not found` |
+| 4 | 无 owner entry | `MISSING/null`，ref/null，exp/null，`没有已保存的演示资产。` |
+| 5 | 旧 FINAL SIMULATED/NO_EXECUTION | `MISSING/原kind`，同上文案 |
+| 6 | CLAIMED | `UNKNOWN/UNKNOWN`，`无法确认这次演示保存结果。` |
+| 7 | SAVED 且当前 rights 非 GRANTED 或 proofRef=null | `RIGHTS_REJECTED/SAVED`，ref/exp 均 null，`当前授权不允许读取此演示资产。` |
+| 8 | SAVED 且 Artifact 域已锁 | 错误 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown` |
+| 9 | fresh 库首次外改/损坏 | `TASK_OWNER_STORE_CHANGED/$/store changed` 或 `STORE_INVALID/$/store invalid`，原 Artifact 锁；后续同第 8 行 |
+| 10 | SAVED 但库无 ref | `MISSING/SAVED`，`演示资产当前不存在。` |
+| 11 | 当前 GRANTED 但 proof 与库 entry 不符 | `RIGHTS_REJECTED/SAVED`，`当前授权不允许读取此演示资产。` |
+| 12 | 该 ref 为 DELETED | `DELETED/SAVED`，ref/原 expiresAt，`演示资产已删除。` |
+| 13 | STORED 且 now>=expiresAt | `EXPIRED/SAVED`，ref/expiresAt，`演示资产已过期。` |
+| 14 | STORED 有效 | `READABLE/SAVED`，ref/expiresAt，`演示资产当前可读取。` |
 
-优先级：Task 事实 → rights → 库锁 → 删除 → 过期 → 可读；不得越过 rights 泄露资产，也不把旧 GRANTED 当当前许可。
+方法序列：cap 与已知 Task 锁在前；格式/版本在真实读之前；表内顺序固定。rights 形状沿
+`artifact-library:289-308`；`DENIED/UNKNOWN/null proof` 是合法形状但不可读；非法字符串/类型是输入错误；
+rights 拒绝不得泄露 ref/expiry。库未能 fresh 读取时不得假称 proof 匹配或 READABLE。历史 `get` 不因 status 改变。
 
-### 4.4 `save`（八键）
+### 4.3 22 码完整表
 
-成功/EXISTING/合法非 SUCCESS/NO_EXECUTION/CLAIMED 及 artifact 字段规则：
+| # | 最终 code | path | 固定 reason |
+|---|---|---|---|
+| 1 | `TASK_OWNER_INVALID_INPUT` | `$`/`<unknown-key>`/`scopeId`/`taskId`/`input` 及原 `readOptions`/`readExactRoot` 位置；新 status 另含 `now`/`rights` | `invalid input` |
+| 2 | `TASK_OWNER_RESOURCE_LIMIT` | `input` 或 `$`（按预算边界） | `resource limit` |
+| 3 | `TASK_OWNER_UNSUPPORTED_VERSION` | `schemaVersion` 或 `input` | `unsupported version` |
+| 4 | `TASK_OWNER_SANDBOX_INVALID` | `$` | `sandbox invalid` |
+| 5 | `TASK_OWNER_NOT_FOUND` | `$` | `not found` |
+| 6 | `TASK_OWNER_BIRTH_INVALID` | `$` | `birth invalid` |
+| 7 | `TASK_OWNER_STORE_INVALID` | `$` | `store invalid` |
+| 8 | `TASK_OWNER_STORE_CHANGED` | `$` | `store changed` |
+| 9 | `TASK_OWNER_WRITE_REJECTED` | `$` | `write rejected` |
+| 10 | `TASK_OWNER_WRITE_UNKNOWN` | `$` | `write unknown` |
+| 11 | `TASK_OWNER_OWNER_UNKNOWN` | `$` | `owner unknown` |
+| 12 | `TASK_OWNER_EXECUTION_UNKNOWN` | `$` 或旧成功 `value.reason`（不新增抛错路径） | `execution unknown` |
+| 13 | `TASK_OWNER_DEPENDENCY_FAILURE` | `$` | `dependency failure` |
+| 14 | `TASK_OWNER_INTERNAL_FAILURE` | `$` | `internal failure` |
+| 15 | `TASK_OWNER_SAVE_INPUT_INVALID` | 已知坏字段；未知键 `<unknown-key>`；缺键/根形状 `$`；input 子结构统一 `input` | `save input invalid` |
+| 16 | `TASK_OWNER_SAVE_RIGHTS_REJECTED` | `rights` | `save rights rejected` |
+| 17 | `TASK_OWNER_SAVE_EXPIRED_REQUEST` | `expiresAt` | `save request expired` |
+| 18 | `TASK_OWNER_SAVE_PRECONDITION` | `$` | `save precondition failed` |
+| 19 | `TASK_OWNER_SAVE_ARTIFACT_REJECTED` | `$` | `artifact import rejected` |
+| 20 | `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN` | `$` | `artifact import unknown` |
+| 21 | `TASK_OWNER_SAVE_TASK_REJECTED` | `$` | `task attach or save rejected` |
+| 22 | `TASK_OWNER_SAVE_UNKNOWN` | `$` | `save outcome unknown` |
 
-| 结果 | outcome/ownerState | artifact 字段 |
-|---|---|---|
-| 本次成功 | `SAVED`/`SAVED` | 存在（ref/byteLength/sha256/expiresAt） |
-| 已 FINAL SAVED | `EXISTING`/`SAVED` | 存在 |
-| 合法非 SUCCESS | `SIMULATED`/`SIMULATED` | `null` |
-| 合法阻断 | `NO_EXECUTION`/`NO_EXECUTION` | `null` |
-| CLAIMED 已存在 | envelope `TASK_OWNER_SAVE_UNKNOWN` | — |
+- 版本固定：新 save 根 `schemaVersion` 错 → `TASK_OWNER_UNSUPPORTED_VERSION/schemaVersion`；
+  `input.schemaVersion` 错 → `TASK_OWNER_UNSUPPORTED_VERSION/input`；status 版本错同样用该码；
+  不归 `SAVE_INPUT_INVALID`。
+- status 调用原 `freshAssociations` 链的 `STORE_INVALID/RESOURCE_LIMIT/STORE_CHANGED/SANDBOX_INVALID/
+  WRITE_UNKNOWN` 按原 `toFailure` 映射；非原有效 `StoreFailure` → `TASK_OWNER_INTERNAL_FAILURE/$`。
+- `EXECUTION_UNKNOWN` 在成功投影里是**原完整 code**（`TASK_OWNER_EXECUTION_UNKNOWN`），不是英文 reason。
 
-### 4.5 错误码（8 新 + 14 继承，完整）
+### 4.4 事实映射（错误/状态之后的后续结果）
 
-| code | path | 固定 reason | 触发 | 后续 run/get/save/status |
-|---|---|---|---|---|
-| `TASK_OWNER_SAVE_INPUT_INVALID` | 键/`$` | `save input invalid` | 八键/input 形状 | 原样 |
-| `TASK_OWNER_SAVE_RIGHTS_REJECTED` | `rights` | `save rights rejected` | rights 非 GRANTED/proof 非法 | 原样 |
-| `TASK_OWNER_SAVE_EXPIRED_REQUEST` | `expiresAt` | `save request expired` | `expiresAt<=now` | 原样 |
-| `TASK_OWNER_SAVE_PRECONDITION` | `$` | `save precondition failed` | 无出生/无 claim 可续/已有非 SAVED FINAL | 原样 |
-| `TASK_OWNER_SAVE_ARTIFACT_REJECTED` | `$` | `artifact import rejected` | 库 pre 拒绝/库外改 | CLAIMED→UNKNOWN |
-| `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN` | `$` | `artifact import unknown` | 库 rename 未知/库锁 | UNKNOWN |
-| `TASK_OWNER_SAVE_TASK_REJECTED` | `$` | `task attach or save rejected` | ATTACH/MARK_SAVED/record 校验拒绝 | CLAIMED→UNKNOWN |
-| `TASK_OWNER_SAVE_UNKNOWN` | `$` | `save outcome unknown` | owner FINAL rename 尝试后失败/联合确认失败 | UNKNOWN |
+| 错后事实 | run / get | save / status | factory 与其他域 |
+|---|---|---|---|
+| 无 entry、无锁、出生有效 | run 可走原 claim；get `NOT_FOUND` | save 可发起一次；status `MISSING/null` | Task/Artifact 原工厂可开 |
+| CLAIMED、无 Task 锁 | run `EXISTING/UNKNOWN`；get `FOUND/UNKNOWN`（ok:true、原 reason） | save `SAVE_UNKNOWN`；status `UNKNOWN/UNKNOWN` | catalog 原操作可用；Artifact 锁独立 |
+| 已合法 FINAL、无 Task 锁 | run `EXISTING`/get `FOUND` + 原 kind（含 SAVED） | save `EXISTING`+原 kind、artifact=null；status 按 §4.2 | catalog/owner 工厂原逻辑 |
+| Task 共享锁 | 所有 owner factory/run/get/save/status → `OWNER_UNKNOWN/$/owner unknown` | 同左，无成功 value | catalog factory/reserve/get → `CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
+| Artifact 锁、Task 无锁 | run/get/owner factory/catalog 只依 Task 事实 | CLAIMED/旧非 SAVED 先按 Task；SAVED 的 status 与真正到库门禁的新 save → `SAVE_ARTIFACT_UNKNOWN`；调用数与序列同既定 | Artifact 全方法 `LIBRARY_UNKNOWN/$/原 library reason` |
 
-继承码（同 M 14 码，不新增）：`TASK_OWNER_INVALID_INPUT/RESOURCE_LIMIT/UNSUPPORTED_VERSION/SANDBOX_INVALID/
-NOT_FOUND/BIRTH_INVALID/STORE_INVALID/STORE_CHANGED/WRITE_REJECTED/WRITE_UNKNOWN/OWNER_UNKNOWN/
-EXECUTION_UNKNOWN/DEPENDENCY_FAILURE/INTERNAL_FAILURE`；映射见 §9。
+旧 Artifact 错误 reason 用其原 REASONS，不把 owner `storeReason` 用到库。
 
 ---
 
-## 5. 存储、revision 与兼容（完整表，不引用外部）
+## 5. 存储、revision 与兼容
 
 - entry 六键；`completion.kind` 增加 `SAVED`（reason null）；`record.state='SAVED'`、`outputArtifactRef=ref`、
   `delivery.state='NOT_REQUESTED'`、`deliveryId=null`。
@@ -404,7 +375,7 @@ save 请求（八键）：
 }
 ```
 
-CLAIMED 快照（791B，摘要见 §2.2）：
+CLAIMED 快照（791B，摘要见 §2.3）：
 
 ```json
 {
@@ -529,7 +500,7 @@ SAVED entry（六键）：
 }
 ```
 
-SaveProof（含 19 键 inspection）：
+SaveProof（根 11 键 + artifact 8 键，含 evaluatedAt）：
 
 ```json
 {
@@ -574,11 +545,12 @@ SaveProof（含 19 键 inspection）：
       "automaticRetryAllowed": false,
       "messageZh": "演示模式的WAV字节已校验；不代表使用权、生成、保存或发送。"
     }
-  }
+  },
+  "evaluatedAt": "2026-10-30T23:00:00.000Z"
 }
 ```
 
-安全输出：
+save 安全输出（12 键，含 artifact）：
 
 ```json
 {
@@ -626,7 +598,7 @@ status 请求：
 {"schemaVersion":1,"scopeId":"scope:fixture-demo","taskId":"task:fixture-0123456789abcdef0123456789abcdef","now":"2026-10-30T23:10:00.000Z","rights":{"state":"GRANTED","proofRef":"fixture-rights:demo-1"}}
 ```
 
-全部 hash/长度/proof 与 M 原算法一致；示例只属候选，不表示 v2 可被现 parser 解析。
+所有 hash/长度/proof 与 M 原算法一致；示例只属候选，不表示 v2 可被现 parser 解析。
 
 ---
 
@@ -644,87 +616,108 @@ status 请求：
 | 8 | 持 Artifact 队列 + importInQueue | Task→Artifact | ARTIFACT_REJECTED/UNKNOWN |
 | 9 | 构造/冻结 SaveProof | 持有 | ARTIFACT_REJECTED |
 | 10 | ATTACH/MARK_SAVED/校验 | 持有 | TASK_REJECTED |
-| 11 | 写 FINAL（proof，v2，候选 rev） | 持有 | WRITE_REJECTED（pre）/WRITE_UNKNOWN（post） |
+| 11 | `writeOwner(...,candidateRevision,proof)` 写 FINAL | 持有 | pre `WRITE_REJECTED`；post `WRITE_UNKNOWN` |
 | 12 | 联合确认 → 释放 | — | SAVE_UNKNOWN 若失败 |
 
 线性化：库 rename `:845`、Task rename `:889`；非跨文件原子。
 
 ---
 
-## 7. 模块、导出与依赖（R3-A）
+## 7. 固定调用路径、helper 与依赖
 
-| 文件 | 导出/签名 | state 类型 | 调用者 | 队列 |
-|---|---|---|---|---|
-| `fixture-store-base-internal.mjs`（新） | `StoreFailure`、`isStoreFailure(e)`、`raiseStore(key,path)`、`storeReason(key)`、`sha256(buf)`、`stableStringify(v)`、`isPlainObject(v)`、`hasOwn(o,k)`、`keySurface(o,set)`、`normalizePath(p)`、`isInside(child,parent)`、`assertRegularStat(stat,key)`、`sameIdentity(a,b)`、`readBoundedPath(state,path,max,opts)`、`checkSandbox(state)` | Task/Artifact 共用 `{sandbox}` 子集 | task-store、artifact-store | — |
-| `fixture-artifact-store-internal.mjs` | 既有 + **`readStoredForSave(state, {scopeId, artifactRef, now}) → {ok:true,value:{artifactRef,identityHash,byteSha256,byteLength,expiresAt,requestKey,rights,inspection,state:'STORED'}}` / `{ok:false,errorKey,path}`** | Artifact state（`getArtifactState`） | task-store writer | **否**（同步只读，不排队） |
-| `fixture-task-store-internal.mjs` | `write(bytes, baseDigest, expectedRevision, proof=null)`（proof 见 §2.3）；内部 `getArtifactState(state.sandbox)` 取得 Artifact state | Task state | task-owner | 否（owner 已持 Task 队列） |
-| `artifact-library.mjs` | 既有 `openFixtureArtifactLibrary`；**新增 `export function importInQueue(state, request)`**（`readImport`→`importOnce`，不入队） | Artifact state | task-owner（持 Artifact 队列时） | 由调用者持有 |
-| `task-owner.mjs` | `openFixtureTaskOwner`；handle 增加 `save`/`artifactStatus` | Task state + sandbox | 外部 | `enqueue` |
-
-- 公开面：`artifact-library` 现有 handle 方法/导出不变；**新增的是内部导出 `importInQueue`**，不是“整个导出面不变”。
-- `readStoredForSave`：同步、免重入、不拿队列；只做 fresh 严格读与 19 键 inspection 复验；`STORED/DELETED/EXPIRED/缺失`
-  分别返回 `state` 或固定 `errorKey`。
-- writer 收到的 proof 必须由**同一 sandbox capability** 构造；writer 用 `getArtifactState(state.sandbox)` 取 Artifact state，
-  校验 `state.sandbox === proof` 来源相同；不把 Task state 传给库。
-- base 迁移后，Task-store 继续通过 base 使用 `readBoundedPath/sameIdentity/assertRegularStat`，**不得**回引 Task-store 成环。
-
-DAG（全部真实边）：
+### 7.1 调用链
 
 ```text
-config-sandbox ─→ fixture-store-base-internal
-                        ↑                ↑
-        fixture-artifact-store ──────────┘
-                 ↑            ↑
-   fixture-task-store ────────┘   （task-store → artifact-store：readStoredForSave）
-          ↑                ↑
-   task-owner ─→ artifact-library ─→ artifact-store
+save(input)
+  → writeOwner(state, bytes, baseDigest, candidateRevision, proof)        // task-owner.mjs:259-260
+  → openOwnerFile(state).write(bytes, baseDigest, candidateRevision, proof) // task-store writer
 ```
 
-初始化：base → artifact-store → task-store → artifact-library → owner；无副作用、无环。
+旧调用 `writeOwner(state, bytes, baseDigest, revision)` 默认 `proof=null`；新增第 5 实参必须逐层转发，不能只改最内签名。
+
+### 7.2 `readStoredForSave`
+
+```text
+readStoredForSave(artifactState, { scopeId, artifactRef, now })
+  → { ok:true, value:{ state:'STORED'|'DELETED'|'EXPIRED'|'MISSING', artifact } }
+  → { ok:false, errorKey, path }
+```
+
+- 同步、免重入、fresh 严格读；不拿 Artifact 队列。
+- `MISSING` 时 `artifact=null`；其余 `artifact` 恰 **8 键**
+  `{artifactRef,identityHash,byteSha256,byteLength,expiresAt,requestKey,rights,inspection}`，
+  全部取原规范 entry 与 inspection；`DELETED` 保留原墓碑 inspection。
+- 优先级：`DELETED` 先于 `EXPIRED`；已锁 → `LIBRARY_UNKNOWN`；非预期异常 → `INTERNAL_FAILURE`。
+- writer 仅接受 `STORED` 且与 proof 完整匹配；status 按 §4.2 转公共结果。
+
+### 7.3 同 cap、base 与依赖边
+
+- 不新增 proof cap 字段/品牌 lease/第三文件；“同 cap”由 owner/writer 捕获的受信 Task state 与
+  `getArtifactState(state.sandbox)` 确定；proof 全部字段按当前 CLAIMED/出生/该库验证。删除任何
+  “`state.sandbox === proof来源`”伪比较。
+- base（新 `fixture-store-base-internal.mjs`）唯一复用原 `StoreFailure` 类与检查算法；有界读/身份/marker
+  私有闭包随原函数迁移，不重写第二套安全算法；`isInside(parent,child)` 保持原序（`config-sandbox:24`，
+  task-store `:226` 以 `root,real` 调用），不翻转。
+- 兼容：Task-store 从 base 导入并**兼容重导出**旧共享名；catalog 与 artifact-library 原 helper imports 仍有效；
+  artifact-store 原 Task-store 共享依赖改到 base，解除反向环；base 从 config-sandbox 复用并按原签名转出
+  `normalizePath/isInside`，原 config 导出不改。
+
+| importer | dependency |
+|---|---|
+| base | config-sandbox（`isTrustedSandbox`）、`normalizePath`/`isInside` 原算法 |
+| artifact-store | base（StoreFailure/检查/有界读/身份/marker 闭包） |
+| Task-store | base；artifact-store（`readStoredForSave`） |
+| artifact-library | artifact-store；Task-store 兼容共享出口 |
+| task-owner | Task-store；artifact-library；artifact-store（`getArtifactState`） |
+
+初始化顺序：config-sandbox → base → artifact-store → Task-store → library → owner；无环、无 TDZ。
 
 ---
 
-## 8. 锁与失败矩阵（R3-B）
+## 8. 锁与失败矩阵
 
 ### 8.1 锁可见性
 
 | 事件 | catalog factory/reserve/get | owner factory/run/get/save/status | artifact factory/import/get/readBytes/delete |
 |---|---|---|---|
-| Task 域锁（claim/final/BIRTH_INVALID） | `CATALOG_UNKNOWN` | `OWNER_UNKNOWN`（历史 get 也 UNKNOWN） | 不变 |
+| Task 域锁（claim/final/BIRTH_INVALID） | `CATALOG_UNKNOWN` | `OWNER_UNKNOWN` | 不变 |
 | Artifact 域锁 | 不变 | run/get 历史不变；save/status 报库错 | `LIBRARY_UNKNOWN` |
 | 无锁 | 正常 | 按状态 | 正常 |
 
-### 8.2 失败类别（writer 首错 vs owner 公开首错）
+### 8.2 失败类别（writer 中性首错 vs owner 公开首错）
 
 | # | 场景 | 磁盘 | engine | import | Task 锁 | Artifact 锁 | writer 首错 | owner 公开首错 | 资产 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | 输入/rights/过期 | 无 | 0 | 0 | 否 | 否 | — | SAVE_INPUT/RIGHTS/EXPIRED | 无 |
-| 2 | proof/候选版本坏（pre） | 旧 | 0 | 0 | 否 | 否 | `WRITE_REJECTED` | `TASK_OWNER_WRITE_REJECTED` | 无 |
-| 3 | claim pre 拒绝（record/输入） | 旧 | 0 | 0 | 否 | 否 | `WRITE_REJECTED` | `TASK_OWNER_WRITE_REJECTED` | 无 |
-| 4 | claim 外改 | 可能 CLAIMED | 0 | 0 | 是 | 否 | `STORE_CHANGED`/`STORE_INVALID` | 同 | 无 |
-| 5 | claim rename 未知 | 可能 CLAIMED | 0 | 0 | 是 | 否 | `WRITE_UNKNOWN` | `TASK_OWNER_SAVE_UNKNOWN` | 无 |
-| 6 | claim 后关联坏 | CLAIMED | 0 | 0 | 是 | 否 | `BIRTH_INVALID` | 同 | 无 |
-| 7 | engine 坏协议 | CLAIMED | 1 | 0 | 否 | 否 | — | `TASK_OWNER_SAVE_UNKNOWN` | 无 |
-| 8 | 合法非 SUCCESS/阻断 | FINAL SIMULATED/NO_EXECUTION | 1 | 0 | 否 | 否 | — | ok:true | 无 |
-| 9 | 库 pre 拒绝 | CLAIMED | 1 | 1 拒 | 否 | 否 | — | `SAVE_ARTIFACT_REJECTED` | 旧包不变 |
-| 10 | 库 rename 未知 | CLAIMED | 1 | 1 | 否 | 是 | — | `SAVE_ARTIFACT_UNKNOWN` | 可能已存，保留 |
-| 11 | 新 STORED 后 pre 拒绝（proof/record） | CLAIMED | 1 | 1 | 否 | 否 | `WRITE_REJECTED` | `TASK_OWNER_WRITE_REJECTED` | 孤儿保留 |
-| 12 | 同位置 Task 外改/出生坏 | CLAIMED | 1 | 1 | 是 | 否 | `STORE_CHANGED`/`BIRTH_INVALID` | 同 | 孤儿保留 |
-| 13 | 同位置 Artifact 外改 | CLAIMED | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_REJECTED` | 旧包保留 |
-| 14 | Task FINAL rename 未知 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
-| 15 | post 确认失败 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
-| 16 | 联合确认后外改 | FINAL | 1 | 1 | 是 | 否 | — | `SAVE_UNKNOWN` | 保留 |
-| 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 各自 | 各自 | — | 后到分流 | 不接管 |
+| 2 | 坏 proof/pre 拒绝（含候选版本） | 旧 | 0 | 0 | 否 | 否 | `WRITE_REJECTED` | `TASK_OWNER_WRITE_REJECTED` | 无 |
+| 3 | claim 外改 | 可能 CLAIMED | 0 | 0 | 是 | 否 | `STORE_CHANGED`/`STORE_INVALID` | 同 | 无 |
+| 4 | claim rename 未知 | 可能 CLAIMED | 0 | 0 | 是 | 否 | `WRITE_UNKNOWN` | `TASK_OWNER_SAVE_UNKNOWN` | 无 |
+| 5 | claim 后关联坏 | CLAIMED | 0 | 0 | 是 | 否 | `BIRTH_INVALID` | 同 | 无 |
+| 6 | engine 坏协议 | CLAIMED | 1 | 0 | 否 | 否 | — | `TASK_OWNER_SAVE_UNKNOWN` | 无 |
+| 7 | 合法非 SUCCESS/阻断 | FINAL SIMULATED/NO_EXECUTION | 1 | 0 | 否 | 否 | — | ok:true | 无 |
+| 8 | 库 pre 拒绝 | CLAIMED | 1 | 1 拒 | 否 | 否 | — | `SAVE_ARTIFACT_REJECTED` | 旧包不变 |
+| 9 | 库 rename 未知 | CLAIMED | 1 | 1 | 否 | 是 | — | `SAVE_ARTIFACT_UNKNOWN` | 可能已存，保留 |
+| 10 | 新 STORED 后 pre 拒绝（proof/record） | CLAIMED | 1 | 1 | 否 | 否 | `WRITE_REJECTED` | `TASK_OWNER_WRITE_REJECTED` | 孤儿保留 |
+| 11 | 同位置 Task 外改/出生坏 | CLAIMED | 1 | 1 | 是 | 否 | `STORE_CHANGED`/`BIRTH_INVALID` | 同 | 孤儿保留 |
+| 12 | 同位置 Artifact 外改 | CLAIMED | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_REJECTED` | 旧包保留 |
+| 13 | Task FINAL rename 未知 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
+| 14 | post 确认失败 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
+| 15 | 联合确认前发现外改 | CLAIMED/可能 FINAL | 1 | 1 | 按域 | 按域 | 按域 | 按 §4.4 | 保留 |
+| 16 | 成功返回后外改 | FINAL 已存 | — | — | 仅后读 | 按域 | — | 下次读首错；不回退历史 | 保留 |
+| 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 各自 | 各自 | — | 后序分流 | 不接管 |
 | 18 | 保存后删除/过期/撤权 | FINAL 不变 | 0 | 0 | 否 | 视库 | — | status 状态 | 历史不改 |
 
-第 11/12/13 行区分“Task 已 claim 成功 1 次、FINAL 0 次、Artifact 1 次”，不能称 Task 总 rename 0。
+**发现阶段不能倒置**：writer 确认后、owner 联合确认前发现外改 → 按被改域加锁、当前调用失败；
+已经联合确认并成功返回后发生的外改 → 只影响**下一次** fresh 读取，不倒报上次保存失败；
+仅 Artifact 外改不自动锁 Task、历史 `get` 不回退。第 11/12/13 行区分“claim 成功 1、FINAL 0、
+Artifact 1”，不能称 Task 总 rename 0。
 
 ---
 
 ## 9. 删除、过期、取消
 
 - 持 Artifact 队列至联合确认；`delete` 只在释放后执行；失败释放后 delete 可删新资产，owner 墓碑不回滚。
-- 历史 SAVED 与当前可用性分离（§4.3）；不自动清孤儿；UNKNOWN 不删/不重 import。
+- 历史 SAVED 与当前可用性分离（§4.2）；不自动清孤儿；UNKNOWN 不删/不重 import。
 - 无 cancel API；保存为不可中断单次尝试（`NOT_SUPPORTED`）。
 
 ---
@@ -738,24 +731,28 @@ config-sandbox ─→ fixture-store-base-internal
 | 3 | task-store v2/SAVED/proof+pre/post 门禁 | `test/task-owner.test.mjs` v1/v2/proof | 1 |
 | 4 | `importInQueue` + owner save/status | `test/task-owner-save.test.mjs`（新） | 2,3 |
 
-测试代表（复用 M `test/task-owner.test.mjs:203-250` 的 fsProxy 与 `:271-315` 真实 engine 委托替换）：
+故障代表固定设计（未来测试，不实现）：
 
-| 例 | fs 方法/匹配 | 命中 | 计数判据 |
-|---|---|---|---|
-| claim pre 拒绝 | 不注入；构造坏 proof | — | claim rename 0/FINAL 0/Artifact 0 |
-| claim 外改 | `renameSync`? 否；改出生文件后 `write` | 1 | claim rename 0、Task 锁 |
-| claim rename 未知 | `renameSync` 命中 owner 文件第 1 次 | 1 | claim rename 1 尝试、FINAL 0、Task 锁 |
-| 库 pre 拒绝 | 冲突 requestKey | — | import 1 拒、Artifact rename 0 |
-| 库 rename 未知 | `renameSync` 命中 artifact 文件 | 1 | Artifact rename 1、Artifact 锁、claim 保留 |
-| 新 STORED 后 pre 拒绝 | proof 改 ref | — | claim 1、FINAL 0、Artifact 1、孤儿 |
-| 同位置 Task 外改 | 出生文件改后 `fsyncSync` 后读 | 1 | Task 锁、claim 1/FINAL 0/Artifact 1 |
-| Task FINAL rename 未知 | `renameSync` 命中 owner 文件第 2 次 | 1 | FINAL rename 1 尝试、possible FINAL |
-| Task post 确认失败 | `readFileSync`/`fstatSync` 命中 owner 第 2 次读 | 1 | `SAVE_UNKNOWN`、不删 |
-| delete 排队 | import 后调用 delete | — | 阻塞至 save 结束 |
-| 旧 run/多 handle/factory | 保存后旧 run | — | EXISTING/SAVED、锁按 §8.1 |
+| 代表 | 真实方法/目标/时点 | 命中与计数/文件结果 |
+|---|---|---|
+| claim rename 未知 | wrapper 仅匹配 `renameSync` 的 `args[1]` 为 owner 固定正式文件，第一次目标 rename；真实委托成功后记录成功并抛 EIO | fault 1；claim attempt 1/success 1、FINAL 0、Artifact 0；CLAIMED 保留/Task 锁 |
+| 库 rename 未知 | `renameSync` `args[1]` 为 artifact 正式文件；真实委托一次后抛 EIO | claim 1、Artifact attempt 1/success 1、FINAL 0；Artifact 锁，Task 仅 CLAIMED |
+| 新 STORED 后坏 proof | 测试 VM 仅包装固定 `writeOwner` 符号；真实 engine/import 成功后、仅在 FINAL 调用把 proof 复制成错 ref 的新冻结对象再转发唯一 writer | claim 1/FINAL 0/Artifact 1；pre 拒绝/无 Task 锁/孤儿保留；成功控制同输入不替换 |
+| FINAL 内 Task 外改 | `fsyncSync` 通过 fdPaths 匹配 owner 自有 tmp，阶段已新 STORED 且为 FINAL；真实 fsync 一次后替换 Task 正式文件为原 parser 通过但 digest 不同的 fixture，再走真实 fresh 门禁 | fault 1/claim 1/FINAL 0/Artifact 1；`STORE_CHANGED`/Task 锁；外改数据与新资产保留 |
+| 同位置 Artifact 外改 | 同一 FINAL tmp 真实 fsync 后，用原库严格 parser 通过且摘要不同的规范 pack 外改 Artifact 正式包；不调用公开 delete | fault 1/claim 1/FINAL 0/Artifact 1；Artifact `STORE_CHANGED`/Artifact 锁，不擅加 Task 锁 |
+| FINAL rename 未知 | `renameSync` `args[1]` 为 owner 正式文件，第二次该目标 rename；真实委托后抛 EIO | claim 1、FINAL attempt 1/success 1、Artifact 1；FINAL 真实存在/Task 锁/资产保留 |
+| writer post 确认失败 | 观察到 FINAL rename 成功后，在 post 的 `lstatSync(正式 owner)` 一次真实委托后抛 EIO（不用不存在的 readFileSync） | fault 1/claim 1/FINAL 1/Artifact 1；中性 `WRITE_UNKNOWN`、公开唯一映射、字节保留 |
+| writer 返回后联合确认失败 | `writeOwner` 包装器真实返回成功后置测试 phase 标志；随后第一次真实 owner/artifact fresh 读的 `lstatSync` 按固定目标匹配，真实委托后注入一域外改/错误 | fault 1，三 rename 均成功；按域/阶段锁与公开首错、后续按 §4.4 |
+| 成功返回后外改 | 先完成真实保存控制并成功返回，再外改一域，调用下一次 get/status | 本次保存保持成功；下一读首错/该域锁，第二读固定 UNKNOWN；仅 Artifact 外改时 Task 历史不变 |
 
-每例给成功控制、真实委托命中 1、磁盘保留、engine/import 累计、旧/新 handle 与 factory 结果；
-claim/FINAL/Artifact rename 分开计数，不用“rename 0/1”混同。未实现测试不报为已通过。
+- wrapper 计数必须在**真实成功委托后、故障抛出前**记录（含 after 分支）；attempt 与 success 分列。
+- M fsProxy 默认 file 取 `args[0]` 临时路径；rename 必须在 wrapper 加固定 `args[1]` 目标匹配；
+  tmp 名为 `audio-task-owner-v1.<hex>.tmp`，不可拿正式文件名匹配 `args[0]`。
+- fd 读真实为 `readSync`，`fstatSync` 每次读两次且含 claim/pre/post 多轮；用 `lstatSync` + 明确 phase
+  避免不确定计数；临时 fd 阶段由 fdPaths 与固定文件名/phase 确认。
+- 每代表列 when/skip（phase 唯一时 skip=0）、目标调用 1、真实成功控制、三文件磁盘内容、
+  engine/import 累计与原/新 handle/factory。其余代表（输入/合法非 SUCCESS/库拒绝/delete 排队/旧 run）
+  复用已给控制并补同等判据；不新增跨进程/真实取消/生产场景。
 
 ---
 
@@ -768,8 +765,8 @@ claim/FINAL/Artifact rename 分开计数，不用“rename 0/1”混同。未实
 
 ## 12. 结论
 
-v1.3 分离 current claim 与 candidate FINAL 的版本/digest，给出可复算 791B CLAIMED 摘要
-（`e30bee44…`），把 proof 写成双侧操作数与 19 键 inspection，修正旧 run/get（EXISTING/FOUND）、
-status 独立 schema 与优先级、完整 8+14 错误表、完整兼容表、模块签名/DAG 与 18 类失败矩阵。
+v1.4 恢复强制 delta 与严格 proof（11+8 键、`evaluatedAt`、一般 claimDigest），给出 save 12 键/status 6 键、
+22 码与事实映射，固定 `writeOwner(...proof)` 调用链、`readStoredForSave` 返回、base 依赖边与 `isInside` 原序，
+并把 9 个故障代表落到真实 fs 方法/目标/时点与 attempt/success 分列计数。
 
 **状态：`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`。**
