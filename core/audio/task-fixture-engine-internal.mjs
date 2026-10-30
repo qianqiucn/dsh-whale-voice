@@ -147,12 +147,15 @@ const PRODUCER_INSPECTION_KEYS = Object.freeze([
   'messageZh',
 ])
 
-/* Native-slot getters: never read a shadowable byteLength/byteOffset/buffer/length property. */
+/* Native-slot getters: never read a shadowable name/length/byteLength/byteOffset/buffer property. */
 const TYPED_ARRAY_PROTO = Object.getPrototypeOf(Uint8Array.prototype)
+const TYPED_ARRAY_TAG = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTO, Symbol.toStringTag).get
 const TYPED_ARRAY_BYTE_LENGTH = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTO, 'byteLength').get
 const TYPED_ARRAY_BYTE_OFFSET = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTO, 'byteOffset').get
 const TYPED_ARRAY_LENGTH = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTO, 'length').get
 const TYPED_ARRAY_BUFFER = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTO, 'buffer').get
+const ARRAY_BUFFER_BYTE_LENGTH = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get
+const ARRAY_BUFFER_RESIZABLE = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable').get
 const ARRAY_BUFFER_DETACHED = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'detached').get
 
 function bytesResult(record, result, production) {
@@ -197,29 +200,34 @@ function exactSurface(object, keys) {
   return values
 }
 
+/**
+ * Native carrier check for the produced byte pack. The brand comes from the intrinsic
+ * %TypedArray% @@toStringTag getter (it reads [[TypedArrayName]], so an own @@toStringTag or
+ * byteLength accessor is never consulted), from the prototype identity, and from the intrinsic
+ * length/byteLength/byteOffset/buffer plus ArrayBuffer byteLength/resizable/detached accessors.
+ * No instanceof, constructor, own-property read or Object.prototype.toString is used, no getter,
+ * iterator or species hook is executed, and the bytes are never copied.
+ */
 function ownSyntheticBytes(value, expectedByteLength) {
-  if (value === null || typeof value !== 'object' || !ArrayBuffer.isView(value)) return false
-  let byteLength
-  let byteOffset
-  let length
-  let buffer
+  if (value === null || typeof value !== 'object') return false
+  if (typeof TYPED_ARRAY_TAG !== 'function') return false
+  if (typeof ARRAY_BUFFER_RESIZABLE !== 'function' || typeof ARRAY_BUFFER_DETACHED !== 'function') return false
   try {
-    byteLength = TYPED_ARRAY_BYTE_LENGTH.call(value)
-    byteOffset = TYPED_ARRAY_BYTE_OFFSET.call(value)
-    length = TYPED_ARRAY_LENGTH.call(value)
-    buffer = TYPED_ARRAY_BUFFER.call(value)
-  } catch {
-    return false
-  }
-  if (byteLength !== expectedByteLength || length !== expectedByteLength) return false
-  if (byteOffset !== 0) return false
-  if (Object.prototype.toString.call(buffer) !== '[object ArrayBuffer]') return false
-  try {
+    if (TYPED_ARRAY_TAG.call(value) !== 'Uint8Array') return false
+    if (Object.getPrototypeOf(value) !== Uint8Array.prototype) return false
+    const byteLength = TYPED_ARRAY_BYTE_LENGTH.call(value)
+    const byteOffset = TYPED_ARRAY_BYTE_OFFSET.call(value)
+    const length = TYPED_ARRAY_LENGTH.call(value)
+    const buffer = TYPED_ARRAY_BUFFER.call(value)
+    if (byteLength !== expectedByteLength || length !== expectedByteLength) return false
+    if (byteOffset !== 0) return false
+    if (Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype) return false
+    if (ARRAY_BUFFER_RESIZABLE.call(buffer) !== false) return false
     if (ARRAY_BUFFER_DETACHED.call(buffer) !== false) return false
+    return ARRAY_BUFFER_BYTE_LENGTH.call(buffer) === byteLength
   } catch {
     return false
   }
-  return buffer.byteLength === byteLength
 }
 
 /** Derive the one bounded producer request from the already verified Fake SUCCESS result. */
@@ -246,8 +254,20 @@ function deriveByteRequest(result) {
   }
 }
 
-/** Thin 08-E-C protocol guard over the real producer value; never re-parses WAV or re-hashes. */
+/**
+ * Thin 08-E-C protocol guard over the real producer value; never re-parses WAV or re-hashes.
+ * Any throw inside the private guard stays at this dependency boundary: the caller maps a
+ * non-ok result to TASK_FIXTURE_BYTES_DEPENDENCY_FAILURE, never to the legacy INVALID_INPUT.
+ */
 function guardProducedBytes(produced, derived) {
+  try {
+    return guardProducedBytesChecked(produced, derived)
+  } catch {
+    return { ok: false }
+  }
+}
+
+function guardProducedBytesChecked(produced, derived) {
   if (!isPlainObject(produced) || !Object.isFrozen(produced)) return { ok: false }
   const root = exactSurface(produced, ['ok', 'value'])
   if (root === null || root.ok !== true) return { ok: false }
@@ -531,20 +551,32 @@ function sameDispatchIdentity(gate, execution) {
   return true
 }
 
-function blockedEnvelope(sourceCheck, readiness, record, projection, states, reason, messageZh, execution = null) {
-  return privateResult(
-    record,
-    envelope({
-      phase: 'BLOCKED',
-      reason,
-      messageZh,
-      sourceCheck,
-      readiness,
-      execution,
-      task: projection,
-      states,
-    }),
-  )
+/**
+ * A legal block: the legacy entries return the private two-key root, while the bytes entry always
+ * returns its own three-key root with `production: null`. Same record/result in both modes.
+ */
+function blockedEnvelope(
+  sourceCheck,
+  readiness,
+  record,
+  projection,
+  states,
+  reason,
+  messageZh,
+  execution = null,
+  byteMode = false,
+) {
+  const result = envelope({
+    phase: 'BLOCKED',
+    reason,
+    messageZh,
+    sourceCheck,
+    readiness,
+    execution,
+    task: projection,
+    states,
+  })
+  return byteMode ? bytesResult(record, result, null) : privateResult(record, result)
 }
 
 function runFlow(payload, existingRecord, byteMode) {
@@ -602,6 +634,8 @@ function runFlow(payload, existingRecord, byteMode) {
         [existingRecord.state],
         TASK_FIXTURE_ERRORS.SOURCE_BLOCKED,
         sourceCheck.messageZh,
+        null,
+        byteMode,
       )
     }
     return finish(
@@ -638,6 +672,8 @@ function runFlow(payload, existingRecord, byteMode) {
       states,
       TASK_FIXTURE_ERRORS.READINESS_BLOCKED,
       readiness.messageZh,
+      null,
+      byteMode,
     )
   }
 
@@ -654,6 +690,8 @@ function runFlow(payload, existingRecord, byteMode) {
       states,
       PROVIDER_DISPATCH_ERRORS.UNSUPPORTED_DISPATCH,
       TTS_UNSUPPORTED_MESSAGE,
+      null,
+      byteMode,
     )
   }
 
@@ -685,6 +723,7 @@ function runFlow(payload, existingRecord, byteMode) {
       TASK_FIXTURE_ERRORS.DISPATCH_BLOCKED,
       executionValue.messageZh,
       executionValue,
+      byteMode,
     )
   }
 

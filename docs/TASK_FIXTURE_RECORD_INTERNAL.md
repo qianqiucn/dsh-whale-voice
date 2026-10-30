@@ -157,29 +157,266 @@ frame 浅描述符/根预算 → owner 分区复制 → input 分区复制 → i
 `runExistingFixtureTaskBytesOnce(frame)` 复用同一 frame 预检、`validateExisting` 与唯一 `runFlow`：
 在本次真实 Fake SUCCESS 验证及源/输出 ref 碰撞门禁之后、旧 `ATTACH_FAKE_ARTIFACT` 之前分叉，
 用本次 verified `sampleRate=44100` 与合法整数 `durationMs` 先做**整帧**检查、再做 1 MiB 输出预算，
-然后实际调用一次原 08-E-C `produceFixtureWav`；薄协议守卫成功后只执行一次原 `BEGIN_PROCESS`，
-返回私有 `{record, result, production}`（根冻结）：
+然后实际调用一次原 08-E-C `produceFixtureWav`；薄协议守卫成功后只执行一次原 `BEGIN_PROCESS`。
 
-- `record` 为最终 `PROCESSING` 完整记录：身份/`observedAt`/源/voiceProfile/rights 原样，
-  `outputArtifactRef=null`、`hasOutput=false`，不 ATTACH、不 `MARK_SAVED`、不建第二个 Task；
-- `result` 仍为原 13 键安全信封，成功 `phase=SIMULATED`、`reason=null`、
-  `states=[CREATED, PROCESSING]`、固定中文 `演示字节已准备，尚未登记资产或保存任务。`；
-- `production` 为本次原 producer 的九键 value（含 owned/mutable bytes），失败/阻断为 `null`。
+### 12.1 返回契约（067 / R1 收口后）
 
-新错误表 `TASK_FIXTURE_BYTES_ERRORS` 恰三码：`UNREPRESENTABLE_DURATION`、`RESOURCE_LIMIT`、
-`DEPENDENCY_FAILURE`；旧 14 码与旧入口结果不变，旧 draft/existing/public 路径 producer 调用 0 次。
-本入口只准备字节，**不接 owner/保存事务**，不代表真实 TTS/RVC、来源、权利或 ownership。
+- 新入口**每个**出口都恰为 `{record, result, production}` 三键、根冻结；未产出成功字节时
+  `production` 必为 `null`（不是缺键、不是 `undefined`）。
+- 合法 source/readiness/TTS/dispatch 阻断时，`record` 与 `result` 和旧
+  `runExistingFixtureTaskOnce` **逐字段深等**，只多出第三键 `production: null`；旧 draft/existing
+  入口仍返回两键私有根，旧公开门面仍只返回 13 键 `result`。
+- 成功时 `record` 为最终 `PROCESSING` 完整记录（`outputArtifactRef=null`、`hasOutput=false`），
+  `result` 仍为原 13 键安全信封（`phase=SIMULATED`、`reason=null`、
+  `states=[CREATED, PROCESSING]`、固定中文 `演示字节已准备，尚未登记资产或保存任务。`），
+  `production` 为本次原 producer 九键 value（`bytes` 可写、`inspection` 冻结、`origin=SYNTHETIC_FIXTURE`）。
+- 不 ATTACH、不 `MARK_SAVED`、不建第二个 Task、不产生资产库文件。
 
-以下 JSON 由 `test/task-fixture-bytes.test.mjs` 原样执行：
+### 12.2 字节载体守卫（067 / R2 收口后）
+
+薄守卫只做协议确认，不重解析 WAV、不重算 hash、不复制字节：
+
+- 品牌与载体全部经**原生内部槽**读取：`%TypedArray%` 的 `@@toStringTag` 内在 getter（读
+  `[[TypedArrayName]]`，自有 `@@toStringTag` 无法遮蔽）、`length`/`byteLength`/`byteOffset`/`buffer`
+  内在 getter、`ArrayBuffer` 的 `byteLength`/`resizable`/`detached` 内在 getter，以及
+  `Uint8Array.prototype` 的原型同一性。
+- 不接受 `Int8Array`/`Uint8ClampedArray`/`DataView`/`Buffer`/Proxy/`SharedArrayBuffer` 载体与
+  **resizable** `ArrayBuffer`；不执行任何 getter、iterator 或 species。
+- 载体要求不变：`byteOffset=0`、真实 view 长度 = 真实 buffer 长度 = `44 + frameCount*2`。
+- 载体对象上自有的 `byteLength` 或 `@@toStringTag` getter **永不执行**（即使其函数体会抛错）。
+  此类对象因原生槽仍是完整合法 `Uint8Array` 而**正常成功**——这是本实现选用的策略，
+  对应测试的 getter 调用计数为 0。
+- producer 抛错、坏协议、守卫内部拒绝或异常统一收束为
+  `TASK_FIXTURE_BYTES_DEPENDENCY_FAILURE/$`（固定 reason `fixture byte production unavailable`），
+  `record`/`production` 均 `null`、`transition=0`、不重试；`BEGIN_PROCESS`、最终 record 校验与
+  投影失败仍保留各自原错误码，不被吞成新依赖码。
+
+### 12.3 完整可执行帧（测试原样执行）
+
+下面的 `bytes-frame` 是**完整、自洽、无需目录预留**的合法新入口 frame：`record` 由
+`createAudioTaskRecord(input.sourceInput.voiceBinding.taskDraft, { observedAt })` 得到，`taskId`
+固定且与 draft 身份域一致。测试直接 `JSON.parse` 该块并调用新入口，不依赖测试私有工厂或
+catalog reserve。
 
 ```json
-{"name":"bytes-success","durationMs":10,"expect":"PROCESSING","byteLength":926}
+{
+  "name": "bytes-frame",
+  "scopeId": "scope:fixture-demo",
+  "record": {
+    "schemaVersion": 1,
+    "taskId": "task:fixture-doc-example",
+    "feature": "singing",
+    "taskType": "SVC",
+    "source": {
+      "kind": "AUDIO_REF",
+      "ref": "artifact:fixture-source-1"
+    },
+    "voiceProfileId": "voice:demo-hero",
+    "deliveryRequested": false,
+    "rights": {
+      "state": "CONFIRMED_FIXTURE"
+    },
+    "state": "CREATED",
+    "outputArtifactRef": null,
+    "cancel": {
+      "requested": false,
+      "confirmed": false
+    },
+    "delivery": {
+      "state": "NOT_REQUESTED",
+      "deliveryId": null
+    },
+    "lastError": null,
+    "observedAt": "2026-10-27T00:00:00.000Z",
+    "mockOnly": true,
+    "realOperationAllowed": false
+  },
+  "input": {
+    "schemaVersion": 1,
+    "sourceInput": {
+      "schemaVersion": 1,
+      "voiceBinding": {
+        "schemaVersion": 1,
+        "library": {
+          "schemaVersion": 1,
+          "profiles": [
+            {
+              "voiceProfileId": "voice:demo-hero",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "displayName": "演示角色",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "bindings": [
+                {
+                  "instanceId": "instance:rvc",
+                  "assetId": "asset:fixture-model-a"
+                }
+              ]
+            }
+          ],
+          "assets": [
+            {
+              "assetId": "asset:fixture-model-a",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "kind": "RVC_MODEL",
+              "candidateId": "rvc",
+              "providerRef": "rvc-model:fixture-a",
+              "availability": "PRESENT",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "integrity": {
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1048576
+              },
+              "expiresAt": null
+            }
+          ]
+        },
+        "taskDraft": {
+          "schemaVersion": 1,
+          "taskId": "task:fixture-doc-example",
+          "feature": "singing",
+          "taskType": "SVC",
+          "source": {
+            "kind": "AUDIO_REF",
+            "ref": "artifact:fixture-source-1"
+          },
+          "voiceProfileId": "voice:demo-hero",
+          "deliveryRequested": false,
+          "rights": {
+            "state": "CONFIRMED_FIXTURE"
+          }
+        },
+        "negotiation": {
+          "schemaVersion": 1,
+          "registry": {
+            "schemaVersion": 1,
+            "instances": [
+              {
+                "instanceId": "instance:rvc",
+                "category": "SVC",
+                "candidateId": "rvc",
+                "protocolVersion": 1,
+                "fixture": true,
+                "manifest": null,
+                "observation": {
+                  "state": "ok",
+                  "credentials": "not_required",
+                  "observedAt": "2026-10-26T00:00:00.000Z",
+                  "versionMatches": true
+                }
+              }
+            ]
+          },
+          "selection": {
+            "category": "SVC",
+            "instanceId": "instance:rvc"
+          },
+          "consent": {
+            "networkAllowed": false,
+            "textUploadAllowed": false,
+            "paidAllowed": false
+          },
+          "request": {
+            "schemaVersion": 1,
+            "sourceAudioRef": "artifact:fixture-source-1",
+            "targetModelId": "rvc-model:fixture-a",
+            "pitchShift": 0,
+            "outputFormat": "audio/wav",
+            "inputAudio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            },
+            "rights": {
+              "state": "CONFIRMED_FIXTURE"
+            }
+          }
+        },
+        "expectation": {
+          "scopeId": "scope:fixture-demo",
+          "profileRevision": 1,
+          "assetRevision": 1
+        },
+        "now": "2026-10-27T00:00:00.000Z"
+      },
+      "artifactLibrary": {
+        "schemaVersion": 1,
+        "artifacts": [
+          {
+            "artifactRef": "artifact:fixture-source-1",
+            "revision": 1,
+            "scopeId": "scope:fixture-demo",
+            "kind": "AUDIO",
+            "rightsState": "CONFIRMED_FIXTURE",
+            "availability": "PRESENT",
+            "expiresAt": null,
+            "text": null,
+            "audio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            }
+          }
+        ]
+      },
+      "sourceRevision": 1
+    },
+    "readiness": {
+      "schemaVersion": 1,
+      "instances": [
+        {
+          "instanceId": "instance:rvc",
+          "installation": "PRESENT",
+          "resources": {
+            "profile": "CPU_FIXTURE",
+            "cpu": "AVAILABLE",
+            "gpu": "AVAILABLE"
+          }
+        }
+      ]
+    },
+    "context": {
+      "requestId": "request:fixture-1",
+      "endpointId": "gateway:fixture-rvc",
+      "scenario": "SUCCESS"
+    }
+  }
+}
+```
+
+派生步骤（同帧同步构造，测试逐步执行）：
+
+1. 复制 `bytes-frame` 的 `scopeId`/`record`/`input`；
+2. 同时把 `input.sourceInput.artifactLibrary.artifacts[0].audio.durationMs` 与
+   `input.sourceInput.voiceBinding.negotiation.request.inputAudio.durationMs` 设为同一整数毫秒；
+3. 调用 `runExistingFixtureTaskBytesOnce({ scopeId, record, input })`。
+
+```json
+{"name":"bytes-success","from":"bytes-frame","durationMs":10,"expect":"PROCESSING","byteLength":926}
 ```
 
 ```json
-{"name":"bytes-refused-unrepresentable","durationMs":1,"expect":"UNREPRESENTABLE_DURATION"}
+{"name":"bytes-refused-unrepresentable","from":"bytes-frame","durationMs":1,"expect":"UNREPRESENTABLE_DURATION"}
 ```
 
 ```json
-{"name":"bytes-refused-budget","durationMs":11890,"expect":"RESOURCE_LIMIT"}
+{"name":"bytes-refused-budget","from":"bytes-frame","durationMs":11890,"expect":"RESOURCE_LIMIT"}
 ```
+
+基线（`bytes-frame` 原样、1000 ms）预期 `PROCESSING` / 88244 bytes。
+
+### 12.4 与 0062 的据实更正（不回写历史）
+
+0062 中“D01–D07 全部闭合 / D04 已做完整 record 深等 / 旧 draft 入口已验证 / 文档含完整新入口
+示例”属**过度表述**：当时 D04 只比较了 `recordState`，旧 `draft` 入口仅由 worker 支持但测试未实际
+运行，本节当时只有三个 duration 期望向量而没有完整 frame。本轮按 067 补齐后上述四项才成立；
+0062 原文与 INDEX 历史保留、不覆盖。
+
+### 12.5 限制（不变）
+
+本入口仍纯函数、无持久幂等、无跨调用防重；`PROCESSING+bytes` 不写现 owner `FINAL`；
+`SYNTHETIC_FIXTURE` 不是真实生成、来源权利或 ownership 凭证；仍是
+`OFFLINE / FIXTURE_ONLY / INTERNAL_BYTES_ONLY / NOT_INTEGRATED`，不接 owner 保存事务、下一子任务或 Plan09。
