@@ -495,9 +495,10 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 ## 13. 候选保存事务契约（PLANNED，尚未实现）
 
 同一 claim 内把 `PROCESSING + bytes` 保存进演示资产库的候选契约见
-[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md)
+[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.1
 （`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`）。
 
 **当前 owner 仍未实现保存**：工厂只有 `run`/`get`，`FINAL` 只允许 `SIMULATED`/`NO_EXECUTION`，
-不写 `SAVED`、不调用资产库、不产生 `artifactRef`。本文第 1–12 节全部为既有行为，仍为
-`OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`；候选文档不是运行时代码授权。
+不写 `SAVED`、不调用资产库、不产生 `artifactRef`；owner 快照现为 v1、`revision` 按
+`CLAIMED=1 / FINAL=2` 权重累计。本文第 1–12 节全部为既有行为，仍为 `OFFLINE` / `FIXTURE_ONLY` /
+`NOT_INTEGRATED`；候选文档不是运行时代码授权。

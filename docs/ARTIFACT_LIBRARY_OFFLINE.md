@@ -297,12 +297,12 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
 ## 10. 与 Task 保存候选契约的关系（PLANNED）
 
 同一 claim 保存事务的候选契约见
-[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md)
+[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.1
 （`PLANNED` / `DESIGN_REVIEW_REQUIRED`，运行时未实现）。
 
-- 本文的库合同**不变**：唯一 import 实现、`origin: FIXTURE_IMPORT`、`(scope, requestKey)` 幂等、
+- 本文的库合同**不变**：唯一 import 实现（七键输入）、`origin: FIXTURE_IMPORT`、`(scope, requestKey)` 幂等、
   入队前 owned copy、重新 inspector、原子包写入与墓碑删除。
-- **导入身份 ≠ Task 关联**：`artifactIdentityHash` 只覆盖 scope/requestKey/byteSha256/expiresAt/rights，
-  不含 taskId 或 claim；同字节或同 requestKey 都不证明任何 Task ownership。
-- 候选方案只在 owner 侧用 `record.outputArtifactRef` + 库权威读取建立关联；库不新增 Task 字段、
-  不新增 origin、不反向依赖 owner。
+- **导入身份 ≠ Task 关联**：`artifactIdentityHash(scopeId, requestKey, byteSha256, expiresAt, rights)`
+  只覆盖这些字段，不含 taskId 或 claim；同字节或同 requestKey 都不证明任何 Task ownership。
+- 候选方案只在 owner 侧用 `record.outputArtifactRef` + 库权威读取（`readStoredForSave`）建立关联；
+  库不新增 Task 字段、不新增 origin、不反向依赖 owner。
