@@ -478,15 +478,18 @@ const sourceModule = new vm.SyntheticModule(Object.keys(real), function () {
     }
     if (!result.ok) {
       if (scenario.mode === 'failed-error-getter') {
-        const error = { ...result.errors[0] }
-        Object.defineProperty(error, 'code', {
+        // 089-R01/B: reproduce the original bug shape — an own getter at the errors array index 0,
+        // which a bare errors[0] read would have executed exactly once.
+        const original = result.errors[0]
+        const errors = new Array(1)
+        Object.defineProperty(errors, 0, {
           enumerable: true,
           get() {
             counts.getters += 1
-            return result.errors[0].code
+            return original
           },
         })
-        return { ok: false, errors: [error] }
+        return { ok: false, errors }
       }
       return result
     }
@@ -514,6 +517,20 @@ const sourceModule = new vm.SyntheticModule(Object.keys(real), function () {
     }
     if (scenario.mode === 'provider-extra') {
       const provider = { ...value.voiceBinding.provider, descriptionForAudit: 'safe demo description' }
+      const voiceBinding = { ...value.voiceBinding, provider }
+      return { ok: true, value: { ...value, voiceBinding } }
+    }
+    if (scenario.mode === 'provider-minimal') {
+      const provider = {
+        category: value.voiceBinding.provider.category,
+        instanceId: value.voiceBinding.provider.instanceId,
+        candidateId: value.voiceBinding.provider.candidateId,
+      }
+      const voiceBinding = { ...value.voiceBinding, provider }
+      return { ok: true, value: { ...value, voiceBinding } }
+    }
+    if (scenario.mode === 'provider-null-message') {
+      const provider = { ...value.voiceBinding.provider, messageZh: null }
       const voiceBinding = { ...value.voiceBinding, provider }
       return { ok: true, value: { ...value, voiceBinding } }
     }
@@ -694,4 +711,12 @@ test('F02-R01 the whole dependency return is bounded-safe-copied before consumpt
   const extra = runCoverWorker({ mode: 'provider-extra' }, payload())
   assert.equal(extra.counts.calls, 1)
   expectPlanned(extra.result, 4, false)
+
+  const minimal = runCoverWorker({ mode: 'provider-minimal' }, payload())
+  assert.equal(minimal.counts.calls, 1)
+  expectPlanned(minimal.result, 4, false)
+
+  const nullMessage = runCoverWorker({ mode: 'provider-null-message' }, payload())
+  assert.equal(nullMessage.counts.calls, 1)
+  expectPlanned(nullMessage.result, 4, false)
 })

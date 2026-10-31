@@ -32,7 +32,7 @@ pitch 只取原 resolver 已接受的 `sourceInput.voiceBinding.negotiation.requ
 ## 3. 固定校验顺序
 
 1. 整 root 安全复制 → 根键面/版本 → recipe 键面/版本/字段/交叉规则 → capabilities 键面/版本/枚举；这些失败时 resolver 调用 0 次。
-2. 对复制后的完整 `sourceInput` 调用原 `resolveFixtureTaskSource` **恰一次**；失败协议（throw、坏形状、accessor）一律 `DEPENDENCY_FAILURE`，合法 `ok:false` 映射 `SOURCE_INVALID`，不回显其错误数组或输入。
+2. 对复制后的完整 `sourceInput` 调用原 `resolveFixtureTaskSource` **恰一次**；**其整个返回先经原 `copyFixtureInput` 有界安全复制，再只解析安全副本**——accessor（含 `errors[0]` 索引 getter）、抛错 Proxy、超预算未消费子图、坏形状一律固定 `DEPENDENCY_FAILURE`（getter 0、异常不外抛、不泄露内容）；合法 `ok:false` 映射 `SOURCE_INVALID`，不回显其错误数组或输入；返回中只消费事实字段，未消费 Provider 内部（`schemaVersion/decision/reason/messageZh` 或额外安全字段、可省略的 message）不构成新的本地 schema。
 3. 合法源 BLOCKED → 立即 `SOURCE_BLOCKED`，`dependencyReason` 仅透传下列原十个 business reason（各为 `SOURCE_ARTIFACT_` + key），**先于**任务/路由/能力可用性：
 
    `VOICE_BINDING_BLOCKED`、`SOURCE_UNAVAILABLE`、`SOURCE_REVISION_MISMATCH`、`SOURCE_RIGHTS_UNCONFIRMED`、`SOURCE_MISSING`、`SOURCE_UNKNOWN`、`SOURCE_EXPIRED`、`SOURCE_KIND_MISMATCH`、`SOURCE_TEXT_MISMATCH`、`SOURCE_AUDIO_MISMATCH`。

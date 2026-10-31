@@ -386,32 +386,17 @@ function captureSourceResult(resolved) {
   }
   const provider = ownData(binding, 'provider').value
   if (!isPlainObject(provider)) return null
-  // 088-R01: only the provider facts this planner actually consumes are required; extra safe
-  // provider internals (for example a description) are not turned into a new local schema.
-  for (const key of [
-    'schemaVersion',
-    'category',
-    'instanceId',
-    'candidateId',
-    'decision',
-    'reason',
-    'messageZh',
-    'mockOnly',
-    'realOperationAllowed',
-    'submitAllowed',
-    'automaticRetryAllowed',
-  ]) {
-    if (!ownData(provider, key)) return null
-  }
-  if (ownData(provider, 'schemaVersion').value !== 1) return null
-  if (ownData(provider, 'decision').value !== 'FIXTURE_COMPATIBLE') return null
-  if (ownData(provider, 'reason').value !== null) return null
-  const category = ownData(provider, 'category').value
-  if (category !== 'SVC' && category !== 'TTS') return null
+  // 088-R01/A: only the provider facts this planner actually consumes are required. Unconsumed
+  // provider internals (schemaVersion/decision/reason/messageZh/flags or any extra safe field) are
+  // not turned into a new local schema and are never existence- or value-checked here.
+  const category = ownData(provider, 'category')
+  if (category === null) return null
+  const categoryValue = category.value
+  if (categoryValue !== 'SVC' && categoryValue !== 'TTS') return null
   for (const key of ['instanceId', 'candidateId']) {
-    if (typeof ownData(provider, key).value !== 'string') return null
+    const field = ownData(provider, key)
+    if (field === null || typeof field.value !== 'string') return null
   }
-  if (typeof ownData(provider, 'messageZh').value !== 'string') return null
   const pointer = ownData(value, 'source').value
   if (!isPlainObject(pointer) || keySurface(pointer, SOURCE_POINTER_KEYS) !== 'ok') return null
   const pointerKind = ownData(pointer, 'kind').value
@@ -432,7 +417,7 @@ function captureSourceResult(resolved) {
       instanceId: ownData(inner, 'instanceId').value,
       candidateId: ownData(inner, 'candidateId').value,
       providerRef: ownData(inner, 'providerRef').value,
-      providerCategory: category,
+      providerCategory: categoryValue,
       providerInstanceId: ownData(provider, 'instanceId').value,
       providerCandidateId: ownData(provider, 'candidateId').value,
       sourceKind: pointerKind,
