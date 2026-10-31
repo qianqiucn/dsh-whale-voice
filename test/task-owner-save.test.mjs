@@ -1011,7 +1011,17 @@ try {
 }
 `
 
-test('S21 the previous main program still rejects a v2 owner snapshot in isolation', async () => {
+test('S21 the previous main program still rejects a v2 owner snapshot in isolation', async (t) => {
+  let historyAvailable = true
+  try {
+    execFileSync('git', ['cat-file', '-e', 'e7f1aad'], { stdio: 'ignore' })
+  } catch {
+    historyAvailable = false
+  }
+  if (!historyAvailable) {
+    t.skip('the previous main commit is not present in this (shallow) checkout')
+    return
+  }
   const ex = example()
   await withSandbox(async (sandbox) => {
     const { saved } = await saveOk(sandbox, ex, 'key:fixture-s21')
