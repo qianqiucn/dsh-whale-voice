@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import os from 'node:os'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { copyFixtureInput } from '../core/audio/fixture-input-boundary.mjs'
@@ -124,7 +125,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, fsFaults: 0, ownerRenames: 0 }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } } }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -175,6 +176,27 @@ function legalBirthChange() {
   return valid
 }
 
+function foreignOwnerBytes() {
+  const file = root + '/audio-task-owner-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(/[0-9a-f]{64}/, (hash) => {
+    const last = hash[hash.length - 1]
+    return hash.slice(0, -1) + (last === '0' ? '1' : '0')
+  })
+  return Buffer.from(replaced, 'utf8')
+}
+
+function foreignArtifactBytes() {
+  const file = root + '/audio-artifacts-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(
+    /"createdAt":"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})[.]([0-9]{3})Z"/,
+    (all, head, ms) => all.replace('.' + ms + 'Z', '.' + (ms === '000' ? '001' : '000') + 'Z'),
+  )
+  if (replaced === source) throw new Error('AF_NO_CHANGE')
+  return Buffer.from(replaced, 'utf8')
+}
+
 function whenMatches(when) {
   if (!when || when === 'always') return true
   if (when === 'engine0') return counts.engine === 0
@@ -209,6 +231,81 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
+      if (prop === 'renameSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
+        const renameBase = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (renameBase === 'audio-task-owner-v1.json') counts.finalRenames = (counts.finalRenames || 0) + 1
+      }
+      if (prop === 'lstatSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
+        const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        const result = original.apply(fsReal, args)
+        if (lstatName === 'audio-task-owner-v1.json' && (counts.finalRenames || 0) >= 2) {
+          counts.finalOwnerLstats = (counts.finalOwnerLstats || 0) + 1
+          if (scenario.saveLstatFault && counts.finalOwnerLstats === scenario.saveLstatFault.occurrence) {
+            counts.fsFaults += 1
+            const error = new Error('EIO')
+            error.code = 'EIO'
+            throw error
+          }
+          if (scenario.saveJointFault && scenario.saveJointFault.kind === 'owner' && counts.finalOwnerLstats === scenario.saveJointFault.occurrence) {
+            fsReal.writeFileSync(root + '/audio-task-owner-v1.json', foreignOwnerBytes())
+            counts.fsFaults += 1
+          }
+        }
+        if (lstatName === 'audio-task-owner-v1.json' && counts.finalOwnerLstats === 3) {
+          counts.jointTaskRead = true
+        }
+        if (lstatName === 'audio-artifacts-v1.json' && scenario.saveJointFault && scenario.saveJointFault.kind === 'artifact' && counts.jointTaskRead) {
+          counts.finalArtifactLstats = (counts.finalArtifactLstats || 0) + 1
+          if (counts.finalArtifactLstats === scenario.saveJointFault.occurrence) {
+            fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreignArtifactBytes())
+            counts.fsFaults += 1
+          }
+        }
+        return result
+      }
+      if (prop === 'fsyncSync' && scenario.saveFsyncFault) {
+        const fsyncPath = fdPaths.get(args[0]) || ''
+        const fsyncName = fsyncPath.split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (/^audio-task-owner-v1\.[0-9a-f]+\.tmp$/.test(fsyncName)) {
+          counts.ownerFsyncs = (counts.ownerFsyncs || 0) + 1
+          const result = original.apply(fsReal, args)
+          if (counts.ownerFsyncs === scenario.saveFsyncFault.occurrence) {
+            const foreign =
+              scenario.saveFsyncFault.action === 'AF'
+                ? foreignArtifactBytes()
+                : foreignOwnerBytes()
+            const name = scenario.saveFsyncFault.action === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+            fsReal.writeFileSync(root + '/' + name, foreign)
+            counts.fsFaults += 1
+          }
+          return result
+        }
+      }
+      if (prop === 'renameSync' && scenario.saveRenameFault) {
+        const parts = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/')
+        const renameName = parts[parts.length - 1]
+        const kind =
+          renameName === 'audio-task-owner-v1.json'
+            ? 'owner'
+            : renameName === 'audio-artifacts-v1.json'
+              ? 'artifact'
+              : null
+        if (kind) {
+          const record = counts.renames[kind]
+          record.attempt += 1
+          const saveFault = scenario.saveRenameFault
+          const isFault = saveFault.kind === kind && record.attempt === saveFault.occurrence
+          const result = original.apply(fsReal, args)
+          record.success += 1
+          if (isFault) {
+            counts.fsFaults += 1
+            const error = new Error('EIO')
+            error.code = 'EIO'
+            throw error
+          }
+          return result
+        }
+      }
       const fault = scenario.fsFault
       if (fault && prop === fault.call && file.includes(fault.match) && whenMatches(fault.when)) {
         hits += 1
@@ -310,11 +407,56 @@ const wrappedEngine = (frame) => {
   return copy
 }
 const engineModule = new vm.SyntheticModule(
-  ['TASK_FIXTURE_ERRORS', 'TASK_FIXTURE_SCHEMA_VERSION', 'runExistingFixtureTaskOnce'],
+  [
+    'TASK_FIXTURE_ERRORS',
+    'TASK_FIXTURE_SCHEMA_VERSION',
+    'runExistingFixtureTaskOnce',
+    'runExistingFixtureTaskBytesOnce',
+  ],
   function () {
     this.setExport('TASK_FIXTURE_ERRORS', real.engine.TASK_FIXTURE_ERRORS)
     this.setExport('TASK_FIXTURE_SCHEMA_VERSION', real.engine.TASK_FIXTURE_SCHEMA_VERSION)
     this.setExport('runExistingFixtureTaskOnce', wrappedEngine)
+    // Plan 08-E-C: the real bytes entry is forwarded unchanged; the legacy fault wrapper above keeps
+    // its own original scope and never becomes a fake success for the save path.
+    this.setExport('runExistingFixtureTaskBytesOnce', (bytesFrame) => {
+      counts.engine += 1
+      const out = real.engine.runExistingFixtureTaskBytesOnce(bytesFrame)
+      const fault = scenario.bytesFault
+      if (!fault || counts.engine !== 1) return out
+      // Keep the real production bytes carrier; only the single target field is replaced.
+      const production = { ...out.production, inspection: { ...out.production.inspection } }
+      const value = { ...out.result.value }
+      if (fault === 'channels') production.inspection.channels = 3
+      else if (fault === 'peak') production.inspection.peak = 2
+      else if (fault === 'flags') production.realOperationAllowed = true
+      else if (fault === 'execution') value.execution = 'not-an-object'
+      else if (fault === 'states-getter') {
+        const states = value.states.slice()
+        Object.defineProperty(states, states.length - 1, {
+          enumerable: true,
+          get() {
+            getterCalls.count += 1
+            return 'PROCESSING'
+          },
+        })
+        value.states = states
+      } else if (fault === 'shadow') {
+        const bytes = out.production.bytes
+        Object.defineProperty(bytes, 'length', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, 'byteLength', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, Symbol.toStringTag, { get() { getterCalls.count += 1; return 'NotBytes' } })
+        production.bytes = bytes
+      } else if (fault === 'resizable') {
+        const bytes = out.production.bytes
+        const buffer = new ArrayBuffer(bytes.length, { maxByteLength: bytes.length * 2 })
+        new Uint8Array(buffer).set(bytes)
+        production.bytes = new Uint8Array(buffer)
+      }
+      if (fault === 'missing-production') return { record: out.record, result: { ok: true, value } }
+      if (fault === 'clone') return { record: out.record, result: { ok: true, value }, production }
+      return { record: out.record, result: { ok: true, value }, production }
+    })
   },
   { identifier: engineUrl },
 )
@@ -330,18 +472,71 @@ await baseModule.link(async (specifier) => {
 })
 await baseModule.evaluate()
 
-const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
-const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
-await storeModule.link(async (specifier, referencing) => {
+const artifactUrl = new URL('fixture-artifact-store-internal.mjs', base).href
+const artifactModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(artifactUrl), 'utf8'), {
+  identifier: artifactUrl,
+})
+await artifactModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === engineUrl) return engineModule
   if (url === baseUrl) return baseModule
   if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
   if (specifier === 'node:path') return synth('node:path', { default: pathReal })
   if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
   return synth(url, await import(url))
 })
+await artifactModule.evaluate()
+
+const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
+const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
+await storeModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === engineUrl) return engineModule
+  if (url === baseUrl) return baseModule
+  if (url === artifactUrl) return artifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
 await storeModule.evaluate()
+
+const libraryUrl = new URL('artifact-library.mjs', base).href
+const libraryModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(libraryUrl), 'utf8'), {
+  identifier: libraryUrl,
+})
+await libraryModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === storeUrl) return storeModule
+  if (url === artifactUrl) return artifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
+await libraryModule.evaluate()
+
+// The owner must see the same library instance; only the counting wrapper is added here.
+const libraryNamespace = libraryModule.namespace
+const ownerLibraryModule = new vm.SyntheticModule(
+  [
+    'ARTIFACT_LIBRARY_SCHEMA_VERSION',
+    'ARTIFACT_LIBRARY_LIMITS',
+    'ARTIFACT_LIBRARY_ERRORS',
+    'openFixtureArtifactLibrary',
+    'importInQueue',
+  ],
+  function () {
+    this.setExport('ARTIFACT_LIBRARY_SCHEMA_VERSION', libraryNamespace.ARTIFACT_LIBRARY_SCHEMA_VERSION)
+    this.setExport('ARTIFACT_LIBRARY_LIMITS', libraryNamespace.ARTIFACT_LIBRARY_LIMITS)
+    this.setExport('ARTIFACT_LIBRARY_ERRORS', libraryNamespace.ARTIFACT_LIBRARY_ERRORS)
+    this.setExport('openFixtureArtifactLibrary', libraryNamespace.openFixtureArtifactLibrary)
+    this.setExport('importInQueue', (state, input) => {
+      counts.imports += 1
+      return libraryNamespace.importInQueue(state, input)
+    })
+  },
+  { identifier: libraryUrl },
+)
 
 const catalogSource = fsReal.readFileSync(new URL(catalogUrl), 'utf8')
 const catalogModule = new vm.SourceTextModule(catalogSource, { identifier: catalogUrl })
@@ -352,12 +547,41 @@ await catalogModule.link(async (specifier, referencing) => {
 })
 await catalogModule.evaluate()
 
+const storeNamespace = storeModule.namespace
+const storeNames = Object.keys(storeNamespace)
+const ownerStoreModule = new vm.SyntheticModule(storeNames, function () {
+  for (const name of storeNames) {
+    if (name === 'openOwnerFile') continue
+    this.setExport(name, storeNamespace[name])
+  }
+  this.setExport('openOwnerFile', (state) => {
+    const file = storeNamespace.openOwnerFile(state)
+    return Object.freeze({
+      name: file.name,
+      read: file.read,
+      readVerified: file.readVerified,
+      write: (bytes, baseDigest, revision, proof) => {
+        if (proof && scenario.badProof) {
+          const tampered = {
+            ...proof,
+            artifact: { ...proof.artifact, artifactRef: 'artifact:fixture-bytes-' + 'f'.repeat(32) },
+          }
+          return file.write(bytes, baseDigest, revision, tampered)
+        }
+        return file.write(bytes, baseDigest, revision, proof)
+      },
+    })
+  })
+}, { identifier: storeUrl })
+
 const ownerSource = fsReal.readFileSync(new URL(ownerUrl), 'utf8')
 const ownerModule = new vm.SourceTextModule(ownerSource, { identifier: ownerUrl })
 await ownerModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === storeUrl) return storeModule
+  if (url === storeUrl) return ownerStoreModule
   if (url === engineUrl) return engineModule
+  if (url === artifactUrl) return artifactModule
+  if (url === libraryUrl) return ownerLibraryModule
   return synth(url, await import(url))
 })
 await ownerModule.evaluate()
@@ -438,6 +662,37 @@ try {
     const again = await owner()
     if (!again.ok) record('second-open', again)
     else record('second', await again.value.run(frame))
+  } else if (mode === 'save') {
+    const opened = await owner()
+    if (!opened.ok) {
+      record('open', opened)
+    } else {
+      const saveFrame = {
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        requestKey: scenario.requestKey || 'save:fixture-worker-1',
+        now: '2026-10-27T00:00:01.000Z',
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        rights: { state: 'GRANTED', proofRef: 'fixture-rights:worker-1' },
+        input: frame.input,
+      }
+      record('save', await opened.value.save(saveFrame))
+      if (scenario.afterMutate) {
+        const name = scenario.afterMutate === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+        const foreign = scenario.afterMutate === 'AF' ? foreignArtifactBytes() : foreignOwnerBytes()
+        fsReal.writeFileSync(root + '/' + name, foreign)
+        counts.fsFaults += 1
+      }
+      record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      record('status', await opened.value.artifactStatus({
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        now: '2026-10-27T00:00:02.000Z',
+        rights: saveFrame.rights,
+      }))
+    }
   } else if (mode === 'twoTasks') {
     const opened = await owner()
     record('task-a', await opened.value.run(frame))
@@ -602,8 +857,11 @@ try {
 
 function runOwnerWorker(scenario) {
   const script = OWNER_WORKER(BASE)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-owner-worker-'))
+  const file = path.join(dir, 'worker.mjs')
+  fs.writeFileSync(file, script)
   try {
-    const output = execFileSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], {
+    const output = execFileSync(process.execPath, ['--experimental-vm-modules', file], {
       env: { ...process.env, OWNER_SCENARIO: JSON.stringify(scenario) },
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
@@ -611,6 +869,8 @@ function runOwnerWorker(scenario) {
     return JSON.parse(output.trim())
   } catch (error) {
     throw new Error('owner worker failed: ' + String(error.stderr || error.message).slice(0, 3000))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -882,7 +1142,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     const b = await birth(sandbox, svc, 'key:fixture-c08')
     const owner = await openFixtureTaskOwner({ sandbox })
     assert.equal(owner.ok, true)
-    assert.deepEqual(Object.keys(owner.value).sort(), ['get', 'run'])
+    assert.deepEqual(Object.keys(owner.value).sort(), ['artifactStatus', 'get', 'run', 'save'])
     assert.equal(Object.isFrozen(owner.value), true)
 
     expectOwnerError(await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'INVALID_INPUT', '$')
@@ -933,7 +1193,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     assert.equal(text.includes(sandbox.root), false)
 
     assert.equal(TASK_OWNER_SCHEMA_VERSION, 1)
-    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 14)
+    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 22)
     for (const [key, code] of Object.entries(TASK_OWNER_ERRORS)) {
       assert.equal(code, 'TASK_OWNER_' + key)
     }
@@ -1879,4 +2139,208 @@ test('B01 store-base extraction keeps one binding, one class and the real fs bou
   assert.equal(result.ok, false)
   assert.equal(result.errors[0].code, TASK_OWNER_ERRORS.SANDBOX_INVALID)
   assert.equal(result.errors[0].path, '$')
+})
+
+/* ------------------------------------------------------------------ V01 */
+
+test('V01 shared VM graph: one save runs one real engine and one real import, then reads back', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v01', mode: 'save' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.counts.fsFaults, 0)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.outcome, 'SAVED')
+  assert.equal(saved.value.ownerState, 'SAVED')
+  assert.equal(saved.value.revision, 2)
+  assert.deepEqual(Object.keys(saved.value.artifact).sort(), ['artifactRef', 'byteLength', 'expiresAt', 'sha256'])
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, true, JSON.stringify(status))
+  assert.equal(status.value.state, 'READABLE')
+  assert.equal(status.value.artifactRef, saved.value.artifact.artifactRef)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true)
+  assert.equal(got.value.ownerState, 'SAVED')
+})
+
+
+/* ------------------------------------------------------------------ V02 */
+
+test('V02 the protocol representatives are SAVE_UNKNOWN with engine=1/import=0 and no getter', () => {
+  for (const fault of ['channels', 'peak', 'flags', 'execution', 'states-getter', 'resizable', 'missing-production']) {
+    const worker = runOwnerWorker({ key: 'key:fixture-v02-' + fault, mode: 'save', bytesFault: fault })
+    assert.equal(worker.counts.engine, 1, fault + ' engine')
+    assert.equal(worker.counts.imports, 0, fault + ' import')
+    assert.equal(worker.getterCalls, 0, fault + ' getter')
+    const saved = workerResult(worker, 'save')
+    assert.equal(saved.ok, false, fault + ' ' + JSON.stringify(saved))
+    assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN, fault)
+    const got = workerResult(worker, 'get')
+    assert.equal(got.ok, true, fault)
+    assert.equal(got.value.ownerState, 'UNKNOWN', fault)
+  }
+})
+
+test('V03 a harmless field clone still saves once through the real engine and import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v03', mode: 'save', bytesFault: 'clone' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+test('V04 harmless byte-view shadows are never read and the save still succeeds', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v04', mode: 'save', bytesFault: 'shadow' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+/* ------------------------------------------------------------------ V05 */
+
+test('V05 claim rename unknown in the VM: SAVE_UNKNOWN, engine/import 0', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v05',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 0, success: 0 })
+  assert.equal(worker.counts.engine, 0)
+  assert.equal(worker.counts.imports, 0)
+})
+
+test('V06 artifact rename unknown in the VM: SAVE_ARTIFACT_UNKNOWN with engine=1/import=1', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v06',
+    mode: 'save',
+    saveRenameFault: { kind: 'artifact', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V07 FINAL rename unknown in the VM: SAVE_UNKNOWN after the real FINAL commit', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v07',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+
+/* ------------------------------------------------------------------ V08 */
+
+test('V08 a foreign Task write after the FINAL fsync is STORE_CHANGED with the claim on disk', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v08',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'OF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V10 an external Task change after a successful save fails only the next fresh read', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v10', mode: 'save', afterMutate: 'OF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 160))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, false, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+test('V09 a foreign Artifact write after the FINAL fsync is SAVE_ARTIFACT_REJECTED', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v09',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'AF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V11 an external Artifact change after a successful save fails only the next fresh status', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v11', mode: 'save', afterMutate: 'AF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 120))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 120))
+  assert.equal(got.value.ownerState, 'SAVED')
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, false, 'status ' + JSON.stringify(status).slice(0, 160))
+  assert.equal(status.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+
+/* ------------------------------------------------------------------ V12 */
+
+test('V12 a post-rename owner lstat failure is WRITE_UNKNOWN -> SAVE_UNKNOWN with the FINAL kept', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v12',
+    mode: 'save',
+    saveLstatFault: { occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V13 a JOINT-phase Task overwrite is SAVE_UNKNOWN with a Task lock', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v13',
+    mode: 'save',
+    saveJointFault: { kind: 'owner', occurrence: 3 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 160))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+})
+
+test('V14 a JOINT-phase Artifact overwrite is SAVE_ARTIFACT_UNKNOWN with the artifact domain locked', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v14',
+    mode: 'save',
+    saveJointFault: { kind: 'artifact', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+})
+
+test('V15 a bad proof injected into the real FINAL write is WRITE_REJECTED with the claim kept', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v15', mode: 'save', badProof: true })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.value.ownerState, 'UNKNOWN')
 })

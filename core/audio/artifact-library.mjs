@@ -509,6 +509,25 @@ function importOnce(state, request) {
   }
 }
 
+/**
+ * Plan 08-E-C §7.3: the one internal, non-reentrant import used by a caller that already holds this
+ * sandbox's artifact queue (the task owner's same-claim save). It parses the same original seven
+ * import keys, takes the same private owned copy and runs the same original `importOnce`; it never
+ * enqueues again and never exposes a path, fs, parser, callback or capability brand. The public
+ * `import` keeps its original read-before-queue behaviour and both paths share this one import
+ * implementation.
+ */
+export function importInQueue(state, input) {
+  if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
+  let request
+  try {
+    request = readImport(input)
+  } catch (error) {
+    return toFailure(error)
+  }
+  return importOnce(state, request)
+}
+
 function readOnce(state, request, withBytes) {
   if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
   try {

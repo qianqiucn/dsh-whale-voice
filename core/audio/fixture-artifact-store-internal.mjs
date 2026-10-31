@@ -571,6 +571,65 @@ export function readArtifactPack(state) {
   raiseStore('STORE_CHANGED', '$')
 }
 
+/* ------------------------- fresh stored read for the task save transaction ------------------- */
+
+/**
+ * Plan 08-E-C §7.2: one synchronous, queue-free, fresh read of a single stored artifact for the
+ * same-claim save transaction. It never takes the artifact queue, never calls the public
+ * `get`/`readBytes` and never writes: the caller already holds the artifact queue (or is the Task
+ * writer answering its own pre/post gate).
+ *
+ * The returned `artifact` is exactly the eight-proof fields of the frozen contract and is always
+ * taken from the canonical pack entry, never from owner metadata:
+ *   {artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection}
+ * `DELETED` keeps the tombstone inspection but never claims to have re-read the deleted payload;
+ * `DELETED` wins over `EXPIRED`. A locked domain or an unexpected pack change reports the original
+ * library error key instead of a fabricated state.
+ */
+export function readStoredForSave(state, query) {
+  if (!isPlainObject(query)) return { ok: false, errorKey: 'INTERNAL_FAILURE', path: '$' }
+  if (typeof query.scopeId !== 'string' || typeof query.artifactRef !== 'string') {
+    return { ok: false, errorKey: 'INTERNAL_FAILURE', path: '$' }
+  }
+  let nowMs
+  try {
+    nowMs = Date.parse(query.now)
+  } catch {
+    return { ok: false, errorKey: 'INTERNAL_FAILURE', path: '$' }
+  }
+  if (!Number.isFinite(nowMs)) return { ok: false, errorKey: 'INTERNAL_FAILURE', path: '$' }
+  if (state.locked) return { ok: false, errorKey: 'LIBRARY_UNKNOWN', path: '$' }
+
+  let current
+  try {
+    current = readArtifactPack(state)
+  } catch (error) {
+    if (isStoreFailure(error)) return { ok: false, errorKey: error.key, path: error.errorPath }
+    return { ok: false, errorKey: 'INTERNAL_FAILURE', path: '$' }
+  }
+
+  const found = current.entries.find((item) => item.entry.artifactRef === query.artifactRef) || null
+  if (!found || found.entry.scopeId !== query.scopeId) {
+    return { ok: true, value: { state: 'MISSING', artifact: null } }
+  }
+  const entry = found.entry
+  const inspection = {}
+  for (const key of INSPECTION_KEYS) inspection[key] = entry.inspection[key]
+  const artifact = deepFreezeFixtureValue({
+    artifactRef: entry.artifactRef,
+    identityHash: entry.identityHash,
+    byteSha256: inspection.sha256,
+    byteLength: inspection.byteLength,
+    expiresAt: entry.expiresAt,
+    requestKey: entry.requestKey,
+    rights: { state: entry.rights.state, proofRef: entry.rights.proofRef },
+    inspection,
+  })
+  if (!found.stored) return { ok: true, value: { state: 'DELETED', artifact } }
+  if (nowMs >= Date.parse(entry.expiresAt)) return { ok: true, value: { state: 'EXPIRED', artifact } }
+  return { ok: true, value: { state: 'STORED', artifact } }
+}
+
 /** Read the current pack for a write transaction; it must match the digest the caller saw. */
 function readVerified(state, baseDigest) {
   const raw = readRaw(state, true)

@@ -1,4 +1,4 @@
-﻿/* Whale Voice — private shared Fixture task store (Plan 08-D-C internal helper).
+/* Whale Voice — private shared Fixture task store (Plan 08-D-C internal helper).
  *
  * One implementation of the already verified isolated file storage, shared by the 08-D-A catalog
  * and the 08-D-C task owner. It is not a public API and not a generic file service: the two fixed
@@ -54,6 +54,7 @@ export {
 import { createAudioTaskRecord, validateAudioTaskRecord } from './task-contract.mjs'
 import { TASK_FIXTURE_ERRORS } from './task-fixture-engine-internal.mjs'
 import { PROVIDER_DISPATCH_ERRORS } from './provider-dispatch.mjs'
+import { getArtifactState, readStoredForSave } from './fixture-artifact-store-internal.mjs'
 
 export const CATALOG_FILE_NAME = 'audio-task-catalog-v1.json'
 export const OWNER_FILE_NAME = 'audio-task-owner-v1.json'
@@ -72,6 +73,8 @@ const SCOPE_PATTERN = /^scope:fixture-[A-Za-z0-9_-]{1,32}$/
 const KEY_PATTERN = /^key:fixture-[A-Za-z0-9_-]{1,48}$/
 const TASK_ID_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const HASH_PATTERN = /^[0-9a-f]{64}$/
+const OWNER_KEY_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
+const OWNER_PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
 const SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entries']))
 const CATALOG_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'idempotencyKey', 'identityHash', 'record']))
 const CATALOG_SCHEMA_VERSION = 1
@@ -80,6 +83,58 @@ const OWNER_SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 
 const OWNER_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'taskId', 'birthIdentityHash', 'phase', 'record', 'completion']))
 const OWNER_COMPLETION_KEYS = Object.freeze(new Set(['kind', 'reason']))
 const OWNER_SNAPSHOT_SCHEMA_VERSION = 1
+/** Plan 08-E-C: the only second on-disk owner snapshot version, written when a SAVED FINAL exists. */
+const OWNER_SNAPSHOT_SCHEMA_VERSION_V2 = 2
+const ARTIFACT_REF_PATTERN = /^artifact:fixture-bytes-[0-9a-f]{32}$/
+const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const PROOF_KEYS = Object.freeze([
+  'schemaVersion',
+  'scopeId',
+  'taskId',
+  'birthIdentityHash',
+  'birthObservedAt',
+  'claimRevision',
+  'claimDigest',
+  'candidateRevision',
+  'recordIdentityHash',
+  'artifact',
+  'evaluatedAt',
+])
+const PROOF_KEY_SET = Object.freeze(new Set(PROOF_KEYS))
+const PROOF_ARTIFACT_KEYS = Object.freeze([
+  'artifactRef',
+  'identityHash',
+  'byteSha256',
+  'byteLength',
+  'expiresAt',
+  'requestKey',
+  'rights',
+  'inspection',
+])
+const PROOF_ARTIFACT_KEY_SET = Object.freeze(new Set(PROOF_ARTIFACT_KEYS))
+const OWNER_RIGHTS_KEYS = Object.freeze(new Set(['state', 'proofRef']))
+const OWNER_INSPECTION_KEYS = Object.freeze([
+  'schemaVersion',
+  'format',
+  'codec',
+  'bitsPerSample',
+  'sampleRate',
+  'channels',
+  'byteLength',
+  'dataByteLength',
+  'frameCount',
+  'durationMs',
+  'peak',
+  'fullScaleSampleCount',
+  'sha256',
+  'validationState',
+  'mockOnly',
+  'realOperationAllowed',
+  'submitAllowed',
+  'automaticRetryAllowed',
+  'messageZh',
+])
+const OWNER_INSPECTION_KEY_SET = Object.freeze(new Set(OWNER_INSPECTION_KEYS))
 const OWNER_SIMULATED_STATES = Object.freeze(
   new Set(['ARTIFACT_READY', 'FAILED', 'UNKNOWN', 'CANCEL_REQUESTED', 'CANCELLED']),
 )
@@ -289,13 +344,17 @@ export function parseOwnerSnapshot(bytes) {
   const snapshot = parseSnapshot(bytes)
   if (!isPlainObject(snapshot)) raiseStore('STORE_INVALID', '$')
   if (keySurface(snapshot, OWNER_SNAPSHOT_KEYS) !== 'ok') raiseStore('STORE_INVALID', '$')
-  if (snapshot.schemaVersion !== OWNER_SNAPSHOT_SCHEMA_VERSION) raiseStore('STORE_INVALID', '$')
+  const schemaVersion = snapshot.schemaVersion
+  if (schemaVersion !== OWNER_SNAPSHOT_SCHEMA_VERSION && schemaVersion !== OWNER_SNAPSHOT_SCHEMA_VERSION_V2) {
+    raiseStore('STORE_INVALID', '$')
+  }
   if (!Array.isArray(snapshot.entries)) raiseStore('STORE_INVALID', '$')
   if (snapshot.entries.length > MAX_OWNER_ENTRIES) raiseStore('RESOURCE_LIMIT', '$')
   if (!Number.isInteger(snapshot.revision) || snapshot.revision < 0) raiseStore('STORE_INVALID', '$')
 
   const seen = new Set()
   let weight = 0
+  let savedCount = 0
   const entries = []
   for (const entry of snapshot.entries) {
     if (!isPlainObject(entry) || keySurface(entry, OWNER_ENTRY_KEYS) !== 'ok') raiseStore('STORE_INVALID', '$')
@@ -343,6 +402,27 @@ export function parseOwnerSnapshot(bytes) {
       })
       continue
     }
+    if (kind === 'SAVED') {
+      if (schemaVersion !== OWNER_SNAPSHOT_SCHEMA_VERSION_V2) raiseStore('STORE_INVALID', '$')
+      if (reason !== null) raiseStore('STORE_INVALID', '$')
+      if (record.state !== 'SAVED') raiseStore('STORE_INVALID', '$')
+      if (typeof record.outputArtifactRef !== 'string' || !ARTIFACT_REF_PATTERN.test(record.outputArtifactRef)) {
+        raiseStore('STORE_INVALID', '$')
+      }
+      if (record.cancel.requested !== false || record.cancel.confirmed !== false) raiseStore('STORE_INVALID', '$')
+      if (record.lastError !== null) raiseStore('STORE_INVALID', '$')
+      savedCount += 1
+      weight += 2
+      entries.push({
+        scopeId: entry.scopeId,
+        taskId: entry.taskId,
+        birthIdentityHash: entry.birthIdentityHash,
+        phase: 'FINAL',
+        record,
+        completion: Object.freeze({ kind: 'SAVED', reason: null }),
+      })
+      continue
+    }
     if (kind !== 'NO_EXECUTION') raiseStore('STORE_INVALID', '$')
     if (!OWNER_NO_EXECUTION_REASONS.includes(reason)) raiseStore('STORE_INVALID', '$')
     initialOnly(record)
@@ -357,7 +437,12 @@ export function parseOwnerSnapshot(bytes) {
     })
   }
   if (snapshot.revision !== weight) raiseStore('STORE_INVALID', '$')
-  return { revision: snapshot.revision, entries }
+  if (schemaVersion === OWNER_SNAPSHOT_SCHEMA_VERSION_V2) {
+    if (savedCount === 0) raiseStore('STORE_INVALID', '$')
+  } else if (savedCount !== 0) {
+    raiseStore('STORE_INVALID', '$')
+  }
+  return { revision: snapshot.revision, entries, schemaVersion }
 }
 
 /* ------------------------------- owner association gate (08-D-C) ----------------------------- */
@@ -415,6 +500,197 @@ export function verifyOwnerAssociations(state, snapshot) {
     throw error
   }
   return catalog
+}
+
+/* -------------------- Plan 08-E-C: mandatory SAVED delta and SaveProof ---------------------- */
+
+function ownerEntryKey(entry) {
+  return entry.scopeId + '\u0000' + entry.taskId
+}
+
+function rejectWrite() {
+  raiseStore('WRITE_REJECTED', '$')
+}
+
+/**
+ * The only writer-side classification of a candidate snapshot against the current one. Exactly one
+ * `CLAIMED -> SAVED FINAL` transition is the sole write that must carry a proof; rewriting an
+ * already SAVED entry, deleting entries, changing more than one task, writing a FINAL without a
+ * claim, a wrong candidate revision or a snapshot version that disagrees with its SAVED content are
+ * all pre-rejections without a lock.
+ */
+function planOwnerDelta(spec, current, bytes, expectedRevision, proof) {
+  let candidate
+  try {
+    candidate = spec.parse(bytes)
+  } catch {
+    rejectWrite()
+  }
+  if (!Number.isInteger(expectedRevision) || candidate.revision !== expectedRevision) rejectWrite()
+  const savedEntries = candidate.entries.filter(
+    (entry) => entry.phase === 'FINAL' && entry.completion.kind === 'SAVED',
+  )
+  const expectedVersion =
+    savedEntries.length > 0 ? OWNER_SNAPSHOT_SCHEMA_VERSION_V2 : OWNER_SNAPSHOT_SCHEMA_VERSION
+  if (candidate.schemaVersion !== expectedVersion) rejectWrite()
+
+  const currentMap = new Map(current.entries.map((entry) => [ownerEntryKey(entry), entry]))
+  const nextMap = new Map(candidate.entries.map((entry) => [ownerEntryKey(entry), entry]))
+  for (const key of currentMap.keys()) {
+    if (!nextMap.has(key)) rejectWrite()
+  }
+
+  let savedEntry = null
+  let changed = 0
+  for (const [key, entry] of nextMap) {
+    const previous = currentMap.get(key) || null
+    if (previous && stableStringify(previous) === stableStringify(entry)) continue
+    changed += 1
+    if (previous && previous.phase === 'FINAL' && previous.completion.kind === 'SAVED') rejectWrite()
+    if (entry.phase === 'FINAL' && entry.completion.kind === 'SAVED') {
+      if (!previous || previous.phase !== 'CLAIMED' || savedEntry !== null) rejectWrite()
+      savedEntry = entry
+      continue
+    }
+    if (!previous) {
+      if (entry.phase !== 'CLAIMED') rejectWrite()
+      continue
+    }
+    if (!(previous.phase === 'CLAIMED' && entry.phase === 'FINAL')) rejectWrite()
+  }
+  if (changed > 1) rejectWrite()
+  if (savedEntry !== null && proof === null) rejectWrite()
+  if (savedEntry === null && proof !== null) rejectWrite()
+  return { candidate, savedEntry }
+}
+
+function proofDataField(object, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !hasOwn(descriptor, 'value') || descriptor.enumerable !== true) rejectWrite()
+  return descriptor.value
+}
+
+/** Strict shape/descriptor/type pass: the only way to obtain `evaluatedAt` for a fresh library read. */
+function proofFieldsOnly(proof) {
+  if (!isPlainObject(proof) || keySurface(proof, PROOF_KEY_SET) !== 'ok') rejectWrite()
+  const fields = {}
+  for (const key of PROOF_KEYS) fields[key] = proofDataField(proof, key)
+  if (fields.schemaVersion !== 1) rejectWrite()
+  if (typeof fields.evaluatedAt !== 'string' || !ISO_PATTERN.test(fields.evaluatedAt)) rejectWrite()
+  const evaluatedMs = Date.parse(fields.evaluatedAt)
+  if (!Number.isFinite(evaluatedMs) || new Date(evaluatedMs).toISOString() !== fields.evaluatedAt) rejectWrite()
+  const artifact = fields.artifact
+  if (!isPlainObject(artifact) || keySurface(artifact, PROOF_ARTIFACT_KEY_SET) !== 'ok') rejectWrite()
+  for (const key of PROOF_ARTIFACT_KEYS) proofDataField(artifact, key)
+  const inspection = artifact.inspection
+  if (!isPlainObject(inspection) || keySurface(inspection, OWNER_INSPECTION_KEY_SET) !== 'ok') rejectWrite()
+  for (const key of OWNER_INSPECTION_KEYS) proofDataField(inspection, key)
+  const proofInspection = artifact.inspection
+  if (typeof proofInspection.byteLength !== 'number' || !Number.isInteger(proofInspection.byteLength)) rejectWrite()
+  if (typeof proofInspection.dataByteLength !== 'number' || !Number.isInteger(proofInspection.dataByteLength)) {
+    rejectWrite()
+  }
+  if (typeof proofInspection.frameCount !== 'number' || !Number.isInteger(proofInspection.frameCount)) rejectWrite()
+  if (typeof proofInspection.durationMs !== 'number' || !Number.isFinite(proofInspection.durationMs)) rejectWrite()
+  if (typeof proofInspection.peak !== 'number' || !Number.isFinite(proofInspection.peak)) rejectWrite()
+  if (typeof proofInspection.fullScaleSampleCount !== 'number' || !Number.isInteger(proofInspection.fullScaleSampleCount)) {
+    rejectWrite()
+  }
+  if (typeof proofInspection.sha256 !== 'string') rejectWrite()
+  if (typeof proofInspection.messageZh !== 'string') rejectWrite()
+  if (typeof artifact.identityHash !== 'string') rejectWrite()
+  if (typeof artifact.byteSha256 !== 'string') rejectWrite()
+  if (typeof artifact.byteLength !== 'number' || !Number.isInteger(artifact.byteLength)) rejectWrite()
+  if (typeof artifact.artifactRef !== 'string' || !ARTIFACT_REF_PATTERN.test(artifact.artifactRef)) rejectWrite()
+  if (typeof artifact.expiresAt !== 'string' || !ISO_PATTERN.test(artifact.expiresAt)) rejectWrite()
+  if (artifact.inspection.sha256 !== artifact.byteSha256) rejectWrite()
+  if (artifact.inspection.byteLength !== artifact.byteLength) rejectWrite()
+  if (!(artifact.inspection.byteLength >= artifact.inspection.dataByteLength + 44)) rejectWrite()
+  if (artifact.inspection.peak < 0 || artifact.inspection.peak > 1) rejectWrite()
+  return fields
+}
+
+/**
+ * Full §2.4 binding of one SaveProof against fresh authoritative data: the current CLAIMED
+ * snapshot/digest/revision, the catalog birth identity, the candidate record identity and the
+ * actual artifact that the same save just imported. Only WRITE_REJECTED may come out of here.
+ */
+/**
+ * F04/G02: every local (library-free) proof fact is captured and checked before the fresh library
+ * read: strict 11+8+19 data, hash/ref/key/rights shapes, revisions and the bindings that only need
+ * the current CLAIMED snapshot, the catalog birth and the candidate record.
+ */
+function validateSaveProofLocal(proof, context) {
+  const fields = proofFieldsOnly(proof)
+  const evaluatedMs = Date.parse(fields.evaluatedAt)
+  const entry = context.entry
+  const birth = context.birth
+  if (typeof fields.scopeId !== 'string' || fields.scopeId !== entry.scopeId) rejectWrite()
+  if (typeof fields.taskId !== 'string' || fields.taskId !== entry.taskId) rejectWrite()
+  if (typeof fields.birthIdentityHash !== 'string' || !HASH_PATTERN.test(fields.birthIdentityHash)) rejectWrite()
+  if (fields.birthIdentityHash !== entry.birthIdentityHash) rejectWrite()
+  if (typeof fields.birthObservedAt !== 'string' || !ISO_PATTERN.test(fields.birthObservedAt)) rejectWrite()
+  if (!birth || birth.identityHash !== entry.birthIdentityHash) rejectWrite()
+  if (birth.record.observedAt !== fields.birthObservedAt) rejectWrite()
+  if (typeof fields.claimDigest !== 'string' || !HASH_PATTERN.test(fields.claimDigest)) rejectWrite()
+  if (fields.claimDigest !== context.baseDigest) rejectWrite()
+  if (!Number.isInteger(fields.claimRevision) || fields.claimRevision < 1) rejectWrite()
+  if (fields.claimRevision !== context.current.revision) rejectWrite()
+  if (!Number.isInteger(fields.candidateRevision) || fields.candidateRevision !== context.expectedRevision) rejectWrite()
+  if (fields.candidateRevision !== fields.claimRevision + 1) rejectWrite()
+  if (typeof fields.recordIdentityHash !== 'string' || !HASH_PATTERN.test(fields.recordIdentityHash)) rejectWrite()
+
+  const record = entry.record
+  if (record.state !== 'SAVED') rejectWrite()
+  if (fields.recordIdentityHash !== identityHashOf(record)) rejectWrite()
+  if (!sameImmutable(record, birth.record)) rejectWrite()
+
+  const artifact = fields.artifact
+  if (typeof artifact.identityHash !== 'string' || !HASH_PATTERN.test(artifact.identityHash)) rejectWrite()
+  if (typeof artifact.byteSha256 !== 'string' || !HASH_PATTERN.test(artifact.byteSha256)) rejectWrite()
+  if (!Number.isInteger(artifact.byteLength) || artifact.byteLength < 44) rejectWrite()
+  if (artifact.byteLength > 1048576) rejectWrite()
+  if (typeof artifact.requestKey !== 'string' || !OWNER_KEY_PATTERN.test(artifact.requestKey)) rejectWrite()
+  if (record.outputArtifactRef !== artifact.artifactRef) rejectWrite()
+  const rights = artifact.rights
+  if (!isPlainObject(rights) || keySurface(rights, OWNER_RIGHTS_KEYS) !== 'ok') rejectWrite()
+  if (proofDataField(rights, 'state') !== 'GRANTED') rejectWrite()
+  const proofRef = proofDataField(rights, 'proofRef')
+  if (typeof proofRef !== 'string' || !OWNER_PROOF_PATTERN.test(proofRef)) rejectWrite()
+  const expiresMs = Date.parse(artifact.expiresAt)
+  if (!Number.isFinite(expiresMs) || new Date(expiresMs).toISOString() !== artifact.expiresAt) rejectWrite()
+  if (expiresMs <= evaluatedMs) rejectWrite()
+  return fields
+}
+
+/** Only the facts that require the actual fresh library entry remain after the local gate. */
+function validateSaveArtifact(fields, actual) {
+  if (!actual) rejectWrite()
+  const artifact = fields.artifact
+  if (artifact.artifactRef !== actual.artifactRef) rejectWrite()
+  if (artifact.identityHash !== actual.identityHash) rejectWrite()
+  if (artifact.byteSha256 !== actual.byteSha256) rejectWrite()
+  if (artifact.byteLength !== actual.byteLength) rejectWrite()
+  if (artifact.expiresAt !== actual.expiresAt) rejectWrite()
+  if (artifact.requestKey !== actual.requestKey) rejectWrite()
+  if (stableStringify(artifact.rights) !== stableStringify(actual.rights)) rejectWrite()
+  if (stableStringify(artifact.inspection) !== stableStringify(actual.inspection)) rejectWrite()
+  return true
+}
+
+/** The fresh STORED artifact a proof must bind to; an unusable library read is never a proof pass. */
+function freshSaveArtifact(state, entry, evaluatedAt) {
+  const read = readStoredForSave(getArtifactState(state.sandbox), {
+    scopeId: entry.scopeId,
+    artifactRef: entry.record.outputArtifactRef,
+    now: evaluatedAt,
+  })
+  if (!read || read.ok !== true) {
+    if (read && read.errorKey === 'LIBRARY_UNKNOWN') raiseStore('SAVE_ARTIFACT_UNKNOWN', '$')
+    raiseStore('SAVE_ARTIFACT_REJECTED', '$')
+  }
+  if (!read.value || read.value.state !== 'STORED' || !read.value.artifact) rejectWrite()
+  return read.value.artifact
 }
 
 /* ------------------------------------- the two fixed files ------------------------------------ */
@@ -513,7 +789,7 @@ function openStoreFile(state, spec, unknownKey) {
         raiseStore('STORE_CHANGED', '$')
       }
       finishRead(null)
-      return { revision: 0, entries: [], digest: null, missing: true, snapshot: { revision: 0, entries: [] } }
+      return { revision: 0, entries: [], digest: null, missing: true, schemaVersion: 1, snapshot: { schemaVersion: 1, revision: 0, entries: [] } }
     }
 
     let parsed = null
@@ -528,13 +804,13 @@ function openStoreFile(state, spec, unknownKey) {
       if (parseError) throw parseError
       file.confirmedDigest = raw.digest
       finishRead(raw.identity)
-      return { revision: parsed.revision, entries: parsed.entries, digest: raw.digest, missing: false, snapshot: parsed }
+      return { revision: parsed.revision, entries: parsed.entries, digest: raw.digest, missing: false, schemaVersion: parsed.schemaVersion, snapshot: parsed }
     }
 
     if (file.confirmedDigest === raw.digest) {
       if (parseError) throw parseError
       finishRead(raw.identity)
-      return { revision: parsed.revision, entries: parsed.entries, digest: raw.digest, missing: false, snapshot: parsed }
+      return { revision: parsed.revision, entries: parsed.entries, digest: raw.digest, missing: false, schemaVersion: parsed.schemaVersion, snapshot: parsed }
     }
 
     lockStore(state)
@@ -557,7 +833,7 @@ function openStoreFile(state, spec, unknownKey) {
         lockStore(state)
         raiseStore('STORE_CHANGED', '$')
       }
-      return { missing: true, revision: 0, entries: [], digest: null, snapshot: { revision: 0, entries: [] } }
+      return { missing: true, revision: 0, entries: [], digest: null, schemaVersion: 1, snapshot: { schemaVersion: 1, revision: 0, entries: [] } }
     }
     let parsed
     try {
@@ -570,14 +846,15 @@ function openStoreFile(state, spec, unknownKey) {
       lockStore(state)
       raiseStore('STORE_CHANGED', '$')
     }
-    return { missing: false, revision: parsed.revision, entries: parsed.entries, digest: raw.digest, snapshot: parsed }
+    return { missing: false, revision: parsed.revision, entries: parsed.entries, digest: raw.digest, schemaVersion: parsed.schemaVersion, snapshot: parsed }
   }
 
   const associationsGate = (snapshot) => {
-    if (spec.associations === true) verifyOwnerAssociations(state, snapshot)
+    if (spec.associations === true) return verifyOwnerAssociations(state, snapshot)
+    return null
   }
 
-  function write(bytes, baseDigest, expectedRevision) {
+  function write(bytes, baseDigest, expectedRevision, proof = null) {
     if (bytes.length > spec.maxBytes) raiseStore('RESOURCE_LIMIT', '$')
 
     checkSandbox(state)
@@ -586,6 +863,10 @@ function openStoreFile(state, spec, unknownKey) {
 
     const current = readVerified(baseDigest)
     associationsGate(current.snapshot)
+    // Plan 08-E-C: the mandatory delta rule is decided on the exact candidate bytes before any temp
+    // file exists, so a bad proof/record/candidate is a plain WRITE_REJECTED with no lock and no
+    // side effect. The full proof binding is re-checked against fresh data at the pre-rename gate.
+    const plan = spec.associations === true ? planOwnerDelta(spec, current, bytes, expectedRevision, proof) : null
 
     const tempName = spec.name.replace(/\.json$/, '') + '.' + crypto.randomBytes(16).toString('hex') + '.tmp'
     const tempPath = path.join(root, tempName)
@@ -714,10 +995,36 @@ function openStoreFile(state, spec, unknownKey) {
         throw error
       }
 
-      // Pre-rename association gate: the exact bytes about to be committed are parsed and the
-      // latest birth registry is read again. A birth change between the temp fsync and the rename
-      // stops the commit here, so the confirmed CLAIMED bytes stay on disk.
-      associationsGate(spec.parse(bytes))
+      // Pre-rename gate: the exact bytes about to be committed are parsed, the current owner
+      // snapshot and the latest birth registry are read again, and a SAVED delta re-reads the
+      // artifact pack so the proof is bound once more against fresh data. A Task change between
+      // the temp fsync and the rename stops the commit here, so confirmed bytes stay on disk.
+      let preParse
+      try {
+        preParse = spec.parse(bytes)
+      } catch {
+        attemptCleanup()
+        rejectWrite()
+      }
+      const preCurrent = readVerified(baseDigest)
+      const preCatalog = associationsGate(preParse)
+      if (plan && plan.savedEntry !== null) {
+        const preEntry = preParse.entries.find((entry) => ownerEntryKey(entry) === ownerEntryKey(plan.savedEntry))
+        if (!preEntry) rejectWrite()
+        const birth = preCatalog.entries.find(
+          (item) => item.scopeId === preEntry.scopeId && item.record.taskId === preEntry.taskId,
+        )
+        if (!birth) raiseStore('BIRTH_INVALID', '$')
+        const preFields = validateSaveProofLocal(proof, {
+          entry: preEntry,
+          birth,
+          current: preCurrent,
+          baseDigest,
+          expectedRevision,
+        })
+        const artifact = freshSaveArtifact(state, preEntry, preFields.evaluatedAt)
+        validateSaveArtifact(preFields, artifact)
+      }
 
       renameAttempted = true
       try {
@@ -743,7 +1050,24 @@ function openStoreFile(state, spec, unknownKey) {
         // Post-rename association gate: after the real rename the birth association is re-checked
         // against freshly read bytes. A failure here is a storage-unknown outcome, never a made-up
         // rollback: the actual FINAL bytes stay untouched and the capability stays locked.
-        associationsGate(verified)
+        const postCatalog = associationsGate(verified)
+        if (plan && plan.savedEntry !== null) {
+          const postEntry = verified.entries.find((entry) => ownerEntryKey(entry) === ownerEntryKey(plan.savedEntry))
+          if (!postEntry) rejectWrite()
+          const birth = postCatalog.entries.find(
+            (item) => item.scopeId === postEntry.scopeId && item.record.taskId === postEntry.taskId,
+          )
+          if (!birth) raiseStore('BIRTH_INVALID', '$')
+          const postFields = validateSaveProofLocal(proof, {
+            entry: postEntry,
+            birth,
+            current: { revision: expectedRevision - 1 },
+            baseDigest,
+            expectedRevision,
+          })
+          const artifact = freshSaveArtifact(state, postEntry, postFields.evaluatedAt)
+          validateSaveArtifact(postFields, artifact)
+        }
         checkSandbox(state)
         file.confirmedDigest = sha256(bytes)
         return verified.revision
