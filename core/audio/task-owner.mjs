@@ -656,37 +656,37 @@ function readSaveRoot(input) {
   if (input.schemaVersion !== TASK_OWNER_SCHEMA_VERSION) raise('UNSUPPORTED_VERSION', 'schemaVersion')
 }
 
-function readSaveIso(root, key) {
+function readSaveIso(root, key, failKey = 'SAVE_INPUT_INVALID') {
   const field = ownDataField(root, key)
-  if (!field.ok || typeof field.value !== 'string') raise('SAVE_INPUT_INVALID', key)
+  if (!field.ok || typeof field.value !== 'string') raise(failKey, key)
   const ms = Date.parse(field.value)
-  if (!Number.isFinite(ms) || new Date(ms).toISOString() !== field.value) raise('SAVE_INPUT_INVALID', key)
+  if (!Number.isFinite(ms) || new Date(ms).toISOString() !== field.value) raise(failKey, key)
   return { iso: field.value, ms }
 }
 
-function readSaveRights(root) {
+function readSaveRights(root, failKey = 'SAVE_INPUT_INVALID') {
   const field = ownDataField(root, 'rights')
-  if (!field.ok || !isPlainObject(field.value)) raise('SAVE_INPUT_INVALID', 'rights')
+  if (!field.ok || !isPlainObject(field.value)) raise(failKey, 'rights')
   const value = field.value
   let keys
   try {
     keys = Reflect.ownKeys(value)
   } catch {
-    raise('SAVE_INPUT_INVALID', 'rights')
+    raise(failKey, 'rights')
   }
-  if (keys.length !== RIGHTS_KEYS.size) raise('SAVE_INPUT_INVALID', 'rights')
+  if (keys.length !== RIGHTS_KEYS.size) raise(failKey, 'rights')
   for (const key of keys) {
-    if (typeof key !== 'string' || !RIGHTS_KEYS.has(key)) raise('SAVE_INPUT_INVALID', 'rights')
+    if (typeof key !== 'string' || !RIGHTS_KEYS.has(key)) raise(failKey, 'rights')
   }
   const stateField = ownDataField(value, 'state')
   const proofField = ownDataField(value, 'proofRef')
-  if (!stateField.ok || !proofField.ok) raise('SAVE_INPUT_INVALID', 'rights')
+  if (!stateField.ok || !proofField.ok) raise(failKey, 'rights')
   const state = stateField.value
-  if (state !== 'GRANTED' && state !== 'DENIED' && state !== 'UNKNOWN') raise('SAVE_INPUT_INVALID', 'rights')
+  if (state !== 'GRANTED' && state !== 'DENIED' && state !== 'UNKNOWN') raise(failKey, 'rights')
   const proofRef = proofField.value
   if (proofRef !== null) {
     if (typeof proofRef !== 'string' || proofRef.length > 128 || !PROOF_REF_PATTERN.test(proofRef)) {
-      raise('SAVE_INPUT_INVALID', 'rights')
+      raise(failKey, 'rights')
     }
   }
   return Object.freeze({ state, proofRef })
@@ -722,8 +722,8 @@ function readSave(input) {
 function readStatus(input) {
   readExactRoot(input, STATUS_KEYS, '$')
   validateScopeTask(input)
-  const now = readSaveIso(input, 'now')
-  const rights = readSaveRights(input)
+  const now = readSaveIso(input, 'now', 'INVALID_INPUT')
+  const rights = readSaveRights(input, 'INVALID_INPUT')
   return Object.freeze({ scopeId: input.scopeId, taskId: input.taskId, now, rights })
 }
 
@@ -742,6 +742,8 @@ function checkSavePrecondition(request, birthRecord) {
     draft.source.kind === birthRecord.source.kind &&
     draft.source.ref === birthRecord.source.ref &&
     draft.voiceProfileId === birthRecord.voiceProfileId &&
+    isPlainObject(draft.rights) &&
+    draft.rights.state === birthRecord.rights.state &&
     draft.deliveryRequested === birthRecord.deliveryRequested
   if (!same) raise('SAVE_PRECONDITION', '$')
 }
@@ -894,7 +896,32 @@ async function saveOnce(state, input) {
         if (isStoreFailure(error) && error.key === 'WRITE_UNKNOWN') return failure('SAVE_UNKNOWN', '$')
         throw error
       }
-      return saveValue('RECORDED', finalRevision, decision.record, decision.kind, decision.reason, null)
+      // The writer's internal post gate never replaces the owner's own final fresh confirmation.
+      let settled = null
+      try {
+        settled = freshAssociations(state)
+      } catch {
+        lockStore(state)
+        return failure('SAVE_UNKNOWN', '$')
+      }
+      const settledEntry = entryFor(settled.owner.snapshot, request.scopeId, request.taskId)
+      if (
+        !settledEntry ||
+        settledEntry.phase !== 'FINAL' ||
+        settledEntry.completion.kind !== decision.kind ||
+        settled.owner.revision !== finalRevision
+      ) {
+        lockStore(state)
+        return failure('SAVE_UNKNOWN', '$')
+      }
+      return saveValue(
+        'RECORDED',
+        settled.owner.revision,
+        settledEntry.record,
+        decision.kind,
+        settledEntry.completion.reason,
+        null,
+      )
     }
 
     const artifactState = getArtifactState(state.sandbox)
@@ -1021,8 +1048,18 @@ async function saveOnce(state, input) {
     }
     if (outcome.kind === 'ARTIFACT_FAILED') return failure(libraryFailureKey(outcome.error), '$')
     if (outcome.kind === 'TASK_REJECTED') return failure('SAVE_TASK_REJECTED', '$')
-    if (outcome.kind === 'STORED_ERROR') return failure(outcome.key, '$')
-    return failure(outcome.kind, '$')
+    if (outcome.kind === 'STORED_ERROR') {
+      const mapped = TASK_OWNER_ERRORS[outcome.key] ? outcome.key : 'INTERNAL_FAILURE'
+      return failure(mapped, '$')
+    }
+    const SAVE_OUTCOME_FAILURES = Object.freeze({
+      ARTIFACT_REJECTED: 'SAVE_ARTIFACT_REJECTED',
+      SAVE_ARTIFACT_REJECTED: 'SAVE_ARTIFACT_REJECTED',
+      SAVE_ARTIFACT_UNKNOWN: 'SAVE_ARTIFACT_UNKNOWN',
+      SAVE_UNKNOWN: 'SAVE_UNKNOWN',
+      WRITE_REJECTED: 'WRITE_REJECTED',
+    })
+    return failure(SAVE_OUTCOME_FAILURES[outcome.kind] || 'INTERNAL_FAILURE', '$')
   } catch (error) {
     return toFailure(error)
   }

@@ -539,9 +539,11 @@ function planOwnerDelta(spec, current, bytes, expectedRevision, proof) {
   }
 
   let savedEntry = null
+  let changed = 0
   for (const [key, entry] of nextMap) {
     const previous = currentMap.get(key) || null
     if (previous && stableStringify(previous) === stableStringify(entry)) continue
+    changed += 1
     if (previous && previous.phase === 'FINAL' && previous.completion.kind === 'SAVED') rejectWrite()
     if (entry.phase === 'FINAL' && entry.completion.kind === 'SAVED') {
       if (!previous || previous.phase !== 'CLAIMED' || savedEntry !== null) rejectWrite()
@@ -554,6 +556,7 @@ function planOwnerDelta(spec, current, bytes, expectedRevision, proof) {
     }
     if (!(previous.phase === 'CLAIMED' && entry.phase === 'FINAL')) rejectWrite()
   }
+  if (changed > 1) rejectWrite()
   if (savedEntry !== null && proof === null) rejectWrite()
   if (savedEntry === null && proof !== null) rejectWrite()
   return { candidate, savedEntry }
@@ -565,12 +568,8 @@ function proofDataField(object, key) {
   return descriptor.value
 }
 
-/**
- * Full §2.4 binding of one SaveProof against fresh authoritative data: the current CLAIMED
- * snapshot/digest/revision, the catalog birth identity, the candidate record identity and the
- * actual artifact that the same save just imported. Only WRITE_REJECTED may come out of here.
- */
-function validateSaveProof(proof, context) {
+/** Strict shape/descriptor/type pass: the only way to obtain `evaluatedAt` for a fresh library read. */
+function proofFieldsOnly(proof) {
   if (!isPlainObject(proof) || keySurface(proof, PROOF_KEY_SET) !== 'ok') rejectWrite()
   const fields = {}
   for (const key of PROOF_KEYS) fields[key] = proofDataField(proof, key)
@@ -578,6 +577,25 @@ function validateSaveProof(proof, context) {
   if (typeof fields.evaluatedAt !== 'string' || !ISO_PATTERN.test(fields.evaluatedAt)) rejectWrite()
   const evaluatedMs = Date.parse(fields.evaluatedAt)
   if (!Number.isFinite(evaluatedMs) || new Date(evaluatedMs).toISOString() !== fields.evaluatedAt) rejectWrite()
+  const artifact = fields.artifact
+  if (!isPlainObject(artifact) || keySurface(artifact, PROOF_ARTIFACT_KEY_SET) !== 'ok') rejectWrite()
+  for (const key of PROOF_ARTIFACT_KEYS) proofDataField(artifact, key)
+  const inspection = artifact.inspection
+  if (!isPlainObject(inspection) || keySurface(inspection, OWNER_INSPECTION_KEY_SET) !== 'ok') rejectWrite()
+  for (const key of OWNER_INSPECTION_KEYS) proofDataField(inspection, key)
+  if (typeof artifact.artifactRef !== 'string' || !ARTIFACT_REF_PATTERN.test(artifact.artifactRef)) rejectWrite()
+  if (typeof artifact.expiresAt !== 'string' || !ISO_PATTERN.test(artifact.expiresAt)) rejectWrite()
+  return fields
+}
+
+/**
+ * Full §2.4 binding of one SaveProof against fresh authoritative data: the current CLAIMED
+ * snapshot/digest/revision, the catalog birth identity, the candidate record identity and the
+ * actual artifact that the same save just imported. Only WRITE_REJECTED may come out of here.
+ */
+function validateSaveProof(proof, context) {
+  const fields = proofFieldsOnly(proof)
+  const evaluatedMs = Date.parse(fields.evaluatedAt)
 
   const entry = context.entry
   const birth = context.birth
@@ -963,7 +981,8 @@ function openStoreFile(state, spec, unknownKey) {
           (item) => item.scopeId === preEntry.scopeId && item.record.taskId === preEntry.taskId,
         )
         if (!birth) raiseStore('BIRTH_INVALID', '$')
-        const artifact = freshSaveArtifact(state, preEntry, proof.evaluatedAt)
+        const preFields = proofFieldsOnly(proof)
+        const artifact = freshSaveArtifact(state, preEntry, preFields.evaluatedAt)
         validateSaveProof(proof, {
           entry: preEntry,
           birth,
@@ -1006,7 +1025,8 @@ function openStoreFile(state, spec, unknownKey) {
             (item) => item.scopeId === postEntry.scopeId && item.record.taskId === postEntry.taskId,
           )
           if (!birth) raiseStore('BIRTH_INVALID', '$')
-          const artifact = freshSaveArtifact(state, postEntry, proof.evaluatedAt)
+          const postFields = proofFieldsOnly(proof)
+          const artifact = freshSaveArtifact(state, postEntry, postFields.evaluatedAt)
           validateSaveProof(proof, {
             entry: postEntry,
             birth,

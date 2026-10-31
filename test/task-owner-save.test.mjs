@@ -414,6 +414,16 @@ test('S03 refusals happen at the documented stage and never create a claim', asy
       'SAVE_PRECONDITION',
       '$',
     )
+    // F02: a format-valid rights-state conflict is refused before any claim is written.
+    expectError(
+      await owner.value.save(
+        saveFrame(b, (frame) => {
+          frame.input.sourceInput.voiceBinding.taskDraft.rights = { state: 'DENIED' }
+        }),
+      ),
+      'SAVE_PRECONDITION',
+      '$',
+    )
     assert.equal(fs.existsSync(filePath(sandbox, OWNER_FILE)), false)
 
     const status = await owner.value.artifactStatus(statusFrame(b))
