@@ -6,6 +6,18 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Plan 08-F-A pure Fixture cover stage planner (`core/audio/cover-plan.mjs`, **new**, 4 exports, 18 tests;
+  `docs/COVER_PLAN_OFFLINE.md`): one synchronous side-effect-free `planFixtureCover(payload)` validates a
+  complete Fixture `sourceInput` through the original `resolveFixtureTaskSource` exactly once, a strict
+  four-key recipe and a three-key capability declaration, and returns a deeply frozen 15-key planning
+  value (`PLANNED`/`BLOCKED`, 11-key association, 5-key recipe, 3- or 4-stage symbolic graph,
+  `taskAuthority: UNVERIFIED`, `outputArtifactRef: null`, fixed safety flags). `COVER_PLAN_CODES` holds the
+  14 fixed codes; the error/priority order (safe copy -> root/recipe/caps -> one real source call ->
+  common facts -> SVC-only association -> instrumental/separator/mixer routing) is covered behaviourally,
+  including SOURCE_BLOCKED precedence, the three legal stage graphs, gain/pitch boundaries, bad
+  dependency protocols through a real-resolver VM facade, and two complete documented positive examples
+  plus one complete negative example parsed verbatim. Pure planning only: no engine, producer, import,
+  save, store, file, network, process, clock or random call and no Task/audio side effect.
 
 - Plan 08-E-E-B Step 1 shared store base (`core/audio/fixture-store-base-internal.mjs`, **new**; `fixture-task-store-internal.mjs` and `fixture-artifact-store-internal.mjs` imports; `test/task-owner.test.mjs` VM linker + B01): the already verified storage-agnostic helpers (`StoreFailure`, error helpers, pure object/hash/serialisation utilities, `checkSandbox` with its marker/bounded-read/identity closure, `readBoundedPath`/`sameIdentity`/`assertRegularStat`, `normalizePath`/`isInside`) now live in one private base module. The Task store keeps the ten former shared names as re-exports of the **same bindings** (one `StoreFailure` class), the Artifact store imports the same eight helpers from the base, and catalog/owner/library behaviour is unchanged. B01 pins the 15-export surface, binding identity, both import orders in fresh processes, and one marker-read fault through the original VM fs proxy. Offline only; save runtime, v2, proof and `importInQueue` are still not implemented.
 - Docs: candidate save-transaction contract revised to **v1.6** (076; `docs/TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md`; `PLANNED` / `DESIGN_REVIEW_REQUIRED`, no runtime change): makes FC mean only CLAIMED and FS only FINAL SAVED, removes the IDs from no-entry and old SIMULATED/NO_EXECUTION FINAL rows, rewrites the §4.4 index table, makes FA depend on the existing Task fact, splits the joint-confirmation row into Task/Artifact first errors, restores the discovery-phase paragraph and points §8.1/§8.2 back to the exact existing events instead of "per domain/whatever the library says". Documentation only.

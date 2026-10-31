@@ -427,3 +427,14 @@ complete documented examples; local suite **755/752/3 platform skips/0 fail**, o
 specialty 72/72. Not verified: real Host/GUI, real TTS/media, delivery or any production capability;
 this does not complete Cover orchestration, resource or cancellation work, dynamic-dependency
 evidence or the parent Fake E2E.
+### Plan 08-F-A — pure Fixture cover stage planner (OFFLINE / PLAN_ONLY, PR pending)
+
+`core/audio/cover-plan.mjs` adds one synchronous, side-effect-free planner: the original source
+resolver is called exactly once, a strict recipe and Fixture capability declaration are validated,
+and the result is a frozen 15-key planning value with an 11-key association, a 5-key recipe and a
+symbolic 3- or 4-stage graph. It explicitly does not create or execute a Task, separate/convert/mix/
+verify/save audio, or touch storage, network, clock or randomness. Documented in
+`docs/COVER_PLAN_OFFLINE.md` with the full OPEN compatibility boundary and three complete runnable
+examples. Local suite **773/770/3 platform skips/0 fail**. This does not complete Cover execution,
+resource/cancellation work, dynamic-dependency evidence, the parent Fake E2E or any real capability;
+parent Plan 08 stays IN_PROGRESS.

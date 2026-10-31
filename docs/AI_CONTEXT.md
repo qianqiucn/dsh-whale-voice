@@ -473,3 +473,20 @@ old-main isolation read, a legal delete queued behind a save, and both documente
 as written). 085 v1.3 then added the full canonical-19 comparison against the real bytes, the static proof gate before any fresh read, the uniform eleven-row evidence with a true post-writer JOINT, legal OFFLINE/NO_EXECUTION settlements, fixed EXISTING concurrency, a delete queued inside the held Artifact window and fully inlined documented examples. Suite **755 / 752 pass / 3 platform skips / 0 fail**, owner + save specialty **72/72**;
 branch `feature/plan08e-owner-save`, PR #40 open and unmerged. `OFFLINE` / `FIXTURE_ONLY` /
 `NOT_INTEGRATED`; real Host/GUI, real TTS/media, delivery and production remain unverified.
+## 08-F-A pure Fixture cover stage planner (offline planning only, PR pending)
+
+`core/audio/cover-plan.mjs` (4 exports: `COVER_PLAN_SCHEMA_VERSION`, frozen `COVER_PLAN_LIMITS`,
+frozen `COVER_PLAN_CODES` with 14 fixed keys, synchronous `planFixtureCover`) validates one complete
+Fixture `sourceInput` through the original `resolveFixtureTaskSource` exactly once plus a strict
+four-key recipe and a three-key Fixture capability declaration, and returns a deeply frozen 15-key
+planning value: `PLANNED` or `BLOCKED`, an 11-key association, a 5-key recipe (with the resolver's
+accepted `pitchShift`), a symbolic 3- or 4-stage graph, `outputSlot: VERIFIED_MASTER`,
+`taskAuthority: UNVERIFIED`, `outputArtifactRef: null` and the fixed safety flags. Routing keeps the
+planned priority (safe copy -> root/recipe/capabilities -> one source call -> common facts ->
+SVC-only association -> instrumental/separator/mixer) and `SOURCE_BLOCKED` wins over every later
+business route. Tests 18; suite **773 / 770 pass / 3 platform skips / 0 fail**. Documentation
+(`docs/COVER_PLAN_OFFLINE.md`) carries the full API, all OPEN future responsibilities and two
+complete positive roots plus one complete negative root that the tests run verbatim. No Task is
+created or executed, no audio is generated or saved and the module has no I/O, clock or random
+side effect. `OFFLINE` / `FIXTURE_ONLY` / `PLAN_ONLY` / `NOT_INTEGRATED`; parent Plan 08 is still
+`IN_PROGRESS`.
