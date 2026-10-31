@@ -470,6 +470,6 @@ protocol/native-carrier guards for the result, production and inspection fields 
 accessor path, the eleven-row fs-fault matrix inside the shared VM graph, and §4.3
 compatibility/concurrency (a v2 store surviving a legacy `run` append, concurrent saves, the
 old-main isolation read, a legal delete queued behind a save, and both documented examples executed
-as written). 085 v1.3 then added the full canonical-19 comparison against the real bytes, the static proof gate before any fresh read, the uniform eleven-row evidence with a true post-writer JOINT, legal OFFLINE/NO_EXECUTION settlements, fixed EXISTING concurrency, a delete queued inside the held Artifact window and fully inlined documented examples. Suite **753 / 750 pass / 3 platform skips / 0 fail**, owner + save specialty **70/70**;
+as written). 085 v1.3 then added the full canonical-19 comparison against the real bytes, the static proof gate before any fresh read, the uniform eleven-row evidence with a true post-writer JOINT, legal OFFLINE/NO_EXECUTION settlements, fixed EXISTING concurrency, a delete queued inside the held Artifact window and fully inlined documented examples. Suite **754 / 751 pass / 3 platform skips / 0 fail**, owner + save specialty **71/71**;
 branch `feature/plan08e-owner-save`, PR #40 open and unmerged. `OFFLINE` / `FIXTURE_ONLY` /
 `NOT_INTEGRATED`; real Host/GUI, real TTS/media, delivery and production remain unverified.

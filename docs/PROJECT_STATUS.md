@@ -375,15 +375,17 @@ fs-fault matrix in one shared VM graph, and §4.3 compatibility/concurrency (a v
 legacy `run` append, concurrent saves, the old-main isolation read, a legal delete queued behind a
 save, and both documented examples executed as written). 085 v1.3 then closed the remaining offline gaps: the complete canonical 19-field inspection is
 compared against the real bytes (a numeric message or a byte-contradicting peak is refused), the
-whole locally decidable SaveProof is rejected before the first fresh store read, the eleven-row
-matrix reports uniform claim/FINAL/Artifact attempts and successes plus engine/import counts and
-three-file digests with the one-shot JOINT armed only after the real writer returned, legal OFFLINE
+whole locally decidable SaveProof (including the fullScale negative bound) is rejected before the
+first fresh store read, the eleven-row matrix reports uniform claim/FINAL/Artifact attempts and
+successes plus engine/import counts, three-file digests, the per-row hit/phase/first-error/paired
+control and the old/new handle two-domain locks with the one-shot JOINT armed only after the real
+writer returned, legal OFFLINE
 and source-blocked NO_EXECUTION settlements are recorded as fixed FINALs, ordinary concurrency is a
 fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window provably waits for
 the save's JOINT, and both documented examples carry a complete input and bind only the issued ids.
 Final local evidence: `node --test`
-**753 tests, 750 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
-**70/70**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
+**754 tests, 751 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
+**71/71**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
 integration, real TTS/media, delivery and any production capability. Parent Plan 08-E-E and Plan 08
 remain IN_PROGRESS.
 

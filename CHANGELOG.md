@@ -147,7 +147,11 @@ not invent earlier releases or imply production maturity.
   engine/import counts and three-file digests with the one-shot JOINT armed only after the real
   writer returned, legal OFFLINE/NO_EXECUTION settlements are covered, ordinary concurrency is a
   fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window waits for the JOINT,
-  and both documented examples carry a complete input. Suite **753 / 750 pass / 3 platform skips /
-  0 fail**, owner + save specialty **70/70**; still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+  and both documented examples carry a complete input. A second pass then added the fullScale
+  negative bound to the pre-read gate and the complete per-row automatic regression evidence
+  (hit/phase/skip, first error path/reason, paired control, old/new handle and factory two-domain
+  locks, and a deep-frozen injected bad-ref proof with one delegation). Suite **754 / 751 pass /
+  3 platform skips / 0 fail**, owner + save specialty **71/71**; still OFFLINE / FIXTURE_ONLY /
+  NOT_INTEGRATED.
 - Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
   installer capability is added or implied.
