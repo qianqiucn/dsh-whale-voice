@@ -175,6 +175,26 @@ function legalBirthChange() {
   return valid
 }
 
+function foreignOwnerBytes() {
+  const file = root + '/audio-task-owner-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(/[0-9a-f]{64}/, (hash) => {
+    const last = hash[hash.length - 1]
+    return hash.slice(0, -1) + (last === '0' ? '1' : '0')
+  })
+  return Buffer.from(replaced, 'utf8')
+}
+
+function foreignArtifactBytes() {
+  const file = root + '/audio-artifacts-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(
+    /"createdAt":"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d{3})Z"/,
+    (all, head, ms) => all.replace('.' + ms + 'Z', '.' + (ms === '000' ? '001' : '000') + 'Z'),
+  )
+  return Buffer.from(replaced, 'utf8')
+}
+
 function whenMatches(when) {
   if (!when || when === 'always') return true
   if (when === 'engine0') return counts.engine === 0
@@ -209,6 +229,24 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
+      if (prop === 'fsyncSync' && scenario.saveFsyncFault) {
+        const fsyncPath = fdPaths.get(args[0]) || ''
+        const fsyncName = fsyncPath.split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (/^audio-task-owner-v1\.[0-9a-f]+\.tmp$/.test(fsyncName)) {
+          counts.ownerFsyncs = (counts.ownerFsyncs || 0) + 1
+          const result = original.apply(fsReal, args)
+          if (counts.ownerFsyncs === scenario.saveFsyncFault.occurrence) {
+            const foreign =
+              scenario.saveFsyncFault.action === 'AF'
+                ? foreignArtifactBytes()
+                : foreignOwnerBytes()
+            const name = scenario.saveFsyncFault.action === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+            fsReal.writeFileSync(root + '/' + name, foreign)
+            counts.fsFaults += 1
+          }
+          return result
+        }
+      }
       if (prop === 'renameSync' && scenario.saveRenameFault) {
         const parts = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/')
         const renameName = parts[parts.length - 1]
@@ -579,6 +617,12 @@ try {
         input: frame.input,
       }
       record('save', await opened.value.save(saveFrame))
+      if (scenario.afterMutate) {
+        const name = scenario.afterMutate === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+        const foreign = scenario.afterMutate === 'AF' ? foreignArtifactBytes() : foreignOwnerBytes()
+        fsReal.writeFileSync(root + '/' + name, foreign)
+        counts.fsFaults += 1
+      }
       record('status', await opened.value.artifactStatus({
         schemaVersion: 1,
         scopeId: frame.scopeId,
@@ -2133,6 +2177,22 @@ test('V07 FINAL rename unknown in the VM: SAVE_UNKNOWN after the real FINAL comm
   assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
   assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
   assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+
+/* ------------------------------------------------------------------ V08 */
+
+test('V08 a foreign Task write after the FINAL fsync is STORE_CHANGED with the claim on disk', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v08',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'OF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
   assert.equal(worker.counts.engine, 1)
   assert.equal(worker.counts.imports, 1)
 })
