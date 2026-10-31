@@ -125,7 +125,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } } }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } }, freshArtifactReads: 0, writerReturned: 0, jointArmed: false, jointTaskRead: false, jointDone: false, digests: {} }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -137,6 +137,15 @@ const fdPaths = new Map()
 
 function readText(file) {
   try { return fsReal.readFileSync(file, 'utf8') } catch { return null }
+}
+
+function shaText(name) {
+  const text = readText(root + '/' + name)
+  return text === null ? null : cryptoReal.createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+function shaBytes(buffer) {
+  return cryptoReal.createHash('sha256').update(buffer).digest('hex')
 }
 
 function ownerPhase() {
@@ -231,35 +240,70 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
-      if (prop === 'renameSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
-        const renameBase = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
-        if (renameBase === 'audio-task-owner-v1.json') counts.finalRenames = (counts.finalRenames || 0) + 1
+      // R03: every rename of either formal target is counted for every scenario, and the real call
+      // result is what the counters describe (attempt before, success only after the real return).
+      const renameName = prop === 'renameSync'
+        ? String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        : ''
+      const renameKind = renameName === 'audio-task-owner-v1.json'
+        ? 'owner'
+        : renameName === 'audio-artifacts-v1.json'
+          ? 'artifact'
+          : null
+      if (renameKind) {
+        counts.renames[renameKind].attempt += 1
+        if (renameKind === 'owner') counts.ownerRenames += 1
       }
-      if (prop === 'lstatSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
+      const realCall = () => {
+        const out = original.apply(fsReal, args)
+        if (renameKind) {
+          const record = counts.renames[renameKind]
+          record.success += 1
+          if (renameKind === 'owner' && record.attempt === 1) counts.digests.ownerClaim = shaText('audio-task-owner-v1.json')
+          if (renameKind === 'owner' && record.attempt === 2) counts.digests.ownerSaved = shaText('audio-task-owner-v1.json')
+          if (renameKind === 'artifact' && record.attempt === 1) counts.digests.artifactStored = shaText('audio-artifacts-v1.json')
+        }
+        return out
+      }
+      if (prop === 'lstatSync' && scenario.saveLstatFault) {
         const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
-        const result = original.apply(fsReal, args)
-        if (lstatName === 'audio-task-owner-v1.json' && (counts.finalRenames || 0) >= 2) {
+        if (lstatName === 'audio-task-owner-v1.json' && counts.renames.owner.attempt >= 2) {
           counts.finalOwnerLstats = (counts.finalOwnerLstats || 0) + 1
-          if (scenario.saveLstatFault && counts.finalOwnerLstats === scenario.saveLstatFault.occurrence) {
+          const fire = counts.finalOwnerLstats === scenario.saveLstatFault.occurrence
+          const result = realCall()
+          if (fire) {
             counts.fsFaults += 1
             const error = new Error('EIO')
             error.code = 'EIO'
             throw error
           }
-          if (scenario.saveJointFault && scenario.saveJointFault.kind === 'owner' && counts.finalOwnerLstats === scenario.saveJointFault.occurrence) {
-            fsReal.writeFileSync(root + '/audio-task-owner-v1.json', foreignOwnerBytes())
+          return result
+        }
+        return realCall()
+      }
+      // R03: the one-shot JOINT fault only arms after the real FINAL writer confirmed and returned;
+      // the next formal owner lstat of the owner's own joint confirmation (or the following artifact
+      // lstat) runs its real call first, then overwrites the same inode with legal foreign bytes.
+      if (prop === 'lstatSync' && scenario.saveJointFault && counts.jointArmed && !counts.jointDone) {
+        const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        const result = realCall()
+        if (scenario.saveJointFault.kind === 'owner') {
+          if (lstatName === 'audio-task-owner-v1.json' && !counts.jointTaskRead) {
+            const foreign = foreignOwnerBytes()
+            fsReal.writeFileSync(root + '/audio-task-owner-v1.json', foreign)
+            counts.digests.foreignOwner = shaBytes(foreign)
+            counts.jointTaskRead = true
+            counts.jointDone = true
             counts.fsFaults += 1
           }
-        }
-        if (lstatName === 'audio-task-owner-v1.json' && counts.finalOwnerLstats === 3) {
+        } else if (lstatName === 'audio-task-owner-v1.json') {
           counts.jointTaskRead = true
-        }
-        if (lstatName === 'audio-artifacts-v1.json' && scenario.saveJointFault && scenario.saveJointFault.kind === 'artifact' && counts.jointTaskRead) {
-          counts.finalArtifactLstats = (counts.finalArtifactLstats || 0) + 1
-          if (counts.finalArtifactLstats === scenario.saveJointFault.occurrence) {
-            fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreignArtifactBytes())
-            counts.fsFaults += 1
-          }
+        } else if (lstatName === 'audio-artifacts-v1.json' && counts.jointTaskRead) {
+          const foreign = foreignArtifactBytes()
+          fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreign)
+          counts.digests.foreignArtifact = shaBytes(foreign)
+          counts.jointDone = true
+          counts.fsFaults += 1
         }
         return result
       }
@@ -276,35 +320,24 @@ const fsProxy = new Proxy({}, {
                 : foreignOwnerBytes()
             const name = scenario.saveFsyncFault.action === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
             fsReal.writeFileSync(root + '/' + name, foreign)
+            if (scenario.saveFsyncFault.action === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
+            else counts.digests.foreignOwner = shaBytes(foreign)
             counts.fsFaults += 1
           }
           return result
         }
       }
-      if (prop === 'renameSync' && scenario.saveRenameFault) {
-        const parts = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/')
-        const renameName = parts[parts.length - 1]
-        const kind =
-          renameName === 'audio-task-owner-v1.json'
-            ? 'owner'
-            : renameName === 'audio-artifacts-v1.json'
-              ? 'artifact'
-              : null
-        if (kind) {
-          const record = counts.renames[kind]
-          record.attempt += 1
-          const saveFault = scenario.saveRenameFault
-          const isFault = saveFault.kind === kind && record.attempt === saveFault.occurrence
-          const result = original.apply(fsReal, args)
-          record.success += 1
-          if (isFault) {
-            counts.fsFaults += 1
-            const error = new Error('EIO')
-            error.code = 'EIO'
-            throw error
-          }
-          return result
+      if (prop === 'renameSync' && scenario.saveRenameFault && renameKind) {
+        const saveFault = scenario.saveRenameFault
+        const isFault = saveFault.kind === renameKind && counts.renames[renameKind].attempt === saveFault.occurrence
+        const result = realCall()
+        if (isFault) {
+          counts.fsFaults += 1
+          const error = new Error('EIO')
+          error.code = 'EIO'
+          throw error
         }
+        return result
       }
       const fault = scenario.fsFault
       if (fault && prop === fault.call && file.includes(fault.match) && whenMatches(fault.when)) {
@@ -313,7 +346,7 @@ const fsProxy = new Proxy({}, {
           if (fault.after === true) {
             // The real call runs first and its real result is returned; only after a real success does
             // the injected action happen. A real failure propagates untouched (no second call, no mask).
-            const real = original.apply(fsReal, args)
+            const real = realCall()
             counts.fsFaults += 1
             faultAt = {
               call: prop,
@@ -337,16 +370,15 @@ const fsProxy = new Proxy({}, {
             afterRealCall: false,
             args0: String(args[0]).slice(-24),
           }
-          if (applyFileAction(fault)) return original.apply(fsReal, args)
+          if (applyFileAction(fault)) return realCall()
           const error = new Error('injected fs fault')
           error.code = 'EIO'
           throw error
         }
       }
-      const result = original.apply(fsReal, args)
+      const result = realCall()
       if (prop === 'openSync' && typeof result === 'number') fdPaths.set(result, String(args[0]))
       if (prop === 'closeSync') fdPaths.delete(args[0])
-      if (prop === 'renameSync' && String(args[1]).includes('audio-task-owner-v1.json')) counts.ownerRenames += 1
       return result
     }
   },
@@ -425,19 +457,25 @@ const engineModule = new vm.SyntheticModule(
       const fault = scenario.bytesFault
       if (!fault || counts.engine !== 1) return out
       // Keep the real production bytes carrier; only the single target field is replaced.
-      const production = { ...out.production, inspection: { ...out.production.inspection } }
+      const production = out.production === null
+        ? null
+        : { ...out.production, inspection: { ...out.production.inspection } }
       const value = { ...out.result.value }
       if (fault === 'channels') production.inspection.channels = 3
       else if (fault === 'peak') production.inspection.peak = 2
+      else if (fault === 'peak-mismatch') production.inspection.peak = out.production.inspection.peak === 0.5 ? 0 : 0.5
+      else if (fault === 'message-number') production.inspection.messageZh = 17
       else if (fault === 'flags') production.realOperationAllowed = true
       else if (fault === 'execution') value.execution = 'not-an-object'
       else if (fault === 'states-getter') {
-        const states = value.states.slice()
-        Object.defineProperty(states, states.length - 1, {
+        const originalStates = Array.from(value.states)
+        const states = originalStates.slice()
+        delete states[0]
+        Object.defineProperty(states, 0, {
           enumerable: true,
           get() {
             getterCalls.count += 1
-            return 'PROCESSING'
+            return originalStates[0]
           },
         })
         value.states = states
@@ -486,13 +524,27 @@ await artifactModule.link(async (specifier, referencing) => {
 })
 await artifactModule.evaluate()
 
+// R02: the store's own fresh library read is counted so a statically bad proof can be proven to
+// reject before the first fresh store read (fresh0) instead of after it.
+const artifactNamespace = artifactModule.namespace
+const storeArtifactModule = new vm.SyntheticModule(Object.keys(artifactNamespace), function () {
+  for (const name of Object.keys(artifactNamespace)) {
+    if (name === 'readStoredForSave') continue
+    this.setExport(name, artifactNamespace[name])
+  }
+  this.setExport('readStoredForSave', (state, request) => {
+    counts.freshArtifactReads += 1
+    return artifactNamespace.readStoredForSave(state, request)
+  })
+}, { identifier: artifactUrl })
+
 const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
 const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
 await storeModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
   if (url === engineUrl) return engineModule
   if (url === baseUrl) return baseModule
-  if (url === artifactUrl) return artifactModule
+  if (url === artifactUrl) return storeArtifactModule
   if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
   if (specifier === 'node:path') return synth('node:path', { default: pathReal })
   if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
@@ -561,14 +613,33 @@ const ownerStoreModule = new vm.SyntheticModule(storeNames, function () {
       read: file.read,
       readVerified: file.readVerified,
       write: (bytes, baseDigest, revision, proof) => {
+        let injected = proof
         if (proof && scenario.badProof) {
-          const tampered = {
+          injected = {
             ...proof,
             artifact: { ...proof.artifact, artifactRef: 'artifact:fixture-bytes-' + 'f'.repeat(32) },
           }
-          return file.write(bytes, baseDigest, revision, tampered)
+        } else if (proof && scenario.badProofStatic) {
+          const artifact = {
+            ...proof.artifact,
+            inspection: { ...proof.artifact.inspection },
+            rights: { ...proof.artifact.rights },
+          }
+          if (scenario.badProofStatic === 'message') artifact.inspection.messageZh = ''
+          else if (scenario.badProofStatic === 'schema') artifact.inspection.schemaVersion = 2
+          else if (scenario.badProofStatic === 'channels') artifact.inspection.channels = 3
+          else if (scenario.badProofStatic === 'proofRef129') {
+            artifact.rights.proofRef = 'fixture-rights:' + 'a'.repeat(120)
+          }
+          injected = { ...proof, artifact }
         }
-        return file.write(bytes, baseDigest, revision, proof)
+        const result = file.write(bytes, baseDigest, revision, injected)
+        // R03: only the real FINAL writer (the SAVED delta carrying the proof) has now confirmed and
+        // returned; only from here may the one-shot JOINT fault arm, so the next owner lstat belongs
+        // to the owner's own joint confirmation and never to the claim or to the writer's own gate.
+        counts.writerReturned += 1
+        if (scenario.saveJointFault && proof && !counts.jointArmed) counts.jointArmed = true
+        return result
       },
     })
   })
@@ -677,11 +748,18 @@ try {
         rights: { state: 'GRANTED', proofRef: 'fixture-rights:worker-1' },
         input: frame.input,
       }
+      if (scenario.blockedInput) {
+        const blocked = JSON.parse(JSON.stringify(frame.input))
+        blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+        saveFrame.input = blocked
+      }
       record('save', await opened.value.save(saveFrame))
       if (scenario.afterMutate) {
         const name = scenario.afterMutate === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
         const foreign = scenario.afterMutate === 'AF' ? foreignArtifactBytes() : foreignOwnerBytes()
         fsReal.writeFileSync(root + '/' + name, foreign)
+        if (scenario.afterMutate === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
+        else counts.digests.foreignOwner = shaBytes(foreign)
         counts.fsFaults += 1
       }
       record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
@@ -837,6 +915,14 @@ try {
   try { catalogEntries = JSON.parse(catalogAfter).entries.length } catch { catalogEntries = -1 }
   console.log(JSON.stringify({
     counts,
+    digests: {
+      ...counts.digests,
+      catalog: cryptoReal.createHash('sha256').update(catalogBefore, 'utf8').digest('hex'),
+      ownerEnd: ownerText === null ? null : shaText('audio-task-owner-v1.json'),
+      artifactEnd: shaText('audio-artifacts-v1.json'),
+    },
+    freshArtifactReads: counts.freshArtifactReads,
+    writerReturned: counts.writerReturned,
     faultAt,
     hits,
     legalBirthValid,
@@ -2319,7 +2405,7 @@ test('V13 a JOINT-phase Task overwrite is SAVE_UNKNOWN with a Task lock', () => 
   })
   const saved = workerResult(worker, 'save')
   assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 160))
-  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN, JSON.stringify({ saved, counts: worker.counts, faultAt: worker.faultAt, digests: worker.digests, freshArtifactReads: worker.freshArtifactReads, writerReturned: worker.writerReturned }).slice(0, 2500))
 })
 
 test('V14 a JOINT-phase Artifact overwrite is SAVE_ARTIFACT_UNKNOWN with the artifact domain locked', () => {
@@ -2343,4 +2429,229 @@ test('V15 a bad proof injected into the real FINAL write is WRITE_REJECTED with 
   const got = workerResult(worker, 'get')
   assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 160))
   assert.equal(got.value.ownerState, 'UNKNOWN')
+})
+
+/* ------------------------------------------------------------------ R01 */
+
+test('R01a a numeric inspection message is rejected: SAVE_UNKNOWN, no import, getter 0', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r01a', mode: 'save', bytesFault: 'message-number' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+  assert.equal(worker.files.includes('audio-artifacts-v1.json'), false)
+  assert.equal(worker.catalogUnchanged, true)
+})
+
+test('R01b a peak that contradicts the real bytes is rejected: SAVE_UNKNOWN with the claim kept', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r01b', mode: 'save', bytesFault: 'peak-mismatch' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+})
+
+test('R01c a states accessor on a legal null-production result is never executed (getter 0)', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-r01c',
+    mode: 'save',
+    blockedInput: true,
+    bytesFault: 'states-getter',
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+})
+
+/* ------------------------------------------------------------------ R02 */
+
+for (const kind of ['message', 'schema', 'channels', 'proofRef129']) {
+  test('R02 ' + kind + ': a statically bad proof rejects before the first fresh store read', () => {
+    const worker = runOwnerWorker({ key: 'key:fixture-r02-' + kind, mode: 'save', badProofStatic: kind })
+    const saved = workerResult(worker, 'save')
+    assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 300))
+    assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+    assert.equal(worker.freshArtifactReads, 0)
+    assert.equal(worker.counts.engine, 1)
+    assert.equal(worker.counts.imports, 1)
+    assert.equal(worker.getterCalls, 0)
+    assert.equal(worker.ownerPhase, 'CLAIMED')
+    assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+    assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+    assert.equal(worker.catalogUnchanged, true)
+  })
+}
+
+test('R02 control: a real valid proof still reads the fresh library and saves once', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r02-ok', mode: 'save' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.value.ownerState, 'SAVED')
+  assert.ok(worker.freshArtifactReads >= 1, 'fresh reads ' + worker.freshArtifactReads)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
+})
+
+/* ------------------------------------------------------------------ R03 */
+
+const ROW_EVIDENCE = [
+  {
+    label: '1 claim rename unknown',
+    scenario: { saveRenameFault: { kind: 'owner', occurrence: 1 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 0, success: 0 } },
+    engine: 0,
+    imports: 0,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'none',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '2 artifact rename unknown',
+    scenario: { saveRenameFault: { kind: 'artifact', occurrence: 1 } },
+    code: 'SAVE_ARTIFACT_UNKNOWN',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '3 bad proof delegated to the real writer',
+    scenario: { badProof: true },
+    code: 'WRITE_REJECTED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '4 foreign Task write after the FINAL fsync',
+    scenario: { saveFsyncFault: { occurrence: 2, action: 'OF' } },
+    code: 'STORE_CHANGED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '5 foreign Artifact write after the FINAL fsync',
+    scenario: { saveFsyncFault: { occurrence: 2, action: 'AF' } },
+    code: 'SAVE_ARTIFACT_REJECTED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'foreignArtifact',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '6 FINAL rename unknown',
+    scenario: { saveRenameFault: { kind: 'owner', occurrence: 2 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '7 writer post lstat unknown',
+    scenario: { saveLstatFault: { occurrence: 1 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '8 JOINT Task overwrite after the writer returned',
+    scenario: { saveJointFault: { kind: 'owner' } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '9 JOINT Artifact overwrite after the writer returned',
+    scenario: { saveJointFault: { kind: 'artifact' } },
+    code: 'SAVE_ARTIFACT_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'foreignArtifact',
+    phase: 'FINAL',
+  },
+  {
+    label: '10 external Task change after a successful save',
+    scenario: { afterMutate: 'OF' },
+    code: null,
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '11 external Artifact change after a successful save',
+    scenario: { afterMutate: 'AF' },
+    code: null,
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'foreignArtifact',
+    phase: 'FINAL',
+  },
+]
+
+test('R03 the eleven-row matrix reports uniform R / engine-import / three-file digests', () => {
+  for (const row of ROW_EVIDENCE) {
+    const worker = runOwnerWorker({ key: 'key:fixture-r03-' + row.label.split(' ')[0], mode: 'save', ...row.scenario })
+    const saved = workerResult(worker, 'save')
+    const detail = JSON.stringify({ row: row.label, saved, renames: worker.counts.renames, counts: worker.counts, digests: worker.digests })
+    if (row.code === null) {
+      assert.equal(saved.ok, true, detail)
+      assert.equal(saved.value.ownerState, 'SAVED', detail)
+    } else {
+      assert.equal(saved.ok, false, detail)
+      assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS[row.code], detail)
+    }
+    assert.deepEqual(worker.counts.renames.owner, row.renames.owner, detail)
+    assert.deepEqual(worker.counts.renames.artifact, row.renames.artifact, detail)
+    assert.equal(worker.counts.engine, row.engine, detail)
+    assert.equal(worker.counts.imports, row.imports, detail)
+    assert.equal(worker.catalogUnchanged, true, detail)
+    assert.equal(worker.files.includes('audio-task-owner-v1.json'), true, detail)
+    const d = worker.digests
+    const ownerExpected = row.ownerEnd === 'ownerClaim' ? d.ownerClaim : row.ownerEnd === 'ownerSaved' ? d.ownerSaved : row.ownerEnd === 'foreignOwner' ? d.foreignOwner : null
+    const artifactExpected = row.artifactEnd === 'artifactStored' ? d.artifactStored : row.artifactEnd === 'foreignArtifact' ? d.foreignArtifact : null
+    assert.equal(d.ownerEnd, ownerExpected, detail)
+    assert.equal(d.artifactEnd, artifactExpected, detail)
+    assert.equal(worker.ownerPhase, row.phase, detail)
+  }
 })
