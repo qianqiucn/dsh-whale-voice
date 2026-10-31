@@ -367,14 +367,17 @@ isolated demo captures, not real integration evidence.
 
 Implemented: `save`/`artifactStatus` on the isolated owner, owner snapshot v1/v2 with `SAVED`,
 mandatory delta proof inside the only writer with pre/post gates, `readStoredForSave` and
-`importInQueue`, plus `test/task-owner-save.test.mjs`. Local evidence: `node --test` 719 tests, 716
-pass, 3 platform skips (symlink EPERM), 0 fail; `node build.mjs` regenerated `client.js` with no
-diff. Not implemented / not verified: the full eleven fs-fault representative matrix (six of the
-eleven have real fs-level evidence: claim rename unknown, artifact rename unknown, FINAL rename
-unknown, post-confirm failure, FINAL-in-flight Task/Artifact foreign overwrite; the joint-phase two,
-the bad-proof-through-public-flow and the success-then-external-change pairs are only partially
-covered), the executable documentation save example, real Host/GUI integration, real TTS/media and
-any production capability. Parent Plan 08-E-E and Plan 08 remain IN_PROGRESS.
+`importInQueue`, plus `test/task-owner-save.test.mjs`. The 08-E-C-F01 close-out then completed the
+remaining evidence offline: the K01 (complete canonical 19-field inspection, `peak 0..1`, safe
+`states` capture with the birth constraint, no `@@toStringTag` guess), K02 (all local static proof
+rules verified before any store read) and K03 (known-field accessor path) guards, the eleven-row
+fs-fault matrix in one shared VM graph, and §4.3 compatibility/concurrency (a v2 store surviving a
+legacy `run` append, concurrent saves, the old-main isolation read, a legal delete queued behind a
+save, and both documented examples executed as written). Final local evidence: `node --test`
+**742 tests, 739 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
+**59/59**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
+integration, real TTS/media, delivery and any production capability. Parent Plan 08-E-E and Plan 08
+remain IN_PROGRESS.
 
 ### 08-E-C 续修（VM 11 行证据）
-共享 VM 图 + 真实 after-call 注入已覆盖契约 §10 的十一行代表（含第 3 行公开流程坏 proof 与第 9 行 JOINT Artifact），每行记录 engine/import 与实际 rename 计数；worker 从 `-e` 改为临时文件执行，避免 Windows 命令行长度上限。全量 737/734/3 平台 skip；仍未合并、未验证真实链路。
+共享 VM 图 + 真实 after-call 注入已覆盖契约 §10 的十一行代表（含第 3 行公开流程坏 proof 与第 9 行 JOINT Artifact），每行记录 engine/import 与实际 rename 计数；worker 从 `-e` 改为临时文件执行，避免 Windows 命令行长度上限。收口后全量 742/739/3 平台 skip，owner+save 专项 59/59；仍未合并，Host/GUI、真实 TTS/media 与投递均未验证。

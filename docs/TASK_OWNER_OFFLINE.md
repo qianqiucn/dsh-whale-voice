@@ -492,22 +492,21 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 平台限制：本环境 hardlink/symlink 相关旧断言按既定 EPERM skip 记录，不据此修改产品拒链策略。本文档不预填未执行的通过数。
 
-## 13. 候选保存事务契约（PLANNED，尚未实现）
+## 13. 保存事务契约（设计冻结 v1.6；离线运行时候选已实现，见 §15）
 
-同一 claim 内把 `PROCESSING + bytes` 保存进演示资产库的候选契约见
+同一 claim 内把 `PROCESSING + bytes` 保存进演示资产库的冻结契约见
 [TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.6
-（`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`）。
+（`PLANNED` / `DESIGN_REVIEW_REQUIRED`，作为设计快照不改写）。
 
-**当前 owner 仍未实现保存**：工厂只有 `run`/`get`，`FINAL` 只允许 `SIMULATED`/`NO_EXECUTION`，
-不写 `SAVED`、不调用资产库、不产生 `artifactRef`；owner 快照现为 v1、`revision` 按
-`CLAIMED=1 / FINAL=2` 权重累计。本文第 1–12 节全部为既有行为，仍为 `OFFLINE` / `FIXTURE_ONLY` /
-`NOT_INTEGRATED`；候选文档不是运行时代码授权。
+**保存运行时已由 08-E-C 在本分支离线实现为候选**（`save`/`artifactStatus`、磁盘 owner v2、唯一
+writer 内的冻结 `SaveProof`，详见 §15）；契约文件本身仍不是运行时代码授权。本文第 1–12 节描述
+的 `run`/`get` 行为未变，整体仍为 `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`。
 
 ## 14. 共享存储基础模块（08-E-E-B Step 1，已实现）
 
 `core/audio/fixture-store-base-internal.mjs` 是唯一共享 helper 家园（15 个内部导出）：`StoreFailure` 与错误 helper、`isPlainObject`/`keySurface`/`hasOwn`/`sha256`/`stableStringify`、`checkSandbox`（含 marker/有界读/身份闭包）、`readBoundedPath`/`sameIdentity`/`assertRegularStat`、`normalizePath`/`isInside`。
 
-Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）仍未实现，owner 仍只输出 `SIMULATED`/`NO_EXECUTION`。
+Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）在本切片时尚未实现，后续由 08-E-C（§15）离线补齐。
 
 
 ## 15. 同一 claim 保存事务（08-E-C，离线实现）
@@ -521,9 +520,9 @@ Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`Stor
 - `artifactStatus` 五键输入、六字段输出，按契约十四步优先级；`UNKNOWN`/`MISSING`/`RIGHTS_REJECTED` 不泄漏 ref/expiry；历史 `get` 不因删除/过期/撤权改历史。
 - 新增 8 个公开错误码（共 22）：`SAVE_INPUT_INVALID`/`SAVE_RIGHTS_REJECTED`/`SAVE_EXPIRED_REQUEST`/`SAVE_PRECONDITION`/`SAVE_ARTIFACT_REJECTED`/`SAVE_ARTIFACT_UNKNOWN`/`SAVE_TASK_REJECTED`/`SAVE_UNKNOWN`，reason 固定，不套用旧小写规则。
 
-本地证据：`test/task-owner-save.test.mjs` 15 项全通过（含真实 fs 故障：claim rename 未知、库 rename 未知、FINAL rename 未知、post 确认失败、FINAL 内 Task/Artifact 外改、成功后外改）；全量 719 测试 716 通过 3 平台 skip 0 失败。
+本地证据（08-E-C-F01 收口后）：`test/task-owner-save.test.mjs` 23 项 + `test/task-owner.test.mjs` 36 项共 59/59 通过（含真实 fs 故障、共享 VM 11 行与 §4.3 兼容/并发代表）；全量 742 测试 739 通过 3 平台 skip 0 失败。
 
-未完成：11 个固定故障代表中 joint 阶段两项、公开流程坏 proof、库 pre 拒绝与 delete 排队等未逐一取证；文档示例尚未由测试原样载入执行。本轮不改变真实保存、TTS、微信或 Host 能力。
+上述缺口已由 08-E-C-F01 闭合：11 行固定故障代表在共享 VM 内逐行通过（见下方 §15.1 证据段），§15.1 保存示例由 S16、§15.2 rights 反例由 S23 原样载入执行。仍未改变真实保存、TTS、微信或 Host 能力。
 
 ### 15.1 完整可执行示例（真实出生 → save → status → 旧 get）
 
@@ -609,7 +608,7 @@ Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`Stor
 时序与限制：`schemaVersion` 公开恒为 `1`；磁盘 owner 快照首次写 SAVED 升 `v2`（`schemaVersion:2`），此前 `v1`；两次 rename（模板→正式、Artifact→Task）**非原子**；Task 与 Artifact 各自独立锁；`UNKNOWN` 不自动重试、不回滚、不重造 ID；`SAVED` 只代表演示资产，不是真实生成、版权或投递证据。
 
 #### 08-E-C 续修证据（VM 11 行）
-`test/task-owner.test.mjs` 的共享 VM 图（base→artifact→task→library→owner，同一 fsProxy）现覆盖 11 行固定故障代表：claim/Artifact/FINAL rename 未知、FINAL 内 Task/Artifact 外改、post 确认失败、JOINT Task/Artifact、坏 proof（经 owner 的 store 门面在真实 FINAL 写入前替换 ref 后仍 delegate）、成功后 Task/Artifact 外改；每行带 engine/import 计数与真实 after-call 注入，worker 改为临时文件执行以避开 Windows 命令行长度限制。全量 737 测试 734 通过 3 平台 skip。
+`test/task-owner.test.mjs` 的共享 VM 图（base→artifact→task→library→owner，同一 fsProxy）现覆盖 11 行固定故障代表：claim/Artifact/FINAL rename 未知、FINAL 内 Task/Artifact 外改、post 确认失败、JOINT Task/Artifact、坏 proof（经 owner 的 store 门面在真实 FINAL 写入前替换 ref 后仍 delegate）、成功后 Task/Artifact 外改；每行带 engine/import 计数与真实 after-call 注入，worker 改为临时文件执行以避开 Windows 命令行长度限制。全量 742 测试 739 通过 3 平台 skip；§4.3 另以 S19–S23 覆盖 v2 兼容、并发保存、旧 main 程序隔离读、delete 排队与文档正反例。
 
 ### 15.2 合法反例（rights 拒绝，可执行）
 

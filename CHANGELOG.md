@@ -131,5 +131,14 @@ not invent earlier releases or imply production maturity.
   keys + the 19-key inspection); every other write must carry none.
 - New internal `readStoredForSave` (fresh, queue-free, STORED/DELETED/EXPIRED/MISSING) and
   `importInQueue` (same original import, no re-enqueue, no second implementation).
+- 08-E-C-F01 evidence close-out (tests and docs only; no new capability): complete protocol and
+  native-carrier guards for the save result/production/inspection fields (canonical 19-field
+  inspection, `peak 0..1`, safe `states` capture with the birth constraint, no `@@toStringTag`
+  guess), all local static proof rules verified before any store read, the known-field accessor
+  path, the eleven-row fs-fault matrix inside one shared VM graph, and §4.3 compatibility/concurrency
+  rows (a v2 store surviving a legacy `run` append, concurrent saves, the old-main isolation read, a
+  legal delete queued behind a save, and both documented examples executed as written). Suite
+  **742 / 739 pass / 3 platform skips / 0 fail**, owner + save specialty **59/59**; still `OFFLINE` /
+  `FIXTURE_ONLY` / `NOT_INTEGRATED` and PR #40 is open and unmerged.
 - Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
   installer capability is added or implied.
