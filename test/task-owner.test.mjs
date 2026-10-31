@@ -775,6 +775,10 @@ try {
         blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
         saveFrame.input = blocked
       }
+      const preSecondOwner = await owner()
+      const preLibrary = await libraryModule.namespace.openFixtureArtifactLibrary({ sandbox })
+      record('pre-owner-2', preSecondOwner)
+      record('pre-library', preLibrary)
       if (scenario.concurrentSave) {
         const other = await owner()
         const [left, right] = await Promise.all([opened.value.save(saveFrame), other.value.save(saveFrame)])
@@ -819,6 +823,21 @@ try {
           artifactRef: 'artifact:fixture-bytes-' + 'a'.repeat(32),
           now: '2026-10-27T00:00:02.000Z',
         }))
+      }
+      if (preSecondOwner.ok) {
+        record('post-owner-2-get', await preSecondOwner.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      record('post-catalog-old-get', await catalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      if (preLibrary.ok) {
+        record('post-library-old-delete', await preLibrary.value.delete({
+          schemaVersion: 1,
+          scopeId: frame.scopeId,
+          artifactRef: 'artifact:fixture-bytes-' + 'a'.repeat(32),
+          now: '2026-10-27T00:00:02.000Z',
+        }))
+      }
+      if (scenario.repeatSave) {
+        record('save-repeat', await opened.value.save(saveFrame))
       }
     }
   } else if (mode === 'twoTasks') {
@@ -2764,7 +2783,23 @@ test('R03 the eleven-row matrix carries uniform fault, error, control and two-do
     assert.equal(d.artifactEnd, artifactExpected, detail)
     assert.equal(worker.ownerPhase, row.phase, detail)
 
-    // 4. old/new handle and factory, two-domain lock facts.
+    // 3b. Rows 10/11: the first error of the post-save read, complete code/path/reason.
+    if (number === '10') {
+      const getError = workerResult(worker, 'get')
+      assert.equal(getError.ok, false, detail)
+      assert.equal(getError.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED, detail)
+      assert.equal(getError.errors[0].path, '$', detail)
+      assert.equal(getError.errors[0].reason, FIXED_REASONS.STORE_CHANGED, detail)
+    }
+    if (number === '11') {
+      const statusError = workerResult(worker, 'status')
+      assert.equal(statusError.ok, false, detail)
+      assert.equal(statusError.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED, detail)
+      assert.equal(statusError.errors[0].path, '$', detail)
+      assert.equal(statusError.errors[0].reason, FIXED_REASONS.STORE_CHANGED, detail)
+    }
+
+    // 4. old/second/new handle and factory, two-domain lock facts.
     if (expect.domain === 'FT') {
       const ownerNew = probeLabel(worker, 'post-owner-new')
       assert.equal(ownerNew.ok, false, detail)
@@ -2777,6 +2812,15 @@ test('R03 the eleven-row matrix carries uniform fault, error, control and two-do
       const libraryDelete = probeLabel(worker, 'post-library-delete')
       assert.equal(libraryDelete.ok, true, detail)
       assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, false, detail)
+      assert.equal(secondOwnerGet.errors[0].code, TASK_OWNER_ERRORS.OWNER_UNKNOWN, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, false, detail)
+      assert.equal(oldCatalogGet.errors[0].code, 'TASK_CATALOG_CATALOG_UNKNOWN', detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, true, detail)
+      assert.equal(oldLibraryDelete.value.outcome, 'NOT_FOUND', detail)
     } else if (expect.domain === 'FA') {
       const ownerNew = probeLabel(worker, 'post-owner-new')
       assert.equal(ownerNew.ok, true, detail)
@@ -2786,6 +2830,14 @@ test('R03 the eleven-row matrix carries uniform fault, error, control and two-do
       const libraryNew = probeLabel(worker, 'post-library-new')
       assert.equal(libraryNew.ok, false, detail)
       assert.equal(libraryNew.errors[0].code, 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, true, detail)
+      assert.equal(secondOwnerGet.value.ownerState, expect.ownerState, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, true, detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, false, detail)
+      assert.equal(oldLibraryDelete.errors[0].code, 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN', detail)
     } else {
       const ownerNew = probeLabel(worker, 'post-owner-new')
       assert.equal(ownerNew.ok, true, detail)
@@ -2797,10 +2849,19 @@ test('R03 the eleven-row matrix carries uniform fault, error, control and two-do
       const libraryDelete = probeLabel(worker, 'post-library-delete')
       assert.equal(libraryDelete.ok, true, detail)
       assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, true, detail)
+      assert.equal(secondOwnerGet.value.ownerState, expect.ownerState, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, true, detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, true, detail)
+      assert.equal(oldLibraryDelete.value.outcome, 'NOT_FOUND', detail)
     }
 
-    // 5. Matching fault-free control for the same Fixture.
-    const control = runOwnerWorker({ key: 'key:fixture-r03ctl-' + number, mode: 'save' })
+    // 5. Matching fault-free control for the same Fixture: the successful save plus the read,
+    // repeat and two-domain facts that the fault rows cannot show.
+    const control = runOwnerWorker({ key: 'key:fixture-r03ctl-' + number, mode: 'save', repeatSave: true })
     const controlSaved = workerResult(control, 'save')
     const controlDetail = JSON.stringify({ row: row.label, controlSaved, counts: control.counts })
     assert.equal(controlSaved.ok, true, controlDetail)
@@ -2817,6 +2878,33 @@ test('R03 the eleven-row matrix carries uniform fault, error, control and two-do
     const controlOwnerGet = probeLabel(control, 'post-owner-get')
     assert.equal(controlOwnerGet.ok, true, controlDetail)
     assert.equal(controlOwnerGet.value.ownerState, 'SAVED', controlDetail)
+    const controlGet = workerResult(control, 'get')
+    assert.equal(controlGet.ok, true, controlDetail)
+    assert.equal(controlGet.value.ownerState, 'SAVED', controlDetail)
+    const controlStatus = workerResult(control, 'status')
+    assert.equal(controlStatus.ok, true, controlDetail)
+    assert.equal(controlStatus.value.state, 'READABLE', controlDetail)
+    const controlRepeat = workerResult(control, 'save-repeat')
+    assert.equal(controlRepeat.ok, true, controlDetail)
+    assert.equal(controlRepeat.value.outcome, 'EXISTING', controlDetail)
+    assert.equal(controlRepeat.value.artifact, null, controlDetail)
+    assert.equal(control.counts.engine, 1, controlDetail)
+    assert.equal(control.counts.imports, 1, controlDetail)
+    const controlOwnerNew = probeLabel(control, 'post-owner-new')
+    assert.equal(controlOwnerNew.ok, true, controlDetail)
+    const controlSecondOwner = probeLabel(control, 'post-owner-2-get')
+    assert.equal(controlSecondOwner.ok, true, controlDetail)
+    assert.equal(controlSecondOwner.value.ownerState, 'SAVED', controlDetail)
+    const controlOldCatalog = probeLabel(control, 'post-catalog-old-get')
+    assert.equal(controlOldCatalog.ok, true, controlDetail)
+    const controlNewLibrary = probeLabel(control, 'post-library-new')
+    assert.equal(controlNewLibrary.ok, true, controlDetail)
+    const controlLibraryDelete = probeLabel(control, 'post-library-delete')
+    assert.equal(controlLibraryDelete.ok, true, controlDetail)
+    assert.equal(controlLibraryDelete.value.outcome, 'NOT_FOUND', controlDetail)
+    const controlOldLibrary = probeLabel(control, 'post-library-old-delete')
+    assert.equal(controlOldLibrary.ok, true, controlDetail)
+    assert.equal(controlOldLibrary.value.outcome, 'NOT_FOUND', controlDetail)
   }
 })
 
@@ -2855,4 +2943,21 @@ test('R02 negative bound: fullScaleSampleCount=-1 is rejected before the first f
   assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
   assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
   assert.equal(worker.catalogUnchanged, true)
+})
+
+test('R04 a concurrent second save returns a fixed EXISTING with no extra engine or import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r04-concurrent', mode: 'save', concurrentSave: true })
+  const left = workerResult(worker, 'save')
+  const right = workerResult(worker, 'save-b')
+  const outcomes = [left, right].map((r) => (r.ok ? r.value.outcome : 'ERR:' + r.errors[0].code)).sort()
+  assert.deepEqual(outcomes, ['EXISTING', 'SAVED'], JSON.stringify([left, right]).slice(0, 500))
+  const existing = left.ok && left.value.outcome === 'EXISTING' ? left : right
+  assert.equal(existing.value.artifact, null)
+  assert.equal(existing.value.revision, 2)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerSaved)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
 })
