@@ -124,7 +124,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0 }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } } }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -209,6 +209,31 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
+      if (prop === 'renameSync' && scenario.saveRenameFault) {
+        const parts = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/')
+        const renameName = parts[parts.length - 1]
+        const kind =
+          renameName === 'audio-task-owner-v1.json'
+            ? 'owner'
+            : renameName === 'audio-artifacts-v1.json'
+              ? 'artifact'
+              : null
+        if (kind) {
+          const record = counts.renames[kind]
+          record.attempt += 1
+          const saveFault = scenario.saveRenameFault
+          const isFault = saveFault.kind === kind && record.attempt === saveFault.occurrence
+          const result = original.apply(fsReal, args)
+          record.success += 1
+          if (isFault) {
+            counts.fsFaults += 1
+            const error = new Error('EIO')
+            error.code = 'EIO'
+            throw error
+          }
+          return result
+        }
+      }
       const fault = scenario.fsFault
       if (fault && prop === fault.call && file.includes(fault.match) && whenMatches(fault.when)) {
         hits += 1
@@ -2063,4 +2088,51 @@ test('V04 harmless byte-view shadows are never read and the save still succeeds'
   const saved = workerResult(worker, 'save')
   assert.equal(saved.ok, true, JSON.stringify(saved))
   assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+/* ------------------------------------------------------------------ V05 */
+
+test('V05 claim rename unknown in the VM: SAVE_UNKNOWN, engine/import 0', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v05',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 0, success: 0 })
+  assert.equal(worker.counts.engine, 0)
+  assert.equal(worker.counts.imports, 0)
+})
+
+test('V06 artifact rename unknown in the VM: SAVE_ARTIFACT_UNKNOWN with engine=1/import=1', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v06',
+    mode: 'save',
+    saveRenameFault: { kind: 'artifact', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V07 FINAL rename unknown in the VM: SAVE_UNKNOWN after the real FINAL commit', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v07',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
 })
