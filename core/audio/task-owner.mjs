@@ -54,7 +54,7 @@ import {
   verifyOwnerAssociations,
 } from './fixture-task-store-internal.mjs'
 import { transitionAudioTask } from './task-contract.mjs'
-import { WAV_BYTE_LIMITS } from './wav-byte-inspector.mjs'
+import { WAV_BYTE_LIMITS, inspectFixtureWavBytes } from './wav-byte-inspector.mjs'
 import { enqueueArtifact, getArtifactState, isArtifactLocked, lockArtifact } from './fixture-artifact-store-internal.mjs'
 import { readStoredForSave } from './fixture-artifact-store-internal.mjs'
 import { importInQueue } from './artifact-library.mjs'
@@ -856,18 +856,71 @@ function safeStateList(value) {
   return copied
 }
 
+/**
+ * R01: the common protocol capture runs once, before the SUCCESS / legal-null split. Every field is
+ * read through an own enumerable data descriptor or a bounded data-descriptor copy, so accessors,
+ * hidden keys, Symbols, extra keys and sparse arrays are rejected without ever being invoked.
+ */
+function captureBytesEnvelope(out, birthRecord) {
+  const root = engineObject(out, BYTES_ROOT_KEYS)
+  if (root === null) return null
+  const result = engineObject(root.result, ENGINE_RESULT_KEYS)
+  if (result === null || result.ok !== true) return null
+  const value = engineObject(result.value, ENGINE_VALUE_KEYS)
+  if (value === null) return null
+  if (value.schemaVersion !== TASK_FIXTURE_SCHEMA_VERSION || !ENGINE_PHASES.has(value.phase)) return null
+  if (value.mockOnly !== true || value.realOperationAllowed !== false) return null
+  if (value.submitAllowed !== false || value.automaticRetryAllowed !== false) return null
+  if (typeof value.messageZh !== 'string' || value.messageZh.length > MAX_MESSAGE_LENGTH) return null
+  if (!isPlainObject(value.sourceCheck) || !isPlainObject(value.readiness)) return null
+  const states = safeStateList(value.states)
+  if (states === null) return null
+  let validated
+  try {
+    validated = validateAudioTaskRecord(root.record)
+  } catch {
+    return null
+  }
+  if (!validated || validated.ok !== true || !isPlainObject(validated.value)) return null
+  const record = validated.value
+  if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
+  if (!isPlainObject(record.delivery) || record.delivery.deliveryId !== null) return null
+  if (!sameOwnerImmutable(record, birthRecord)) return null
+  const expectedTask = projectOrNull(record)
+  if (expectedTask === null) return null
+  const guardedTask = guardProjection(value.task, expectedTask)
+  if (guardedTask === null) return null
+  if (stableStringify(expectedTask) !== stableStringify(guardedTask)) return null
+  if (states[states.length - 1] !== record.state) return null
+  return { root, value, record, states }
+}
+
+/** The legal non-SUCCESS settlement, evaluated from the captured copies only (zero getter calls). */
+function settleBytesEnvelope(captured, birthRecord) {
+  const { value, record, states } = captured
+  if (value.execution !== null && !isPlainObject(value.execution)) return null
+  if (value.phase === 'BLOCKED') {
+    if (!OWNER_NO_EXECUTION_REASONS.includes(value.reason)) return null
+    if (states.length !== 1) return null
+    if (!INITIAL_STATES.has(record.state)) return null
+    if (stableStringify(record) !== stableStringify(birthRecord)) return null
+    return { kind: 'NO_EXECUTION', reason: value.reason, record }
+  }
+  if (value.reason !== null && !RVC_REASONS.includes(value.reason)) return null
+  if (!OWNER_SIMULATED_STATES.has(record.state)) return null
+  if (record.delivery.state !== 'NOT_REQUESTED') return null
+  if (states[0] !== birthRecord.state) return null
+  return { kind: 'SIMULATED', reason: null, record }
+}
+
 function interpretBytesEngine(out, birthRecord) {
   try {
-    const root = engineObject(out, BYTES_ROOT_KEYS)
-    if (root === null) return null
-    const production = root.production
-    if (production === null) {
-      const settled = interpretEngine({ record: root.record, result: root.result }, birthRecord)
-      if (settled === null) return null
-      return { kind: settled.kind, reason: settled.reason, record: settled.record }
-    }
-    if (!isPlainObject(production)) return null
-    const fields = engineObject(production, BYTES_PRODUCTION_KEYS)
+    const captured = captureBytesEnvelope(out, birthRecord)
+    if (captured === null) return null
+    const { root, value, record, states } = captured
+    if (root.production === null) return settleBytesEnvelope(captured, birthRecord)
+    if (!isPlainObject(root.production)) return null
+    const fields = engineObject(root.production, BYTES_PRODUCTION_KEYS)
     if (fields === null) return null
     if (fields.schemaVersion !== 1 || fields.origin !== 'SYNTHETIC_FIXTURE') return null
     if (fields.mockOnly !== true || fields.realOperationAllowed !== false) return null
@@ -888,56 +941,53 @@ function interpretBytesEngine(out, birthRecord) {
     if (!Number.isInteger(inspection.dataByteLength) || inspection.dataByteLength < 2) return null
     if (!Number.isInteger(inspection.frameCount) || inspection.frameCount < 1) return null
     if (inspection.frameCount !== inspection.dataByteLength / (inspection.channels * 2)) return null
-    if (inspection.byteLength !== inspection.dataByteLength + 44) return null
-    if (inspection.durationMs !== (inspection.frameCount * 1000) / inspection.sampleRate) return null
-    if (typeof inspection.peak !== 'number' || !Number.isFinite(inspection.peak) || inspection.peak < 0 || inspection.peak > 1) return null
+    if (!Number.isInteger(inspection.byteLength) || inspection.byteLength < inspection.dataByteLength + 44) {
+      return null
+    }
+    if (inspection.byteLength > MAX_SAVE_BYTES) return null
+    if (typeof inspection.durationMs !== 'number' || !Number.isFinite(inspection.durationMs)) return null
+    if (inspection.durationMs <= 0 || inspection.durationMs !== (inspection.frameCount * 1000) / inspection.sampleRate) {
+      return null
+    }
+    if (typeof inspection.peak !== 'number' || !Number.isFinite(inspection.peak) || inspection.peak < 0 || inspection.peak > 1) {
+      return null
+    }
     if (!Number.isInteger(inspection.fullScaleSampleCount) || inspection.fullScaleSampleCount < 0) return null
     if (inspection.fullScaleSampleCount > inspection.frameCount * inspection.channels) return null
     if (inspection.validationState !== 'FIXTURE_WAV_CHECKED') return null
     if (inspection.mockOnly !== true || inspection.realOperationAllowed !== false) return null
     if (inspection.submitAllowed !== false || inspection.automaticRetryAllowed !== false) return null
+    if (typeof inspection.messageZh !== 'string' || inspection.messageZh.length < 1 || inspection.messageZh.length > 256) {
+      return null
+    }
+    if (typeof inspection.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(inspection.sha256)) return null
     const bytes = ownedProducedBytes(fields.bytes)
     if (bytes === null) return null
     if (inspection.byteLength !== bytes.length) return null
-    if (typeof inspection.sha256 !== 'string' || sha256(bytes) !== inspection.sha256) return null
-
-    const result = engineObject(root.result, ENGINE_RESULT_KEYS)
-    if (result === null || result.ok !== true) return null
-    const value = engineObject(result.value, ENGINE_VALUE_KEYS)
-    if (value === null) return null
-    if (value.schemaVersion !== TASK_FIXTURE_SCHEMA_VERSION || value.phase !== 'SIMULATED') return null
-    if (value.reason !== null) return null
-    if (value.mockOnly !== true || value.realOperationAllowed !== false) return null
-    if (value.submitAllowed !== false || value.automaticRetryAllowed !== false) return null
-    if (typeof value.messageZh !== 'string' || value.messageZh.length < 1 || value.messageZh.length > 512) return null
+    if (sha256(bytes) !== inspection.sha256) return null
+    // R01: the complete canonical 19-field measurement of the real bytes must agree with the claim,
+    // so a valid-range peak or a numeric message that contradicts the actual bytes cannot pass.
+    let canonical
+    try {
+      canonical = inspectFixtureWavBytes({ schemaVersion: 1, bytes })
+    } catch {
+      return null
+    }
+    if (!canonical || canonical.ok !== true || !isPlainObject(canonical.value)) return null
+    if (keySurface(canonical.value, BYTES_INSPECTION_KEYS) !== 'ok') return null
+    for (const key of BYTES_INSPECTION_KEYS) {
+      if (inspection[key] !== canonical.value[key]) return null
+    }
+    if (value.phase !== 'SIMULATED' || value.reason !== null) return null
+    if (value.messageZh.length < 1) return null
     if (value.execution !== null) {
       const copied = copyDataGraph(value.execution, 0)
       if (!copied.ok || copied.value === null) return null
       if (copied.value.mockOnly !== true || copied.value.realOperationAllowed !== false) return null
     }
-    if (!isPlainObject(value.sourceCheck) || !isPlainObject(value.readiness)) return null
-    const states = safeStateList(value.states)
-    if (states === null) return null
-
-    let validated
-    try {
-      validated = validateAudioTaskRecord(root.record)
-    } catch {
-      return null
-    }
-    if (!validated || validated.ok !== true || !isPlainObject(validated.value)) return null
-    const record = validated.value
     if (record.state !== 'PROCESSING' || record.outputArtifactRef !== null) return null
-    if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
-    if (!sameOwnerImmutable(record, birthRecord)) return null
     if (stableStringify(record) !== stableStringify(root.record)) return null
     if (states[0] !== birthRecord.state) return null
-    if (states[states.length - 1] !== record.state) return null
-    const expectedTask = projectOrNull(record)
-    if (expectedTask === null) return null
-    const guardedTask = guardProjection(value.task, expectedTask)
-    if (guardedTask === null) return null
-    if (stableStringify(expectedTask) !== stableStringify(guardedTask)) return null
     return { kind: 'SUCCESS', record, bytes }
   } catch {
     return null

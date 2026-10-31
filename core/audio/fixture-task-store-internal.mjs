@@ -55,6 +55,7 @@ import { createAudioTaskRecord, validateAudioTaskRecord } from './task-contract.
 import { TASK_FIXTURE_ERRORS } from './task-fixture-engine-internal.mjs'
 import { PROVIDER_DISPATCH_ERRORS } from './provider-dispatch.mjs'
 import { getArtifactState, readStoredForSave } from './fixture-artifact-store-internal.mjs'
+import { WAV_BYTE_LIMITS } from './wav-byte-inspector.mjs'
 
 export const CATALOG_FILE_NAME = 'audio-task-catalog-v1.json'
 export const OWNER_FILE_NAME = 'audio-task-owner-v1.json'
@@ -607,6 +608,52 @@ function proofFieldsOnly(proof) {
   if (artifact.inspection.byteLength !== artifact.byteLength) rejectWrite()
   if (!(artifact.inspection.byteLength >= artifact.inspection.dataByteLength + 44)) rejectWrite()
   if (artifact.inspection.peak < 0 || artifact.inspection.peak > 1) rejectWrite()
+  // R02: every locally decidable static fact is checked here, before any fresh store read, so a bad
+  // message/schema/channels/proof length is rejected without reading the owner file or the library.
+  if (!HASH_PATTERN.test(artifact.byteSha256)) rejectWrite()
+  if (artifact.inspection.schemaVersion !== 1) rejectWrite()
+  if (artifact.inspection.format !== 'WAV' || artifact.inspection.codec !== 'PCM_S16LE') rejectWrite()
+  if (artifact.inspection.bitsPerSample !== 16) rejectWrite()
+  if (!WAV_BYTE_LIMITS.sampleRates.includes(artifact.inspection.sampleRate)) rejectWrite()
+  if (artifact.inspection.channels !== 1 && artifact.inspection.channels !== 2) rejectWrite()
+  if (artifact.inspection.dataByteLength < 2 || artifact.inspection.frameCount < 1) rejectWrite()
+  if (
+    artifact.inspection.frameCount !==
+    artifact.inspection.dataByteLength / (artifact.inspection.channels * 2)
+  ) {
+    rejectWrite()
+  }
+  if (artifact.inspection.byteLength < 44 || artifact.inspection.byteLength > 1048576) rejectWrite()
+  if (!(artifact.inspection.durationMs > 0)) rejectWrite()
+  if (
+    artifact.inspection.durationMs !==
+    (artifact.inspection.frameCount * 1000) / artifact.inspection.sampleRate
+  ) {
+    rejectWrite()
+  }
+  if (
+    artifact.inspection.fullScaleSampleCount >
+    artifact.inspection.frameCount * artifact.inspection.channels
+  ) {
+    rejectWrite()
+  }
+  if (artifact.inspection.validationState !== 'FIXTURE_WAV_CHECKED') rejectWrite()
+  if (artifact.inspection.mockOnly !== true || artifact.inspection.realOperationAllowed !== false) rejectWrite()
+  if (artifact.inspection.submitAllowed !== false || artifact.inspection.automaticRetryAllowed !== false) {
+    rejectWrite()
+  }
+  if (artifact.inspection.messageZh.length < 1 || artifact.inspection.messageZh.length > 256) rejectWrite()
+  if (typeof artifact.requestKey !== 'string' || !OWNER_KEY_PATTERN.test(artifact.requestKey)) rejectWrite()
+  const proofRights = artifact.rights
+  if (!isPlainObject(proofRights) || keySurface(proofRights, OWNER_RIGHTS_KEYS) !== 'ok') rejectWrite()
+  if (proofDataField(proofRights, 'state') !== 'GRANTED') rejectWrite()
+  const proofRefValue = proofDataField(proofRights, 'proofRef')
+  if (typeof proofRefValue !== 'string' || proofRefValue.length > 128) rejectWrite()
+  if (!OWNER_PROOF_PATTERN.test(proofRefValue)) rejectWrite()
+  const proofExpiresMs = Date.parse(artifact.expiresAt)
+  if (!Number.isFinite(proofExpiresMs)) rejectWrite()
+  if (new Date(proofExpiresMs).toISOString() !== artifact.expiresAt) rejectWrite()
+  if (proofExpiresMs <= Date.parse(fields.evaluatedAt)) rejectWrite()
   return fields
 }
 
@@ -860,6 +907,10 @@ function openStoreFile(state, spec, unknownKey) {
     checkSandbox(state)
     const root = state.sandbox.root
     const fileTarget = target()
+
+    // R02: a malformed proof is a plain WRITE_REJECTED before the first fresh store read, so no
+    // owner/library byte is even opened for a proof that is statically impossible.
+    if (spec.associations === true && proof !== null) proofFieldsOnly(proof)
 
     const current = readVerified(baseDigest)
     associationsGate(current.snapshot)
