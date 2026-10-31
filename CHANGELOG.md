@@ -122,3 +122,39 @@ not invent earlier releases or imply production maturity.
   reviewed isolated demo previews, an honest capability table and target Audio/Relay diagram.
 - Move developer setup and verification guidance to `docs/DEVELOPMENT.md`; document preview
   provenance. No plugin runtime, production configuration or integration behavior changes.
+## 08-E-C — same-claim Fixture save transaction (offline, PR pending)
+
+- `openFixtureTaskOwner` now also exposes `save` and `artifactStatus`; the public owner schema stays
+  `1` and the on-disk owner snapshot gains a separate `v2` form that records one `SAVED` FINAL.
+- The only owner writer enforces the mandatory delta rule inside its own pre/post gate: exactly one
+  `CLAIMED -> SAVED FINAL` transition must carry a frozen `SaveProof` (11 root keys + 8 artifact
+  keys + the 19-key inspection); every other write must carry none.
+- New internal `readStoredForSave` (fresh, queue-free, STORED/DELETED/EXPIRED/MISSING) and
+  `importInQueue` (same original import, no re-enqueue, no second implementation).
+- 08-E-C-F01 evidence close-out (tests and docs only; no new capability): complete protocol and
+  native-carrier guards for the save result/production/inspection fields (canonical 19-field
+  inspection, `peak 0..1`, safe `states` capture with the birth constraint, no `@@toStringTag`
+  guess), all local static proof rules verified before any store read, the known-field accessor
+  path, the eleven-row fs-fault matrix inside one shared VM graph, and §4.3 compatibility/concurrency
+  rows (a v2 store surviving a legacy `run` append, concurrent saves, the old-main isolation read, a
+  legal delete queued behind a save, and both documented examples executed as written). Suite
+  **742 / 739 pass / 3 platform skips / 0 fail**, owner + save specialty **59/59**; still `OFFLINE` /
+  `FIXTURE_ONLY` / `NOT_INTEGRATED` and PR #40 is open and unmerged.
+- 085 v1.3 close-out (tests, docs and two offline guards; no new capability): the save result is
+  captured once before the SUCCESS/legal-null split and the complete canonical 19-field inspection
+  is compared against the real bytes, the whole locally decidable SaveProof is rejected before the
+  first fresh store read, the eleven-row matrix now reports uniform claim/FINAL/Artifact counts,
+  engine/import counts and three-file digests with the one-shot JOINT armed only after the real
+  writer returned, legal OFFLINE/NO_EXECUTION settlements are covered, ordinary concurrency is a
+  fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window waits for the JOINT,
+  and both documented examples carry a complete input. A second pass then added the fullScale
+  negative bound to the pre-read gate and the complete per-row automatic regression evidence
+  (hit/phase/skip, first error path/reason, paired control, old/new handle and factory two-domain
+  locks, and a deep-frozen injected bad-ref proof with one delegation). A third pass adds the
+  pre-fault second owner/catalog/library handles re-checked after the fault, the control
+  get/status/repeat facts with both domains unlocked, rows 10/11 first-error path/reason and the
+  restored concurrent SAVED+EXISTING regression with engine 1/import 1 and rename counts. Suite
+  **755 / 752 pass / 3 platform skips / 0 fail**, owner + save specialty **72/72**; still OFFLINE / FIXTURE_ONLY /
+  NOT_INTEGRATED.
+- Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
+  installer capability is added or implied.

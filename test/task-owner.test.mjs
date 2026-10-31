@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import os from 'node:os'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { copyFixtureInput } from '../core/audio/fixture-input-boundary.mjs'
@@ -124,7 +125,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, fsFaults: 0, ownerRenames: 0 }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } }, freshArtifactReads: 0, writerReturned: 0, writerCalls: 0, proofInjected: 0, faultInfo: null, jointArmed: false, jointTaskRead: false, jointDone: false, digests: {} }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -136,6 +137,21 @@ const fdPaths = new Map()
 
 function readText(file) {
   try { return fsReal.readFileSync(file, 'utf8') } catch { return null }
+}
+
+function shaText(name) {
+  const text = readText(root + '/' + name)
+  return text === null ? null : cryptoReal.createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+function shaBytes(buffer) {
+  return cryptoReal.createHash('sha256').update(buffer).digest('hex')
+}
+
+function deepFreezeAll(value) {
+  if (value === null || typeof value !== 'object') return value
+  for (const key of Object.keys(value)) deepFreezeAll(value[key])
+  return Object.freeze(value)
 }
 
 function ownerPhase() {
@@ -175,6 +191,27 @@ function legalBirthChange() {
   return valid
 }
 
+function foreignOwnerBytes() {
+  const file = root + '/audio-task-owner-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(/[0-9a-f]{64}/, (hash) => {
+    const last = hash[hash.length - 1]
+    return hash.slice(0, -1) + (last === '0' ? '1' : '0')
+  })
+  return Buffer.from(replaced, 'utf8')
+}
+
+function foreignArtifactBytes() {
+  const file = root + '/audio-artifacts-v1.json'
+  const source = fsReal.readFileSync(file, 'utf8')
+  const replaced = source.replace(
+    /"createdAt":"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})[.]([0-9]{3})Z"/,
+    (all, head, ms) => all.replace('.' + ms + 'Z', '.' + (ms === '000' ? '001' : '000') + 'Z'),
+  )
+  if (replaced === source) throw new Error('AF_NO_CHANGE')
+  return Buffer.from(replaced, 'utf8')
+}
+
 function whenMatches(when) {
   if (!when || when === 'always') return true
   if (when === 'engine0') return counts.engine === 0
@@ -209,6 +246,110 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
+      // R03: every rename of either formal target is counted for every scenario, and the real call
+      // result is what the counters describe (attempt before, success only after the real return).
+      const renameName = prop === 'renameSync'
+        ? String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        : ''
+      const renameKind = renameName === 'audio-task-owner-v1.json'
+        ? 'owner'
+        : renameName === 'audio-artifacts-v1.json'
+          ? 'artifact'
+          : null
+      if (renameKind) {
+        counts.renames[renameKind].attempt += 1
+        if (renameKind === 'owner') counts.ownerRenames += 1
+      }
+      const realCall = () => {
+        const out = original.apply(fsReal, args)
+        if (renameKind) {
+          const record = counts.renames[renameKind]
+          record.success += 1
+          if (renameKind === 'owner' && record.attempt === 1) counts.digests.ownerClaim = shaText('audio-task-owner-v1.json')
+          if (renameKind === 'owner' && record.attempt === 2) counts.digests.ownerSaved = shaText('audio-task-owner-v1.json')
+          if (renameKind === 'artifact' && record.attempt === 1) counts.digests.artifactStored = shaText('audio-artifacts-v1.json')
+        }
+        return out
+      }
+      if (prop === 'lstatSync' && scenario.saveLstatFault) {
+        const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (lstatName === 'audio-task-owner-v1.json' && counts.renames.owner.attempt >= 2) {
+          counts.finalOwnerLstats = (counts.finalOwnerLstats || 0) + 1
+          const fire = counts.finalOwnerLstats === scenario.saveLstatFault.occurrence
+          const result = realCall()
+          if (fire) {
+            counts.faultInfo = { id: 'lstat', phase: ownerPhase(), count: counts.finalOwnerLstats }
+            counts.fsFaults += 1
+            const error = new Error('EIO')
+            error.code = 'EIO'
+            throw error
+          }
+          return result
+        }
+        return realCall()
+      }
+      // R03: the one-shot JOINT fault only arms after the real FINAL writer confirmed and returned;
+      // the next formal owner lstat of the owner's own joint confirmation (or the following artifact
+      // lstat) runs its real call first, then overwrites the same inode with legal foreign bytes.
+      if (prop === 'lstatSync' && scenario.saveJointFault && counts.jointArmed && !counts.jointDone) {
+        const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        const result = realCall()
+        if (scenario.saveJointFault.kind === 'owner') {
+          if (lstatName === 'audio-task-owner-v1.json' && !counts.jointTaskRead) {
+            const foreign = foreignOwnerBytes()
+            fsReal.writeFileSync(root + '/audio-task-owner-v1.json', foreign)
+            counts.digests.foreignOwner = shaBytes(foreign)
+            counts.jointTaskRead = true
+            counts.jointDone = true
+            counts.faultInfo = { id: 'joint', kind: 'owner', phase: ownerPhase(), jointTaskRead: true }
+            counts.fsFaults += 1
+          }
+        } else if (lstatName === 'audio-task-owner-v1.json') {
+          counts.jointTaskRead = true
+        } else if (lstatName === 'audio-artifacts-v1.json' && counts.jointTaskRead) {
+          const foreign = foreignArtifactBytes()
+          fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreign)
+          counts.digests.foreignArtifact = shaBytes(foreign)
+          counts.jointDone = true
+          counts.faultInfo = { id: 'joint', kind: 'artifact', phase: ownerPhase(), jointTaskRead: true }
+          counts.fsFaults += 1
+        }
+        return result
+      }
+      if (prop === 'fsyncSync' && scenario.saveFsyncFault) {
+        const fsyncPath = fdPaths.get(args[0]) || ''
+        const fsyncName = fsyncPath.split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (/^audio-task-owner-v1\.[0-9a-f]+\.tmp$/.test(fsyncName)) {
+          counts.ownerFsyncs = (counts.ownerFsyncs || 0) + 1
+          const result = original.apply(fsReal, args)
+          if (counts.ownerFsyncs === scenario.saveFsyncFault.occurrence) {
+            const foreign =
+              scenario.saveFsyncFault.action === 'AF'
+                ? foreignArtifactBytes()
+                : foreignOwnerBytes()
+            const name = scenario.saveFsyncFault.action === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+            fsReal.writeFileSync(root + '/' + name, foreign)
+            if (scenario.saveFsyncFault.action === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
+            else counts.digests.foreignOwner = shaBytes(foreign)
+            counts.faultInfo = { id: 'fsync', action: scenario.saveFsyncFault.action, phase: ownerPhase(), fsync: counts.ownerFsyncs }
+            counts.fsFaults += 1
+          }
+          return result
+        }
+      }
+      if (prop === 'renameSync' && scenario.saveRenameFault && renameKind) {
+        const saveFault = scenario.saveRenameFault
+        const isFault = saveFault.kind === renameKind && counts.renames[renameKind].attempt === saveFault.occurrence
+        const result = realCall()
+        if (isFault) {
+          counts.faultInfo = { id: 'rename', kind: renameKind, phase: ownerPhase(), attempt: counts.renames[renameKind].attempt }
+          counts.fsFaults += 1
+          const error = new Error('EIO')
+          error.code = 'EIO'
+          throw error
+        }
+        return result
+      }
       const fault = scenario.fsFault
       if (fault && prop === fault.call && file.includes(fault.match) && whenMatches(fault.when)) {
         hits += 1
@@ -216,7 +357,7 @@ const fsProxy = new Proxy({}, {
           if (fault.after === true) {
             // The real call runs first and its real result is returned; only after a real success does
             // the injected action happen. A real failure propagates untouched (no second call, no mask).
-            const real = original.apply(fsReal, args)
+            const real = realCall()
             counts.fsFaults += 1
             faultAt = {
               call: prop,
@@ -240,16 +381,15 @@ const fsProxy = new Proxy({}, {
             afterRealCall: false,
             args0: String(args[0]).slice(-24),
           }
-          if (applyFileAction(fault)) return original.apply(fsReal, args)
+          if (applyFileAction(fault)) return realCall()
           const error = new Error('injected fs fault')
           error.code = 'EIO'
           throw error
         }
       }
-      const result = original.apply(fsReal, args)
+      const result = realCall()
       if (prop === 'openSync' && typeof result === 'number') fdPaths.set(result, String(args[0]))
       if (prop === 'closeSync') fdPaths.delete(args[0])
-      if (prop === 'renameSync' && String(args[1]).includes('audio-task-owner-v1.json')) counts.ownerRenames += 1
       return result
     }
   },
@@ -310,11 +450,62 @@ const wrappedEngine = (frame) => {
   return copy
 }
 const engineModule = new vm.SyntheticModule(
-  ['TASK_FIXTURE_ERRORS', 'TASK_FIXTURE_SCHEMA_VERSION', 'runExistingFixtureTaskOnce'],
+  [
+    'TASK_FIXTURE_ERRORS',
+    'TASK_FIXTURE_SCHEMA_VERSION',
+    'runExistingFixtureTaskOnce',
+    'runExistingFixtureTaskBytesOnce',
+  ],
   function () {
     this.setExport('TASK_FIXTURE_ERRORS', real.engine.TASK_FIXTURE_ERRORS)
     this.setExport('TASK_FIXTURE_SCHEMA_VERSION', real.engine.TASK_FIXTURE_SCHEMA_VERSION)
     this.setExport('runExistingFixtureTaskOnce', wrappedEngine)
+    // Plan 08-E-C: the real bytes entry is forwarded unchanged; the legacy fault wrapper above keeps
+    // its own original scope and never becomes a fake success for the save path.
+    this.setExport('runExistingFixtureTaskBytesOnce', (bytesFrame) => {
+      counts.engine += 1
+      const out = real.engine.runExistingFixtureTaskBytesOnce(bytesFrame)
+      const fault = scenario.bytesFault
+      if (!fault || counts.engine !== 1) return out
+      // Keep the real production bytes carrier; only the single target field is replaced.
+      const production = out.production === null
+        ? null
+        : { ...out.production, inspection: { ...out.production.inspection } }
+      const value = { ...out.result.value }
+      if (fault === 'channels') production.inspection.channels = 3
+      else if (fault === 'peak') production.inspection.peak = 2
+      else if (fault === 'peak-mismatch') production.inspection.peak = out.production.inspection.peak === 0.5 ? 0 : 0.5
+      else if (fault === 'message-number') production.inspection.messageZh = 17
+      else if (fault === 'flags') production.realOperationAllowed = true
+      else if (fault === 'execution') value.execution = 'not-an-object'
+      else if (fault === 'states-getter') {
+        const originalStates = Array.from(value.states)
+        const states = originalStates.slice()
+        delete states[0]
+        Object.defineProperty(states, 0, {
+          enumerable: true,
+          get() {
+            getterCalls.count += 1
+            return originalStates[0]
+          },
+        })
+        value.states = states
+      } else if (fault === 'shadow') {
+        const bytes = out.production.bytes
+        Object.defineProperty(bytes, 'length', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, 'byteLength', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, Symbol.toStringTag, { get() { getterCalls.count += 1; return 'NotBytes' } })
+        production.bytes = bytes
+      } else if (fault === 'resizable') {
+        const bytes = out.production.bytes
+        const buffer = new ArrayBuffer(bytes.length, { maxByteLength: bytes.length * 2 })
+        new Uint8Array(buffer).set(bytes)
+        production.bytes = new Uint8Array(buffer)
+      }
+      if (fault === 'missing-production') return { record: out.record, result: { ok: true, value } }
+      if (fault === 'clone') return { record: out.record, result: { ok: true, value }, production }
+      return { record: out.record, result: { ok: true, value }, production }
+    })
   },
   { identifier: engineUrl },
 )
@@ -330,18 +521,85 @@ await baseModule.link(async (specifier) => {
 })
 await baseModule.evaluate()
 
-const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
-const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
-await storeModule.link(async (specifier, referencing) => {
+const artifactUrl = new URL('fixture-artifact-store-internal.mjs', base).href
+const artifactModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(artifactUrl), 'utf8'), {
+  identifier: artifactUrl,
+})
+await artifactModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === engineUrl) return engineModule
   if (url === baseUrl) return baseModule
   if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
   if (specifier === 'node:path') return synth('node:path', { default: pathReal })
   if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
   return synth(url, await import(url))
 })
+await artifactModule.evaluate()
+
+// R02: the store's own fresh library read is counted so a statically bad proof can be proven to
+// reject before the first fresh store read (fresh0) instead of after it.
+const artifactNamespace = artifactModule.namespace
+const storeArtifactModule = new vm.SyntheticModule(Object.keys(artifactNamespace), function () {
+  for (const name of Object.keys(artifactNamespace)) {
+    if (name === 'readStoredForSave') continue
+    this.setExport(name, artifactNamespace[name])
+  }
+  this.setExport('readStoredForSave', (state, request) => {
+    counts.freshArtifactReads += 1
+    return artifactNamespace.readStoredForSave(state, request)
+  })
+}, { identifier: artifactUrl })
+
+const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
+const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
+await storeModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === engineUrl) return engineModule
+  if (url === baseUrl) return baseModule
+  if (url === artifactUrl) return storeArtifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
 await storeModule.evaluate()
+
+const libraryUrl = new URL('artifact-library.mjs', base).href
+const libraryModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(libraryUrl), 'utf8'), {
+  identifier: libraryUrl,
+})
+await libraryModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === storeUrl) return storeModule
+  if (url === artifactUrl) return artifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
+await libraryModule.evaluate()
+
+// The owner must see the same library instance; only the counting wrapper is added here.
+const libraryNamespace = libraryModule.namespace
+const ownerLibraryModule = new vm.SyntheticModule(
+  [
+    'ARTIFACT_LIBRARY_SCHEMA_VERSION',
+    'ARTIFACT_LIBRARY_LIMITS',
+    'ARTIFACT_LIBRARY_ERRORS',
+    'openFixtureArtifactLibrary',
+    'importInQueue',
+  ],
+  function () {
+    this.setExport('ARTIFACT_LIBRARY_SCHEMA_VERSION', libraryNamespace.ARTIFACT_LIBRARY_SCHEMA_VERSION)
+    this.setExport('ARTIFACT_LIBRARY_LIMITS', libraryNamespace.ARTIFACT_LIBRARY_LIMITS)
+    this.setExport('ARTIFACT_LIBRARY_ERRORS', libraryNamespace.ARTIFACT_LIBRARY_ERRORS)
+    this.setExport('openFixtureArtifactLibrary', libraryNamespace.openFixtureArtifactLibrary)
+    this.setExport('importInQueue', (state, input) => {
+      counts.imports += 1
+      return libraryNamespace.importInQueue(state, input)
+    })
+  },
+  { identifier: libraryUrl },
+)
 
 const catalogSource = fsReal.readFileSync(new URL(catalogUrl), 'utf8')
 const catalogModule = new vm.SourceTextModule(catalogSource, { identifier: catalogUrl })
@@ -352,12 +610,71 @@ await catalogModule.link(async (specifier, referencing) => {
 })
 await catalogModule.evaluate()
 
+const storeNamespace = storeModule.namespace
+const storeNames = Object.keys(storeNamespace)
+const ownerStoreModule = new vm.SyntheticModule(storeNames, function () {
+  for (const name of storeNames) {
+    if (name === 'openOwnerFile') continue
+    this.setExport(name, storeNamespace[name])
+  }
+  this.setExport('openOwnerFile', (state) => {
+    const file = storeNamespace.openOwnerFile(state)
+    return Object.freeze({
+      name: file.name,
+      read: file.read,
+      readVerified: file.readVerified,
+      write: (bytes, baseDigest, revision, proof) => {
+        let injected = proof
+        if (proof && scenario.badProof) {
+          injected = {
+            ...proof,
+            artifact: { ...proof.artifact, artifactRef: 'artifact:fixture-bytes-' + 'f'.repeat(32) },
+          }
+        } else if (proof && scenario.badProofStatic) {
+          const artifact = {
+            ...proof.artifact,
+            inspection: { ...proof.artifact.inspection },
+            rights: { ...proof.artifact.rights },
+          }
+          if (scenario.badProofStatic === 'message') artifact.inspection.messageZh = ''
+          else if (scenario.badProofStatic === 'schema') artifact.inspection.schemaVersion = 2
+          else if (scenario.badProofStatic === 'channels') artifact.inspection.channels = 3
+          else if (scenario.badProofStatic === 'fullScaleNegative') artifact.inspection.fullScaleSampleCount = -1
+          else if (scenario.badProofStatic === 'proofRef129') {
+            artifact.rights.proofRef = 'fixture-rights:' + 'a'.repeat(120)
+          }
+          injected = { ...proof, artifact }
+        }
+        if (injected !== proof) {
+          deepFreezeAll(injected)
+          counts.proofInjected += 1
+          counts.proofFrozen =
+            Object.isFrozen(injected) &&
+            Object.isFrozen(injected.artifact) &&
+            Object.isFrozen(injected.artifact.inspection) &&
+            Object.isFrozen(injected.artifact.rights)
+        }
+        counts.writerCalls += 1
+        const result = file.write(bytes, baseDigest, revision, injected)
+        // R03: only the real FINAL writer (the SAVED delta carrying the proof) has now confirmed and
+        // returned; only from here may the one-shot JOINT fault arm, so the next owner lstat belongs
+        // to the owner's own joint confirmation and never to the claim or to the writer's own gate.
+        counts.writerReturned += 1
+        if (scenario.saveJointFault && proof && !counts.jointArmed) counts.jointArmed = true
+        return result
+      },
+    })
+  })
+}, { identifier: storeUrl })
+
 const ownerSource = fsReal.readFileSync(new URL(ownerUrl), 'utf8')
 const ownerModule = new vm.SourceTextModule(ownerSource, { identifier: ownerUrl })
 await ownerModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === storeUrl) return storeModule
+  if (url === storeUrl) return ownerStoreModule
   if (url === engineUrl) return engineModule
+  if (url === artifactUrl) return artifactModule
+  if (url === libraryUrl) return ownerLibraryModule
   return synth(url, await import(url))
 })
 await ownerModule.evaluate()
@@ -438,6 +755,91 @@ try {
     const again = await owner()
     if (!again.ok) record('second-open', again)
     else record('second', await again.value.run(frame))
+  } else if (mode === 'save') {
+    const opened = await owner()
+    if (!opened.ok) {
+      record('open', opened)
+    } else {
+      const saveFrame = {
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        requestKey: scenario.requestKey || 'save:fixture-worker-1',
+        now: '2026-10-27T00:00:01.000Z',
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        rights: { state: 'GRANTED', proofRef: 'fixture-rights:worker-1' },
+        input: frame.input,
+      }
+      if (scenario.blockedInput) {
+        const blocked = JSON.parse(JSON.stringify(frame.input))
+        blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+        saveFrame.input = blocked
+      }
+      const preSecondOwner = await owner()
+      const preLibrary = await libraryModule.namespace.openFixtureArtifactLibrary({ sandbox })
+      record('pre-owner-2', preSecondOwner)
+      record('pre-library', preLibrary)
+      if (scenario.concurrentSave) {
+        const other = await owner()
+        const [left, right] = await Promise.all([opened.value.save(saveFrame), other.value.save(saveFrame)])
+        record('save', left)
+        record('save-b', right)
+      } else {
+        record('save', await opened.value.save(saveFrame))
+      }
+      if (scenario.afterMutate) {
+        const name = scenario.afterMutate === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
+        const foreign = scenario.afterMutate === 'AF' ? foreignArtifactBytes() : foreignOwnerBytes()
+        fsReal.writeFileSync(root + '/' + name, foreign)
+        if (scenario.afterMutate === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
+        else counts.digests.foreignOwner = shaBytes(foreign)
+        counts.faultInfo = { id: 'after', kind: scenario.afterMutate, phase: ownerPhase() }
+        counts.fsFaults += 1
+      }
+      record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      record('status', await opened.value.artifactStatus({
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        now: '2026-10-27T00:00:02.000Z',
+        rights: saveFrame.rights,
+      }))
+      const postOwner = await owner()
+      record('post-owner-new', postOwner)
+      if (postOwner.ok) {
+        record('post-owner-get', await postOwner.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      const postCatalog = await catalogModule.namespace.openFixtureTaskCatalog({ sandbox })
+      record('post-catalog-new', postCatalog)
+      if (postCatalog.ok) {
+        record('post-catalog-get', await postCatalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      const postLibrary = await libraryModule.namespace.openFixtureArtifactLibrary({ sandbox })
+      record('post-library-new', postLibrary)
+      if (postLibrary.ok) {
+        record('post-library-delete', await postLibrary.value.delete({
+          schemaVersion: 1,
+          scopeId: frame.scopeId,
+          artifactRef: 'artifact:fixture-bytes-' + 'a'.repeat(32),
+          now: '2026-10-27T00:00:02.000Z',
+        }))
+      }
+      if (preSecondOwner.ok) {
+        record('post-owner-2-get', await preSecondOwner.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      record('post-catalog-old-get', await catalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      if (preLibrary.ok) {
+        record('post-library-old-delete', await preLibrary.value.delete({
+          schemaVersion: 1,
+          scopeId: frame.scopeId,
+          artifactRef: 'artifact:fixture-bytes-' + 'a'.repeat(32),
+          now: '2026-10-27T00:00:02.000Z',
+        }))
+      }
+      if (scenario.repeatSave) {
+        record('save-repeat', await opened.value.save(saveFrame))
+      }
+    }
   } else if (mode === 'twoTasks') {
     const opened = await owner()
     record('task-a', await opened.value.run(frame))
@@ -582,6 +984,14 @@ try {
   try { catalogEntries = JSON.parse(catalogAfter).entries.length } catch { catalogEntries = -1 }
   console.log(JSON.stringify({
     counts,
+    digests: {
+      ...counts.digests,
+      catalog: cryptoReal.createHash('sha256').update(catalogBefore, 'utf8').digest('hex'),
+      ownerEnd: ownerText === null ? null : shaText('audio-task-owner-v1.json'),
+      artifactEnd: shaText('audio-artifacts-v1.json'),
+    },
+    freshArtifactReads: counts.freshArtifactReads,
+    writerReturned: counts.writerReturned,
     faultAt,
     hits,
     legalBirthValid,
@@ -602,8 +1012,11 @@ try {
 
 function runOwnerWorker(scenario) {
   const script = OWNER_WORKER(BASE)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-owner-worker-'))
+  const file = path.join(dir, 'worker.mjs')
+  fs.writeFileSync(file, script)
   try {
-    const output = execFileSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], {
+    const output = execFileSync(process.execPath, ['--experimental-vm-modules', file], {
       env: { ...process.env, OWNER_SCENARIO: JSON.stringify(scenario) },
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
@@ -611,6 +1024,8 @@ function runOwnerWorker(scenario) {
     return JSON.parse(output.trim())
   } catch (error) {
     throw new Error('owner worker failed: ' + String(error.stderr || error.message).slice(0, 3000))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -882,7 +1297,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     const b = await birth(sandbox, svc, 'key:fixture-c08')
     const owner = await openFixtureTaskOwner({ sandbox })
     assert.equal(owner.ok, true)
-    assert.deepEqual(Object.keys(owner.value).sort(), ['get', 'run'])
+    assert.deepEqual(Object.keys(owner.value).sort(), ['artifactStatus', 'get', 'run', 'save'])
     assert.equal(Object.isFrozen(owner.value), true)
 
     expectOwnerError(await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'INVALID_INPUT', '$')
@@ -933,7 +1348,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     assert.equal(text.includes(sandbox.root), false)
 
     assert.equal(TASK_OWNER_SCHEMA_VERSION, 1)
-    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 14)
+    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 22)
     for (const [key, code] of Object.entries(TASK_OWNER_ERRORS)) {
       assert.equal(code, 'TASK_OWNER_' + key)
     }
@@ -1879,4 +2294,670 @@ test('B01 store-base extraction keeps one binding, one class and the real fs bou
   assert.equal(result.ok, false)
   assert.equal(result.errors[0].code, TASK_OWNER_ERRORS.SANDBOX_INVALID)
   assert.equal(result.errors[0].path, '$')
+})
+
+/* ------------------------------------------------------------------ V01 */
+
+test('V01 shared VM graph: one save runs one real engine and one real import, then reads back', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v01', mode: 'save' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.counts.fsFaults, 0)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.outcome, 'SAVED')
+  assert.equal(saved.value.ownerState, 'SAVED')
+  assert.equal(saved.value.revision, 2)
+  assert.deepEqual(Object.keys(saved.value.artifact).sort(), ['artifactRef', 'byteLength', 'expiresAt', 'sha256'])
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, true, JSON.stringify(status))
+  assert.equal(status.value.state, 'READABLE')
+  assert.equal(status.value.artifactRef, saved.value.artifact.artifactRef)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true)
+  assert.equal(got.value.ownerState, 'SAVED')
+})
+
+
+/* ------------------------------------------------------------------ V02 */
+
+test('V02 the protocol representatives are SAVE_UNKNOWN with engine=1/import=0 and no getter', () => {
+  for (const fault of ['channels', 'peak', 'flags', 'execution', 'states-getter', 'resizable', 'missing-production']) {
+    const worker = runOwnerWorker({ key: 'key:fixture-v02-' + fault, mode: 'save', bytesFault: fault })
+    assert.equal(worker.counts.engine, 1, fault + ' engine')
+    assert.equal(worker.counts.imports, 0, fault + ' import')
+    assert.equal(worker.getterCalls, 0, fault + ' getter')
+    const saved = workerResult(worker, 'save')
+    assert.equal(saved.ok, false, fault + ' ' + JSON.stringify(saved))
+    assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN, fault)
+    const got = workerResult(worker, 'get')
+    assert.equal(got.ok, true, fault)
+    assert.equal(got.value.ownerState, 'UNKNOWN', fault)
+  }
+})
+
+test('V03 a harmless field clone still saves once through the real engine and import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v03', mode: 'save', bytesFault: 'clone' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+test('V04 harmless byte-view shadows are never read and the save still succeeds', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v04', mode: 'save', bytesFault: 'shadow' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+/* ------------------------------------------------------------------ V05 */
+
+test('V05 claim rename unknown in the VM: SAVE_UNKNOWN, engine/import 0', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v05',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 0, success: 0 })
+  assert.equal(worker.counts.engine, 0)
+  assert.equal(worker.counts.imports, 0)
+})
+
+test('V06 artifact rename unknown in the VM: SAVE_ARTIFACT_UNKNOWN with engine=1/import=1', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v06',
+    mode: 'save',
+    saveRenameFault: { kind: 'artifact', occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 1, success: 1 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V07 FINAL rename unknown in the VM: SAVE_UNKNOWN after the real FINAL commit', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v07',
+    mode: 'save',
+    saveRenameFault: { kind: 'owner', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+
+/* ------------------------------------------------------------------ V08 */
+
+test('V08 a foreign Task write after the FINAL fsync is STORE_CHANGED with the claim on disk', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v08',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'OF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V10 an external Task change after a successful save fails only the next fresh read', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v10', mode: 'save', afterMutate: 'OF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 160))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, false, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+test('V09 a foreign Artifact write after the FINAL fsync is SAVE_ARTIFACT_REJECTED', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v09',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'AF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V11 an external Artifact change after a successful save fails only the next fresh status', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v11', mode: 'save', afterMutate: 'AF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 120))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 120))
+  assert.equal(got.value.ownerState, 'SAVED')
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, false, 'status ' + JSON.stringify(status).slice(0, 160))
+  assert.equal(status.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+
+/* ------------------------------------------------------------------ V12 */
+
+test('V12 a post-rename owner lstat failure is WRITE_UNKNOWN -> SAVE_UNKNOWN with the FINAL kept', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v12',
+    mode: 'save',
+    saveLstatFault: { occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V13 a JOINT-phase Task overwrite is SAVE_UNKNOWN with a Task lock', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v13',
+    mode: 'save',
+    saveJointFault: { kind: 'owner', occurrence: 3 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 160))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN, JSON.stringify({ saved, counts: worker.counts, faultAt: worker.faultAt, digests: worker.digests, freshArtifactReads: worker.freshArtifactReads, writerReturned: worker.writerReturned }).slice(0, 2500))
+})
+
+test('V14 a JOINT-phase Artifact overwrite is SAVE_ARTIFACT_UNKNOWN with the artifact domain locked', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v14',
+    mode: 'save',
+    saveJointFault: { kind: 'artifact', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+})
+
+test('V15 a bad proof injected into the real FINAL write is WRITE_REJECTED with the claim kept', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v15', mode: 'save', badProof: true })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.value.ownerState, 'UNKNOWN')
+})
+
+/* ------------------------------------------------------------------ R01 */
+
+test('R01a a numeric inspection message is rejected: SAVE_UNKNOWN, no import, getter 0', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r01a', mode: 'save', bytesFault: 'message-number' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+  assert.equal(worker.files.includes('audio-artifacts-v1.json'), false)
+  assert.equal(worker.catalogUnchanged, true)
+})
+
+test('R01b a peak that contradicts the real bytes is rejected: SAVE_UNKNOWN with the claim kept', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r01b', mode: 'save', bytesFault: 'peak-mismatch' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+})
+
+test('R01c a states accessor on a legal null-production result is never executed (getter 0)', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-r01c',
+    mode: 'save',
+    blockedInput: true,
+    bytesFault: 'states-getter',
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 0)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+})
+
+/* ------------------------------------------------------------------ R02 */
+
+for (const kind of ['message', 'schema', 'channels', 'proofRef129']) {
+  test('R02 ' + kind + ': a statically bad proof rejects before the first fresh store read', () => {
+    const worker = runOwnerWorker({ key: 'key:fixture-r02-' + kind, mode: 'save', badProofStatic: kind })
+    const saved = workerResult(worker, 'save')
+    assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 300))
+    assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+    assert.equal(worker.freshArtifactReads, 0)
+    assert.equal(worker.counts.engine, 1)
+    assert.equal(worker.counts.imports, 1)
+    assert.equal(worker.getterCalls, 0)
+    assert.equal(worker.ownerPhase, 'CLAIMED')
+    assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+    assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+    assert.equal(worker.catalogUnchanged, true)
+  })
+}
+
+test('R02 control: a real valid proof still reads the fresh library and saves once', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r02-ok', mode: 'save' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.value.ownerState, 'SAVED')
+  assert.ok(worker.freshArtifactReads >= 1, 'fresh reads ' + worker.freshArtifactReads)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
+})
+
+/* ------------------------------------------------------------------ R03 */
+
+const ROW_EVIDENCE = [
+  {
+    label: '1 claim rename unknown',
+    scenario: { saveRenameFault: { kind: 'owner', occurrence: 1 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 0, success: 0 } },
+    engine: 0,
+    imports: 0,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'none',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '2 artifact rename unknown',
+    scenario: { saveRenameFault: { kind: 'artifact', occurrence: 1 } },
+    code: 'SAVE_ARTIFACT_UNKNOWN',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '3 bad proof delegated to the real writer',
+    scenario: { badProof: true },
+    code: 'WRITE_REJECTED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '4 foreign Task write after the FINAL fsync',
+    scenario: { saveFsyncFault: { occurrence: 2, action: 'OF' } },
+    code: 'STORE_CHANGED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '5 foreign Artifact write after the FINAL fsync',
+    scenario: { saveFsyncFault: { occurrence: 2, action: 'AF' } },
+    code: 'SAVE_ARTIFACT_REJECTED',
+    renames: { owner: { attempt: 1, success: 1 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerClaim',
+    artifactEnd: 'foreignArtifact',
+    phase: 'CLAIMED',
+  },
+  {
+    label: '6 FINAL rename unknown',
+    scenario: { saveRenameFault: { kind: 'owner', occurrence: 2 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '7 writer post lstat unknown',
+    scenario: { saveLstatFault: { occurrence: 1 } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '8 JOINT Task overwrite after the writer returned',
+    scenario: { saveJointFault: { kind: 'owner' } },
+    code: 'SAVE_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '9 JOINT Artifact overwrite after the writer returned',
+    scenario: { saveJointFault: { kind: 'artifact' } },
+    code: 'SAVE_ARTIFACT_UNKNOWN',
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'foreignArtifact',
+    phase: 'FINAL',
+  },
+  {
+    label: '10 external Task change after a successful save',
+    scenario: { afterMutate: 'OF' },
+    code: null,
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'foreignOwner',
+    artifactEnd: 'artifactStored',
+    phase: 'FINAL',
+  },
+  {
+    label: '11 external Artifact change after a successful save',
+    scenario: { afterMutate: 'AF' },
+    code: null,
+    renames: { owner: { attempt: 2, success: 2 }, artifact: { attempt: 1, success: 1 } },
+    engine: 1,
+    imports: 1,
+    ownerEnd: 'ownerSaved',
+    artifactEnd: 'foreignArtifact',
+    phase: 'FINAL',
+  },
+]
+
+const ROW_EXPECT = {
+  '1': { fault: { id: 'rename', kind: 'owner', attempt: 1, phase: 'CLAIMED' }, domain: 'FT' },
+  '2': { fault: { id: 'rename', kind: 'artifact', attempt: 1, phase: 'CLAIMED' }, domain: 'FA', ownerState: 'UNKNOWN' },
+  '3': { fault: null, domain: 'NONE', ownerState: 'UNKNOWN' },
+  '4': { fault: { id: 'fsync', action: 'OF', phase: 'CLAIMED', fsync: 2 }, domain: 'FT' },
+  '5': { fault: { id: 'fsync', action: 'AF', phase: 'CLAIMED', fsync: 2 }, domain: 'FA', ownerState: 'UNKNOWN' },
+  '6': { fault: { id: 'rename', kind: 'owner', attempt: 2, phase: 'FINAL' }, domain: 'FT' },
+  '7': { fault: { id: 'lstat', phase: 'FINAL', count: 1 }, domain: 'FT' },
+  '8': { fault: { id: 'joint', kind: 'owner', phase: 'FINAL', jointTaskRead: true }, domain: 'FT' },
+  '9': { fault: { id: 'joint', kind: 'artifact', phase: 'FINAL', jointTaskRead: true }, domain: 'FA', ownerState: 'SAVED' },
+  '10': { fault: { id: 'after', kind: 'OF', phase: 'FINAL' }, domain: 'FT' },
+  '11': { fault: { id: 'after', kind: 'AF', phase: 'FINAL' }, domain: 'FA', ownerState: 'SAVED' },
+}
+
+const FIXED_REASONS = Object.freeze({
+  SAVE_UNKNOWN: 'save outcome unknown',
+  SAVE_ARTIFACT_UNKNOWN: 'artifact import unknown',
+  SAVE_ARTIFACT_REJECTED: 'artifact import rejected',
+  WRITE_REJECTED: 'write rejected',
+  STORE_CHANGED: 'store changed',
+})
+
+function probeLabel(worker, label) {
+  const entry = worker.results.find((item) => item.label === label)
+  return entry ? entry.result : null
+}
+
+test('R03 the eleven-row matrix carries uniform fault, error, control and two-domain evidence', () => {
+  for (const row of ROW_EVIDENCE) {
+    const number = row.label.split(' ')[0]
+    const expect = ROW_EXPECT[number]
+    assert.ok(expect, 'missing row expectation ' + number)
+    const worker = runOwnerWorker({ key: 'key:fixture-r03-' + number, mode: 'save', ...row.scenario })
+    const saved = workerResult(worker, 'save')
+    const detail = JSON.stringify({ row: row.label, saved, counts: worker.counts, digests: worker.digests })
+
+    // 1. save first error: complete code/path/reason.
+    if (row.code === null) {
+      assert.equal(saved.ok, true, detail)
+      assert.equal(saved.value.ownerState, 'SAVED', detail)
+    } else {
+      assert.equal(saved.ok, false, detail)
+      assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS[row.code], detail)
+      assert.equal(saved.errors[0].path, '$', detail)
+      assert.equal(saved.errors[0].reason, FIXED_REASONS[row.code], detail)
+    }
+
+    // 2. exact fault hit, phase and the dedicated window counter (skip 0).
+    if (expect.fault === null) {
+      assert.equal(worker.counts.fsFaults, 0, detail)
+      assert.equal(worker.counts.faultInfo, null, detail)
+    } else {
+      assert.equal(worker.counts.fsFaults, 1, detail)
+      assert.ok(worker.counts.faultInfo, detail)
+      for (const [key, value] of Object.entries(expect.fault)) {
+        assert.equal(worker.counts.faultInfo[key], value, detail)
+      }
+    }
+
+    // 3. R / E-I / three-file digests.
+    assert.deepEqual(worker.counts.renames.owner, row.renames.owner, detail)
+    assert.deepEqual(worker.counts.renames.artifact, row.renames.artifact, detail)
+    assert.equal(worker.counts.engine, row.engine, detail)
+    assert.equal(worker.counts.imports, row.imports, detail)
+    assert.equal(worker.catalogUnchanged, true, detail)
+    assert.equal(worker.files.includes('audio-task-owner-v1.json'), true, detail)
+    const d = worker.digests
+    const ownerExpected =
+      row.ownerEnd === 'ownerClaim'
+        ? d.ownerClaim
+        : row.ownerEnd === 'ownerSaved'
+          ? d.ownerSaved
+          : row.ownerEnd === 'foreignOwner'
+            ? d.foreignOwner
+            : null
+    const artifactExpected =
+      row.artifactEnd === 'artifactStored'
+        ? d.artifactStored
+        : row.artifactEnd === 'foreignArtifact'
+          ? d.foreignArtifact
+          : null
+    assert.equal(d.ownerEnd, ownerExpected, detail)
+    assert.equal(d.artifactEnd, artifactExpected, detail)
+    assert.equal(worker.ownerPhase, row.phase, detail)
+
+    // 3b. Rows 10/11: the first error of the post-save read, complete code/path/reason.
+    if (number === '10') {
+      const getError = workerResult(worker, 'get')
+      assert.equal(getError.ok, false, detail)
+      assert.equal(getError.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED, detail)
+      assert.equal(getError.errors[0].path, '$', detail)
+      assert.equal(getError.errors[0].reason, FIXED_REASONS.STORE_CHANGED, detail)
+    }
+    if (number === '11') {
+      const statusError = workerResult(worker, 'status')
+      assert.equal(statusError.ok, false, detail)
+      assert.equal(statusError.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED, detail)
+      assert.equal(statusError.errors[0].path, '$', detail)
+      assert.equal(statusError.errors[0].reason, FIXED_REASONS.STORE_CHANGED, detail)
+    }
+
+    // 4. old/second/new handle and factory, two-domain lock facts.
+    if (expect.domain === 'FT') {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, false, detail)
+      assert.equal(ownerNew.errors[0].code, TASK_OWNER_ERRORS.OWNER_UNKNOWN, detail)
+      const catalogNew = probeLabel(worker, 'post-catalog-new')
+      assert.equal(catalogNew.ok, false, detail)
+      assert.equal(catalogNew.errors[0].code, 'TASK_CATALOG_CATALOG_UNKNOWN', detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, true, detail)
+      const libraryDelete = probeLabel(worker, 'post-library-delete')
+      assert.equal(libraryDelete.ok, true, detail)
+      assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, false, detail)
+      assert.equal(secondOwnerGet.errors[0].code, TASK_OWNER_ERRORS.OWNER_UNKNOWN, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, false, detail)
+      assert.equal(oldCatalogGet.errors[0].code, 'TASK_CATALOG_CATALOG_UNKNOWN', detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, true, detail)
+      assert.equal(oldLibraryDelete.value.outcome, 'NOT_FOUND', detail)
+    } else if (expect.domain === 'FA') {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, true, detail)
+      const ownerGet = probeLabel(worker, 'post-owner-get')
+      assert.equal(ownerGet.ok, true, detail)
+      assert.equal(ownerGet.value.ownerState, expect.ownerState, detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, false, detail)
+      assert.equal(libraryNew.errors[0].code, 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, true, detail)
+      assert.equal(secondOwnerGet.value.ownerState, expect.ownerState, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, true, detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, false, detail)
+      assert.equal(oldLibraryDelete.errors[0].code, 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN', detail)
+    } else {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, true, detail)
+      const ownerGet = probeLabel(worker, 'post-owner-get')
+      assert.equal(ownerGet.ok, true, detail)
+      assert.equal(ownerGet.value.ownerState, expect.ownerState, detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, true, detail)
+      const libraryDelete = probeLabel(worker, 'post-library-delete')
+      assert.equal(libraryDelete.ok, true, detail)
+      assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+      const secondOwnerGet = probeLabel(worker, 'post-owner-2-get')
+      assert.equal(secondOwnerGet.ok, true, detail)
+      assert.equal(secondOwnerGet.value.ownerState, expect.ownerState, detail)
+      const oldCatalogGet = probeLabel(worker, 'post-catalog-old-get')
+      assert.equal(oldCatalogGet.ok, true, detail)
+      const oldLibraryDelete = probeLabel(worker, 'post-library-old-delete')
+      assert.equal(oldLibraryDelete.ok, true, detail)
+      assert.equal(oldLibraryDelete.value.outcome, 'NOT_FOUND', detail)
+    }
+
+    // 5. Matching fault-free control for the same Fixture: the successful save plus the read,
+    // repeat and two-domain facts that the fault rows cannot show.
+    const control = runOwnerWorker({ key: 'key:fixture-r03ctl-' + number, mode: 'save', repeatSave: true })
+    const controlSaved = workerResult(control, 'save')
+    const controlDetail = JSON.stringify({ row: row.label, controlSaved, counts: control.counts })
+    assert.equal(controlSaved.ok, true, controlDetail)
+    assert.equal(controlSaved.value.outcome, 'SAVED', controlDetail)
+    assert.equal(control.counts.fsFaults, 0, controlDetail)
+    assert.equal(control.counts.faultInfo, null, controlDetail)
+    assert.deepEqual(control.counts.renames.owner, { attempt: 2, success: 2 }, controlDetail)
+    assert.deepEqual(control.counts.renames.artifact, { attempt: 1, success: 1 }, controlDetail)
+    assert.equal(control.counts.engine, 1, controlDetail)
+    assert.equal(control.counts.imports, 1, controlDetail)
+    assert.equal(control.digests.ownerEnd, control.digests.ownerSaved, controlDetail)
+    assert.equal(control.digests.artifactEnd, control.digests.artifactStored, controlDetail)
+    assert.equal(control.ownerPhase, 'FINAL', controlDetail)
+    const controlOwnerGet = probeLabel(control, 'post-owner-get')
+    assert.equal(controlOwnerGet.ok, true, controlDetail)
+    assert.equal(controlOwnerGet.value.ownerState, 'SAVED', controlDetail)
+    const controlGet = workerResult(control, 'get')
+    assert.equal(controlGet.ok, true, controlDetail)
+    assert.equal(controlGet.value.ownerState, 'SAVED', controlDetail)
+    const controlStatus = workerResult(control, 'status')
+    assert.equal(controlStatus.ok, true, controlDetail)
+    assert.equal(controlStatus.value.state, 'READABLE', controlDetail)
+    const controlRepeat = workerResult(control, 'save-repeat')
+    assert.equal(controlRepeat.ok, true, controlDetail)
+    assert.equal(controlRepeat.value.outcome, 'EXISTING', controlDetail)
+    assert.equal(controlRepeat.value.artifact, null, controlDetail)
+    assert.equal(control.counts.engine, 1, controlDetail)
+    assert.equal(control.counts.imports, 1, controlDetail)
+    const controlOwnerNew = probeLabel(control, 'post-owner-new')
+    assert.equal(controlOwnerNew.ok, true, controlDetail)
+    const controlSecondOwner = probeLabel(control, 'post-owner-2-get')
+    assert.equal(controlSecondOwner.ok, true, controlDetail)
+    assert.equal(controlSecondOwner.value.ownerState, 'SAVED', controlDetail)
+    const controlOldCatalog = probeLabel(control, 'post-catalog-old-get')
+    assert.equal(controlOldCatalog.ok, true, controlDetail)
+    const controlNewLibrary = probeLabel(control, 'post-library-new')
+    assert.equal(controlNewLibrary.ok, true, controlDetail)
+    const controlLibraryDelete = probeLabel(control, 'post-library-delete')
+    assert.equal(controlLibraryDelete.ok, true, controlDetail)
+    assert.equal(controlLibraryDelete.value.outcome, 'NOT_FOUND', controlDetail)
+    const controlOldLibrary = probeLabel(control, 'post-library-old-delete')
+    assert.equal(controlOldLibrary.ok, true, controlDetail)
+    assert.equal(controlOldLibrary.value.outcome, 'NOT_FOUND', controlDetail)
+  }
+})
+
+test('R03 row 3 freezes the injected bad-ref proof and delegates exactly once', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r03-row3', mode: 'save', badProof: true })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false)
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(worker.counts.proofInjected, 1)
+  assert.equal(worker.counts.proofFrozen, true)
+  assert.equal(worker.counts.writerCalls, 2)
+  assert.equal(worker.counts.fsFaults, 0)
+  // The wrong ref is a local binding fact: it is rejected by the writer's pre gate before any fresh
+  // artifact-library read, and the real writer was still the one that rejected it.
+  assert.equal(worker.counts.freshArtifactReads, 0)
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+})
+
+test('R02 negative bound: fullScaleSampleCount=-1 is rejected before the first fresh store read', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r02-neg', mode: 'save', badProofStatic: 'fullScaleNegative' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 300))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(saved.errors[0].path, '$')
+  assert.equal(saved.errors[0].reason, FIXED_REASONS.WRITE_REJECTED)
+  assert.equal(worker.freshArtifactReads, 0)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.counts.proofInjected, 1)
+  assert.equal(worker.counts.proofFrozen, true)
+  assert.equal(worker.counts.writerCalls, 2)
+  assert.equal(worker.counts.fsFaults, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+  assert.equal(worker.catalogUnchanged, true)
+})
+
+test('R04 a concurrent second save returns a fixed EXISTING with no extra engine or import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r04-concurrent', mode: 'save', concurrentSave: true })
+  const left = workerResult(worker, 'save')
+  const right = workerResult(worker, 'save-b')
+  const outcomes = [left, right].map((r) => (r.ok ? r.value.outcome : 'ERR:' + r.errors[0].code)).sort()
+  assert.deepEqual(outcomes, ['EXISTING', 'SAVED'], JSON.stringify([left, right]).slice(0, 500))
+  const existing = left.ok && left.value.outcome === 'EXISTING' ? left : right
+  assert.equal(existing.value.artifact, null)
+  assert.equal(existing.value.revision, 2)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerSaved)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+  assert.deepEqual(worker.counts.renames.owner, { attempt: 2, success: 2 })
+  assert.deepEqual(worker.counts.renames.artifact, { attempt: 1, success: 1 })
 })

@@ -311,3 +311,9 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
 
 库的八个共享 helper（`StoreFailure`/`checkSandbox`/`isPlainObject`/`isStoreFailure`/`keySurface`/`raiseStore`/`sha256`/`stableStringify`）现从 `core/audio/fixture-store-base-internal.mjs` 导入。库自身私有 IO、parser/writer、队列/digest/UNKNOWN 锁、包格式、预算与 `FIXTURE_IMPORT` 语义均不变；Task 域与 Artifact 域仍独立。
 
+
+## 12. `readStoredForSave` 与 `importInQueue`（08-E-C，离线实现）
+
+`readStoredForSave(state, {scopeId, artifactRef, now})` 是给同一 claim 保存事务用的**同步、免重入、fresh** 读取：不取 Artifact 队列、不调用公开 `get`/`readBytes`、不写盘；返回 `STORED`/`DELETED`/`EXPIRED`/`MISSING` 四态，`MISSING` 时 artifact 为 null，其余为恰八键 `{artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection}`，全部取自 fresh 规范 entry（19 键 inspection 原样），`DELETED` 保留严格校验后的墓碑 inspection。已锁返回 `LIBRARY_UNKNOWN`，意外异常 `INTERNAL_FAILURE`。
+
+`importInQueue(state, input)` 是内部非重入导入：复用原 `readImport`/owned-copy/原 `importOnce` 与 REASONS，**不再次 enqueue**；公开 `import` 仍保持“入队前 readImport/owned-copy”的旧行为，两条路径共用同一个原导入实现，没有第二套导入或自签 ref。二者都不接受路径/fs/parser/callback 或新 cap 品牌，也不是 Host/GUI 公共 API。

@@ -492,20 +492,452 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 平台限制：本环境 hardlink/symlink 相关旧断言按既定 EPERM skip 记录，不据此修改产品拒链策略。本文档不预填未执行的通过数。
 
-## 13. 候选保存事务契约（PLANNED，尚未实现）
+## 13. 保存事务契约（设计冻结 v1.6；离线运行时候选已实现，见 §15）
 
-同一 claim 内把 `PROCESSING + bytes` 保存进演示资产库的候选契约见
+同一 claim 内把 `PROCESSING + bytes` 保存进演示资产库的冻结契约见
 [TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.6
-（`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`）。
+（`PLANNED` / `DESIGN_REVIEW_REQUIRED`，作为设计快照不改写）。
 
-**当前 owner 仍未实现保存**：工厂只有 `run`/`get`，`FINAL` 只允许 `SIMULATED`/`NO_EXECUTION`，
-不写 `SAVED`、不调用资产库、不产生 `artifactRef`；owner 快照现为 v1、`revision` 按
-`CLAIMED=1 / FINAL=2` 权重累计。本文第 1–12 节全部为既有行为，仍为 `OFFLINE` / `FIXTURE_ONLY` /
-`NOT_INTEGRATED`；候选文档不是运行时代码授权。
+**保存运行时已由 08-E-C 在本分支离线实现为候选**（`save`/`artifactStatus`、磁盘 owner v2、唯一
+writer 内的冻结 `SaveProof`，详见 §15）；契约文件本身仍不是运行时代码授权。本文第 1–12 节描述
+的 `run`/`get` 行为未变，整体仍为 `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`。
 
 ## 14. 共享存储基础模块（08-E-E-B Step 1，已实现）
 
 `core/audio/fixture-store-base-internal.mjs` 是唯一共享 helper 家园（15 个内部导出）：`StoreFailure` 与错误 helper、`isPlainObject`/`keySurface`/`hasOwn`/`sha256`/`stableStringify`、`checkSandbox`（含 marker/有界读/身份闭包）、`readBoundedPath`/`sameIdentity`/`assertRegularStat`、`normalizePath`/`isInside`。
 
-Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）仍未实现，owner 仍只输出 `SIMULATED`/`NO_EXECUTION`。
+Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）在本切片时尚未实现，后续由 08-E-C（§15）离线补齐。
 
+
+## 15. 同一 claim 保存事务（08-E-C，离线实现）
+
+`openFixtureTaskOwner` 现返回 `{run, get, save, artifactStatus}`；公开 `schemaVersion` 恒为 `1`，磁盘 owner 快照新增 `v2`（含一条 `SAVED` FINAL 时才写 v2，只读不写盘升级）。
+
+- `save` 请求恰八键 `schemaVersion/scopeId/taskId/requestKey/now/expiresAt/rights/input`，`input` 恰四键，沿用原两分区 copy 与预算；成功值 = 原 11 字段 + `artifact`（仅本次 SAVED 携 `{artifactRef, byteLength, sha256, expiresAt}`，其余 `artifact:null`）。
+- 唯一 writer 在 pre（temp fsync 后、rename 前）与 post（rename 后）按 entry 差分强制 proof：恰一条 `CLAIMED -> SAVED FINAL` 必须携带本次冻结 `SaveProof`（根 11 键 + artifact 8 键 + 19 键 inspection，`claimRevision=当前 revision`、`claimDigest=sha256(当前完整字节)`、`candidateRevision=claim+1`、`evaluatedAt=request.now`）；缺 proof/错形状/错任务/一次多任务/改写历史 SAVED 一律 pre `WRITE_REJECTED`（无锁）。
+- 新增内部 `readStoredForSave(artifactState,{scopeId,artifactRef,now})`：同步、免重入、fresh；四态 `STORED/DELETED/EXPIRED/MISSING`，`MISSING` 时 `artifact=null`，其余恰八键且 inspection 19 键；`DELETED` 优先 `EXPIRED`。
+- 新增 `importInQueue(artifactState,input)`：仅供持 Artifact 队列的 owner 使用，复用原七键解析/owned-copy/原 `importOnce`，不再入队。
+- `artifactStatus` 五键输入、六字段输出，按契约十四步优先级；`UNKNOWN`/`MISSING`/`RIGHTS_REJECTED` 不泄漏 ref/expiry；历史 `get` 不因删除/过期/撤权改历史。
+- 新增 8 个公开错误码（共 22）：`SAVE_INPUT_INVALID`/`SAVE_RIGHTS_REJECTED`/`SAVE_EXPIRED_REQUEST`/`SAVE_PRECONDITION`/`SAVE_ARTIFACT_REJECTED`/`SAVE_ARTIFACT_UNKNOWN`/`SAVE_TASK_REJECTED`/`SAVE_UNKNOWN`，reason 固定，不套用旧小写规则。
+
+本地证据（085 v1.3 收口后）：`test/task-owner-save.test.mjs` 24 项 + `test/task-owner.test.mjs` 48 项共 72/72 通过（含真实 fs 故障、共享 VM 11 行逐行 hit/phase/首错/control/两域锁、§4.3 兼容/并发、R01 共同协议与 canonical 19、R02 本地静态 proof 先验含负下界、R04 合法非 SUCCESS/NO_EXECUTION 与真持窗口 delete）；全量 755 测试 752 通过 3 平台 skip 0 失败。
+
+上述缺口已由 08-E-C-F01 闭合：11 行固定故障代表在共享 VM 内逐行通过（见下方 §15.1 证据段），§15.1 保存示例由 S16、§15.2 rights 反例由 S23 原样载入执行。仍未改变真实保存、TTS、微信或 Host 能力。
+
+### 15.1 完整可执行示例（真实出生 → save → status → 旧 get）
+
+示例只描述**请求形状与固定安全值**；其中 `taskId`、`artifactRef`、`sha256`、`byteLength` 等运行期事实由真实 catalog 签发与本次导入产生，使用时用真实值替换，不能把示例值当 cap 或固定结果。
+
+保存请求（八键；`input` 与原 `run.input` 同构）：
+
+完整 `input` 已内联（与 `TASK_FIXTURE_RUNNER_OFFLINE.md` §7 的完整示例一致）；运行时只需把真实签发的 `taskId`、`scopeId` 与 `sourceInput.voiceBinding.taskDraft.source.ref` 绑定到对应占位值，不得整块替换或补填空壳。
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "requestKey": "save:fixture-demo-1",
+  "now": "2026-10-27T00:00:01.000Z",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "rights": { "state": "GRANTED", "proofRef": "fixture-rights:demo-1" },
+  "input": {
+    "schemaVersion": 1,
+    "sourceInput": {
+      "schemaVersion": 1,
+      "voiceBinding": {
+        "schemaVersion": 1,
+        "library": {
+          "schemaVersion": 1,
+          "profiles": [
+            {
+              "voiceProfileId": "voice:demo-hero",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "displayName": "演示角色",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "bindings": [
+                {
+                  "instanceId": "instance:rvc",
+                  "assetId": "asset:fixture-model-a"
+                }
+              ]
+            }
+          ],
+          "assets": [
+            {
+              "assetId": "asset:fixture-model-a",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "kind": "RVC_MODEL",
+              "candidateId": "rvc",
+              "providerRef": "rvc-model:fixture-a",
+              "availability": "PRESENT",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "integrity": {
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1048576
+              },
+              "expiresAt": null
+            }
+          ]
+        },
+        "taskDraft": {
+          "schemaVersion": 1,
+          "taskId": "task:demo-svc",
+          "feature": "singing",
+          "taskType": "SVC",
+          "source": {
+            "kind": "AUDIO_REF",
+            "ref": "artifact:fixture-source-1"
+          },
+          "voiceProfileId": "voice:demo-hero",
+          "deliveryRequested": false,
+          "rights": {
+            "state": "CONFIRMED_FIXTURE"
+          }
+        },
+        "negotiation": {
+          "schemaVersion": 1,
+          "registry": {
+            "schemaVersion": 1,
+            "instances": [
+              {
+                "instanceId": "instance:rvc",
+                "category": "SVC",
+                "candidateId": "rvc",
+                "protocolVersion": 1,
+                "fixture": true,
+                "manifest": null,
+                "observation": {
+                  "state": "ok",
+                  "credentials": "not_required",
+                  "observedAt": "2026-10-26T00:00:00.000Z",
+                  "versionMatches": true
+                }
+              }
+            ]
+          },
+          "selection": {
+            "category": "SVC",
+            "instanceId": "instance:rvc"
+          },
+          "consent": {
+            "networkAllowed": false,
+            "textUploadAllowed": false,
+            "paidAllowed": false
+          },
+          "request": {
+            "schemaVersion": 1,
+            "sourceAudioRef": "artifact:fixture-source-1",
+            "targetModelId": "rvc-model:fixture-a",
+            "pitchShift": 0,
+            "outputFormat": "audio/wav",
+            "inputAudio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            },
+            "rights": {
+              "state": "CONFIRMED_FIXTURE"
+            }
+          }
+        },
+        "expectation": {
+          "scopeId": "scope:fixture-demo",
+          "profileRevision": 1,
+          "assetRevision": 1
+        },
+        "now": "2026-10-27T00:00:00.000Z"
+      },
+      "artifactLibrary": {
+        "schemaVersion": 1,
+        "artifacts": [
+          {
+            "artifactRef": "artifact:fixture-source-1",
+            "revision": 1,
+            "scopeId": "scope:fixture-demo",
+            "kind": "AUDIO",
+            "rightsState": "CONFIRMED_FIXTURE",
+            "availability": "PRESENT",
+            "expiresAt": null,
+            "text": null,
+            "audio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            }
+          }
+        ]
+      },
+      "sourceRevision": 1
+    },
+    "readiness": {
+      "schemaVersion": 1,
+      "instances": [
+        {
+          "instanceId": "instance:rvc",
+          "installation": "PRESENT",
+          "resources": {
+            "profile": "CPU_FIXTURE",
+            "cpu": "AVAILABLE",
+            "gpu": "AVAILABLE"
+          }
+        }
+      ]
+    },
+    "context": {
+      "requestId": "request:fixture-1",
+      "endpointId": "gateway:fixture-rvc",
+      "scenario": "SUCCESS"
+    }
+  }
+}
+```
+
+成功值（恰十二键；只有本次 SAVED 携 `artifact`，其余 `ok:true` 为 `artifact:null`）：
+
+```json
+{
+  "schemaVersion": 1,
+  "outcome": "SAVED",
+  "revision": 2,
+  "ownerState": "SAVED",
+  "reason": null,
+  "task": {
+    "schemaVersion": 1,
+    "taskId": "task:fixture-<real-issued-32-hex>",
+    "feature": "singing",
+    "taskType": "SVC",
+    "state": "SAVED",
+    "voiceProfileId": "voice:demo-hero",
+    "hasInput": true,
+    "hasOutput": true,
+    "cancelRequested": false,
+    "cancelConfirmed": false,
+    "deliveryRequested": false,
+    "mockOnly": true,
+    "realOperationAllowed": false,
+    "userMessageZh": "已保存到演示资产库；这不代表已经发送到微信。（演示状态，尚未接入真实生成）"
+  },
+  "artifact": {
+    "artifactRef": "artifact:fixture-bytes-<real-32-hex>",
+    "byteLength": 88244,
+    "sha256": "<real-sha256>",
+    "expiresAt": "2026-10-28T00:00:00.000Z"
+  },
+  "userMessageZh": "演示结果已保存到本地演示资产库；这不会发送到微信，也不代表真实生成。",
+  "mockOnly": true,
+  "realOperationAllowed": false,
+  "submitAllowed": false,
+  "automaticRetryAllowed": false
+}
+```
+
+状态请求与结果（五键输入、六字段输出；本例为当前可读取）：
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "now": "2026-10-27T00:00:02.000Z",
+  "rights": { "state": "GRANTED", "proofRef": "fixture-rights:demo-1" }
+}
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "state": "READABLE",
+  "ownerState": "SAVED",
+  "artifactRef": "artifact:fixture-bytes-<real-32-hex>",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "messageZh": "演示资产当前可读取。"
+}
+```
+
+时序与限制：`schemaVersion` 公开恒为 `1`；磁盘 owner 快照首次写 SAVED 升 `v2`（`schemaVersion:2`），此前 `v1`；两次 rename（模板→正式、Artifact→Task）**非原子**；Task 与 Artifact 各自独立锁；`UNKNOWN` 不自动重试、不回滚、不重造 ID；`SAVED` 只代表演示资产，不是真实生成、版权或投递证据。
+
+#### 08-E-C 续修证据（VM 11 行）
+`test/task-owner.test.mjs` 的共享 VM 图（base→artifact→task→library→owner，同一 fsProxy）现覆盖 11 行固定故障代表：claim/Artifact/FINAL rename 未知、FINAL 内 Task/Artifact 外改、post 确认失败、JOINT Task/Artifact、坏 proof（经 owner 的 store 门面在真实 FINAL 写入前替换 ref 后仍 delegate）、成功后 Task/Artifact 外改；每行带 engine/import 计数与真实 after-call 注入。085 起每行统一断言 claim/FINAL/Artifact 各自 attempt/success、engine/import、三文件摘要，并补齐原自动回归全证：逐行 faultHits=1、注入时精确 phase、指定窗口 skip0、完整首错 code/path/reason、同 Fixture 无故障 control、以及旧/新 handle 与 factory 的两域锁（Task/catalog 锁 vs Artifact 锁）；JOINT 只在**真实 FINAL writer 确认返回后**一次性触发，并由 owner 自己的 joint 读命中。第 3 行错 ref 替换体现被深冻结并断言注入 1 次、真实 writer 委托 1 次；故障前另持第二 owner 与既有 catalog/library 句柄，故障后与新增 factory 一并断言（旧/第二 handle 与两域锁一致），成功 control 另证旧 get SAVED、status READABLE、两域无锁、真实 repeat save=EXISTING/artifact null/E-I 不增，行 10 的 get 与行 11 的合法 rights status 补完整首错 code/path/reason；R04 并发回归另证 SAVED+EXISTING/artifact null/revision 2/E1I1 与 rename 计数。R01/R02 另证 canonical 19 不符（数值 message、错 peak）、null 支路 states accessor（getter 0）、本地静态坏 proof（fresh 库读 0 次）与 fullScaleSampleCount=-1 负下界（fresh 库读 0 次）。全量 755 测试 752 通过 3 平台 skip；§4.3 以 S19–S23 覆盖 v2 兼容、并发保存、旧 main 程序隔离读、delete 排队与文档正反例。
+
+### 15.2 合法反例（rights 拒绝，可执行）
+
+当 `rights.state` 不是 `GRANTED`（或 `proofRef` 为空）时，保存必须在 claim 之前被拒绝，且不写任何文件：
+
+完整 `input` 已内联（与 `TASK_FIXTURE_RUNNER_OFFLINE.md` §7 的完整示例一致）；运行时只需把真实签发的 `taskId`、`scopeId` 与 `sourceInput.voiceBinding.taskDraft.source.ref` 绑定到对应占位值，不得整块替换或补填空壳。
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "requestKey": "save:fixture-demo-denied",
+  "now": "2026-10-27T00:00:01.000Z",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "rights": { "state": "DENIED", "proofRef": null },
+  "input": {
+    "schemaVersion": 1,
+    "sourceInput": {
+      "schemaVersion": 1,
+      "voiceBinding": {
+        "schemaVersion": 1,
+        "library": {
+          "schemaVersion": 1,
+          "profiles": [
+            {
+              "voiceProfileId": "voice:demo-hero",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "displayName": "演示角色",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "bindings": [
+                {
+                  "instanceId": "instance:rvc",
+                  "assetId": "asset:fixture-model-a"
+                }
+              ]
+            }
+          ],
+          "assets": [
+            {
+              "assetId": "asset:fixture-model-a",
+              "revision": 1,
+              "scopeId": "scope:fixture-demo",
+              "kind": "RVC_MODEL",
+              "candidateId": "rvc",
+              "providerRef": "rvc-model:fixture-a",
+              "availability": "PRESENT",
+              "rightsState": "CONFIRMED_FIXTURE",
+              "integrity": {
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1048576
+              },
+              "expiresAt": null
+            }
+          ]
+        },
+        "taskDraft": {
+          "schemaVersion": 1,
+          "taskId": "task:demo-svc",
+          "feature": "singing",
+          "taskType": "SVC",
+          "source": {
+            "kind": "AUDIO_REF",
+            "ref": "artifact:fixture-source-1"
+          },
+          "voiceProfileId": "voice:demo-hero",
+          "deliveryRequested": false,
+          "rights": {
+            "state": "CONFIRMED_FIXTURE"
+          }
+        },
+        "negotiation": {
+          "schemaVersion": 1,
+          "registry": {
+            "schemaVersion": 1,
+            "instances": [
+              {
+                "instanceId": "instance:rvc",
+                "category": "SVC",
+                "candidateId": "rvc",
+                "protocolVersion": 1,
+                "fixture": true,
+                "manifest": null,
+                "observation": {
+                  "state": "ok",
+                  "credentials": "not_required",
+                  "observedAt": "2026-10-26T00:00:00.000Z",
+                  "versionMatches": true
+                }
+              }
+            ]
+          },
+          "selection": {
+            "category": "SVC",
+            "instanceId": "instance:rvc"
+          },
+          "consent": {
+            "networkAllowed": false,
+            "textUploadAllowed": false,
+            "paidAllowed": false
+          },
+          "request": {
+            "schemaVersion": 1,
+            "sourceAudioRef": "artifact:fixture-source-1",
+            "targetModelId": "rvc-model:fixture-a",
+            "pitchShift": 0,
+            "outputFormat": "audio/wav",
+            "inputAudio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            },
+            "rights": {
+              "state": "CONFIRMED_FIXTURE"
+            }
+          }
+        },
+        "expectation": {
+          "scopeId": "scope:fixture-demo",
+          "profileRevision": 1,
+          "assetRevision": 1
+        },
+        "now": "2026-10-27T00:00:00.000Z"
+      },
+      "artifactLibrary": {
+        "schemaVersion": 1,
+        "artifacts": [
+          {
+            "artifactRef": "artifact:fixture-source-1",
+            "revision": 1,
+            "scopeId": "scope:fixture-demo",
+            "kind": "AUDIO",
+            "rightsState": "CONFIRMED_FIXTURE",
+            "availability": "PRESENT",
+            "expiresAt": null,
+            "text": null,
+            "audio": {
+              "durationMs": 1000,
+              "byteLength": 1000,
+              "sampleRate": 44100,
+              "channels": 1
+            }
+          }
+        ]
+      },
+      "sourceRevision": 1
+    },
+    "readiness": {
+      "schemaVersion": 1,
+      "instances": [
+        {
+          "instanceId": "instance:rvc",
+          "installation": "PRESENT",
+          "resources": {
+            "profile": "CPU_FIXTURE",
+            "cpu": "AVAILABLE",
+            "gpu": "AVAILABLE"
+          }
+        }
+      ]
+    },
+    "context": {
+      "requestId": "request:fixture-1",
+      "endpointId": "gateway:fixture-rvc",
+      "scenario": "SUCCESS"
+    }
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "errors": [{ "code": "TASK_OWNER_SAVE_RIGHTS_REJECTED", "path": "rights", "reason": "save rights rejected" }]
+}
+```

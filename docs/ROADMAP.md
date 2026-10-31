@@ -413,3 +413,17 @@ release, no public visibility and no release artifact yet.
 The Chinese homepage and isolated demo screenshots explain current capabilities and planned user
 flows. The developer setup guide remains separate. This documentation work does not complete or
 advance any runtime phase, installer, provider or delivery milestone.
+
+### Plan 08-E-E-C — same-claim save transaction (OFFLINE, PR pending)
+
+The frozen save contract's Step 2-4 are implemented offline as one unit: fresh library helper, v2
+owner snapshot with a mandatory `SaveProof` inside the only writer, non-reentrant `importInQueue`,
+and public `save`/`artifactStatus`. The F01 close-out completes the remaining offline evidence: the
+three protocol/native-carrier guards, the eleven-row fs-fault matrix in one shared VM graph and the
+§4.3 compatibility/concurrency rows. The 085 v1.3 close-out adds the full canonical inspection
+comparison, the static proof pre-read gate, the uniform eleven-row evidence with a true post-writer
+JOINT, legal non-SUCCESS settlements, fixed EXISTING concurrency, held-window delete queueing and
+complete documented examples; local suite **755/752/3 platform skips/0 fail**, owner + save
+specialty 72/72. Not verified: real Host/GUI, real TTS/media, delivery or any production capability;
+this does not complete Cover orchestration, resource or cancellation work, dynamic-dependency
+evidence or the parent Fake E2E.

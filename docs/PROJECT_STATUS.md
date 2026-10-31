@@ -362,3 +362,32 @@ current-capability table and a clearly marked target Audio/Relay architecture. D
 and checks live in `docs/DEVELOPMENT.md`. This presentation change adds no provider, audio,
 installation, configuration-write, task-execution or delivery capability. The preview images are
 isolated demo captures, not real integration evidence.
+
+### 08-E-C same-claim save — OFFLINE / FIXTURE_ONLY / PR pending
+
+Implemented: `save`/`artifactStatus` on the isolated owner, owner snapshot v1/v2 with `SAVED`,
+mandatory delta proof inside the only writer with pre/post gates, `readStoredForSave` and
+`importInQueue`, plus `test/task-owner-save.test.mjs`. The 08-E-C-F01 close-out then completed the
+remaining evidence offline: the K01 (complete canonical 19-field inspection, `peak 0..1`, safe
+`states` capture with the birth constraint, no `@@toStringTag` guess), K02 (all local static proof
+rules verified before any store read) and K03 (known-field accessor path) guards, the eleven-row
+fs-fault matrix in one shared VM graph, and §4.3 compatibility/concurrency (a v2 store surviving a
+legacy `run` append, concurrent saves, the old-main isolation read, a legal delete queued behind a
+save, and both documented examples executed as written). 085 v1.3 then closed the remaining offline gaps: the complete canonical 19-field inspection is
+compared against the real bytes (a numeric message or a byte-contradicting peak is refused), the
+whole locally decidable SaveProof (including the fullScale negative bound) is rejected before the
+first fresh store read, the eleven-row matrix reports uniform claim/FINAL/Artifact attempts and
+successes plus engine/import counts, three-file digests, the per-row hit/phase/first-error/paired,
+the pre-fault second-owner/catalog/library handles re-checked after the fault, the control get/status/repeat facts and the old/new handle two-domain locks with the one-shot JOINT armed only after the real
+writer returned, legal OFFLINE
+and source-blocked NO_EXECUTION settlements are recorded as fixed FINALs, ordinary concurrency is a
+fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window provably waits for
+the save's JOINT, and both documented examples carry a complete input and bind only the issued ids.
+Final local evidence: `node --test`
+**755 tests, 752 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
+**72/72**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
+integration, real TTS/media, delivery and any production capability. Parent Plan 08-E-E and Plan 08
+remain IN_PROGRESS.
+
+### 08-E-C 续修（VM 11 行证据）
+共享 VM 图 + 真实 after-call 注入已覆盖契约 §10 的十一行代表（含第 3 行公开流程坏 proof 与第 9 行 JOINT Artifact），每行记录 engine/import 与实际 rename 计数；worker 从 `-e` 改为临时文件执行，避免 Windows 命令行长度上限。收口后全量 742/739/3 平台 skip，owner+save 专项 59/59；仍未合并，Host/GUI、真实 TTS/media 与投递均未验证。
