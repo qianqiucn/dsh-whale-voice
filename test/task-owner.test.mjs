@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import os from 'node:os'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { copyFixtureInput } from '../core/audio/fixture-input-boundary.mjs'
@@ -250,7 +251,10 @@ const fsProxy = new Proxy({}, {
             counts.fsFaults += 1
           }
         }
-        if (lstatName === 'audio-artifacts-v1.json' && scenario.saveJointFault && scenario.saveJointFault.kind === 'artifact') {
+        if (lstatName === 'audio-task-owner-v1.json' && counts.finalOwnerLstats === 3) {
+          counts.jointTaskRead = true
+        }
+        if (lstatName === 'audio-artifacts-v1.json' && scenario.saveJointFault && scenario.saveJointFault.kind === 'artifact' && counts.jointTaskRead) {
           counts.finalArtifactLstats = (counts.finalArtifactLstats || 0) + 1
           if (counts.finalArtifactLstats === scenario.saveJointFault.occurrence) {
             fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreignArtifactBytes())
@@ -543,11 +547,38 @@ await catalogModule.link(async (specifier, referencing) => {
 })
 await catalogModule.evaluate()
 
+const storeNamespace = storeModule.namespace
+const storeNames = Object.keys(storeNamespace)
+const ownerStoreModule = new vm.SyntheticModule(storeNames, function () {
+  for (const name of storeNames) {
+    if (name === 'openOwnerFile') continue
+    this.setExport(name, storeNamespace[name])
+  }
+  this.setExport('openOwnerFile', (state) => {
+    const file = storeNamespace.openOwnerFile(state)
+    return Object.freeze({
+      name: file.name,
+      read: file.read,
+      readVerified: file.readVerified,
+      write: (bytes, baseDigest, revision, proof) => {
+        if (proof && scenario.badProof) {
+          const tampered = {
+            ...proof,
+            artifact: { ...proof.artifact, artifactRef: 'artifact:fixture-bytes-' + 'f'.repeat(32) },
+          }
+          return file.write(bytes, baseDigest, revision, tampered)
+        }
+        return file.write(bytes, baseDigest, revision, proof)
+      },
+    })
+  })
+}, { identifier: storeUrl })
+
 const ownerSource = fsReal.readFileSync(new URL(ownerUrl), 'utf8')
 const ownerModule = new vm.SourceTextModule(ownerSource, { identifier: ownerUrl })
 await ownerModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === storeUrl) return storeModule
+  if (url === storeUrl) return ownerStoreModule
   if (url === engineUrl) return engineModule
   if (url === artifactUrl) return artifactModule
   if (url === libraryUrl) return ownerLibraryModule
@@ -826,8 +857,11 @@ try {
 
 function runOwnerWorker(scenario) {
   const script = OWNER_WORKER(BASE)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-owner-worker-'))
+  const file = path.join(dir, 'worker.mjs')
+  fs.writeFileSync(file, script)
   try {
-    const output = execFileSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], {
+    const output = execFileSync(process.execPath, ['--experimental-vm-modules', file], {
       env: { ...process.env, OWNER_SCENARIO: JSON.stringify(scenario) },
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
@@ -835,6 +869,8 @@ function runOwnerWorker(scenario) {
     return JSON.parse(output.trim())
   } catch (error) {
     throw new Error('owner worker failed: ' + String(error.stderr || error.message).slice(0, 3000))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -2284,4 +2320,27 @@ test('V13 a JOINT-phase Task overwrite is SAVE_UNKNOWN with a Task lock', () => 
   const saved = workerResult(worker, 'save')
   assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 160))
   assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+})
+
+test('V14 a JOINT-phase Artifact overwrite is SAVE_ARTIFACT_UNKNOWN with the artifact domain locked', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v14',
+    mode: 'save',
+    saveJointFault: { kind: 'artifact', occurrence: 2 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_UNKNOWN)
+})
+
+test('V15 a bad proof injected into the real FINAL write is WRITE_REJECTED with the claim kept', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v15', mode: 'save', badProof: true })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 200))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.value.ownerState, 'UNKNOWN')
 })

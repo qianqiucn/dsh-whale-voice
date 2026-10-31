@@ -375,3 +375,6 @@ unknown, post-confirm failure, FINAL-in-flight Task/Artifact foreign overwrite; 
 the bad-proof-through-public-flow and the success-then-external-change pairs are only partially
 covered), the executable documentation save example, real Host/GUI integration, real TTS/media and
 any production capability. Parent Plan 08-E-E and Plan 08 remain IN_PROGRESS.
+
+### 08-E-C 续修（VM 11 行证据）
+共享 VM 图 + 真实 after-call 注入已覆盖契约 §10 的十一行代表（含第 3 行公开流程坏 proof 与第 9 行 JOINT Artifact），每行记录 engine/import 与实际 rename 计数；worker 从 `-e` 改为临时文件执行，避免 Windows 命令行长度上限。全量 737/734/3 平台 skip；仍未合并、未验证真实链路。

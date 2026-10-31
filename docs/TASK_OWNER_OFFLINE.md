@@ -607,3 +607,6 @@ Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`Stor
 ```
 
 时序与限制：`schemaVersion` 公开恒为 `1`；磁盘 owner 快照首次写 SAVED 升 `v2`（`schemaVersion:2`），此前 `v1`；两次 rename（模板→正式、Artifact→Task）**非原子**；Task 与 Artifact 各自独立锁；`UNKNOWN` 不自动重试、不回滚、不重造 ID；`SAVED` 只代表演示资产，不是真实生成、版权或投递证据。
+
+#### 08-E-C 续修证据（VM 11 行）
+`test/task-owner.test.mjs` 的共享 VM 图（base→artifact→task→library→owner，同一 fsProxy）现覆盖 11 行固定故障代表：claim/Artifact/FINAL rename 未知、FINAL 内 Task/Artifact 外改、post 确认失败、JOINT Task/Artifact、坏 proof（经 owner 的 store 门面在真实 FINAL 写入前替换 ref 后仍 delegate）、成功后 Task/Artifact 外改；每行带 engine/import 计数与真实 after-call 注入，worker 改为临时文件执行以避开 Windows 命令行长度限制。全量 737 测试 734 通过 3 平台 skip。
