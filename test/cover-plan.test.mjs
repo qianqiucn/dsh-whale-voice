@@ -469,7 +469,28 @@ const sourceModule = new vm.SyntheticModule(Object.keys(real), function () {
     counts.calls += 1
     const result = real.resolveFixtureTaskSource(input)
     if (scenario.mode === 'throw') throw new Error('injected dependency throw')
-    if (scenario.mode === 'control' || !result.ok) return result
+    if (scenario.mode === 'proxy-prototype') {
+      return new Proxy(result, {
+        getPrototypeOf() {
+          throw new Error('injected proxy prototype')
+        },
+      })
+    }
+    if (!result.ok) {
+      if (scenario.mode === 'failed-error-getter') {
+        const error = { ...result.errors[0] }
+        Object.defineProperty(error, 'code', {
+          enumerable: true,
+          get() {
+            counts.getters += 1
+            return result.errors[0].code
+          },
+        })
+        return { ok: false, errors: [error] }
+      }
+      return result
+    }
+    if (scenario.mode === 'control') return result
     const value = { ...result.value }
     if (scenario.mode === 'accessor') {
       Object.defineProperty(value, 'decision', {
@@ -484,6 +505,28 @@ const sourceModule = new vm.SyntheticModule(Object.keys(real), function () {
     if (scenario.mode === 'bad-shape') return { ok: true, value: { ...value, extra: true } }
     if (scenario.mode === 'mismatch') {
       const voiceBinding = { ...value.voiceBinding, binding: { ...value.voiceBinding.binding, instanceId: 'instance:other' } }
+      return { ok: true, value: { ...value, voiceBinding } }
+    }
+    if (scenario.mode === 'budget-message') {
+      const provider = { ...value.voiceBinding.provider, messageZh: 'x'.repeat(8193) }
+      const voiceBinding = { ...value.voiceBinding, provider }
+      return { ok: true, value: { ...value, voiceBinding } }
+    }
+    if (scenario.mode === 'provider-extra') {
+      const provider = { ...value.voiceBinding.provider, descriptionForAudit: 'safe demo description' }
+      const voiceBinding = { ...value.voiceBinding, provider }
+      return { ok: true, value: { ...value, voiceBinding } }
+    }
+    if (scenario.mode === 'blocked-getter') {
+      if (value.decision !== 'BLOCKED') return result
+      const voiceBinding = { ...value.voiceBinding }
+      Object.defineProperty(voiceBinding, 'taskId', {
+        enumerable: true,
+        get() {
+          counts.getters += 1
+          return 'task:demo-svc'
+        },
+      })
       return { ok: true, value: { ...value, voiceBinding } }
     }
     if (scenario.mode === 'failed-envelope') {
@@ -625,4 +668,30 @@ test('F06 the three documented complete roots run verbatim', () => {
   const c = planFixtureCover(rootC)
   const valueC = expectBlocked(c, 'INSTRUMENTAL_MISSING')
   assert.equal(valueC.dependencyReason, null)
+})
+test('F02-R01 the whole dependency return is bounded-safe-copied before consumption', () => {
+  const failureInput = payload({ sourceInput: { schemaVersion: 1 } })
+  const failedGetter = runCoverWorker({ mode: 'failed-error-getter' }, failureInput)
+  assert.equal(failedGetter.counts.calls, 1)
+  assert.equal(failedGetter.counts.getters, 0)
+  expectError(failedGetter.result, 'DEPENDENCY_FAILURE', 'sourceInput')
+
+  const proxy = runCoverWorker({ mode: 'proxy-prototype' }, payload())
+  assert.equal(proxy.counts.calls, 1)
+  expectError(proxy.result, 'DEPENDENCY_FAILURE', 'sourceInput')
+
+  const budget = runCoverWorker({ mode: 'budget-message' }, payload())
+  assert.equal(budget.counts.calls, 1)
+  expectError(budget.result, 'DEPENDENCY_FAILURE', 'sourceInput')
+
+  const blockedInput = payload()
+  blockedInput.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+  const blockedGetter = runCoverWorker({ mode: 'blocked-getter' }, blockedInput)
+  assert.equal(blockedGetter.counts.calls, 1)
+  assert.equal(blockedGetter.counts.getters, 0)
+  expectError(blockedGetter.result, 'DEPENDENCY_FAILURE', 'sourceInput')
+
+  const extra = runCoverWorker({ mode: 'provider-extra' }, payload())
+  assert.equal(extra.counts.calls, 1)
+  expectPlanned(extra.result, 4, false)
 })

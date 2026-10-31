@@ -385,7 +385,24 @@ function captureSourceResult(resolved) {
     if (!Number.isInteger(number) || number < 1) return null
   }
   const provider = ownData(binding, 'provider').value
-  if (!isPlainObject(provider) || keySurface(provider, PROVIDER_KEYS) !== 'ok') return null
+  if (!isPlainObject(provider)) return null
+  // 088-R01: only the provider facts this planner actually consumes are required; extra safe
+  // provider internals (for example a description) are not turned into a new local schema.
+  for (const key of [
+    'schemaVersion',
+    'category',
+    'instanceId',
+    'candidateId',
+    'decision',
+    'reason',
+    'messageZh',
+    'mockOnly',
+    'realOperationAllowed',
+    'submitAllowed',
+    'automaticRetryAllowed',
+  ]) {
+    if (!ownData(provider, key)) return null
+  }
   if (ownData(provider, 'schemaVersion').value !== 1) return null
   if (ownData(provider, 'decision').value !== 'FIXTURE_COMPATIBLE') return null
   if (ownData(provider, 'reason').value !== null) return null
@@ -547,7 +564,17 @@ export function planFixtureCover(payload) {
   } catch {
     return fail('DEPENDENCY_FAILURE', 'sourceInput')
   }
-  const captured = captureSourceResult(resolved)
+  // 088-R01: the whole dependency return is bounded-safe-copied by the original helper before any
+  // field is read, so accessors, throwing proxies, over-budget/unconsumed subgraphs and malformed
+  // failures all close into the fixed DEPENDENCY_FAILURE without leaking an exception or a getter.
+  let copiedReturn
+  try {
+    copiedReturn = copyFixtureInput(resolved)
+  } catch {
+    return fail('DEPENDENCY_FAILURE', 'sourceInput')
+  }
+  if (!copiedReturn.ok) return fail('DEPENDENCY_FAILURE', 'sourceInput')
+  const captured = captureSourceResult(copiedReturn.value)
   if (captured === null) return fail('DEPENDENCY_FAILURE', 'sourceInput')
   if (captured.kind === 'failed') return fail('SOURCE_INVALID', 'sourceInput')
   if (captured.kind === 'blocked') return blocked('SOURCE_BLOCKED', captured.dependencyReason)

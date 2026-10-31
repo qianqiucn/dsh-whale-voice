@@ -404,7 +404,7 @@ source call -> common facts -> SVC-only association -> instrumental/separator/mi
 precedence, legal TTS rejection, the three legal stage graphs, gain/pitch boundaries, bad dependency
 protocols through a real-resolver VM facade, and two complete documented positive roots plus one
 complete negative root parsed verbatim from `docs/COVER_PLAN_OFFLINE.md`. Local evidence: cover-plan
-tests 18/18 and `node --test` **773 tests, 770 pass, 3 platform skips (symlink EPERM), 0 fail**;
+tests 19/19 and `node --test` **774 tests, 771 pass, 3 platform skips (symlink EPERM), 0 fail**;
 `node build.mjs` regenerates `client.js` with no diff. The planner has no engine, producer, import,
 save, store, file, network, process, clock or random call; no Task is created or executed and no
 audio is generated or saved. Not implemented / not verified: real Cover execution and StageArtifact

@@ -23,9 +23,9 @@
 
 读取任何业务字段前，整个 payload 先经原 `copyFixtureInput` 安全复制：4096 values / depth 12 / 32 object keys / 256 array items / 8192 string code units，plain 或 null-prototype 对象、有限数、密集标准数组；拒绝 accessor/Symbol/隐藏键/自定义原型/洞/额外数组属性/循环，caller getter 0。
 
-`recipe` 恰四键：`schemaVersion`、`sourceLayout`（`MIXED` 或 `CLEAN_VOCAL`）、`separationPreset`（`NONE` 或 `FIXTURE_TWO_STEM`）、`mixConfig`（恰 `mode/vocalGainDb/instrumentalGainDb`）。**MIXED 必须 `FIXTURE_TWO_STEM`，CLEAN_VOCAL 必须 `NONE`**；两 gain 为有限数、范围 [-24,12] 含边界；`VOCAL_ONLY` 的 `instrumentalGainDb` 必须严格为 0。recipe 不接受 `pitchShift/modelId/providerId` 等输入键。
+`recipe` 恰四键：`schemaVersion`（必须为数字 `1`）、`sourceLayout`（`MIXED` 或 `CLEAN_VOCAL`）、`separationPreset`（`NONE` 或 `FIXTURE_TWO_STEM`）、`mixConfig`（恰 `mode/vocalGainDb/instrumentalGainDb`；**`mode` 仅 `VOCAL_ONLY` 或 `WITH_INSTRUMENTAL`**）。**MIXED 必须 `FIXTURE_TWO_STEM`，CLEAN_VOCAL 必须 `NONE`**；两 gain 为有限数、范围 [-24,12] 含边界；`VOCAL_ONLY` 的 `instrumentalGainDb` 必须严格为 0。recipe 不接受 `pitchShift/modelId/providerId` 等输入键。
 
-`capabilities` 恰三键：`schemaVersion`、`separator`、`mixer`；两者仅 `AVAILABLE_FIXTURE|UNAVAILABLE|UNKNOWN`。它们只是本次调用的 Fixture 声明，不是可信 CapabilityEvidence、资源租约、安装或模型能力实测。
+`capabilities` 恰三键：`schemaVersion`（必须为数字 `1`）、`separator`、`mixer`；`separator`/`mixer` 仅 `AVAILABLE_FIXTURE|UNAVAILABLE|UNKNOWN`。它们只是本次调用的 Fixture 声明，不是可信 CapabilityEvidence、资源租约、安装或模型能力实测。
 
 pitch 只取原 resolver 已接受的 `sourceInput.voiceBinding.negotiation.request.pitchShift`（整数 [-12,12]），模型/路由只沿原 voice/model binding 与同 request 核一致；planner 不提供第二个来源。
 
@@ -33,7 +33,9 @@ pitch 只取原 resolver 已接受的 `sourceInput.voiceBinding.negotiation.requ
 
 1. 整 root 安全复制 → 根键面/版本 → recipe 键面/版本/字段/交叉规则 → capabilities 键面/版本/枚举；这些失败时 resolver 调用 0 次。
 2. 对复制后的完整 `sourceInput` 调用原 `resolveFixtureTaskSource` **恰一次**；失败协议（throw、坏形状、accessor）一律 `DEPENDENCY_FAILURE`，合法 `ok:false` 映射 `SOURCE_INVALID`，不回显其错误数组或输入。
-3. 合法源 BLOCKED → 立即 `SOURCE_BLOCKED`（`dependencyReason` 仅为原 10 个 business reason 之一），**先于**任务/路由/能力可用性。
+3. 合法源 BLOCKED → 立即 `SOURCE_BLOCKED`，`dependencyReason` 仅透传下列原十个 business reason（各为 `SOURCE_ARTIFACT_` + key），**先于**任务/路由/能力可用性：
+
+   `VOICE_BINDING_BLOCKED`、`SOURCE_UNAVAILABLE`、`SOURCE_REVISION_MISMATCH`、`SOURCE_RIGHTS_UNCONFIRMED`、`SOURCE_MISSING`、`SOURCE_UNKNOWN`、`SOURCE_EXPIRED`、`SOURCE_KIND_MISMATCH`、`SOURCE_TEXT_MISMATCH`、`SOURCE_AUDIO_MISMATCH`。
 4. 源 LINKED → 先核共通事实（schema、四安全标志、taskId/feature/voiceProfileId 与已复制 draft 一致）；不是 `singing` + `SVC` → `UNSUPPORTED_TASK`（合法 TTS 源在此拒绝）。
 5. 仅 SVC 分支再核完整 11 字段关联（profile/asset/source 单选定位与等值交叉检查、AUDIO 源、RVC_MODEL/rvc、pitch 原边界）；任何矛盾 → `DEPENDENCY_FAILURE`，不静默取 0 或换模型。
 6. `CLEAN_VOCAL` + `WITH_INSTRUMENTAL` → `INSTRUMENTAL_MISSING`（先于能力可用性）。
@@ -86,6 +88,16 @@ pitch 只取原 resolver 已接受的 `sourceInput.voiceBinding.negotiation.requ
 ## 7. 完整可执行示例
 
 以下三份 JSON 均为**完整独立 root**，包含全部四个字段与完整 `sourceInput`（取自 `docs/TASK_FIXTURE_RUNNER_OFFLINE.md` §7 的演示源；全部 ID 均为明示虚构值）。测试逐字解析这些代码块并直接调用 `planFixtureCover`，不注入、不替换、不补字段。
+
+三份示例对应关系与调用步骤：
+
+1. 把示例 A 的 JSON 赋给变量 `exampleA`（示例 B/C 同理 `exampleB`/`exampleC`）；
+2. `import { planFixtureCover } from './core/audio/cover-plan.mjs'`；
+3. `const resultA = planFixtureCover(exampleA)` → 预期 `PLANNED`（4 stages）；
+4. `const resultB = planFixtureCover(exampleB)` → 预期 `PLANNED`（3 stages，无分离）；
+5. `const resultC = planFixtureCover(exampleC)` → 预期 `BLOCKED`（`COVER_PLAN_INSTRUMENTAL_MISSING`）。
+
+三份示例共享同一份合法演示源，属于**声明输入**，不称已实测清唱/伴奏或真实模型文件。
 
 ### 示例 A · MIXED / WITH_INSTRUMENTAL（预期 PLANNED，4 stages，pitch 0）
 

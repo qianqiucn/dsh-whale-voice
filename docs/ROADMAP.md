@@ -435,6 +435,6 @@ and the result is a frozen 15-key planning value with an 11-key association, a 5
 symbolic 3- or 4-stage graph. It explicitly does not create or execute a Task, separate/convert/mix/
 verify/save audio, or touch storage, network, clock or randomness. Documented in
 `docs/COVER_PLAN_OFFLINE.md` with the full OPEN compatibility boundary and three complete runnable
-examples. Local suite **773/770/3 platform skips/0 fail**. This does not complete Cover execution,
+examples. Local suite **774/771/3 platform skips/0 fail**. This does not complete Cover execution,
 resource/cancellation work, dynamic-dependency evidence, the parent Fake E2E or any real capability;
 parent Plan 08 stays IN_PROGRESS.

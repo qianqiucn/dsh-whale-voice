@@ -6,7 +6,7 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
-- Plan 08-F-A pure Fixture cover stage planner (`core/audio/cover-plan.mjs`, **new**, 4 exports, 18 tests;
+- Plan 08-F-A pure Fixture cover stage planner (`core/audio/cover-plan.mjs`, **new**, 4 exports, 19 tests;
   `docs/COVER_PLAN_OFFLINE.md`): one synchronous side-effect-free `planFixtureCover(payload)` validates a
   complete Fixture `sourceInput` through the original `resolveFixtureTaskSource` exactly once, a strict
   four-key recipe and a three-key capability declaration, and returns a deeply frozen 15-key planning

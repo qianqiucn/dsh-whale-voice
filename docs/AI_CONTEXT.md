@@ -484,7 +484,7 @@ accepted `pitchShift`), a symbolic 3- or 4-stage graph, `outputSlot: VERIFIED_MA
 `taskAuthority: UNVERIFIED`, `outputArtifactRef: null` and the fixed safety flags. Routing keeps the
 planned priority (safe copy -> root/recipe/capabilities -> one source call -> common facts ->
 SVC-only association -> instrumental/separator/mixer) and `SOURCE_BLOCKED` wins over every later
-business route. Tests 18; suite **773 / 770 pass / 3 platform skips / 0 fail**. Documentation
+business route. Tests 19; suite **774 / 771 pass / 3 platform skips / 0 fail**. Documentation
 (`docs/COVER_PLAN_OFFLINE.md`) carries the full API, all OPEN future responsibilities and two
 complete positive roots plus one complete negative root that the tests run verbatim. No Task is
 created or executed, no audio is generated or saved and the module has no I/O, clock or random
