@@ -54,6 +54,7 @@ import {
   verifyOwnerAssociations,
 } from './fixture-task-store-internal.mjs'
 import { transitionAudioTask } from './task-contract.mjs'
+import { WAV_BYTE_LIMITS } from './wav-byte-inspector.mjs'
 import { enqueueArtifact, getArtifactState, isArtifactLocked, lockArtifact } from './fixture-artifact-store-internal.mjs'
 import { readStoredForSave } from './fixture-artifact-store-internal.mjs'
 import { importInQueue } from './artifact-library.mjs'
@@ -793,6 +794,8 @@ const VIEW_BUFFER = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'buffer').get
 const VIEW_BYTE_LENGTH = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'byteLength').get
 const VIEW_BYTE_OFFSET = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'byteOffset').get
 const BUFFER_BYTE_LENGTH = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get
+const BUFFER_RESIZABLE = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable').get
+const ARRAY_PROTO = Array.prototype
 
 /**
  * F01: copy the producer's real native byte view. Only the intrinsic typed-array slots participate,
@@ -818,6 +821,8 @@ function ownedProducedBytes(value) {
   let bufferLength
   try {
     bufferLength = BUFFER_BYTE_LENGTH.call(buffer)
+    if (BUFFER_RESIZABLE.call(buffer) === true) return null
+    if (Object.prototype.toString.call(buffer) !== '[object ArrayBuffer]') return null
   } catch {
     return null
   }
@@ -834,6 +839,24 @@ function ownedProducedBytes(value) {
  * immutable identity and the fixed synthetic safety flags; the byte view comes from the native slots
  * and is re-hashed. Any deviation is a bad protocol, never a silent save.
  */
+function safeStateList(value) {
+  if (!Array.isArray(value)) return null
+  const length = value.length
+  if (!Number.isInteger(length) || length < 1 || length > 64) return null
+  if (Object.getPrototypeOf(value) !== ARRAY_PROTO) return null
+  if (Reflect.ownKeys(value).length !== length + 1) return null
+  const copied = []
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (!descriptor || !hasOwn(descriptor, 'value') || descriptor.enumerable !== true) return null
+    if (typeof descriptor.value !== 'string' || descriptor.value.length === 0 || descriptor.value.length > 64) {
+      return null
+    }
+    copied.push(descriptor.value)
+  }
+  return copied
+}
+
 function interpretBytesEngine(out, birthRecord) {
   try {
     const root = engineObject(out, BYTES_ROOT_KEYS)
@@ -861,6 +884,16 @@ function interpretBytesEngine(out, birthRecord) {
       return null
     }
     if (inspection.bitsPerSample !== 16) return null
+    if (inspection.channels !== 1 && inspection.channels !== 2) return null
+    if (!WAV_BYTE_LIMITS.sampleRates.includes(inspection.sampleRate)) return null
+    if (!Number.isInteger(inspection.dataByteLength) || inspection.dataByteLength < 2) return null
+    if (!Number.isInteger(inspection.frameCount) || inspection.frameCount < 1) return null
+    if (inspection.frameCount !== inspection.dataByteLength / (inspection.channels * 2)) return null
+    if (inspection.byteLength !== inspection.dataByteLength + 44) return null
+    if (inspection.durationMs !== (inspection.frameCount * 1000) / inspection.sampleRate) return null
+    if (typeof inspection.peak !== 'number' || !Number.isFinite(inspection.peak) || inspection.peak < 0) return null
+    if (!Number.isInteger(inspection.fullScaleSampleCount) || inspection.fullScaleSampleCount < 0) return null
+    if (inspection.fullScaleSampleCount > inspection.frameCount * inspection.channels) return null
     if (inspection.validationState !== 'FIXTURE_WAV_CHECKED') return null
     if (inspection.mockOnly !== true || inspection.realOperationAllowed !== false) return null
     if (inspection.submitAllowed !== false || inspection.automaticRetryAllowed !== false) return null
@@ -874,9 +907,18 @@ function interpretBytesEngine(out, birthRecord) {
     const value = engineObject(result.value, ENGINE_VALUE_KEYS)
     if (value === null) return null
     if (value.schemaVersion !== TASK_FIXTURE_SCHEMA_VERSION || value.phase !== 'SIMULATED') return null
+    if (value.reason !== null) return null
     if (value.mockOnly !== true || value.realOperationAllowed !== false) return null
     if (value.submitAllowed !== false || value.automaticRetryAllowed !== false) return null
-    if (!Array.isArray(value.states) || value.states.length === 0) return null
+    if (typeof value.messageZh !== 'string' || value.messageZh.length < 1 || value.messageZh.length > 512) return null
+    if (value.execution !== null) {
+      const copied = copyDataGraph(value.execution, 0)
+      if (!copied.ok || copied.value === null) return null
+      if (copied.value.mockOnly !== true || copied.value.realOperationAllowed !== false) return null
+    }
+    if (!isPlainObject(value.sourceCheck) || !isPlainObject(value.readiness)) return null
+    const states = safeStateList(value.states)
+    if (states === null) return null
 
     let validated
     try {
@@ -890,7 +932,7 @@ function interpretBytesEngine(out, birthRecord) {
     if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
     if (!sameOwnerImmutable(record, birthRecord)) return null
     if (stableStringify(record) !== stableStringify(root.record)) return null
-    if (value.states[value.states.length - 1] !== record.state) return null
+    if (states[states.length - 1] !== record.state) return null
     const expectedTask = projectOrNull(record)
     if (expectedTask === null) return null
     const guardedTask = guardProjection(value.task, expectedTask)
