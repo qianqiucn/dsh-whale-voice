@@ -593,54 +593,67 @@ function proofFieldsOnly(proof) {
  * snapshot/digest/revision, the catalog birth identity, the candidate record identity and the
  * actual artifact that the same save just imported. Only WRITE_REJECTED may come out of here.
  */
-function validateSaveProof(proof, context) {
+/**
+ * F04/G02: every local (library-free) proof fact is captured and checked before the fresh library
+ * read: strict 11+8+19 data, hash/ref/key/rights shapes, revisions and the bindings that only need
+ * the current CLAIMED snapshot, the catalog birth and the candidate record.
+ */
+function validateSaveProofLocal(proof, context) {
   const fields = proofFieldsOnly(proof)
   const evaluatedMs = Date.parse(fields.evaluatedAt)
-
   const entry = context.entry
   const birth = context.birth
-  if (fields.scopeId !== entry.scopeId || fields.taskId !== entry.taskId) rejectWrite()
-  if (typeof fields.birthIdentityHash !== 'string' || fields.birthIdentityHash !== entry.birthIdentityHash) {
-    rejectWrite()
-  }
+  if (typeof fields.scopeId !== 'string' || fields.scopeId !== entry.scopeId) rejectWrite()
+  if (typeof fields.taskId !== 'string' || fields.taskId !== entry.taskId) rejectWrite()
+  if (typeof fields.birthIdentityHash !== 'string' || !HASH_PATTERN.test(fields.birthIdentityHash)) rejectWrite()
+  if (fields.birthIdentityHash !== entry.birthIdentityHash) rejectWrite()
+  if (typeof fields.birthObservedAt !== 'string' || !ISO_PATTERN.test(fields.birthObservedAt)) rejectWrite()
   if (!birth || birth.identityHash !== entry.birthIdentityHash) rejectWrite()
   if (birth.record.observedAt !== fields.birthObservedAt) rejectWrite()
-  if (typeof fields.claimDigest !== 'string' || fields.claimDigest !== context.baseDigest) rejectWrite()
+  if (typeof fields.claimDigest !== 'string' || !HASH_PATTERN.test(fields.claimDigest)) rejectWrite()
+  if (fields.claimDigest !== context.baseDigest) rejectWrite()
+  if (!Number.isInteger(fields.claimRevision) || fields.claimRevision < 1) rejectWrite()
   if (fields.claimRevision !== context.current.revision) rejectWrite()
-  if (fields.candidateRevision !== context.expectedRevision) rejectWrite()
+  if (!Number.isInteger(fields.candidateRevision) || fields.candidateRevision !== context.expectedRevision) rejectWrite()
   if (fields.candidateRevision !== fields.claimRevision + 1) rejectWrite()
+  if (typeof fields.recordIdentityHash !== 'string' || !HASH_PATTERN.test(fields.recordIdentityHash)) rejectWrite()
 
   const record = entry.record
   if (record.state !== 'SAVED') rejectWrite()
-  if (typeof fields.recordIdentityHash !== 'string' || fields.recordIdentityHash !== identityHashOf(record)) {
-    rejectWrite()
-  }
+  if (fields.recordIdentityHash !== identityHashOf(record)) rejectWrite()
   if (!sameImmutable(record, birth.record)) rejectWrite()
 
   const artifact = fields.artifact
-  if (!isPlainObject(artifact) || keySurface(artifact, PROOF_ARTIFACT_KEY_SET) !== 'ok') rejectWrite()
-  for (const key of PROOF_ARTIFACT_KEYS) proofDataField(artifact, key)
-  const actual = context.artifact
+  if (typeof artifact.identityHash !== 'string' || !HASH_PATTERN.test(artifact.identityHash)) rejectWrite()
+  if (typeof artifact.byteSha256 !== 'string' || !HASH_PATTERN.test(artifact.byteSha256)) rejectWrite()
+  if (!Number.isInteger(artifact.byteLength) || artifact.byteLength < 44) rejectWrite()
+  if (artifact.byteLength > 1048576) rejectWrite()
+  if (typeof artifact.requestKey !== 'string' || artifact.requestKey.length < 1 || artifact.requestKey.length > 64) {
+    rejectWrite()
+  }
+  if (record.outputArtifactRef !== artifact.artifactRef) rejectWrite()
+  const rights = artifact.rights
+  if (!isPlainObject(rights) || keySurface(rights, OWNER_RIGHTS_KEYS) !== 'ok') rejectWrite()
+  if (proofDataField(rights, 'state') !== 'GRANTED') rejectWrite()
+  const proofRef = proofDataField(rights, 'proofRef')
+  if (typeof proofRef !== 'string' || proofRef.length === 0 || proofRef.length > 128) rejectWrite()
+  const expiresMs = Date.parse(artifact.expiresAt)
+  if (!Number.isFinite(expiresMs) || expiresMs <= evaluatedMs) rejectWrite()
+  return fields
+}
+
+/** Only the facts that require the actual fresh library entry remain after the local gate. */
+function validateSaveArtifact(fields, actual) {
   if (!actual) rejectWrite()
-  if (record.outputArtifactRef !== artifact.artifactRef || artifact.artifactRef !== actual.artifactRef) rejectWrite()
+  const artifact = fields.artifact
+  if (artifact.artifactRef !== actual.artifactRef) rejectWrite()
   if (artifact.identityHash !== actual.identityHash) rejectWrite()
   if (artifact.byteSha256 !== actual.byteSha256) rejectWrite()
   if (artifact.byteLength !== actual.byteLength) rejectWrite()
   if (artifact.expiresAt !== actual.expiresAt) rejectWrite()
   if (artifact.requestKey !== actual.requestKey) rejectWrite()
-  const expiresMs = Date.parse(artifact.expiresAt)
-  if (!Number.isFinite(expiresMs) || expiresMs <= evaluatedMs) rejectWrite()
-  const rights = artifact.rights
-  if (!isPlainObject(rights) || keySurface(rights, OWNER_RIGHTS_KEYS) !== 'ok') rejectWrite()
-  proofDataField(rights, 'state')
-  proofDataField(rights, 'proofRef')
-  if (rights.state !== 'GRANTED') rejectWrite()
-  if (typeof rights.proofRef !== 'string' || rights.proofRef.length === 0) rejectWrite()
-  if (stableStringify(rights) !== stableStringify(actual.rights)) rejectWrite()
-  const inspection = artifact.inspection
-  if (!isPlainObject(inspection) || keySurface(inspection, OWNER_INSPECTION_KEY_SET) !== 'ok') rejectWrite()
-  for (const key of OWNER_INSPECTION_KEYS) proofDataField(inspection, key)
-  if (stableStringify(inspection) !== stableStringify(actual.inspection)) rejectWrite()
+  if (stableStringify(artifact.rights) !== stableStringify(actual.rights)) rejectWrite()
+  if (stableStringify(artifact.inspection) !== stableStringify(actual.inspection)) rejectWrite()
   return true
 }
 
@@ -981,16 +994,15 @@ function openStoreFile(state, spec, unknownKey) {
           (item) => item.scopeId === preEntry.scopeId && item.record.taskId === preEntry.taskId,
         )
         if (!birth) raiseStore('BIRTH_INVALID', '$')
-        const preFields = proofFieldsOnly(proof)
-        const artifact = freshSaveArtifact(state, preEntry, preFields.evaluatedAt)
-        validateSaveProof(proof, {
+        const preFields = validateSaveProofLocal(proof, {
           entry: preEntry,
           birth,
           current: preCurrent,
           baseDigest,
           expectedRevision,
-          artifact,
         })
+        const artifact = freshSaveArtifact(state, preEntry, preFields.evaluatedAt)
+        validateSaveArtifact(preFields, artifact)
       }
 
       renameAttempted = true
@@ -1025,16 +1037,15 @@ function openStoreFile(state, spec, unknownKey) {
             (item) => item.scopeId === postEntry.scopeId && item.record.taskId === postEntry.taskId,
           )
           if (!birth) raiseStore('BIRTH_INVALID', '$')
-          const postFields = proofFieldsOnly(proof)
-          const artifact = freshSaveArtifact(state, postEntry, postFields.evaluatedAt)
-          validateSaveProof(proof, {
+          const postFields = validateSaveProofLocal(proof, {
             entry: postEntry,
             birth,
             current: { revision: expectedRevision - 1 },
             baseDigest,
             expectedRevision,
-            artifact,
           })
+          const artifact = freshSaveArtifact(state, postEntry, postFields.evaluatedAt)
+          validateSaveArtifact(postFields, artifact)
         }
         checkSandbox(state)
         file.confirmedDigest = sha256(bytes)
