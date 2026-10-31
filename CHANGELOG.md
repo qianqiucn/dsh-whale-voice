@@ -140,5 +140,14 @@ not invent earlier releases or imply production maturity.
   legal delete queued behind a save, and both documented examples executed as written). Suite
   **742 / 739 pass / 3 platform skips / 0 fail**, owner + save specialty **59/59**; still `OFFLINE` /
   `FIXTURE_ONLY` / `NOT_INTEGRATED` and PR #40 is open and unmerged.
+- 085 v1.3 close-out (tests, docs and two offline guards; no new capability): the save result is
+  captured once before the SUCCESS/legal-null split and the complete canonical 19-field inspection
+  is compared against the real bytes, the whole locally decidable SaveProof is rejected before the
+  first fresh store read, the eleven-row matrix now reports uniform claim/FINAL/Artifact counts,
+  engine/import counts and three-file digests with the one-shot JOINT armed only after the real
+  writer returned, legal OFFLINE/NO_EXECUTION settlements are covered, ordinary concurrency is a
+  fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window waits for the JOINT,
+  and both documented examples carry a complete input. Suite **753 / 750 pass / 3 platform skips /
+  0 fail**, owner + save specialty **70/70**; still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
 - Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
   installer capability is added or implied.

@@ -886,7 +886,13 @@ test('S16 the documented save example runs as written against a real sandbox', a
     const frame = clone(request)
     frame.taskId = b.taskId
     frame.scopeId = b.scopeId
-    frame.input = b.input
+    // The documented input object is used as written; only the real issued identity and the real
+    // source reference are bound into the documented placeholders.
+    assert.equal(Object.keys(frame.input).length, 4)
+    frame.input.sourceInput.voiceBinding.taskDraft.taskId = b.taskId
+    frame.input.sourceInput.voiceBinding.taskDraft.source.ref =
+      b.input.sourceInput.voiceBinding.taskDraft.source.ref
+    assert.deepEqual(frame.input, b.input)
     const saved = await owner.value.save(frame)
     assert.equal(saved.ok, true, JSON.stringify(saved))
     assert.deepEqual(Object.keys(saved.value), Object.keys(expectedSave))
@@ -1012,16 +1018,12 @@ test('S20 concurrent saves on one capability never duplicate the artifact or the
     assert.equal(savedResults.length, 1, JSON.stringify([left, right]).slice(0, 400))
     const saved = savedResults[0]
     const other = saved === left ? right : left
-    if (other.ok) {
-      assert.equal(other.value.outcome, 'EXISTING')
-      assert.equal(other.value.artifact, null)
-    } else {
-      assert.ok(
-        other.errors[0].code === TASK_OWNER_ERRORS.SAVE_UNKNOWN ||
-          other.errors[0].code === TASK_OWNER_ERRORS.WRITE_REJECTED,
-        JSON.stringify(other),
-      )
-    }
+    // The ordinary concurrent second attempt is a fixed EXISTING, never an UNKNOWN or a rejection.
+    assert.equal(other.ok, true, JSON.stringify(other).slice(0, 400))
+    assert.equal(other.value.outcome, 'EXISTING')
+    assert.equal(other.value.artifact, null)
+    assert.equal(other.value.ownerState, 'SAVED')
+    assert.equal(other.value.revision, 2)
     const pack = readJson(sandbox, ARTIFACT_FILE_NAME)
     assert.equal(pack.entries.length, 1)
     assert.equal(pack.entries[0].artifactRef, saved.value.artifact.artifactRef)
@@ -1107,7 +1109,7 @@ test('S21 the previous main program still rejects a v2 owner snapshot in isolati
   })
 })
 
-test('S22 a legal delete issued during another save queues on the artifact domain and both finish', async () => {
+test('S22 a legal delete issued inside the held Artifact window waits for the save JOINT', async () => {
   const ex = example()
   await withSandbox(async (sandbox) => {
     const first = await birth(sandbox, ex, 'key:fixture-s22a')
@@ -1120,33 +1122,71 @@ test('S22 a legal delete issued during another save queues on the artifact domai
     assert.equal(library.ok, true)
 
     const second = await birth(sandbox, ex, 'key:fixture-s22b')
-    const [secondSave, deleted] = await Promise.all([
-      owner.value.save(saveFrame(second, (frame) => (frame.requestKey = 'save:fixture-' + second.taskId.slice(-8)))),
-      library.value.delete({ schemaVersion: 1, scopeId: first.scopeId, artifactRef: refA, now: SAVE_NOW }),
-    ])
+    let deleteIssued = false
+    let deletePromise = null
+    let deleteRanAtOwnerRenames = null
+    let packAtIssue = null
+    const faults = installFaults(sandbox, {
+      ownerTempFsync(state, sb) {
+        // The FINAL temp fsync runs inside the save's own Artifact-queue window, after the import.
+        if (state.ownerFsyncs === 2 && !deleteIssued) {
+          deleteIssued = true
+          packAtIssue = readJson(sb, ARTIFACT_FILE_NAME)
+          deletePromise = library.value
+            .delete({ schemaVersion: 1, scopeId: first.scopeId, artifactRef: refA, now: SAVE_NOW })
+            .then((result) => {
+              deleteRanAtOwnerRenames = state.ownerRenames
+              return result
+            })
+        }
+      },
+    })
+    let secondSave
+    try {
+      secondSave = await owner.value.save(
+        saveFrame(second, (frame) => (frame.requestKey = 'save:fixture-' + second.taskId.slice(-8))),
+      )
+    } finally {
+      faults.restore()
+    }
+    assert.equal(deleteIssued, true)
     assert.equal(secondSave.ok, true, JSON.stringify(secondSave))
     assert.equal(secondSave.value.outcome, 'SAVED')
+
+    // The delete was only queued: at issue time A was still a live STORED entry.
+    const aAtIssue = packAtIssue.entries.find((entry) => entry.artifactRef === refA)
+    assert.equal(aAtIssue.deletedAt, null)
+    const aAtIssueOwner = aAtIssue.payload
+    assert.notEqual(aAtIssueOwner, null)
+
+    const deleted = await deletePromise
     assert.equal(deleted.ok, true, JSON.stringify(deleted))
     assert.equal(deleted.value.outcome, 'DELETED')
+    // It could only execute after the save's real FINAL rename (both renames done under the queue).
+    assert.equal(deleteRanAtOwnerRenames, 2)
 
     const pack = readJson(sandbox, ARTIFACT_FILE_NAME)
-    const entries = pack.entries
-    assert.equal(entries.length, 2)
-    const tombstone = entries.find((entry) => entry.artifactRef === refA)
+    assert.equal(pack.entries.length, 2)
+    const tombstone = pack.entries.find((entry) => entry.artifactRef === refA)
     assert.equal(tombstone.payload, null)
     assert.equal(typeof tombstone.deletedAt, 'string')
-    const stored = entries.find((entry) => entry.artifactRef === secondSave.value.artifact.artifactRef)
+    const stored = pack.entries.find((entry) => entry.artifactRef === secondSave.value.artifact.artifactRef)
     assert.equal(stored.deletedAt, null)
 
     const doc = readJson(sandbox, OWNER_FILE)
     assert.equal(doc.schemaVersion, 2)
     assert.equal(doc.revision, 4)
+    assert.equal(doc.entries.length, 2)
+    assert.equal(doc.entries[0].completion.kind, 'SAVED')
     const statusA = await owner.value.artifactStatus(statusFrame(first))
     assert.equal(statusA.ok, true)
     assert.equal(statusA.value.state, 'DELETED')
     const statusB = await owner.value.artifactStatus(statusFrame(second))
     assert.equal(statusB.ok, true)
     assert.equal(statusB.value.state, 'READABLE')
+    const gotA = await owner.value.get({ schemaVersion: 1, scopeId: first.scopeId, taskId: first.taskId })
+    assert.equal(gotA.ok, true)
+    assert.equal(gotA.value.ownerState, 'SAVED')
   })
 })
 test('S23 the documented rights-rejection example runs as written', async () => {
@@ -1170,7 +1210,13 @@ test('S23 the documented rights-rejection example runs as written', async () => 
     const frame = clone(request)
     frame.taskId = b.taskId
     frame.scopeId = b.scopeId
-    frame.input = b.input
+    // The documented input object is used as written; only the real issued identity and the real
+    // source reference are bound into the documented placeholders.
+    assert.equal(Object.keys(frame.input).length, 4)
+    frame.input.sourceInput.voiceBinding.taskDraft.taskId = b.taskId
+    frame.input.sourceInput.voiceBinding.taskDraft.source.ref =
+      b.input.sourceInput.voiceBinding.taskDraft.source.ref
+    assert.deepEqual(frame.input, b.input)
     const result = await owner.value.save(frame)
     assert.equal(result.ok, false)
     assert.equal(result.errors[0].code, expected.errors[0].code)

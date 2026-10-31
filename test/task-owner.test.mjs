@@ -753,7 +753,14 @@ try {
         blocked.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
         saveFrame.input = blocked
       }
-      record('save', await opened.value.save(saveFrame))
+      if (scenario.concurrentSave) {
+        const other = await owner()
+        const [left, right] = await Promise.all([opened.value.save(saveFrame), other.value.save(saveFrame)])
+        record('save', left)
+        record('save-b', right)
+      } else {
+        record('save', await opened.value.save(saveFrame))
+      }
       if (scenario.afterMutate) {
         const name = scenario.afterMutate === 'AF' ? 'audio-artifacts-v1.json' : 'audio-task-owner-v1.json'
         const foreign = scenario.afterMutate === 'AF' ? foreignArtifactBytes() : foreignOwnerBytes()
@@ -2654,4 +2661,20 @@ test('R03 the eleven-row matrix reports uniform R / engine-import / three-file d
     assert.equal(d.artifactEnd, artifactExpected, detail)
     assert.equal(worker.ownerPhase, row.phase, detail)
   }
+})
+
+test('R04 a concurrent second save returns a fixed EXISTING with no extra engine or import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r04-concurrent', mode: 'save', concurrentSave: true })
+  const left = workerResult(worker, 'save')
+  const right = workerResult(worker, 'save-b')
+  const outcomes = [left, right].map((r) => (r.ok ? r.value.outcome : 'ERR:' + r.errors[0].code)).sort()
+  assert.deepEqual(outcomes, ['EXISTING', 'SAVED'], JSON.stringify([left, right]).slice(0, 500))
+  const existing = left.ok && left.value.outcome === 'EXISTING' ? left : right
+  assert.equal(existing.value.artifact, null)
+  assert.equal(existing.value.revision, 2)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerSaved)
+  assert.equal(worker.counts.renames.owner.attempt, 2)
+  assert.equal(worker.counts.renames.artifact.attempt, 1)
 })

@@ -420,7 +420,10 @@ The frozen save contract's Step 2-4 are implemented offline as one unit: fresh l
 owner snapshot with a mandatory `SaveProof` inside the only writer, non-reentrant `importInQueue`,
 and public `save`/`artifactStatus`. The F01 close-out completes the remaining offline evidence: the
 three protocol/native-carrier guards, the eleven-row fs-fault matrix in one shared VM graph and the
-§4.3 compatibility/concurrency rows. Local suite **742/739/3 platform skips/0 fail**, owner + save
-specialty 59/59. Not verified: real Host/GUI, real TTS/media, delivery or any production capability;
+§4.3 compatibility/concurrency rows. The 085 v1.3 close-out adds the full canonical inspection
+comparison, the static proof pre-read gate, the uniform eleven-row evidence with a true post-writer
+JOINT, legal non-SUCCESS settlements, fixed EXISTING concurrency, held-window delete queueing and
+complete documented examples; local suite **753/750/3 platform skips/0 fail**, owner + save
+specialty 70/70. Not verified: real Host/GUI, real TTS/media, delivery or any production capability;
 this does not complete Cover orchestration, resource or cancellation work, dynamic-dependency
 evidence or the parent Fake E2E.
