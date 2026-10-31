@@ -860,3 +860,28 @@ test('S16 the documented save example runs as written against a real sandbox', a
     assert.equal(got.value.ownerState, 'SAVED')
   })
 })
+/* ------------------------------------------------------------------ S17 */
+
+test('S17 a JOINT-phase Task overwrite after the writer returned is SAVE_UNKNOWN with a Task lock', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s17')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    let jointDone = false
+    const faults = installFaults(sandbox, {
+      ownerLstat(state, sb) {
+        if (state.ownerRenames === 2 && state.afterFinal === 3 && !jointDone) {
+          jointDone = true
+          overwrite(sb, OWNER_FILE, foreignOwnerBytes(sb))
+        }
+      },
+    })
+    try {
+      expectError(await owner.value.save(saveFrame(b)), 'SAVE_UNKNOWN', '$')
+    } finally {
+      faults.restore()
+    }
+    assert.equal(jointDone, true)
+    expectError(await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'OWNER_UNKNOWN', '$')
+  })
+})

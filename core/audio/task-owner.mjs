@@ -749,36 +749,154 @@ function checkSavePrecondition(request, birthRecord) {
 }
 
 /** The bytes engine either produces one bounded synthetic pack or a legal non-SUCCESS conclusion. */
+const BYTES_ROOT_KEYS = Object.freeze(new Set(['record', 'result', 'production']))
+const BYTES_PRODUCTION_KEYS = Object.freeze(
+  new Set([
+    'schemaVersion',
+    'origin',
+    'bytes',
+    'inspection',
+    'mockOnly',
+    'realOperationAllowed',
+    'submitAllowed',
+    'automaticRetryAllowed',
+    'messageZh',
+  ]),
+)
+const BYTES_INSPECTION_KEYS = Object.freeze(
+  new Set([
+    'schemaVersion',
+    'format',
+    'codec',
+    'bitsPerSample',
+    'sampleRate',
+    'channels',
+    'byteLength',
+    'dataByteLength',
+    'frameCount',
+    'durationMs',
+    'peak',
+    'fullScaleSampleCount',
+    'sha256',
+    'validationState',
+    'mockOnly',
+    'realOperationAllowed',
+    'submitAllowed',
+    'automaticRetryAllowed',
+    'messageZh',
+  ]),
+)
+const MAX_SAVE_BYTES = 1048576
+const TYPED_PROTO = Object.getPrototypeOf(Uint8Array.prototype)
+const TYPED_TAG = Object.getOwnPropertyDescriptor(TYPED_PROTO, Symbol.toStringTag).get
+const VIEW_BUFFER = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'buffer').get
+const VIEW_BYTE_LENGTH = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'byteLength').get
+const VIEW_BYTE_OFFSET = Object.getOwnPropertyDescriptor(TYPED_PROTO, 'byteOffset').get
+const BUFFER_BYTE_LENGTH = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get
+
+/**
+ * F01: copy the producer's real native byte view. Only the intrinsic typed-array slots participate,
+ * so shadowed length/byteLength/buffer properties and accessors are ignored instead of being read.
+ */
+function ownedProducedBytes(value) {
+  if (value === null || typeof value !== 'object') return null
+  let tag
+  let buffer
+  let byteLength
+  let byteOffset
+  try {
+    tag = TYPED_TAG.call(value)
+    buffer = VIEW_BUFFER.call(value)
+    byteLength = VIEW_BYTE_LENGTH.call(value)
+    byteOffset = VIEW_BYTE_OFFSET.call(value)
+  } catch {
+    return null
+  }
+  if (tag !== 'Uint8Array') return null
+  if (!Number.isInteger(byteLength) || byteLength <= 0 || byteLength > MAX_SAVE_BYTES) return null
+  if (!Number.isInteger(byteOffset) || byteOffset < 0) return null
+  let bufferLength
+  try {
+    bufferLength = BUFFER_BYTE_LENGTH.call(buffer)
+  } catch {
+    return null
+  }
+  if (byteOffset + byteLength > bufferLength) return null
+  const copy = new Uint8Array(byteLength)
+  Uint8Array.prototype.set.call(copy, new Uint8Array(buffer, byteOffset, byteLength))
+  return Buffer.from(copy)
+}
+
+/**
+ * F01: full protocol guard over the real bytes engine. The three-key root, the result envelope, the
+ * production value and its 19-field inspection are copied through own data descriptors only; a
+ * missing production is not production:null; a SUCCESS must be PROCESSING with the pristine
+ * immutable identity and the fixed synthetic safety flags; the byte view comes from the native slots
+ * and is re-hashed. Any deviation is a bad protocol, never a silent save.
+ */
 function interpretBytesEngine(out, birthRecord) {
   try {
-    if (!isPlainObject(out)) return null
-    const production = out.production
-    if (production !== null && production !== undefined) {
-      if (!isPlainObject(production) || production.origin !== 'SYNTHETIC_FIXTURE') return null
-      const bytes = production.bytes
-      if (!(bytes instanceof Uint8Array) || bytes.length === 0) return null
-      if (!isPlainObject(production.inspection)) return null
-      const result = out.result
-      if (!isPlainObject(result) || result.ok !== true || !isPlainObject(result.value)) return null
-      if (result.value.phase !== 'SIMULATED') return null
-      let validated
-      try {
-        validated = validateAudioTaskRecord(out.record)
-      } catch {
-        return null
-      }
-      if (!validated || validated.ok !== true || !isPlainObject(validated.value)) return null
-      const record = validated.value
-      if (record.state !== 'PROCESSING') return null
-      if (record.outputArtifactRef !== null) return null
-      if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
-      if (!sameOwnerImmutable(record, birthRecord)) return null
-      if (stableStringify(record) !== stableStringify(out.record)) return null
-      return { kind: 'SUCCESS', record, bytes: Buffer.from(bytes) }
+    const root = engineObject(out, BYTES_ROOT_KEYS)
+    if (root === null) return null
+    const production = root.production
+    if (production === null) {
+      const settled = interpretEngine({ record: root.record, result: root.result }, birthRecord)
+      if (settled === null) return null
+      return { kind: settled.kind, reason: settled.reason, record: settled.record }
     }
-    const settled = interpretEngine({ record: out.record, result: out.result }, birthRecord)
-    if (settled === null) return null
-    return { kind: settled.kind, reason: settled.reason, record: settled.record }
+    if (!isPlainObject(production)) return null
+    const fields = engineObject(production, BYTES_PRODUCTION_KEYS)
+    if (fields === null) return null
+    if (fields.schemaVersion !== 1 || fields.origin !== 'SYNTHETIC_FIXTURE') return null
+    if (fields.mockOnly !== true || fields.realOperationAllowed !== false) return null
+    if (fields.submitAllowed !== false || fields.automaticRetryAllowed !== false) return null
+    if (typeof fields.messageZh !== 'string' || fields.messageZh.length < 1 || fields.messageZh.length > 256) {
+      return null
+    }
+    const inspection = isPlainObject(fields.inspection)
+      ? engineObject(fields.inspection, BYTES_INSPECTION_KEYS)
+      : null
+    if (inspection === null) return null
+    if (inspection.schemaVersion !== 1 || inspection.format !== 'WAV' || inspection.codec !== 'PCM_S16LE') {
+      return null
+    }
+    if (inspection.bitsPerSample !== 16) return null
+    if (inspection.validationState !== 'FIXTURE_WAV_CHECKED') return null
+    if (inspection.mockOnly !== true || inspection.realOperationAllowed !== false) return null
+    if (inspection.submitAllowed !== false || inspection.automaticRetryAllowed !== false) return null
+    const bytes = ownedProducedBytes(fields.bytes)
+    if (bytes === null) return null
+    if (inspection.byteLength !== bytes.length) return null
+    if (typeof inspection.sha256 !== 'string' || sha256(bytes) !== inspection.sha256) return null
+
+    const result = engineObject(root.result, ENGINE_RESULT_KEYS)
+    if (result === null || result.ok !== true) return null
+    const value = engineObject(result.value, ENGINE_VALUE_KEYS)
+    if (value === null) return null
+    if (value.schemaVersion !== TASK_FIXTURE_SCHEMA_VERSION || value.phase !== 'SIMULATED') return null
+    if (value.mockOnly !== true || value.realOperationAllowed !== false) return null
+    if (value.submitAllowed !== false || value.automaticRetryAllowed !== false) return null
+    if (!Array.isArray(value.states) || value.states.length === 0) return null
+
+    let validated
+    try {
+      validated = validateAudioTaskRecord(root.record)
+    } catch {
+      return null
+    }
+    if (!validated || validated.ok !== true || !isPlainObject(validated.value)) return null
+    const record = validated.value
+    if (record.state !== 'PROCESSING' || record.outputArtifactRef !== null) return null
+    if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
+    if (!sameOwnerImmutable(record, birthRecord)) return null
+    if (stableStringify(record) !== stableStringify(root.record)) return null
+    if (value.states[value.states.length - 1] !== record.state) return null
+    const expectedTask = projectOrNull(record)
+    if (expectedTask === null) return null
+    const guardedTask = guardProjection(value.task, expectedTask)
+    if (guardedTask === null) return null
+    if (stableStringify(expectedTask) !== stableStringify(guardedTask)) return null
+    return { kind: 'SUCCESS', record, bytes }
   } catch {
     return null
   }
