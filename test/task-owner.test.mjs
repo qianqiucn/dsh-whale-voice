@@ -327,19 +327,15 @@ const engineModule = new vm.SyntheticModule(
       const out = real.engine.runExistingFixtureTaskBytesOnce(bytesFrame)
       const fault = scenario.bytesFault
       if (!fault || counts.engine !== 1) return out
-      if (fault === 'resizable') {
-        const copy = JSON.parse(JSON.stringify(out))
-        copy.production.bytes = new Uint8Array(new ArrayBuffer(16, { maxByteLength: 64 }))
-        copy.production.inspection.sha256 = '0'.repeat(64)
-        return copy
-      }
-      const copy = JSON.parse(JSON.stringify(out))
-      if (fault === 'channels') copy.production.inspection.channels = 3
-      else if (fault === 'execution') copy.result.value.execution = 'not-an-object'
-      else if (fault === 'flags') copy.production.realOperationAllowed = true
-      else if (fault === 'missing-production') delete copy.production
+      // Keep the real production bytes carrier; only the single target field is replaced.
+      const production = { ...out.production, inspection: { ...out.production.inspection } }
+      const value = { ...out.result.value }
+      if (fault === 'channels') production.inspection.channels = 3
+      else if (fault === 'peak') production.inspection.peak = 2
+      else if (fault === 'flags') production.realOperationAllowed = true
+      else if (fault === 'execution') value.execution = 'not-an-object'
       else if (fault === 'states-getter') {
-        const states = copy.result.value.states.slice()
+        const states = value.states.slice()
         Object.defineProperty(states, states.length - 1, {
           enumerable: true,
           get() {
@@ -347,9 +343,16 @@ const engineModule = new vm.SyntheticModule(
             return 'PROCESSING'
           },
         })
-        copy.result.value.states = states
+        value.states = states
+      } else if (fault === 'resizable') {
+        const bytes = out.production.bytes
+        const buffer = new ArrayBuffer(bytes.length, { maxByteLength: bytes.length * 2 })
+        new Uint8Array(buffer).set(bytes)
+        production.bytes = new Uint8Array(buffer)
       }
-      return copy
+      if (fault === 'missing-production') return { record: out.record, result: { ok: true, value } }
+      if (fault === 'clone') return { record: out.record, result: { ok: true, value }, production }
+      return { record: out.record, result: { ok: true, value }, production }
     })
   },
   { identifier: engineUrl },
@@ -2017,4 +2020,31 @@ test('V01 shared VM graph: one save runs one real engine and one real import, th
   const got = workerResult(worker, 'get')
   assert.equal(got.ok, true)
   assert.equal(got.value.ownerState, 'SAVED')
+})
+
+
+/* ------------------------------------------------------------------ V02 */
+
+test('V02 the protocol representatives are SAVE_UNKNOWN with engine=1/import=0 and no getter', () => {
+  for (const fault of ['channels', 'peak', 'flags', 'execution', 'states-getter', 'resizable', 'missing-production']) {
+    const worker = runOwnerWorker({ key: 'key:fixture-v02-' + fault, mode: 'save', bytesFault: fault })
+    assert.equal(worker.counts.engine, 1, fault + ' engine')
+    assert.equal(worker.counts.imports, 0, fault + ' import')
+    assert.equal(worker.getterCalls, 0, fault + ' getter')
+    const saved = workerResult(worker, 'save')
+    assert.equal(saved.ok, false, fault + ' ' + JSON.stringify(saved))
+    assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN, fault)
+    const got = workerResult(worker, 'get')
+    assert.equal(got.ok, true, fault)
+    assert.equal(got.value.ownerState, 'UNKNOWN', fault)
+  }
+})
+
+test('V03 a harmless field clone still saves once through the real engine and import', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v03', mode: 'save', bytesFault: 'clone' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
 })

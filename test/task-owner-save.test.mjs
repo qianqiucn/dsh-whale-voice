@@ -885,3 +885,23 @@ test('S17 a JOINT-phase Task overwrite after the writer returned is SAVE_UNKNOWN
     expectError(await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'OWNER_UNKNOWN', '$')
   })
 })
+
+test('S18 a known save field with an accessor keeps its own path and never runs the getter', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s18')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    let getterCalls = 0
+    const frame = saveFrame(b)
+    Object.defineProperty(frame, 'now', {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        return SAVE_NOW
+      },
+    })
+    expectError(await owner.value.save(frame), 'SAVE_INPUT_INVALID', 'now')
+    assert.equal(getterCalls, 0)
+    assert.equal(fs.existsSync(filePath(sandbox, OWNER_FILE)), false)
+  })
+})

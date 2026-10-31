@@ -652,7 +652,7 @@ function readSaveRoot(input) {
   }
   if (keys.length !== SAVE_KEYS.size) raise('SAVE_INPUT_INVALID', '$')
   for (const key of keys) {
-    if (!ownDataField(input, key).ok) raise('SAVE_INPUT_INVALID', '$')
+    if (!ownDataField(input, key).ok) raise('SAVE_INPUT_INVALID', key)
   }
   if (input.schemaVersion !== TASK_OWNER_SCHEMA_VERSION) raise('UNSUPPORTED_VERSION', 'schemaVersion')
 }
@@ -891,7 +891,7 @@ function interpretBytesEngine(out, birthRecord) {
     if (inspection.frameCount !== inspection.dataByteLength / (inspection.channels * 2)) return null
     if (inspection.byteLength !== inspection.dataByteLength + 44) return null
     if (inspection.durationMs !== (inspection.frameCount * 1000) / inspection.sampleRate) return null
-    if (typeof inspection.peak !== 'number' || !Number.isFinite(inspection.peak) || inspection.peak < 0) return null
+    if (typeof inspection.peak !== 'number' || !Number.isFinite(inspection.peak) || inspection.peak < 0 || inspection.peak > 1) return null
     if (!Number.isInteger(inspection.fullScaleSampleCount) || inspection.fullScaleSampleCount < 0) return null
     if (inspection.fullScaleSampleCount > inspection.frameCount * inspection.channels) return null
     if (inspection.validationState !== 'FIXTURE_WAV_CHECKED') return null

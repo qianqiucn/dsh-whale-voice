@@ -73,6 +73,8 @@ const SCOPE_PATTERN = /^scope:fixture-[A-Za-z0-9_-]{1,32}$/
 const KEY_PATTERN = /^key:fixture-[A-Za-z0-9_-]{1,48}$/
 const TASK_ID_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const HASH_PATTERN = /^[0-9a-f]{64}$/
+const OWNER_KEY_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
+const OWNER_PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
 const SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entries']))
 const CATALOG_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'idempotencyKey', 'identityHash', 'record']))
 const CATALOG_SCHEMA_VERSION = 1
@@ -585,6 +587,10 @@ function proofFieldsOnly(proof) {
   for (const key of OWNER_INSPECTION_KEYS) proofDataField(inspection, key)
   if (typeof artifact.artifactRef !== 'string' || !ARTIFACT_REF_PATTERN.test(artifact.artifactRef)) rejectWrite()
   if (typeof artifact.expiresAt !== 'string' || !ISO_PATTERN.test(artifact.expiresAt)) rejectWrite()
+  if (artifact.inspection.sha256 !== artifact.byteSha256) rejectWrite()
+  if (artifact.inspection.byteLength !== artifact.byteLength) rejectWrite()
+  if (!(artifact.inspection.byteLength >= artifact.inspection.dataByteLength + 44)) rejectWrite()
+  if (artifact.inspection.peak < 0 || artifact.inspection.peak > 1) rejectWrite()
   return fields
 }
 
@@ -628,17 +634,16 @@ function validateSaveProofLocal(proof, context) {
   if (typeof artifact.byteSha256 !== 'string' || !HASH_PATTERN.test(artifact.byteSha256)) rejectWrite()
   if (!Number.isInteger(artifact.byteLength) || artifact.byteLength < 44) rejectWrite()
   if (artifact.byteLength > 1048576) rejectWrite()
-  if (typeof artifact.requestKey !== 'string' || artifact.requestKey.length < 1 || artifact.requestKey.length > 64) {
-    rejectWrite()
-  }
+  if (typeof artifact.requestKey !== 'string' || !OWNER_KEY_PATTERN.test(artifact.requestKey)) rejectWrite()
   if (record.outputArtifactRef !== artifact.artifactRef) rejectWrite()
   const rights = artifact.rights
   if (!isPlainObject(rights) || keySurface(rights, OWNER_RIGHTS_KEYS) !== 'ok') rejectWrite()
   if (proofDataField(rights, 'state') !== 'GRANTED') rejectWrite()
   const proofRef = proofDataField(rights, 'proofRef')
-  if (typeof proofRef !== 'string' || proofRef.length === 0 || proofRef.length > 128) rejectWrite()
+  if (typeof proofRef !== 'string' || !OWNER_PROOF_PATTERN.test(proofRef)) rejectWrite()
   const expiresMs = Date.parse(artifact.expiresAt)
-  if (!Number.isFinite(expiresMs) || expiresMs <= evaluatedMs) rejectWrite()
+  if (!Number.isFinite(expiresMs) || new Date(expiresMs).toISOString() !== artifact.expiresAt) rejectWrite()
+  if (expiresMs <= evaluatedMs) rejectWrite()
   return fields
 }
 
