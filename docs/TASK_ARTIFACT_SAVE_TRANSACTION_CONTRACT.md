@@ -1,11 +1,11 @@
-# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.5
+# Whale Voice · 同一 claim 内的任务保存事务契约（候审）v1.6
 
 > **状态：`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`。**
 > 候审技术契约，不是已实现功能，不构成运行时代码授权。现有 owner 仍只有 `run`/`get`
 > （`SIMULATED`/`NO_EXECUTION`），库仍只有 `FIXTURE_IMPORT`；**没有任务保存能力**。
 >
 > 基准 `main` **M `08cf0b61acc402d619618df2ad15bce5436b0873`**；`文件:行` 以 M 为准。
-> v1.5 按 075 补正字段类型/预算出处、一般输入/投影/失败协议、迁移符号表、FINAL 计数与逐代表证据；
+> v1.6 按 076 统一 FC=CLAIMED / FS=FINAL SAVED 的事实编号与摘要引用；
 > 070–073 已过项与 0066–0069 原文保留。
 
 ---
@@ -188,13 +188,14 @@ rights 拒绝不得泄露 ref/expiry。库未能 fresh 读取时不得假称 pro
 
 ### 4.4 事实映射（错误/状态之后的后续结果）
 
-| ID | 错后事实 | run / get | save / status | factory 与其他域 |
-|---|---|---|---|---|
-| FC | 无 entry、无锁、出生有效（run 可 claim） | run 可走原 claim；get `NOT_FOUND` | save 可发起一次；status `MISSING/null` | Task/Artifact 原工厂可开 |
-| FC | CLAIMED、无 Task 锁 | run `EXISTING/UNKNOWN`；get `FOUND/UNKNOWN`（ok:true、原 reason） | save `SAVE_UNKNOWN`；status `UNKNOWN/UNKNOWN` | catalog 原操作可用；Artifact 锁独立 |
-| FS | 已合法 FINAL、无 Task 锁 | run `EXISTING`/get `FOUND` + 原 kind（含 SAVED） | save `EXISTING`+原 kind、artifact=null；status 按 §4.2 | catalog/owner 工厂原逻辑 |
-| FT | Task 共享锁 | 所有 owner factory/run/get/save/status → `OWNER_UNKNOWN/$/owner unknown` | 同左，无成功 value | catalog factory/reserve/get → `CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
-| FA | Artifact 锁、Task 无锁 | run/get/owner factory/catalog 只依 Task 事实 | CLAIMED/旧非 SAVED 先按 Task；SAVED 的 status 与真正到库门禁的新 save → `SAVE_ARTIFACT_UNKNOWN`；调用数与序列同既定 | Artifact 全方法 `LIBRARY_UNKNOWN/$/原 library reason` |
+| ID | Task 事实（Task 无锁时） | run / get | save / status |
+|---|---|---|---|
+| — | 出生有效、无 owner entry | run 可以按旧流程 claim；get 错误 `TASK_OWNER_NOT_FOUND/$/not found` | save 可按既定唯一序列发起一次；status `ok:true MISSING/ownerState=null`，ref/expiry=null |
+| FC | CLAIMED | run `ok:true EXISTING/UNKNOWN`；get `ok:true FOUND/UNKNOWN`，reason=`TASK_OWNER_EXECUTION_UNKNOWN` | save 错误 `TASK_OWNER_SAVE_UNKNOWN/$/save outcome unknown`；status `ok:true UNKNOWN/UNKNOWN`，ref/expiry=null |
+| — | FINAL SIMULATED 或 NO_EXECUTION | run `ok:true EXISTING`、get `ok:true FOUND`，ownerState/reason 保持各原值 | save `ok:true EXISTING`+原 ownerState/reason、artifact=null；status `ok:true MISSING`+对应原 ownerState，ref/expiry=null |
+| FS | FINAL SAVED | run `ok:true EXISTING/SAVED`；get `ok:true FOUND/SAVED` | save `ok:true EXISTING/SAVED`、artifact=null；status 依 §4.2 当前可用性，不修改历史 |
+| FT | Task 共享锁（覆盖以上 Task 事实） | 所有 owner factory/run/get/save/status 错误 `TASK_OWNER_OWNER_UNKNOWN/$/owner unknown` | catalog factory/reserve/get 错误 `TASK_CATALOG_CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此新增锁 |
+| FA | Artifact 锁叠加于无 Task 锁的上述 Task 事实 | owner factory/catalog/run/get 只按对应 Task 事实；不改历史、不新锁 Task | CLAIMED status 仍成功 UNKNOWN，旧非 SAVED FINAL status 仍 MISSING；已有任一 FINAL 的 save 仍 EXISTING/artifact=null；SAVED 且当前 rights 准入后的 status、及确实到达库门禁的新 save，错误 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown` |
 
 旧 Artifact 错误 reason 用其原 REASONS，不把 owner `storeReason` 用到库。
 
@@ -635,7 +636,7 @@ status 请求：
 | 9 | 构造/冻结 SaveProof | 持有 | ARTIFACT_REJECTED |
 | 10 | ATTACH/MARK_SAVED/校验 | 持有 | TASK_REJECTED |
 | 11 | `writeOwner(...,candidateRevision,proof)` 写 FINAL | 持有 | pre `WRITE_REJECTED`；post `WRITE_UNKNOWN` |
-| 12 | 联合确认 → 释放 | — | 按域引用 FT 或 FS+FA；失败按 §8 发现阶段表 |
+| 12 | 联合确认 → 释放 | — | Task 异常→`SAVE_UNKNOWN`+FT；Artifact 异常→`SAVE_ARTIFACT_UNKNOWN`+FS+FA |
 
 线性化：库 rename `:845`、Task rename `:889`；非跨文件原子。
 
@@ -712,9 +713,9 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 
 | 事件 | catalog factory/reserve/get | owner factory/run/get/save/status | artifact factory/import/get/readBytes/delete |
 |---|---|---|---|
-| Task 域锁（claim/final/BIRTH_INVALID） | `CATALOG_UNKNOWN` | `OWNER_UNKNOWN` | 不变 |
-| Artifact 域锁 | 不变 | run/get 历史不变；save/status 报库错 | `LIBRARY_UNKNOWN` |
-| 无锁 | 正常 | 按状态 | 正常 |
+| Task 域锁（claim/final/BIRTH_INVALID） | `CATALOG_UNKNOWN`（FT） | `OWNER_UNKNOWN`（FT） | 不变 |
+| Artifact 域锁，Task 无锁 | 按 §4.4 对应 Task 事实行 | 无 entry/FC/旧非 SAVED FINAL/FS 各按 §4.4；CLAIMED status 仍 UNKNOWN；SAVED 且 rights 准入后的 status 报 FA | `LIBRARY_UNKNOWN`（FA） |
+| 无锁 | 按 §4.4 对应行 | 按 §4.4 对应行 | 正常 |
 
 ### 8.2 失败类别（writer 中性首错 vs owner 公开首错）
 
@@ -734,10 +735,13 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 | 12 | 同位置 Artifact 外改 | CLAIMED | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_REJECTED` | 旧包保留 |
 | 13 | Task FINAL rename 未知 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
 | 14 | post 确认失败 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
-| 15 | 联合确认前发现外改 | CLAIMED/可能 FINAL | 1 | 1 | 按域 | 按域 | 按域 | 按 §4.4 | 保留 |
-| 16 | 成功返回后外改 | FINAL 已存 | — | — | 仅后读 | 按域 | — | 下次读首错；不回退历史 | 保留 |
-| 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 各自 | 各自 | — | 后序分流 | 不接管 |
-| 18 | 保存后删除/过期/撤权 | FINAL 不变 | 0 | 0 | 否 | 视库 | — | status 状态 | 历史不改 |
+| 15a | 联合确认前发现 Task 外改 | CLAIMED/可能 FINAL | 1 | 1 | 是 | 否 | `STORE_CHANGED` | `SAVE_UNKNOWN` + FT | 保留；引用 Task JOINT 行 |
+| 15b | 联合确认前发现 Artifact 外改 | CLAIMED/可能 FINAL | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_UNKNOWN` + FS+FA | 保留；引用 Artifact JOINT 行 |
+| 16 | 成功返回后外改 | FINAL 已存 | — | — | 仅后读 | 按域 | — | Task 后读→FT；Artifact 后读→FS+FA | 保留 |
+| 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 否 | 否 | — | entry 存在→FC/旧非 SAVED FINAL 无编号行/FS；无 entry→无编号行 | 不接管 |
+| 18 | 保存后合法 delete/过期/撤权（无存储未知） | FINAL 不变 | 0 | 0 | 否 | 否 | — | status 按 §4.2；delete 自产未知→原库 WRITE_UNKNOWN/FA | 历史不改 |
+
+**发现阶段不能倒置**：writer 确认后、owner 联合确认前发现外改 → 按被改域加锁、当前调用失败；已经联合确认并成功返回后发生的外改 → 只影响**下一次** fresh 读取，不倒报上次保存失败；仅 Artifact 外改不自动锁 Task、历史 `get` 不回退。
 
 **计数更正（075）**：FINAL 前拒绝/内闸门外改的第 10/11/12 行为 **claim 1、FINAL 0、Artifact 1**；第 13 行（FINAL rename 未知）的固定 after-real 代表为 **claim 1、FINAL attempt 1/success 1、Artifact 1**，泛化 rename 尝试未知与该真实已落盘代表分开表述，不能笼统写“FINAL 0”。
 
@@ -748,7 +752,7 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 | FC | Task 为 CLAIMED 且无 Task 锁：run `ok:true EXISTING/UNKNOWN`、get `ok:true FOUND/UNKNOWN`，reason=`TASK_OWNER_EXECUTION_UNKNOWN`；save 错误 `TASK_OWNER_SAVE_UNKNOWN/$/save outcome unknown`；status `ok:true UNKNOWN/UNKNOWN` 且 ref/expiry null；owner 工厂可开、catalog 原操作可用；Artifact 域另按 FA |
 | FS | Task 为合法 FINAL SAVED 且无 Task 锁：run `EXISTING/SAVED`、get `FOUND/SAVED`、save `EXISTING/SAVED` 且 artifact=null，均 ok:true；status 按 §4.2；catalog/owner 工厂原逻辑 |
 | FT | Task 共享锁：所有 owner factory/run/get/save/status 错误 `TASK_OWNER_OWNER_UNKNOWN/$/owner unknown`；catalog factory/reserve/get 错误 `TASK_CATALOG_CATALOG_UNKNOWN/$/catalog unknown`；Artifact 不因此锁 |
-| FA | Artifact 锁：库 factory/import/get/readBytes/delete 错误 `ARTIFACT_LIBRARY_LIBRARY_UNKNOWN/$/the artifact domain is locked after an unknown outcome`。Task 无锁时 owner factory 及 run/get 照 FC 或 FS；CLAIMED status 仍 `ok:true UNKNOWN`；SAVED 且 rights 准入后的 status 错误 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown`；save 先按已有 entry 分流（CLAIMED→FC、FINAL→FS），不重新 import |
+| FA | Artifact 锁：库 factory/import/get/readBytes/delete 错误 `ARTIFACT_LIBRARY_LIBRARY_UNKNOWN/$/the artifact domain is locked after an unknown outcome`。Task 无锁时 owner factory 及 run/get 按 §4.4 对应 Task 事实；CLAIMED→FC，SAVED FINAL→FS，旧 `SIMULATED`/`NO_EXECUTION` FINAL 与无 entry 各按 §4.4 无编号行；CLAIMED status 仍 `ok:true UNKNOWN`；SAVED 且 rights 准入后的 status 错误 `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown`；save 先按已有 entry 分流，不重新 import |
 
 **发现阶段与两域首错（不新增功能）**
 
@@ -818,7 +822,7 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 
 ## 12. 结论
 
-v1.5 按 075 补正字段类型/预算、一般输入/投影/失败协议、迁移符号表与逐代表证据；v1.4 恢复强制 delta 与严格 proof（11+8 键、`evaluatedAt`、一般 claimDigest），给出 save 12 键/status 6 键、
+v1.6 按 076 统一 FC/FS 编号并修正 §4.4/§6/§8.1/§8.2 的摘要引用；v1.5 按 075 补正字段类型/预算、一般输入/投影/失败协议、迁移符号表与逐代表证据；v1.4 恢复强制 delta 与严格 proof（11+8 键、`evaluatedAt`、一般 claimDigest），给出 save 12 键/status 6 键、
 22 码与事实映射，固定 `writeOwner(...proof)` 调用链、`readStoredForSave` 返回、base 依赖边与 `isInside` 原序，
 并把 9 个故障代表落到真实 fs 方法/目标/时点与 attempt/success 分列计数。
 
