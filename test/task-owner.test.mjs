@@ -189,9 +189,10 @@ function foreignArtifactBytes() {
   const file = root + '/audio-artifacts-v1.json'
   const source = fsReal.readFileSync(file, 'utf8')
   const replaced = source.replace(
-    /"createdAt":"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d{3})Z"/,
+    /"createdAt":"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})[.]([0-9]{3})Z"/,
     (all, head, ms) => all.replace('.' + ms + 'Z', '.' + (ms === '000' ? '001' : '000') + 'Z'),
   )
+  if (replaced === source) throw new Error('AF_NO_CHANGE')
   return Buffer.from(replaced, 'utf8')
 }
 
@@ -229,6 +230,35 @@ const fsProxy = new Proxy({}, {
     return function (...args) {
       const fdTarget = typeof args[0] === 'number' ? (fdPaths.get(args[0]) || '') : ''
       const file = typeof args[0] === 'string' ? args[0] : fdTarget
+      if (prop === 'renameSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
+        const renameBase = String(args[1] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        if (renameBase === 'audio-task-owner-v1.json') counts.finalRenames = (counts.finalRenames || 0) + 1
+      }
+      if (prop === 'lstatSync' && (scenario.saveLstatFault || scenario.saveJointFault)) {
+        const lstatName = String(args[0] || '').split(String.fromCharCode(92)).join('/').split('/').pop()
+        const result = original.apply(fsReal, args)
+        if (lstatName === 'audio-task-owner-v1.json' && (counts.finalRenames || 0) >= 2) {
+          counts.finalOwnerLstats = (counts.finalOwnerLstats || 0) + 1
+          if (scenario.saveLstatFault && counts.finalOwnerLstats === scenario.saveLstatFault.occurrence) {
+            counts.fsFaults += 1
+            const error = new Error('EIO')
+            error.code = 'EIO'
+            throw error
+          }
+          if (scenario.saveJointFault && scenario.saveJointFault.kind === 'owner' && counts.finalOwnerLstats === scenario.saveJointFault.occurrence) {
+            fsReal.writeFileSync(root + '/audio-task-owner-v1.json', foreignOwnerBytes())
+            counts.fsFaults += 1
+          }
+        }
+        if (lstatName === 'audio-artifacts-v1.json' && scenario.saveJointFault && scenario.saveJointFault.kind === 'artifact') {
+          counts.finalArtifactLstats = (counts.finalArtifactLstats || 0) + 1
+          if (counts.finalArtifactLstats === scenario.saveJointFault.occurrence) {
+            fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreignArtifactBytes())
+            counts.fsFaults += 1
+          }
+        }
+        return result
+      }
       if (prop === 'fsyncSync' && scenario.saveFsyncFault) {
         const fsyncPath = fdPaths.get(args[0]) || ''
         const fsyncName = fsyncPath.split(String.fromCharCode(92)).join('/').split('/').pop()
@@ -623,6 +653,7 @@ try {
         fsReal.writeFileSync(root + '/' + name, foreign)
         counts.fsFaults += 1
       }
+      record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
       record('status', await opened.value.artifactStatus({
         schemaVersion: 1,
         scopeId: frame.scopeId,
@@ -630,7 +661,6 @@ try {
         now: '2026-10-27T00:00:02.000Z',
         rights: saveFrame.rights,
       }))
-      record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
     }
   } else if (mode === 'twoTasks') {
     const opened = await owner()
@@ -2195,4 +2225,63 @@ test('V08 a foreign Task write after the FINAL fsync is STORE_CHANGED with the c
   assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
   assert.equal(worker.counts.engine, 1)
   assert.equal(worker.counts.imports, 1)
+})
+
+test('V10 an external Task change after a successful save fails only the next fresh read', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v10', mode: 'save', afterMutate: 'OF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 160))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, false, 'get ' + JSON.stringify(got).slice(0, 160))
+  assert.equal(got.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+test('V09 a foreign Artifact write after the FINAL fsync is SAVE_ARTIFACT_REJECTED', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v09',
+    mode: 'save',
+    saveFsyncFault: { occurrence: 2, action: 'AF' },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_ARTIFACT_REJECTED)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V11 an external Artifact change after a successful save fails only the next fresh status', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v11', mode: 'save', afterMutate: 'AF' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, 'save ' + JSON.stringify(saved).slice(0, 120))
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true, 'get ' + JSON.stringify(got).slice(0, 120))
+  assert.equal(got.value.ownerState, 'SAVED')
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, false, 'status ' + JSON.stringify(status).slice(0, 160))
+  assert.equal(status.errors[0].code, TASK_OWNER_ERRORS.STORE_CHANGED)
+})
+
+/* ------------------------------------------------------------------ V12 */
+
+test('V12 a post-rename owner lstat failure is WRITE_UNKNOWN -> SAVE_UNKNOWN with the FINAL kept', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v12',
+    mode: 'save',
+    saveLstatFault: { occurrence: 1 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+})
+
+test('V13 a JOINT-phase Task overwrite is SAVE_UNKNOWN with a Task lock', () => {
+  const worker = runOwnerWorker({
+    key: 'key:fixture-v13',
+    mode: 'save',
+    saveJointFault: { kind: 'owner', occurrence: 3 },
+  })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, 'save ' + JSON.stringify(saved).slice(0, 160))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
 })
