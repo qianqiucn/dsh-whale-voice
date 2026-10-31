@@ -413,3 +413,11 @@ release, no public visibility and no release artifact yet.
 The Chinese homepage and isolated demo screenshots explain current capabilities and planned user
 flows. The developer setup guide remains separate. This documentation work does not complete or
 advance any runtime phase, installer, provider or delivery milestone.
+
+### Plan 08-E-E-C — same-claim save transaction (OFFLINE, PR pending)
+
+The frozen save contract's Step 2-4 are implemented offline as one unit: fresh library helper, v2
+owner snapshot with a mandatory `SaveProof` inside the only writer, non-reentrant `importInQueue`,
+and public `save`/`artifactStatus`. Local suite 719/716/3 platform skips/0 fail. Remaining evidence
+gaps are listed in `docs/PROJECT_STATUS.md`; this does not complete Cover orchestration, resource or
+cancellation work, dynamic-dependency evidence, the parent Fake E2E, or any real capability.

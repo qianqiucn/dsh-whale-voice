@@ -25,6 +25,7 @@ import { isTrustedSandbox } from '../config-sandbox.mjs'
 import { projectAudioTask, validateAudioTaskRecord } from './task-contract.mjs'
 import {
   TASK_FIXTURE_SCHEMA_VERSION,
+  runExistingFixtureTaskBytesOnce,
   runExistingFixtureTaskOnce,
 } from './task-fixture-engine-internal.mjs'
 import { RVC_FAKE_ERRORS } from '../svc/rvc-fake-gateway.mjs'
@@ -32,7 +33,6 @@ import {
   INITIAL_STATES,
   OWNER_NO_EXECUTION_REASONS,
   OWNER_SIMULATED_STATES,
-  OWNER_SNAPSHOT_SCHEMA_VERSION,
   SCOPE_PATTERN,
   STORE_DOMAINS,
   TASK_ID_PATTERN,
@@ -40,6 +40,7 @@ import {
   enqueue,
   getStoreState,
   hasOwn,
+  identityHashOf,
   isPlainObject,
   isStoreFailure,
   keySurface,
@@ -52,8 +53,13 @@ import {
   storeReason,
   verifyOwnerAssociations,
 } from './fixture-task-store-internal.mjs'
+import { transitionAudioTask } from './task-contract.mjs'
+import { enqueueArtifact, getArtifactState, isArtifactLocked, lockArtifact } from './fixture-artifact-store-internal.mjs'
+import { readStoredForSave } from './fixture-artifact-store-internal.mjs'
+import { importInQueue } from './artifact-library.mjs'
 
-export const TASK_OWNER_SCHEMA_VERSION = OWNER_SNAPSHOT_SCHEMA_VERSION
+/** The public owner schema is frozen at 1 and never follows the on-disk owner snapshot version. */
+export const TASK_OWNER_SCHEMA_VERSION = 1
 
 const ERROR_KEYS = Object.freeze([
   'INVALID_INPUT',
@@ -70,6 +76,14 @@ const ERROR_KEYS = Object.freeze([
   'EXECUTION_UNKNOWN',
   'DEPENDENCY_FAILURE',
   'INTERNAL_FAILURE',
+  'SAVE_INPUT_INVALID',
+  'SAVE_RIGHTS_REJECTED',
+  'SAVE_EXPIRED_REQUEST',
+  'SAVE_PRECONDITION',
+  'SAVE_ARTIFACT_REJECTED',
+  'SAVE_ARTIFACT_UNKNOWN',
+  'SAVE_TASK_REJECTED',
+  'SAVE_UNKNOWN',
 ])
 
 /** Fixed error protocol. Every value is `TASK_OWNER_` plus the key itself. */
@@ -80,6 +94,34 @@ export const TASK_OWNER_ERRORS = Object.freeze(
 const RUN_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId', 'input']))
 const GET_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId']))
 const INPUT_KEYS = Object.freeze(new Set(['schemaVersion', 'sourceInput', 'readiness', 'context']))
+const SAVE_KEYS = Object.freeze(
+  new Set(['schemaVersion', 'scopeId', 'taskId', 'requestKey', 'now', 'expiresAt', 'rights', 'input']),
+)
+const STATUS_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId', 'now', 'rights']))
+const RIGHTS_KEYS = Object.freeze(new Set(['state', 'proofRef']))
+const REQUEST_KEY_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
+const PROOF_REF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
+
+/** The eight new frozen reasons of §4.3; the original fourteen keep the store's own reason text. */
+const SAVE_REASONS = Object.freeze({
+  SAVE_INPUT_INVALID: 'save input invalid',
+  SAVE_RIGHTS_REJECTED: 'save rights rejected',
+  SAVE_EXPIRED_REQUEST: 'save request expired',
+  SAVE_PRECONDITION: 'save precondition failed',
+  SAVE_ARTIFACT_REJECTED: 'artifact import rejected',
+  SAVE_ARTIFACT_UNKNOWN: 'artifact import unknown',
+  SAVE_TASK_REJECTED: 'task attach or save rejected',
+  SAVE_UNKNOWN: 'save outcome unknown',
+})
+
+const SAVE_MESSAGES_ZH = Object.freeze({
+  MISSING: '没有已保存的演示资产。',
+  UNKNOWN: '无法确认这次演示保存结果。',
+  RIGHTS_REJECTED: '当前授权不允许读取此演示资产。',
+  DELETED: '演示资产已删除。',
+  EXPIRED: '演示资产已过期。',
+  READABLE: '演示资产当前可读取。',
+})
 
 /* The existing internal engine keeps its own frozen protocol; this owner only adapts it. */
 const ENGINE_ROOT_KEYS = Object.freeze(new Set(['record', 'result']))
@@ -108,6 +150,7 @@ const RVC_REASONS = Object.freeze(Object.values(RVC_FAKE_ERRORS))
 const MESSAGES_ZH = Object.freeze({
   SIMULATED: '演示执行已完成：结果只保存在当前隔离目录，不会发送或保存为真实资产。',
   NO_EXECUTION: '本次演示没有执行真实生成：任务保持原状态，系统不会自动重试。',
+  SAVED: '演示结果已保存到本地演示资产库；这不会发送到微信，也不代表真实生成。',
   UNKNOWN: '无法确认这次演示是否完成；系统不会自动重跑，请人工核对。',
 })
 
@@ -115,7 +158,7 @@ function failure(key, errorPath) {
   const code = TASK_OWNER_ERRORS[key] || TASK_OWNER_ERRORS.INTERNAL_FAILURE
   return deepFreezeFixtureValue({
     ok: false,
-    errors: [{ code, path: errorPath, reason: storeReason(key) }],
+    errors: [{ code, path: errorPath, reason: SAVE_REASONS[key] || storeReason(key) }],
   })
 }
 
@@ -165,6 +208,43 @@ function successValue(outcome, revision, record, ownerState, reason) {
 
 function unknownValue(outcome, revision, record) {
   return successValue(outcome, revision, record, 'UNKNOWN', TASK_OWNER_ERRORS.EXECUTION_UNKNOWN)
+}
+
+/** save success: the original eleven fields plus `artifact`, exactly twelve keys. */
+function saveValue(outcome, revision, record, ownerState, reason, artifact) {
+  const normalized = ownerState === 'SIMULATED' ? null : reason
+  return deepFreezeFixtureValue({
+    ok: true,
+    value: {
+      schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+      outcome,
+      revision,
+      ownerState,
+      reason: normalized,
+      task: project(record),
+      artifact: artifact === null ? null : { ...artifact },
+      userMessageZh: MESSAGES_ZH[ownerState],
+      mockOnly: true,
+      realOperationAllowed: false,
+      submitAllowed: false,
+      automaticRetryAllowed: false,
+    },
+  })
+}
+
+/** artifactStatus success: exactly the six frozen fields, never bytes/sha/proof/record. */
+function statusValue(stateName, ownerState, artifactRef, expiresAt) {
+  return deepFreezeFixtureValue({
+    ok: true,
+    value: {
+      schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+      state: stateName,
+      ownerState,
+      artifactRef,
+      expiresAt,
+      messageZh: SAVE_MESSAGES_ZH[stateName],
+    },
+  })
 }
 
 /* ------------------------------- fresh association gates (R01) ------------------------------- */
@@ -256,8 +336,15 @@ function readOptions(options) {
 
 /* ---------------------------------------- owner file ---------------------------------------- */
 
-function writeOwner(state, bytes, baseDigest, revision) {
-  return openOwnerFile(state).write(bytes, baseDigest, revision)
+function writeOwner(state, bytes, baseDigest, revision, proof = null) {
+  return openOwnerFile(state).write(bytes, baseDigest, revision, proof)
+}
+
+/** The owner state a stored FINAL conclusion projects into (SAVED is a real fourth kind). */
+function finalKind(entry) {
+  if (entry.completion.kind === 'SIMULATED') return 'SIMULATED'
+  if (entry.completion.kind === 'SAVED') return 'SAVED'
+  return 'NO_EXECUTION'
 }
 
 function entryFor(snapshot, scopeId, taskId) {
@@ -424,15 +511,20 @@ async function runOnce(state, input) {
     const existing = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
     if (existing) {
       if (existing.phase === 'FINAL') {
-        const stateName = existing.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
-        return successValue('EXISTING', current.owner.revision, existing.record, stateName, existing.completion.reason)
+        return successValue(
+          'EXISTING',
+          current.owner.revision,
+          existing.record,
+          finalKind(existing),
+          existing.completion.reason,
+        )
       }
       return unknownValue('EXISTING', current.owner.revision, existing.record)
     }
 
     const claimRevision = current.owner.revision + 1
     const claim = {
-      schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+      schemaVersion: current.owner.schemaVersion,
       revision: claimRevision,
       entries: [
         ...current.owner.snapshot.entries,
@@ -480,7 +572,7 @@ async function runOnce(state, input) {
     const finalRevision = claimRevision + 1
     const finalBytes = Buffer.from(
       JSON.stringify({
-        schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+        schemaVersion: current.owner.schemaVersion,
         revision: finalRevision,
         entries: [
           ...current.owner.snapshot.entries,
@@ -521,7 +613,7 @@ async function runOnce(state, input) {
       lockStore(state)
       raise('WRITE_UNKNOWN', '$')
     }
-    const stateName = finalEntry.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
+    const stateName = finalKind(finalEntry)
     return successValue('RECORDED', confirmed.owner.revision, finalEntry.record, stateName, finalEntry.completion.reason)
   } catch (error) {
     return toFailure(error)
@@ -537,8 +629,450 @@ async function getOnce(state, input) {
     const entry = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
     if (!entry) raise('NOT_FOUND', '$')
     if (entry.phase === 'CLAIMED') return unknownValue('FOUND', current.owner.revision, entry.record)
-    const stateName = entry.completion.kind === 'SIMULATED' ? 'SIMULATED' : 'NO_EXECUTION'
+    const stateName = finalKind(entry)
     return successValue('FOUND', current.owner.revision, entry.record, stateName, entry.completion.reason)
+  } catch (error) {
+    return toFailure(error)
+  }
+}
+
+/* ------------------------------------ save / status (08-E-C) -------------------------------- */
+
+function readSaveRoot(input) {
+  if (!isPlainObject(input)) raise('SAVE_INPUT_INVALID', '$')
+  let keys
+  try {
+    keys = Reflect.ownKeys(input)
+  } catch {
+    raise('SAVE_INPUT_INVALID', '$')
+  }
+  for (const key of keys) {
+    if (typeof key !== 'string' || !SAVE_KEYS.has(key)) raise('SAVE_INPUT_INVALID', '<unknown-key>')
+  }
+  if (keys.length !== SAVE_KEYS.size) raise('SAVE_INPUT_INVALID', '$')
+  for (const key of keys) {
+    if (!ownDataField(input, key).ok) raise('SAVE_INPUT_INVALID', '$')
+  }
+  if (input.schemaVersion !== TASK_OWNER_SCHEMA_VERSION) raise('UNSUPPORTED_VERSION', 'schemaVersion')
+}
+
+function readSaveIso(root, key) {
+  const field = ownDataField(root, key)
+  if (!field.ok || typeof field.value !== 'string') raise('SAVE_INPUT_INVALID', key)
+  const ms = Date.parse(field.value)
+  if (!Number.isFinite(ms) || new Date(ms).toISOString() !== field.value) raise('SAVE_INPUT_INVALID', key)
+  return { iso: field.value, ms }
+}
+
+function readSaveRights(root) {
+  const field = ownDataField(root, 'rights')
+  if (!field.ok || !isPlainObject(field.value)) raise('SAVE_INPUT_INVALID', 'rights')
+  const value = field.value
+  let keys
+  try {
+    keys = Reflect.ownKeys(value)
+  } catch {
+    raise('SAVE_INPUT_INVALID', 'rights')
+  }
+  if (keys.length !== RIGHTS_KEYS.size) raise('SAVE_INPUT_INVALID', 'rights')
+  for (const key of keys) {
+    if (typeof key !== 'string' || !RIGHTS_KEYS.has(key)) raise('SAVE_INPUT_INVALID', 'rights')
+  }
+  const stateField = ownDataField(value, 'state')
+  const proofField = ownDataField(value, 'proofRef')
+  if (!stateField.ok || !proofField.ok) raise('SAVE_INPUT_INVALID', 'rights')
+  const state = stateField.value
+  if (state !== 'GRANTED' && state !== 'DENIED' && state !== 'UNKNOWN') raise('SAVE_INPUT_INVALID', 'rights')
+  const proofRef = proofField.value
+  if (proofRef !== null) {
+    if (typeof proofRef !== 'string' || proofRef.length > 128 || !PROOF_REF_PATTERN.test(proofRef)) {
+      raise('SAVE_INPUT_INVALID', 'rights')
+    }
+  }
+  return Object.freeze({ state, proofRef })
+}
+
+function readSave(input) {
+  readSaveRoot(input)
+  if (typeof input.scopeId !== 'string' || !SCOPE_PATTERN.test(input.scopeId)) raise('SAVE_INPUT_INVALID', 'scopeId')
+  if (typeof input.taskId !== 'string' || !TASK_ID_PATTERN.test(input.taskId)) raise('SAVE_INPUT_INVALID', 'taskId')
+  if (typeof input.requestKey !== 'string' || !REQUEST_KEY_PATTERN.test(input.requestKey)) {
+    raise('SAVE_INPUT_INVALID', 'requestKey')
+  }
+  const now = readSaveIso(input, 'now')
+  const expiresAt = readSaveIso(input, 'expiresAt')
+  const rights = readSaveRights(input)
+  const copied = copyFixtureInput(input.input)
+  if (!copied.ok) raise(copied.key === 'RESOURCE_LIMIT' ? 'RESOURCE_LIMIT' : 'SAVE_INPUT_INVALID', 'input')
+  const payload = copied.value
+  if (!isPlainObject(payload)) raise('SAVE_INPUT_INVALID', 'input')
+  if (keySurface(payload, INPUT_KEYS) !== 'ok') raise('SAVE_INPUT_INVALID', 'input')
+  if (payload.schemaVersion !== 1) raise('UNSUPPORTED_VERSION', 'input')
+  return Object.freeze({
+    scopeId: input.scopeId,
+    taskId: input.taskId,
+    requestKey: input.requestKey,
+    now,
+    expiresAt,
+    rights,
+    input: payload,
+  })
+}
+
+function readStatus(input) {
+  readExactRoot(input, STATUS_KEYS, '$')
+  validateScopeTask(input)
+  const now = readSaveIso(input, 'now')
+  const rights = readSaveRights(input)
+  return Object.freeze({ scopeId: input.scopeId, taskId: input.taskId, now, rights })
+}
+
+/** A format-valid save whose stated task identity disagrees with the catalog birth is refused. */
+function checkSavePrecondition(request, birthRecord) {
+  const sourceInput = isPlainObject(request.input.sourceInput) ? request.input.sourceInput : null
+  const draft = sourceInput && isPlainObject(sourceInput.voiceBinding) && isPlainObject(sourceInput.voiceBinding.taskDraft)
+    ? sourceInput.voiceBinding.taskDraft
+    : null
+  if (!isPlainObject(draft)) return
+  const same =
+    draft.taskId === birthRecord.taskId &&
+    draft.feature === birthRecord.feature &&
+    draft.taskType === birthRecord.taskType &&
+    isPlainObject(draft.source) &&
+    draft.source.kind === birthRecord.source.kind &&
+    draft.source.ref === birthRecord.source.ref &&
+    draft.voiceProfileId === birthRecord.voiceProfileId &&
+    draft.deliveryRequested === birthRecord.deliveryRequested
+  if (!same) raise('SAVE_PRECONDITION', '$')
+}
+
+/** The bytes engine either produces one bounded synthetic pack or a legal non-SUCCESS conclusion. */
+function interpretBytesEngine(out, birthRecord) {
+  try {
+    if (!isPlainObject(out)) return null
+    const production = out.production
+    if (production !== null && production !== undefined) {
+      if (!isPlainObject(production) || production.origin !== 'SYNTHETIC_FIXTURE') return null
+      const bytes = production.bytes
+      if (!(bytes instanceof Uint8Array) || bytes.length === 0) return null
+      if (!isPlainObject(production.inspection)) return null
+      const result = out.result
+      if (!isPlainObject(result) || result.ok !== true || !isPlainObject(result.value)) return null
+      if (result.value.phase !== 'SIMULATED') return null
+      let validated
+      try {
+        validated = validateAudioTaskRecord(out.record)
+      } catch {
+        return null
+      }
+      if (!validated || validated.ok !== true || !isPlainObject(validated.value)) return null
+      const record = validated.value
+      if (record.state !== 'PROCESSING') return null
+      if (record.outputArtifactRef !== null) return null
+      if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
+      if (!sameOwnerImmutable(record, birthRecord)) return null
+      if (stableStringify(record) !== stableStringify(out.record)) return null
+      return { kind: 'SUCCESS', record, bytes: Buffer.from(bytes) }
+    }
+    const settled = interpretEngine({ record: out.record, result: out.result }, birthRecord)
+    if (settled === null) return null
+    return { kind: settled.kind, reason: settled.reason, record: settled.record }
+  } catch {
+    return null
+  }
+}
+
+function libraryFailureKey(error) {
+  const code = error && error.errors && error.errors[0] ? String(error.errors[0].code) : ''
+  if (code === 'ARTIFACT_LIBRARY_WRITE_UNKNOWN' || code === 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN') {
+    return 'SAVE_ARTIFACT_UNKNOWN'
+  }
+  return 'SAVE_ARTIFACT_REJECTED'
+}
+
+/** One complete same-claim attempt: bytes -> new STORED -> strict SAVED FINAL -> availability. */
+async function saveOnce(state, input) {
+  if (state.locked) return failure('OWNER_UNKNOWN', '$')
+  try {
+    const request = readSave(input)
+    const current = freshAssociations(state)
+    const birth = birthOf(current.catalog, request.scopeId, request.taskId)
+    if (!birth) raise('NOT_FOUND', '$')
+
+    const existing = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
+    if (existing) {
+      if (existing.phase === 'FINAL') {
+        return saveValue(
+          'EXISTING',
+          current.owner.revision,
+          existing.record,
+          finalKind(existing),
+          existing.completion.reason,
+          null,
+        )
+      }
+      return failure('SAVE_UNKNOWN', '$')
+    }
+
+    if (request.rights.state !== 'GRANTED' || request.rights.proofRef === null) {
+      raise('SAVE_RIGHTS_REJECTED', 'rights')
+    }
+    if (request.expiresAt.ms <= request.now.ms) raise('SAVE_EXPIRED_REQUEST', 'expiresAt')
+    checkSavePrecondition(request, birth.record)
+
+    const claimRevision = current.owner.revision + 1
+    const claimEntries = [
+      ...current.owner.snapshot.entries,
+      {
+        scopeId: request.scopeId,
+        taskId: request.taskId,
+        birthIdentityHash: birth.identityHash,
+        phase: 'CLAIMED',
+        record: birth.record,
+        completion: null,
+      },
+    ]
+    const claimBytes = Buffer.from(
+      JSON.stringify({ schemaVersion: current.owner.schemaVersion, revision: claimRevision, entries: claimEntries }),
+      'utf8',
+    )
+    try {
+      writeOwner(state, claimBytes, current.owner.digest, claimRevision)
+    } catch (error) {
+      if (isStoreFailure(error) && error.key === 'WRITE_UNKNOWN') return failure('SAVE_UNKNOWN', '$')
+      throw error
+    }
+    const claimDigest = sha256(claimBytes)
+
+    const afterClaim = freshAssociations(state)
+    const claimed = requireClaimed(afterClaim.owner, request.scopeId, request.taskId)
+    if (afterClaim.owner.digest !== claimDigest) raise('STORE_CHANGED', '$')
+    const freshBirth = birthOf(afterClaim.catalog, request.scopeId, request.taskId)
+    if (!freshBirth) raise('BIRTH_INVALID', '$')
+    if (stableStringify(claimed.record) !== stableStringify(freshBirth.record)) raise('BIRTH_INVALID', '$')
+
+    let engineOut = null
+    try {
+      engineOut = runExistingFixtureTaskBytesOnce({
+        scopeId: request.scopeId,
+        record: freshBirth.record,
+        input: request.input,
+      })
+    } catch {
+      return failure('SAVE_UNKNOWN', '$')
+    }
+    const decision = interpretBytesEngine(engineOut, freshBirth.record)
+    if (decision === null) return failure('SAVE_UNKNOWN', '$')
+
+    const beforeFinal = freshAssociations(state)
+    requireClaimed(beforeFinal.owner, request.scopeId, request.taskId)
+    const baseEntries = current.owner.snapshot.entries
+    const finalRevision = claimRevision + 1
+
+    if (decision.kind !== 'SUCCESS') {
+      const finalBytes = Buffer.from(
+        JSON.stringify({
+          schemaVersion: beforeFinal.owner.schemaVersion,
+          revision: finalRevision,
+          entries: [
+            ...baseEntries,
+            {
+              scopeId: request.scopeId,
+              taskId: request.taskId,
+              birthIdentityHash: freshBirth.identityHash,
+              phase: 'FINAL',
+              record: decision.record,
+              completion: { kind: decision.kind, reason: decision.reason },
+            },
+          ],
+        }),
+        'utf8',
+      )
+      try {
+        writeOwner(state, finalBytes, claimDigest, finalRevision)
+      } catch (error) {
+        if (isStoreFailure(error) && error.key === 'WRITE_UNKNOWN') return failure('SAVE_UNKNOWN', '$')
+        throw error
+      }
+      return saveValue('RECORDED', finalRevision, decision.record, decision.kind, decision.reason, null)
+    }
+
+    const artifactState = getArtifactState(state.sandbox)
+    const outcome = await enqueueArtifact(artifactState, () => {
+      const imported = importInQueue(artifactState, {
+        schemaVersion: 1,
+        scopeId: request.scopeId,
+        requestKey: request.requestKey,
+        bytes: decision.bytes,
+        now: request.now.iso,
+        expiresAt: request.expiresAt.iso,
+        rights: request.rights,
+      })
+      if (!imported || imported.ok !== true) return { kind: 'ARTIFACT_FAILED', error: imported }
+      if (imported.value.outcome !== 'STORED') return { kind: 'ARTIFACT_REJECTED' }
+      const artifactRef = imported.value.artifact.artifactRef
+      const fresh = readStoredForSave(artifactState, {
+        scopeId: request.scopeId,
+        artifactRef,
+        now: request.now.iso,
+      })
+      if (!fresh || fresh.ok !== true) return { kind: 'ARTIFACT_FAILED', error: fresh }
+      if (fresh.value.state !== 'STORED') return { kind: 'ARTIFACT_REJECTED' }
+      const artifact = fresh.value.artifact
+
+      const attached = transitionAudioTask(decision.record, { type: 'ATTACH_FAKE_ARTIFACT', artifactRef })
+      if (!attached || attached.ok !== true) return { kind: 'TASK_REJECTED' }
+      const marked = transitionAudioTask(attached.value, { type: 'MARK_SAVED' })
+      if (!marked || marked.ok !== true) return { kind: 'TASK_REJECTED' }
+      const savedRecord = marked.value
+
+      const proof = deepFreezeFixtureValue({
+        schemaVersion: 1,
+        scopeId: request.scopeId,
+        taskId: request.taskId,
+        birthIdentityHash: freshBirth.identityHash,
+        birthObservedAt: freshBirth.record.observedAt,
+        claimRevision,
+        claimDigest,
+        candidateRevision: finalRevision,
+        recordIdentityHash: identityHashOf(savedRecord),
+        artifact: {
+          artifactRef: artifact.artifactRef,
+          identityHash: artifact.identityHash,
+          byteSha256: artifact.byteSha256,
+          byteLength: artifact.byteLength,
+          expiresAt: artifact.expiresAt,
+          requestKey: artifact.requestKey,
+          rights: { state: artifact.rights.state, proofRef: artifact.rights.proofRef },
+          inspection: artifact.inspection,
+        },
+        evaluatedAt: request.now.iso,
+      })
+      const finalBytes = Buffer.from(
+        JSON.stringify({
+          schemaVersion: 2,
+          revision: finalRevision,
+          entries: [
+            ...baseEntries,
+            {
+              scopeId: request.scopeId,
+              taskId: request.taskId,
+              birthIdentityHash: freshBirth.identityHash,
+              phase: 'FINAL',
+              record: savedRecord,
+              completion: { kind: 'SAVED', reason: null },
+            },
+          ],
+        }),
+        'utf8',
+      )
+      try {
+        writeOwner(state, finalBytes, claimDigest, finalRevision, proof)
+      } catch (error) {
+        if (!isStoreFailure(error)) return { kind: 'INTERNAL' }
+        if (error.key === 'WRITE_UNKNOWN') return { kind: 'SAVE_UNKNOWN' }
+        if (error.key === 'WRITE_REJECTED') return { kind: 'WRITE_REJECTED' }
+        if (error.key === 'SAVE_ARTIFACT_REJECTED') return { kind: 'SAVE_ARTIFACT_REJECTED' }
+        if (error.key === 'SAVE_ARTIFACT_UNKNOWN') return { kind: 'SAVE_ARTIFACT_UNKNOWN' }
+        return { kind: 'STORED_ERROR', key: error.key }
+      }
+
+      let confirmed = null
+      try {
+        confirmed = freshAssociations(state)
+      } catch {
+        lockStore(state)
+        return { kind: 'SAVE_UNKNOWN' }
+      }
+      const jointEntry = entryFor(confirmed.owner.snapshot, request.scopeId, request.taskId)
+      if (
+        !jointEntry ||
+        jointEntry.phase !== 'FINAL' ||
+        jointEntry.completion.kind !== 'SAVED' ||
+        confirmed.owner.revision !== finalRevision
+      ) {
+        lockStore(state)
+        return { kind: 'SAVE_UNKNOWN' }
+      }
+      const jointArtifact = readStoredForSave(artifactState, {
+        scopeId: request.scopeId,
+        artifactRef,
+        now: request.now.iso,
+      })
+      if (!jointArtifact || jointArtifact.ok !== true || jointArtifact.value.state !== 'STORED') {
+        lockArtifact(artifactState)
+        return { kind: 'SAVE_ARTIFACT_UNKNOWN' }
+      }
+      return {
+        kind: 'SAVED',
+        revision: finalRevision,
+        record: jointEntry.record,
+        artifact: {
+          artifactRef: artifact.artifactRef,
+          byteLength: artifact.byteLength,
+          sha256: artifact.byteSha256,
+          expiresAt: artifact.expiresAt,
+        },
+      }
+    })
+
+    if (outcome.kind === 'SAVED') {
+      return saveValue('SAVED', outcome.revision, outcome.record, 'SAVED', null, outcome.artifact)
+    }
+    if (outcome.kind === 'ARTIFACT_FAILED') return failure(libraryFailureKey(outcome.error), '$')
+    if (outcome.kind === 'TASK_REJECTED') return failure('SAVE_TASK_REJECTED', '$')
+    if (outcome.kind === 'STORED_ERROR') return failure(outcome.key, '$')
+    return failure(outcome.kind, '$')
+  } catch (error) {
+    return toFailure(error)
+  }
+}
+
+/** The frozen fourteen-step availability order; history is reported, never rewritten. */
+async function statusOnce(state, input) {
+  if (state.locked) return failure('OWNER_UNKNOWN', '$')
+  try {
+    const request = readStatus(input)
+    const current = freshAssociations(state)
+    if (!birthOf(current.catalog, request.scopeId, request.taskId)) raise('NOT_FOUND', '$')
+    const entry = entryFor(current.owner.snapshot, request.scopeId, request.taskId)
+    if (!entry) return statusValue('MISSING', null, null, null)
+    if (entry.phase === 'CLAIMED') return statusValue('UNKNOWN', 'UNKNOWN', null, null)
+    if (entry.completion.kind !== 'SAVED') {
+      return statusValue('MISSING', finalKind(entry), null, null)
+    }
+    if (request.rights.state !== 'GRANTED' || request.rights.proofRef === null) {
+      return statusValue('RIGHTS_REJECTED', 'SAVED', null, null)
+    }
+    const artifactState = getArtifactState(state.sandbox)
+    if (isArtifactLocked(artifactState)) return failure('SAVE_ARTIFACT_UNKNOWN', '$')
+    const read = readStoredForSave(artifactState, {
+      scopeId: request.scopeId,
+      artifactRef: entry.record.outputArtifactRef,
+      now: request.now.iso,
+    })
+    if (!read || read.ok !== true) {
+      if (read && read.errorKey === 'LIBRARY_UNKNOWN') return failure('SAVE_ARTIFACT_UNKNOWN', '$')
+      if (read && (read.errorKey === 'STORE_CHANGED' || read.errorKey === 'STORE_INVALID')) {
+        raise(read.errorKey, '$')
+      }
+      return failure('SAVE_ARTIFACT_UNKNOWN', '$')
+    }
+    if (read.value.state === 'MISSING') return statusValue('MISSING', 'SAVED', null, null)
+    const artifact = read.value.artifact
+    if (artifact.artifactRef !== entry.record.outputArtifactRef) {
+      return statusValue('RIGHTS_REJECTED', 'SAVED', null, null)
+    }
+    if (artifact.rights.proofRef !== request.rights.proofRef) {
+      return statusValue('RIGHTS_REJECTED', 'SAVED', null, null)
+    }
+    if (read.value.state === 'DELETED') {
+      return statusValue('DELETED', 'SAVED', artifact.artifactRef, artifact.expiresAt)
+    }
+    if (read.value.state === 'EXPIRED') {
+      return statusValue('EXPIRED', 'SAVED', artifact.artifactRef, artifact.expiresAt)
+    }
+    return statusValue('READABLE', 'SAVED', artifact.artifactRef, artifact.expiresAt)
   } catch (error) {
     return toFailure(error)
   }
@@ -547,7 +1081,7 @@ async function getOnce(state, input) {
 /**
  * Open one isolated persistent task owner over a trusted temporary sandbox capability.
  * @param {{sandbox: object}} options
- * @returns {Promise<{ok:true,value:{run:Function,get:Function}}|{ok:false,errors:Array<object>}>}
+ * @returns {Promise<{ok:true,value:{run:Function,get:Function,save:Function,artifactStatus:Function}}|{ok:false,errors:Array<object>}>}
  */
 export async function openFixtureTaskOwner(options) {
   let sandbox
@@ -568,6 +1102,8 @@ export async function openFixtureTaskOwner(options) {
         const handle = Object.freeze({
           run: (input) => enqueue(state, () => runOnce(state, input)),
           get: (input) => enqueue(state, () => getOnce(state, input)),
+          save: (input) => enqueue(state, () => saveOnce(state, input)),
+          artifactStatus: (input) => enqueue(state, () => statusOnce(state, input)),
         })
         return deepFreezeFixtureValue({ ok: true, value: handle })
       } catch (error) {

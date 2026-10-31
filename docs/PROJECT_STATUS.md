@@ -362,3 +362,16 @@ current-capability table and a clearly marked target Audio/Relay architecture. D
 and checks live in `docs/DEVELOPMENT.md`. This presentation change adds no provider, audio,
 installation, configuration-write, task-execution or delivery capability. The preview images are
 isolated demo captures, not real integration evidence.
+
+### 08-E-C same-claim save — OFFLINE / FIXTURE_ONLY / PR pending
+
+Implemented: `save`/`artifactStatus` on the isolated owner, owner snapshot v1/v2 with `SAVED`,
+mandatory delta proof inside the only writer with pre/post gates, `readStoredForSave` and
+`importInQueue`, plus `test/task-owner-save.test.mjs`. Local evidence: `node --test` 719 tests, 716
+pass, 3 platform skips (symlink EPERM), 0 fail; `node build.mjs` regenerated `client.js` with no
+diff. Not implemented / not verified: the full eleven fs-fault representative matrix (six of the
+eleven have real fs-level evidence: claim rename unknown, artifact rename unknown, FINAL rename
+unknown, post-confirm failure, FINAL-in-flight Task/Artifact foreign overwrite; the joint-phase two,
+the bad-proof-through-public-flow and the success-then-external-change pairs are only partially
+covered), the executable documentation save example, real Host/GUI integration, real TTS/media and
+any production capability. Parent Plan 08-E-E and Plan 08 remain IN_PROGRESS.

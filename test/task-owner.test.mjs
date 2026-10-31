@@ -310,11 +310,19 @@ const wrappedEngine = (frame) => {
   return copy
 }
 const engineModule = new vm.SyntheticModule(
-  ['TASK_FIXTURE_ERRORS', 'TASK_FIXTURE_SCHEMA_VERSION', 'runExistingFixtureTaskOnce'],
+  [
+    'TASK_FIXTURE_ERRORS',
+    'TASK_FIXTURE_SCHEMA_VERSION',
+    'runExistingFixtureTaskOnce',
+    'runExistingFixtureTaskBytesOnce',
+  ],
   function () {
     this.setExport('TASK_FIXTURE_ERRORS', real.engine.TASK_FIXTURE_ERRORS)
     this.setExport('TASK_FIXTURE_SCHEMA_VERSION', real.engine.TASK_FIXTURE_SCHEMA_VERSION)
     this.setExport('runExistingFixtureTaskOnce', wrappedEngine)
+    // Plan 08-E-C: the real bytes entry is forwarded unchanged; the legacy fault wrapper above keeps
+    // its own original scope and never becomes a fake success for the save path.
+    this.setExport('runExistingFixtureTaskBytesOnce', real.engine.runExistingFixtureTaskBytesOnce)
   },
   { identifier: engineUrl },
 )
@@ -882,7 +890,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     const b = await birth(sandbox, svc, 'key:fixture-c08')
     const owner = await openFixtureTaskOwner({ sandbox })
     assert.equal(owner.ok, true)
-    assert.deepEqual(Object.keys(owner.value).sort(), ['get', 'run'])
+    assert.deepEqual(Object.keys(owner.value).sort(), ['artifactStatus', 'get', 'run', 'save'])
     assert.equal(Object.isFrozen(owner.value), true)
 
     expectOwnerError(await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'INVALID_INPUT', '$')
@@ -933,7 +941,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     assert.equal(text.includes(sandbox.root), false)
 
     assert.equal(TASK_OWNER_SCHEMA_VERSION, 1)
-    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 14)
+    assert.equal(Object.keys(TASK_OWNER_ERRORS).length, 22)
     for (const [key, code] of Object.entries(TASK_OWNER_ERRORS)) {
       assert.equal(code, 'TASK_OWNER_' + key)
     }

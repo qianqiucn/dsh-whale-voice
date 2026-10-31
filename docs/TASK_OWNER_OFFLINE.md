@@ -509,3 +509,18 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 
 Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）仍未实现，owner 仍只输出 `SIMULATED`/`NO_EXECUTION`。
 
+
+## 12. 同一 claim 保存事务（08-E-C，离线实现）
+
+`openFixtureTaskOwner` 现返回 `{run, get, save, artifactStatus}`；公开 `schemaVersion` 恒为 `1`，磁盘 owner 快照新增 `v2`（含一条 `SAVED` FINAL 时才写 v2，只读不写盘升级）。
+
+- `save` 请求恰八键 `schemaVersion/scopeId/taskId/requestKey/now/expiresAt/rights/input`，`input` 恰四键，沿用原两分区 copy 与预算；成功值 = 原 11 字段 + `artifact`（仅本次 SAVED 携 `{artifactRef, byteLength, sha256, expiresAt}`，其余 `artifact:null`）。
+- 唯一 writer 在 pre（temp fsync 后、rename 前）与 post（rename 后）按 entry 差分强制 proof：恰一条 `CLAIMED -> SAVED FINAL` 必须携带本次冻结 `SaveProof`（根 11 键 + artifact 8 键 + 19 键 inspection，`claimRevision=当前 revision`、`claimDigest=sha256(当前完整字节)`、`candidateRevision=claim+1`、`evaluatedAt=request.now`）；缺 proof/错形状/错任务/一次多任务/改写历史 SAVED 一律 pre `WRITE_REJECTED`（无锁）。
+- 新增内部 `readStoredForSave(artifactState,{scopeId,artifactRef,now})`：同步、免重入、fresh；四态 `STORED/DELETED/EXPIRED/MISSING`，`MISSING` 时 `artifact=null`，其余恰八键且 inspection 19 键；`DELETED` 优先 `EXPIRED`。
+- 新增 `importInQueue(artifactState,input)`：仅供持 Artifact 队列的 owner 使用，复用原七键解析/owned-copy/原 `importOnce`，不再入队。
+- `artifactStatus` 五键输入、六字段输出，按契约十四步优先级；`UNKNOWN`/`MISSING`/`RIGHTS_REJECTED` 不泄漏 ref/expiry；历史 `get` 不因删除/过期/撤权改历史。
+- 新增 8 个公开错误码（共 22）：`SAVE_INPUT_INVALID`/`SAVE_RIGHTS_REJECTED`/`SAVE_EXPIRED_REQUEST`/`SAVE_PRECONDITION`/`SAVE_ARTIFACT_REJECTED`/`SAVE_ARTIFACT_UNKNOWN`/`SAVE_TASK_REJECTED`/`SAVE_UNKNOWN`，reason 固定，不套用旧小写规则。
+
+本地证据：`test/task-owner-save.test.mjs` 15 项全通过（含真实 fs 故障：claim rename 未知、库 rename 未知、FINAL rename 未知、post 确认失败、FINAL 内 Task/Artifact 外改、成功后外改）；全量 719 测试 716 通过 3 平台 skip 0 失败。
+
+未完成：11 个固定故障代表中 joint 阶段两项、公开流程坏 proof、库 pre 拒绝与 delete 排队等未逐一取证；文档示例尚未由测试原样载入执行。本轮不改变真实保存、TTS、微信或 Host 能力。

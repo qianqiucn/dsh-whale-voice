@@ -122,3 +122,14 @@ not invent earlier releases or imply production maturity.
   reviewed isolated demo previews, an honest capability table and target Audio/Relay diagram.
 - Move developer setup and verification guidance to `docs/DEVELOPMENT.md`; document preview
   provenance. No plugin runtime, production configuration or integration behavior changes.
+## 08-E-C — same-claim Fixture save transaction (offline, PR pending)
+
+- `openFixtureTaskOwner` now also exposes `save` and `artifactStatus`; the public owner schema stays
+  `1` and the on-disk owner snapshot gains a separate `v2` form that records one `SAVED` FINAL.
+- The only owner writer enforces the mandatory delta rule inside its own pre/post gate: exactly one
+  `CLAIMED -> SAVED FINAL` transition must carry a frozen `SaveProof` (11 root keys + 8 artifact
+  keys + the 19-key inspection); every other write must carry none.
+- New internal `readStoredForSave` (fresh, queue-free, STORED/DELETED/EXPIRED/MISSING) and
+  `importInQueue` (same original import, no re-enqueue, no second implementation).
+- Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
+  installer capability is added or implied.

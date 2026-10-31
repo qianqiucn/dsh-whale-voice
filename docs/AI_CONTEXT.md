@@ -451,3 +451,14 @@ The root README is a Chinese, newcomer-oriented overview with explicitly labelle
 previews and separate current/target capabilities. Developer setup and checks are in
 `docs/DEVELOPMENT.md`; screenshot provenance is in `docs/assets/README.md`. Documentation and
 visual assets only; no runtime capability or integration status changes.
+
+## 08-E-C same-claim save (offline implementation, PR pending)
+
+`openFixtureTaskOwner` returns `{run,get,save,artifactStatus}`. `save` runs one complete same-claim
+attempt on the trusted Fixture sandbox: eight-key request -> fresh birth/association gate -> existing
+FINAL/CLAIMED dispatch -> one CLAIMED -> one real bytes engine -> one Artifact import while holding
+the Artifact queue -> `ATTACH_FAKE_ARTIFACT`/`MARK_SAVED` -> strict `SAVED` FINAL with a frozen
+`SaveProof` -> joint confirmation. Public `schemaVersion` stays `1`; the owner file becomes `v2` only
+when a SAVED FINAL exists. `artifactStatus` reports the frozen six fields in the fourteen-step order.
+Twenty-two public error codes now exist; the eight new ones carry fixed reasons. Nothing here is
+production, real generation, rights verification, delivery or Host integration.
