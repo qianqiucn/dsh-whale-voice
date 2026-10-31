@@ -1083,3 +1083,33 @@ test('S22 a legal delete issued during another save queues on the artifact domai
     assert.equal(statusB.value.state, 'READABLE')
   })
 })
+test('S23 the documented rights-rejection example runs as written', async () => {
+  const doc = fs.readFileSync('docs/TASK_OWNER_OFFLINE.md', 'utf8')
+  const at = doc.indexOf('### 15.2')
+  assert.ok(at >= 0)
+  const blocks = []
+  let cursor = at
+  for (let index = 0; index < 2; index += 1) {
+    const fence = doc.indexOf('```json', cursor)
+    const close = doc.indexOf('```', fence + 7)
+    blocks.push(JSON.parse(doc.slice(fence + 7, close).trim()))
+    cursor = close + 3
+  }
+  const [request, expected] = blocks
+  assert.equal(Object.keys(expected).length, 2)
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s23')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const frame = clone(request)
+    frame.taskId = b.taskId
+    frame.scopeId = b.scopeId
+    frame.input = b.input
+    const result = await owner.value.save(frame)
+    assert.equal(result.ok, false)
+    assert.equal(result.errors[0].code, expected.errors[0].code)
+    assert.equal(result.errors[0].path, expected.errors[0].path)
+    assert.equal(result.errors[0].reason, expected.errors[0].reason)
+    assert.equal(fs.existsSync(filePath(sandbox, OWNER_FILE)), false)
+  })
+})

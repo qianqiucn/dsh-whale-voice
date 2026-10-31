@@ -610,3 +610,27 @@ Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`Stor
 
 #### 08-E-C 续修证据（VM 11 行）
 `test/task-owner.test.mjs` 的共享 VM 图（base→artifact→task→library→owner，同一 fsProxy）现覆盖 11 行固定故障代表：claim/Artifact/FINAL rename 未知、FINAL 内 Task/Artifact 外改、post 确认失败、JOINT Task/Artifact、坏 proof（经 owner 的 store 门面在真实 FINAL 写入前替换 ref 后仍 delegate）、成功后 Task/Artifact 外改；每行带 engine/import 计数与真实 after-call 注入，worker 改为临时文件执行以避开 Windows 命令行长度限制。全量 737 测试 734 通过 3 平台 skip。
+
+### 15.2 合法反例（rights 拒绝，可执行）
+
+当 `rights.state` 不是 `GRANTED`（或 `proofRef` 为空）时，保存必须在 claim 之前被拒绝，且不写任何文件：
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "requestKey": "save:fixture-demo-denied",
+  "now": "2026-10-27T00:00:01.000Z",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "rights": { "state": "DENIED", "proofRef": null },
+  "input": { "schemaVersion": 1, "sourceInput": {}, "readiness": {}, "context": {} }
+}
+```
+
+```json
+{
+  "ok": false,
+  "errors": [{ "code": "TASK_OWNER_SAVE_RIGHTS_REJECTED", "path": "rights", "reason": "save rights rejected" }]
+}
+```
