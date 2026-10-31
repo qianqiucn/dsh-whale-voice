@@ -792,3 +792,71 @@ function expectLibraryError(result, key) {
   assert.equal(result.ok, false, JSON.stringify(result))
   assert.equal(result.errors[0].code, 'ARTIFACT_LIBRARY_' + key)
 }
+
+/* ------------------------------------------------------------------ S16 */
+
+function saveDocExamples() {
+  const doc = fs.readFileSync('docs/TASK_OWNER_OFFLINE.md', 'utf8')
+  const at = doc.indexOf('### 15.1')
+  assert.ok(at >= 0, '### 15.1')
+  const blocks = []
+  let cursor = at
+  for (let index = 0; index < 4; index += 1) {
+    const fence = doc.indexOf('```json', cursor)
+    assert.ok(fence >= 0)
+    const close = doc.indexOf('```', fence + 7)
+    blocks.push(JSON.parse(doc.slice(fence + 7, close).trim()))
+    cursor = close + 3
+  }
+  return blocks
+}
+
+test('S16 the documented save example runs as written against a real sandbox', async () => {
+  const ex = example()
+  const [request, expectedSave, statusRequest, expectedStatus] = saveDocExamples()
+  assert.equal(Object.keys(request).length, 8)
+  assert.equal(Object.keys(expectedSave).length, 12)
+  assert.equal(Object.keys(statusRequest).length, 5)
+  assert.equal(Object.keys(expectedStatus).length, 6)
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s16')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    assert.equal(owner.ok, true)
+    // Only the runtime facts are bound to the real issued task: the documented request shape,
+    // its fixed safety values and the original run input are used as written.
+    const frame = clone(request)
+    frame.taskId = b.taskId
+    frame.scopeId = b.scopeId
+    frame.input = b.input
+    const saved = await owner.value.save(frame)
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    assert.deepEqual(Object.keys(saved.value), Object.keys(expectedSave))
+    assert.equal(saved.value.outcome, expectedSave.outcome)
+    assert.equal(saved.value.ownerState, expectedSave.ownerState)
+    assert.equal(saved.value.reason, expectedSave.reason)
+    assert.equal(saved.value.userMessageZh, expectedSave.userMessageZh)
+    assert.deepEqual(Object.keys(saved.value.task), Object.keys(expectedSave.task))
+    assert.equal(saved.value.task.userMessageZh, expectedSave.task.userMessageZh)
+    assert.deepEqual(Object.keys(saved.value.artifact), Object.keys(expectedSave.artifact))
+    assert.equal(saved.value.mockOnly, expectedSave.mockOnly)
+    assert.equal(saved.value.realOperationAllowed, expectedSave.realOperationAllowed)
+    assert.equal(saved.value.submitAllowed, expectedSave.submitAllowed)
+    assert.equal(saved.value.automaticRetryAllowed, expectedSave.automaticRetryAllowed)
+
+    const statusFrame = clone(statusRequest)
+    statusFrame.taskId = b.taskId
+    statusFrame.scopeId = b.scopeId
+    const status = await owner.value.artifactStatus(statusFrame)
+    assert.equal(status.ok, true)
+    assert.deepEqual(Object.keys(status.value), Object.keys(expectedStatus))
+    assert.equal(status.value.state, expectedStatus.state)
+    assert.equal(status.value.messageZh, expectedStatus.messageZh)
+    assert.equal(status.value.artifactRef, saved.value.artifact.artifactRef)
+    assert.equal(status.value.expiresAt, saved.value.artifact.expiresAt)
+
+    const got = await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId })
+    assert.equal(got.ok, true)
+    assert.equal(got.value.outcome, 'FOUND')
+    assert.equal(got.value.ownerState, 'SAVED')
+  })
+})

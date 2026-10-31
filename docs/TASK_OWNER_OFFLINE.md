@@ -510,7 +510,7 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）仍未实现，owner 仍只输出 `SIMULATED`/`NO_EXECUTION`。
 
 
-## 12. 同一 claim 保存事务（08-E-C，离线实现）
+## 15. 同一 claim 保存事务（08-E-C，离线实现）
 
 `openFixtureTaskOwner` 现返回 `{run, get, save, artifactStatus}`；公开 `schemaVersion` 恒为 `1`，磁盘 owner 快照新增 `v2`（含一条 `SAVED` FINAL 时才写 v2，只读不写盘升级）。
 
@@ -524,3 +524,86 @@ Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`Stor
 本地证据：`test/task-owner-save.test.mjs` 15 项全通过（含真实 fs 故障：claim rename 未知、库 rename 未知、FINAL rename 未知、post 确认失败、FINAL 内 Task/Artifact 外改、成功后外改）；全量 719 测试 716 通过 3 平台 skip 0 失败。
 
 未完成：11 个固定故障代表中 joint 阶段两项、公开流程坏 proof、库 pre 拒绝与 delete 排队等未逐一取证；文档示例尚未由测试原样载入执行。本轮不改变真实保存、TTS、微信或 Host 能力。
+
+### 15.1 完整可执行示例（真实出生 → save → status → 旧 get）
+
+示例只描述**请求形状与固定安全值**；其中 `taskId`、`artifactRef`、`sha256`、`byteLength` 等运行期事实由真实 catalog 签发与本次导入产生，使用时用真实值替换，不能把示例值当 cap 或固定结果。
+
+保存请求（八键；`input` 与原 `run.input` 同构）：
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "requestKey": "save:fixture-demo-1",
+  "now": "2026-10-27T00:00:01.000Z",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "rights": { "state": "GRANTED", "proofRef": "fixture-rights:demo-1" },
+  "input": { "schemaVersion": 1, "sourceInput": {}, "readiness": {}, "context": {} }
+}
+```
+
+成功值（恰十二键；只有本次 SAVED 携 `artifact`，其余 `ok:true` 为 `artifact:null`）：
+
+```json
+{
+  "schemaVersion": 1,
+  "outcome": "SAVED",
+  "revision": 2,
+  "ownerState": "SAVED",
+  "reason": null,
+  "task": {
+    "schemaVersion": 1,
+    "taskId": "task:fixture-<real-issued-32-hex>",
+    "feature": "singing",
+    "taskType": "SVC",
+    "state": "SAVED",
+    "voiceProfileId": "voice:demo-hero",
+    "hasInput": true,
+    "hasOutput": true,
+    "cancelRequested": false,
+    "cancelConfirmed": false,
+    "deliveryRequested": false,
+    "mockOnly": true,
+    "realOperationAllowed": false,
+    "userMessageZh": "已保存到演示资产库；这不代表已经发送到微信。（演示状态，尚未接入真实生成）"
+  },
+  "artifact": {
+    "artifactRef": "artifact:fixture-bytes-<real-32-hex>",
+    "byteLength": 88244,
+    "sha256": "<real-sha256>",
+    "expiresAt": "2026-10-28T00:00:00.000Z"
+  },
+  "userMessageZh": "演示结果已保存到本地演示资产库；这不会发送到微信，也不代表真实生成。",
+  "mockOnly": true,
+  "realOperationAllowed": false,
+  "submitAllowed": false,
+  "automaticRetryAllowed": false
+}
+```
+
+状态请求与结果（五键输入、六字段输出；本例为当前可读取）：
+
+```json
+{
+  "schemaVersion": 1,
+  "scopeId": "scope:fixture-demo",
+  "taskId": "task:fixture-<real-issued-32-hex>",
+  "now": "2026-10-27T00:00:02.000Z",
+  "rights": { "state": "GRANTED", "proofRef": "fixture-rights:demo-1" }
+}
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "state": "READABLE",
+  "ownerState": "SAVED",
+  "artifactRef": "artifact:fixture-bytes-<real-32-hex>",
+  "expiresAt": "2026-10-28T00:00:00.000Z",
+  "messageZh": "演示资产当前可读取。"
+}
+```
+
+时序与限制：`schemaVersion` 公开恒为 `1`；磁盘 owner 快照首次写 SAVED 升 `v2`（`schemaVersion:2`），此前 `v1`；两次 rename（模板→正式、Artifact→Task）**非原子**；Task 与 Artifact 各自独立锁；`UNKNOWN` 不自动重试、不回滚、不重造 ID；`SAVED` 只代表演示资产，不是真实生成、版权或投递证据。
