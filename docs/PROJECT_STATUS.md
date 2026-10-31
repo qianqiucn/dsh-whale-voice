@@ -377,15 +377,15 @@ save, and both documented examples executed as written). 085 v1.3 then closed th
 compared against the real bytes (a numeric message or a byte-contradicting peak is refused), the
 whole locally decidable SaveProof (including the fullScale negative bound) is rejected before the
 first fresh store read, the eleven-row matrix reports uniform claim/FINAL/Artifact attempts and
-successes plus engine/import counts, three-file digests, the per-row hit/phase/first-error/paired
-control and the old/new handle two-domain locks with the one-shot JOINT armed only after the real
+successes plus engine/import counts, three-file digests, the per-row hit/phase/first-error/paired,
+the pre-fault second-owner/catalog/library handles re-checked after the fault, the control get/status/repeat facts and the old/new handle two-domain locks with the one-shot JOINT armed only after the real
 writer returned, legal OFFLINE
 and source-blocked NO_EXECUTION settlements are recorded as fixed FINALs, ordinary concurrency is a
 fixed `SAVED` + `EXISTING`, a delete issued inside the held Artifact window provably waits for
 the save's JOINT, and both documented examples carry a complete input and bind only the issued ids.
 Final local evidence: `node --test`
-**754 tests, 751 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
-**71/71**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
+**755 tests, 752 pass, 3 platform skips (symlink EPERM), 0 fail**; owner + save specialty
+**72/72**; `node build.mjs` regenerates `client.js` with no diff. Not verified: real Host/GUI
 integration, real TTS/media, delivery and any production capability. Parent Plan 08-E-E and Plan 08
 remain IN_PROGRESS.
 

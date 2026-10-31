@@ -150,8 +150,11 @@ not invent earlier releases or imply production maturity.
   and both documented examples carry a complete input. A second pass then added the fullScale
   negative bound to the pre-read gate and the complete per-row automatic regression evidence
   (hit/phase/skip, first error path/reason, paired control, old/new handle and factory two-domain
-  locks, and a deep-frozen injected bad-ref proof with one delegation). Suite **754 / 751 pass /
-  3 platform skips / 0 fail**, owner + save specialty **71/71**; still OFFLINE / FIXTURE_ONLY /
+  locks, and a deep-frozen injected bad-ref proof with one delegation). A third pass adds the
+  pre-fault second owner/catalog/library handles re-checked after the fault, the control
+  get/status/repeat facts with both domains unlocked, rows 10/11 first-error path/reason and the
+  restored concurrent SAVED+EXISTING regression with engine 1/import 1 and rename counts. Suite
+  **755 / 752 pass / 3 platform skips / 0 fail**, owner + save specialty **72/72**; still OFFLINE / FIXTURE_ONLY /
   NOT_INTEGRATED.
 - Offline only: no real TTS/RVC, no Host/GUI integration, no WeChat send, no production write and no
   installer capability is added or implied.
