@@ -34,7 +34,7 @@ import {
   raiseStore,
   sha256,
   stableStringify,
-} from './fixture-task-store-internal.mjs'
+} from './fixture-store-base-internal.mjs'
 
 /** The only pack this module can ever address. */
 export const ARTIFACT_FILE_NAME = 'audio-artifacts-v1.json'
