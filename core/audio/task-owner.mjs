@@ -822,7 +822,6 @@ function ownedProducedBytes(value) {
   try {
     bufferLength = BUFFER_BYTE_LENGTH.call(buffer)
     if (BUFFER_RESIZABLE.call(buffer) === true) return null
-    if (Object.prototype.toString.call(buffer) !== '[object ArrayBuffer]') return null
   } catch {
     return null
   }
@@ -932,6 +931,7 @@ function interpretBytesEngine(out, birthRecord) {
     if (record.mockOnly !== true || record.realOperationAllowed !== false) return null
     if (!sameOwnerImmutable(record, birthRecord)) return null
     if (stableStringify(record) !== stableStringify(root.record)) return null
+    if (states[0] !== birthRecord.state) return null
     if (states[states.length - 1] !== record.state) return null
     const expectedTask = projectOrNull(record)
     if (expectedTask === null) return null

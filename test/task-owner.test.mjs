@@ -344,6 +344,12 @@ const engineModule = new vm.SyntheticModule(
           },
         })
         value.states = states
+      } else if (fault === 'shadow') {
+        const bytes = out.production.bytes
+        Object.defineProperty(bytes, 'length', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, 'byteLength', { get() { getterCalls.count += 1; return 0 } })
+        Object.defineProperty(bytes, Symbol.toStringTag, { get() { getterCalls.count += 1; return 'NotBytes' } })
+        production.bytes = bytes
       } else if (fault === 'resizable') {
         const bytes = out.production.bytes
         const buffer = new ArrayBuffer(bytes.length, { maxByteLength: bytes.length * 2 })
@@ -2044,6 +2050,16 @@ test('V03 a harmless field clone still saves once through the real engine and im
   const worker = runOwnerWorker({ key: 'key:fixture-v03', mode: 'save', bytesFault: 'clone' })
   assert.equal(worker.counts.engine, 1)
   assert.equal(worker.counts.imports, 1)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.ownerState, 'SAVED')
+})
+
+test('V04 harmless byte-view shadows are never read and the save still succeeds', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v04', mode: 'save', bytesFault: 'shadow' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.getterCalls, 0)
   const saved = workerResult(worker, 'save')
   assert.equal(saved.ok, true, JSON.stringify(saved))
   assert.equal(saved.value.ownerState, 'SAVED')

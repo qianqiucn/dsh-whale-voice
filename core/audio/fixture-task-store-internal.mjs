@@ -585,6 +585,22 @@ function proofFieldsOnly(proof) {
   const inspection = artifact.inspection
   if (!isPlainObject(inspection) || keySurface(inspection, OWNER_INSPECTION_KEY_SET) !== 'ok') rejectWrite()
   for (const key of OWNER_INSPECTION_KEYS) proofDataField(inspection, key)
+  const proofInspection = artifact.inspection
+  if (typeof proofInspection.byteLength !== 'number' || !Number.isInteger(proofInspection.byteLength)) rejectWrite()
+  if (typeof proofInspection.dataByteLength !== 'number' || !Number.isInteger(proofInspection.dataByteLength)) {
+    rejectWrite()
+  }
+  if (typeof proofInspection.frameCount !== 'number' || !Number.isInteger(proofInspection.frameCount)) rejectWrite()
+  if (typeof proofInspection.durationMs !== 'number' || !Number.isFinite(proofInspection.durationMs)) rejectWrite()
+  if (typeof proofInspection.peak !== 'number' || !Number.isFinite(proofInspection.peak)) rejectWrite()
+  if (typeof proofInspection.fullScaleSampleCount !== 'number' || !Number.isInteger(proofInspection.fullScaleSampleCount)) {
+    rejectWrite()
+  }
+  if (typeof proofInspection.sha256 !== 'string') rejectWrite()
+  if (typeof proofInspection.messageZh !== 'string') rejectWrite()
+  if (typeof artifact.identityHash !== 'string') rejectWrite()
+  if (typeof artifact.byteSha256 !== 'string') rejectWrite()
+  if (typeof artifact.byteLength !== 'number' || !Number.isInteger(artifact.byteLength)) rejectWrite()
   if (typeof artifact.artifactRef !== 'string' || !ARTIFACT_REF_PATTERN.test(artifact.artifactRef)) rejectWrite()
   if (typeof artifact.expiresAt !== 'string' || !ISO_PATTERN.test(artifact.expiresAt)) rejectWrite()
   if (artifact.inspection.sha256 !== artifact.byteSha256) rejectWrite()
