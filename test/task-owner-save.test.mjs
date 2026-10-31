@@ -1040,3 +1040,46 @@ test('S21 the previous main program still rejects a v2 owner snapshot in isolati
     assert.equal(output.trim(), 'REJECTED:STORE_INVALID')
   })
 })
+
+test('S22 a legal delete issued during another save queues on the artifact domain and both finish', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const first = await birth(sandbox, ex, 'key:fixture-s22a')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const firstSave = await owner.value.save(saveFrame(first))
+    assert.equal(firstSave.ok, true, JSON.stringify(firstSave))
+    const refA = firstSave.value.artifact.artifactRef
+
+    const library = await openFixtureArtifactLibrary({ sandbox })
+    assert.equal(library.ok, true)
+
+    const second = await birth(sandbox, ex, 'key:fixture-s22b')
+    const [secondSave, deleted] = await Promise.all([
+      owner.value.save(saveFrame(second, (frame) => (frame.requestKey = 'save:fixture-' + second.taskId.slice(-8)))),
+      library.value.delete({ schemaVersion: 1, scopeId: first.scopeId, artifactRef: refA, now: SAVE_NOW }),
+    ])
+    assert.equal(secondSave.ok, true, JSON.stringify(secondSave))
+    assert.equal(secondSave.value.outcome, 'SAVED')
+    assert.equal(deleted.ok, true, JSON.stringify(deleted))
+    assert.equal(deleted.value.outcome, 'DELETED')
+
+    const pack = readJson(sandbox, ARTIFACT_FILE_NAME)
+    const entries = pack.entries
+    assert.equal(entries.length, 2)
+    const tombstone = entries.find((entry) => entry.artifactRef === refA)
+    assert.equal(tombstone.payload, null)
+    assert.equal(typeof tombstone.deletedAt, 'string')
+    const stored = entries.find((entry) => entry.artifactRef === secondSave.value.artifact.artifactRef)
+    assert.equal(stored.deletedAt, null)
+
+    const doc = readJson(sandbox, OWNER_FILE)
+    assert.equal(doc.schemaVersion, 2)
+    assert.equal(doc.revision, 4)
+    const statusA = await owner.value.artifactStatus(statusFrame(first))
+    assert.equal(statusA.ok, true)
+    assert.equal(statusA.value.state, 'DELETED')
+    const statusB = await owner.value.artifactStatus(statusFrame(second))
+    assert.equal(statusB.ok, true)
+    assert.equal(statusB.value.state, 'READABLE')
+  })
+})
