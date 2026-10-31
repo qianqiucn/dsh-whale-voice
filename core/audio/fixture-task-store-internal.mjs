@@ -1,4 +1,4 @@
-/* Whale Voice — private shared Fixture task store (Plan 08-D-C internal helper).
+﻿/* Whale Voice — private shared Fixture task store (Plan 08-D-C internal helper).
  *
  * One implementation of the already verified isolated file storage, shared by the 08-D-A catalog
  * and the 08-D-C task owner. It is not a public API and not a generic file service: the two fixed
@@ -20,7 +20,37 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 import { deepFreezeFixtureValue } from './fixture-input-boundary.mjs'
-import { isInside, isTrustedSandbox, normalizePath } from '../config-sandbox.mjs'
+import {
+  StoreFailure,
+  storeReason,
+  raiseStore,
+  isStoreFailure,
+  isPlainObject,
+  keySurface,
+  hasOwn,
+  sha256,
+  stableStringify,
+  checkSandbox,
+  readBoundedPath,
+  sameIdentity,
+  assertRegularStat,
+  isInside,
+} from './fixture-store-base-internal.mjs'
+
+/* Plan 08-E-E-B Step 1: keep the ten former shared bindings re-exported with the same identity so
+ * existing catalog/owner/library imports keep resolving to the single StoreFailure class. */
+export {
+  StoreFailure,
+  storeReason,
+  raiseStore,
+  isStoreFailure,
+  isPlainObject,
+  keySurface,
+  hasOwn,
+  sha256,
+  stableStringify,
+  checkSandbox,
+}
 import { createAudioTaskRecord, validateAudioTaskRecord } from './task-contract.mjs'
 import { TASK_FIXTURE_ERRORS } from './task-fixture-engine-internal.mjs'
 import { PROVIDER_DISPATCH_ERRORS } from './provider-dispatch.mjs'
@@ -38,13 +68,10 @@ export const STORE_DOMAINS = Object.freeze({
   OWNER: 'owner',
 })
 
-const MAX_MARKER_BYTES = 4 * 1024
-const READ_CHUNK = 64 * 1024
 const SCOPE_PATTERN = /^scope:fixture-[A-Za-z0-9_-]{1,32}$/
 const KEY_PATTERN = /^key:fixture-[A-Za-z0-9_-]{1,48}$/
 const TASK_ID_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const HASH_PATTERN = /^[0-9a-f]{64}$/
-const MARKER_KIND = 'whale-voice-isolated-sandbox'
 const SNAPSHOT_KEYS = Object.freeze(new Set(['schemaVersion', 'revision', 'entries']))
 const CATALOG_ENTRY_KEYS = Object.freeze(new Set(['scopeId', 'idempotencyKey', 'identityHash', 'record']))
 const CATALOG_SCHEMA_VERSION = 1
@@ -64,57 +91,6 @@ const OWNER_NO_EXECUTION_REASONS = Object.freeze([
   PROVIDER_DISPATCH_ERRORS.UNSUPPORTED_DISPATCH,
 ])
 const STATES = new WeakMap()
-
-/** Internal failure carrying the neutral store key; each module maps it to its own code prefix. */
-export class StoreFailure extends Error {
-  constructor(key, errorPath) {
-    super(key)
-    this.key = key
-    this.errorPath = errorPath
-  }
-}
-
-export function storeReason(key) {
-  return key.toLowerCase().replace(/_/g, ' ')
-}
-
-export function raiseStore(key, errorPath) {
-  throw new StoreFailure(key, errorPath)
-}
-
-export function isStoreFailure(error) {
-  return error instanceof StoreFailure
-}
-
-export function isPlainObject(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
-  const proto = Object.getPrototypeOf(value)
-  return proto === Object.prototype || proto === null
-}
-
-export function keySurface(object, allowed) {
-  const keys = Reflect.ownKeys(object)
-  for (const key of keys) {
-    if (typeof key !== 'string' || !allowed.has(key)) return 'unknown'
-  }
-  if (keys.length !== allowed.size) return 'count'
-  return 'ok'
-}
-
-export function hasOwn(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key)
-}
-
-export function sha256(buffer) {
-  return crypto.createHash('sha256').update(buffer).digest('hex')
-}
-
-export function stableStringify(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return '[' + value.map((item) => stableStringify(item)).join(',') + ']'
-  const keys = Object.keys(value).sort()
-  return '{' + keys.map((key) => JSON.stringify(key) + ':' + stableStringify(value[key])).join(',') + '}'
-}
 
 export function identityOf(record) {
   return {
@@ -173,147 +149,6 @@ function fileState(state, name) {
     state.files.set(name, file)
   }
   return file
-}
-
-/** Bounded fd read: never allocates or reads more than maxBytes+1. */
-function readBoundedFd(fd, maxBytes, overflowKey) {
-  const limit = maxBytes + 1
-  const buffer = Buffer.allocUnsafe(READ_CHUNK)
-  const chunks = []
-  let total = 0
-  while (total < limit) {
-    const want = Math.min(buffer.length, limit - total)
-    let read
-    try {
-      read = fs.readSync(fd, buffer, 0, want, total)
-    } catch {
-      raiseStore(overflowKey === 'RESOURCE_LIMIT' ? 'SANDBOX_INVALID' : overflowKey, '$')
-    }
-    if (!Number.isInteger(read) || read < 0 || read > want) {
-      raiseStore(overflowKey === 'RESOURCE_LIMIT' ? 'SANDBOX_INVALID' : overflowKey, '$')
-    }
-    if (read === 0) break
-    chunks.push(Buffer.from(buffer.subarray(0, read)))
-    total += read
-    if (total > maxBytes) raiseStore(overflowKey, '$')
-  }
-  return Buffer.concat(chunks, total)
-}
-
-function sameIdentity(left, right) {
-  if (!left || !right) return false
-  if (!Number.isInteger(left.dev) || !Number.isInteger(left.ino)) return true
-  return left.dev === right.dev && left.ino === right.ino
-}
-
-function assertRegularStat(stat, failKey) {
-  if (!stat.isFile() || stat.isSymbolicLink()) raiseStore(failKey, '$')
-  if (typeof stat.nlink === 'number' && stat.nlink > 1) raiseStore(failKey, '$')
-}
-
-function readBoundedPath(state, target, maxBytes, options) {
-  const root = state.sandbox.root
-  const failKey = options.failKey
-  let pre
-  try {
-    pre = fs.lstatSync(target)
-  } catch (error) {
-    if (options.allowMissing && error && error.code === 'ENOENT') return { missing: true }
-    raiseStore(failKey, '$')
-  }
-  assertRegularStat(pre, failKey)
-  const real = fs.realpathSync(target)
-  if (!isInside(root, real)) raiseStore(failKey, '$')
-
-  let fd = null
-  let failure = null
-  let result = null
-  try {
-    fd = fs.openSync(target, 'r')
-    const opened = fs.fstatSync(fd)
-    assertRegularStat(opened, failKey)
-    if (!sameIdentity(pre, opened)) raiseStore(failKey, '$')
-    if (Number.isInteger(opened.size) && opened.size > maxBytes) raiseStore(options.sizeKey || failKey, '$')
-    const bytes = readBoundedFd(fd, maxBytes, options.sizeKey || failKey)
-    const ended = fs.fstatSync(fd)
-    if (!sameIdentity(opened, ended) || ended.size !== bytes.length) raiseStore(failKey, '$')
-    const after = fs.lstatSync(target)
-    if (!sameIdentity(opened, after)) raiseStore(failKey, '$')
-    result = {
-      missing: false,
-      bytes,
-      digest: sha256(bytes),
-      identity: { dev: opened.dev, ino: opened.ino },
-    }
-  } catch (error) {
-    failure = error instanceof StoreFailure ? error : new StoreFailure(failKey, '$')
-  }
-  if (fd !== null) {
-    const closing = fd
-    fd = null
-    try {
-      fs.closeSync(closing)
-    } catch {
-      if (failure === null) failure = new StoreFailure(options.closeKey || failKey, '$')
-    }
-  }
-  if (failure !== null) throw failure
-  return result
-}
-
-export function checkSandbox(state) {
-  const sandbox = state.sandbox
-  if (!isTrustedSandbox(sandbox)) raiseStore('SANDBOX_INVALID', '$')
-
-  let rootStat
-  try {
-    rootStat = fs.lstatSync(sandbox.root)
-  } catch {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) raiseStore('SANDBOX_INVALID', '$')
-
-  let realRoot
-  try {
-    realRoot = fs.realpathSync(sandbox.root)
-  } catch {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-  if (normalizePath(realRoot) !== normalizePath(sandbox.root)) raiseStore('SANDBOX_INVALID', '$')
-  if (!isInside(sandbox.tempRoot, realRoot)) raiseStore('SANDBOX_INVALID', '$')
-  if (
-    Number.isInteger(sandbox.dev) &&
-    Number.isInteger(sandbox.ino) &&
-    (rootStat.dev !== sandbox.dev || rootStat.ino !== sandbox.ino)
-  ) {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-
-  let markerStat
-  try {
-    markerStat = fs.lstatSync(sandbox.marker)
-  } catch {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-  if (!markerStat.isFile() || markerStat.isSymbolicLink()) raiseStore('SANDBOX_INVALID', '$')
-  const markerRead = readBoundedPath(state, sandbox.marker, MAX_MARKER_BYTES, {
-    failKey: 'SANDBOX_INVALID',
-    sizeKey: 'SANDBOX_INVALID',
-    closeKey: 'SANDBOX_INVALID',
-  })
-  if (markerRead.missing) raiseStore('SANDBOX_INVALID', '$')
-  const text = markerRead.bytes.toString('utf8')
-  if (!Buffer.from(text, 'utf8').equals(markerRead.bytes)) raiseStore('SANDBOX_INVALID', '$')
-  let marker
-  try {
-    marker = JSON.parse(text)
-  } catch {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-  if (!isPlainObject(marker) || marker.kind !== MARKER_KIND || marker.id !== sandbox.id) {
-    raiseStore('SANDBOX_INVALID', '$')
-  }
-  return realRoot
 }
 
 function parseSnapshot(bytes) {
@@ -986,3 +821,4 @@ export {
   OWNER_NO_EXECUTION_REASONS,
   OWNER_SIMULATED_STATES,
 }
+

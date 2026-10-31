@@ -502,3 +502,10 @@ root 内唯一新文件 `audio-task-owner-v1.json`（UTF-8、无 BOM、≤128 Ki
 不写 `SAVED`、不调用资产库、不产生 `artifactRef`；owner 快照现为 v1、`revision` 按
 `CLAIMED=1 / FINAL=2` 权重累计。本文第 1–12 节全部为既有行为，仍为 `OFFLINE` / `FIXTURE_ONLY` /
 `NOT_INTEGRATED`；候选文档不是运行时代码授权。
+
+## 14. 共享存储基础模块（08-E-E-B Step 1，已实现）
+
+`core/audio/fixture-store-base-internal.mjs` 是唯一共享 helper 家园（15 个内部导出）：`StoreFailure` 与错误 helper、`isPlainObject`/`keySurface`/`hasOwn`/`sha256`/`stableStringify`、`checkSandbox`（含 marker/有界读/身份闭包）、`readBoundedPath`/`sameIdentity`/`assertRegularStat`、`normalizePath`/`isInside`。
+
+Task-store 仍兼容重导出原十个共享名且保持**同一绑定**（`StoreFailure` 仍只有一个类）；catalog/owner/library 的既有 import 与行为不变。本切片不改变 owner 的 v1 快照、`run`/`get` 语义与两固定文件；保存运行时（save/status/v2/proof）仍未实现，owner 仍只输出 `SIMULATED`/`NO_EXECUTION`。
+

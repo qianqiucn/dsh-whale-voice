@@ -306,3 +306,8 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
   只覆盖这些字段，不含 taskId 或 claim；同字节或同 requestKey 都不证明任何 Task ownership。
 - 候选方案只在 owner 侧用 `record.outputArtifactRef` + 库权威读取（`readStoredForSave`）建立关联；
   库不新增 Task 字段、不新增 origin、不反向依赖 owner。
+
+## 11. 共享存储 helper 改向 base（08-E-E-B Step 1，已实现）
+
+库的八个共享 helper（`StoreFailure`/`checkSandbox`/`isPlainObject`/`isStoreFailure`/`keySurface`/`raiseStore`/`sha256`/`stableStringify`）现从 `core/audio/fixture-store-base-internal.mjs` 导入。库自身私有 IO、parser/writer、队列/digest/UNKNOWN 锁、包格式、预算与 `FIXTURE_IMPORT` 语义均不变；Task 域与 Artifact 域仍独立。
+

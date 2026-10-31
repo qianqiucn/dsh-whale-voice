@@ -125,6 +125,7 @@ import cryptoReal from 'node:crypto'
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
 const counts = { engine: 0, fsFaults: 0, ownerRenames: 0 }
+let birthsDone = false
 let hits = 0
 let faultAt = null
 let legalBirthValid = null
@@ -177,6 +178,7 @@ function legalBirthChange() {
 function whenMatches(when) {
   if (!when || when === 'always') return true
   if (when === 'engine0') return counts.engine === 0
+  if (when === 'afterBirth') return birthsDone
   if (when === 'engineDone') return counts.engine >= 1
   if (when === 'claimOnDisk') return counts.engine === 0 && ownerPhase() === 'CLAIMED'
   if (when === 'diskClaimed') return ownerPhase() === 'CLAIMED'
@@ -317,11 +319,23 @@ const engineModule = new vm.SyntheticModule(
   { identifier: engineUrl },
 )
 
+const baseUrl = new URL('fixture-store-base-internal.mjs', base).href
+const baseSource = fsReal.readFileSync(new URL(baseUrl), 'utf8')
+const baseModule = new vm.SourceTextModule(baseSource, { identifier: baseUrl })
+await baseModule.link(async (specifier) => {
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  const url = new URL(specifier, baseUrl).href
+  return synth(url, await import(url))
+})
+await baseModule.evaluate()
+
 const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
 const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
 await storeModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
   if (url === engineUrl) return engineModule
+  if (url === baseUrl) return baseModule
   if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
   if (specifier === 'node:path') return synth('node:path', { default: pathReal })
   if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
@@ -393,13 +407,16 @@ try {
   const firstBirth = await birthOne(scenario.key || 'key:fixture-worker')
   const secondBirth = mode === 'twoTasks' ? await birthOne(scenario.key2 || 'key:fixture-worker-b') : null
   const catalogBefore = fsReal.readFileSync(root + '/audio-task-catalog-v1.json', 'utf8')
+  birthsDone = true
 
   const results = []
   const record = (label, result) => { results.push({ label, result }) }
   const frame = { schemaVersion: 1, scopeId: firstBirth.scopeId, taskId: firstBirth.taskId, input: firstBirth.input }
   const owner = () => ownerModule.namespace.openFixtureTaskOwner({ sandbox })
 
-  if (mode === 'mixed') {
+  if (mode === 'baseProxy') {
+    record('base-sandbox', await owner())
+  } else if (mode === 'mixed') {
     const first = await owner()
     const second = await owner()
     const outcomes = await Promise.all([
@@ -1772,4 +1789,94 @@ test('E05 legal input changes never re-run, and the original seven scenarios/blo
     assert.deepEqual(objects.map((value) => Object.isFrozen(value)), frozenBefore)
     assert.equal(frozenBefore.includes(true), false)
   })
+})
+
+
+/* ------------------------------------------------------------------ B01 */
+
+test('B01 store-base extraction keeps one binding, one class and the real fs boundary', async () => {
+  const base = await import('../core/audio/fixture-store-base-internal.mjs')
+  const shared = [
+    'StoreFailure',
+    'storeReason',
+    'raiseStore',
+    'isStoreFailure',
+    'isPlainObject',
+    'keySurface',
+    'hasOwn',
+    'sha256',
+    'stableStringify',
+    'checkSandbox',
+  ]
+  assert.deepEqual(Object.keys(base).sort(), [
+    'StoreFailure',
+    'assertRegularStat',
+    'checkSandbox',
+    'hasOwn',
+    'isInside',
+    'isPlainObject',
+    'isStoreFailure',
+    'keySurface',
+    'normalizePath',
+    'raiseStore',
+    'readBoundedPath',
+    'sameIdentity',
+    'sha256',
+    'stableStringify',
+    'storeReason',
+  ])
+  for (const name of shared) assert.equal(storeModule[name], base[name], 'same binding: ' + name)
+  assert.equal(base.StoreFailure, storeModule.StoreFailure, 'one StoreFailure class')
+  let thrown = null
+  try {
+    base.raiseStore('STORE_CHANGED', '$')
+  } catch (error) {
+    thrown = error
+  }
+  assert.ok(thrown instanceof base.StoreFailure)
+  assert.ok(storeModule.isStoreFailure(thrown))
+  assert.equal(base.storeReason('STORE_CHANGED'), 'store changed')
+  assert.equal(base.isInside('/a', '/a/b'), true)
+  assert.equal(base.isInside('/a/b', '/a'), false)
+  assert.equal(typeof base.normalizePath('/a/./b'), 'string')
+
+  const orderScript = [
+    "import { createConfigSandbox, removeConfigSandbox } from '" + BASE + "../config-sandbox.mjs'",
+    'const order = process.env.ORDER',
+    'const names = order === "artifact-first"',
+    '  ? ["fixture-artifact-store-internal.mjs", "fixture-task-store-internal.mjs"]',
+    '  : ["fixture-task-store-internal.mjs", "fixture-artifact-store-internal.mjs"]',
+    'for (const name of names) await import("' + BASE + '" + name)',
+    'const { openFixtureTaskCatalog } = await import("' + BASE + 'task-catalog.mjs")',
+    'const { openFixtureTaskOwner } = await import("' + BASE + 'task-owner.mjs")',
+    'const { openFixtureArtifactLibrary } = await import("' + BASE + 'artifact-library.mjs")',
+    'const sandbox = createConfigSandbox()',
+    'try {',
+    '  const draft = { schemaVersion: 1, feature: "singing", taskType: "SVC", source: { kind: "AUDIO_REF", ref: "artifact:fixture-source-1" }, voiceProfileId: "voice:demo-hero", deliveryRequested: false, rights: { state: "CONFIRMED_FIXTURE" } }',
+    '  const catalog = await openFixtureTaskCatalog({ sandbox })',
+    '  const reserved = await catalog.value.reserve({ schemaVersion: 1, scopeId: "scope:fixture-demo", idempotencyKey: "key:fixture-order", draft, observedAt: "2026-10-27T00:00:00.000Z" })',
+    '  const owner = await openFixtureTaskOwner({ sandbox })',
+    '  const library = await openFixtureArtifactLibrary({ sandbox })',
+    '  console.log(JSON.stringify({ ok: reserved.ok && owner.ok && library.ok, outcome: reserved.ok ? reserved.value.outcome : reserved.errors[0].code }))',
+    '} finally { removeConfigSandbox(sandbox) }',
+  ].join('\n')
+  for (const order of ['artifact-first', 'task-first']) {
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', orderScript], {
+      env: { ...process.env, ORDER: order },
+      encoding: 'utf8',
+    })
+    const parsed = JSON.parse(output.trim())
+    assert.equal(parsed.ok, true, order + ' import order must still work')
+    assert.equal(parsed.outcome, 'CREATED')
+  }
+
+  const worker = runOwnerWorker({
+    mode: 'baseProxy',
+    fsFault: { call: 'lstatSync', match: MARKER_FILE, when: 'afterBirth' },
+  })
+  assert.equal(worker.counts.fsFaults, 1, 'the extracted base must still read through the fs proxy')
+  const result = workerResult(worker, 'base-sandbox')
+  assert.equal(result.ok, false)
+  assert.equal(result.errors[0].code, TASK_OWNER_ERRORS.SANDBOX_INVALID)
+  assert.equal(result.errors[0].path, '$')
 })
