@@ -125,7 +125,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } }, freshArtifactReads: 0, writerReturned: 0, jointArmed: false, jointTaskRead: false, jointDone: false, digests: {} }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0, renames: { owner: { attempt: 0, success: 0 }, artifact: { attempt: 0, success: 0 } }, freshArtifactReads: 0, writerReturned: 0, writerCalls: 0, proofInjected: 0, faultInfo: null, jointArmed: false, jointTaskRead: false, jointDone: false, digests: {} }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -146,6 +146,12 @@ function shaText(name) {
 
 function shaBytes(buffer) {
   return cryptoReal.createHash('sha256').update(buffer).digest('hex')
+}
+
+function deepFreezeAll(value) {
+  if (value === null || typeof value !== 'object') return value
+  for (const key of Object.keys(value)) deepFreezeAll(value[key])
+  return Object.freeze(value)
 }
 
 function ownerPhase() {
@@ -272,6 +278,7 @@ const fsProxy = new Proxy({}, {
           const fire = counts.finalOwnerLstats === scenario.saveLstatFault.occurrence
           const result = realCall()
           if (fire) {
+            counts.faultInfo = { id: 'lstat', phase: ownerPhase(), count: counts.finalOwnerLstats }
             counts.fsFaults += 1
             const error = new Error('EIO')
             error.code = 'EIO'
@@ -294,6 +301,7 @@ const fsProxy = new Proxy({}, {
             counts.digests.foreignOwner = shaBytes(foreign)
             counts.jointTaskRead = true
             counts.jointDone = true
+            counts.faultInfo = { id: 'joint', kind: 'owner', phase: ownerPhase(), jointTaskRead: true }
             counts.fsFaults += 1
           }
         } else if (lstatName === 'audio-task-owner-v1.json') {
@@ -303,6 +311,7 @@ const fsProxy = new Proxy({}, {
           fsReal.writeFileSync(root + '/audio-artifacts-v1.json', foreign)
           counts.digests.foreignArtifact = shaBytes(foreign)
           counts.jointDone = true
+          counts.faultInfo = { id: 'joint', kind: 'artifact', phase: ownerPhase(), jointTaskRead: true }
           counts.fsFaults += 1
         }
         return result
@@ -322,6 +331,7 @@ const fsProxy = new Proxy({}, {
             fsReal.writeFileSync(root + '/' + name, foreign)
             if (scenario.saveFsyncFault.action === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
             else counts.digests.foreignOwner = shaBytes(foreign)
+            counts.faultInfo = { id: 'fsync', action: scenario.saveFsyncFault.action, phase: ownerPhase(), fsync: counts.ownerFsyncs }
             counts.fsFaults += 1
           }
           return result
@@ -332,6 +342,7 @@ const fsProxy = new Proxy({}, {
         const isFault = saveFault.kind === renameKind && counts.renames[renameKind].attempt === saveFault.occurrence
         const result = realCall()
         if (isFault) {
+          counts.faultInfo = { id: 'rename', kind: renameKind, phase: ownerPhase(), attempt: counts.renames[renameKind].attempt }
           counts.fsFaults += 1
           const error = new Error('EIO')
           error.code = 'EIO'
@@ -628,11 +639,22 @@ const ownerStoreModule = new vm.SyntheticModule(storeNames, function () {
           if (scenario.badProofStatic === 'message') artifact.inspection.messageZh = ''
           else if (scenario.badProofStatic === 'schema') artifact.inspection.schemaVersion = 2
           else if (scenario.badProofStatic === 'channels') artifact.inspection.channels = 3
+          else if (scenario.badProofStatic === 'fullScaleNegative') artifact.inspection.fullScaleSampleCount = -1
           else if (scenario.badProofStatic === 'proofRef129') {
             artifact.rights.proofRef = 'fixture-rights:' + 'a'.repeat(120)
           }
           injected = { ...proof, artifact }
         }
+        if (injected !== proof) {
+          deepFreezeAll(injected)
+          counts.proofInjected += 1
+          counts.proofFrozen =
+            Object.isFrozen(injected) &&
+            Object.isFrozen(injected.artifact) &&
+            Object.isFrozen(injected.artifact.inspection) &&
+            Object.isFrozen(injected.artifact.rights)
+        }
+        counts.writerCalls += 1
         const result = file.write(bytes, baseDigest, revision, injected)
         // R03: only the real FINAL writer (the SAVED delta carrying the proof) has now confirmed and
         // returned; only from here may the one-shot JOINT fault arm, so the next owner lstat belongs
@@ -767,6 +789,7 @@ try {
         fsReal.writeFileSync(root + '/' + name, foreign)
         if (scenario.afterMutate === 'AF') counts.digests.foreignArtifact = shaBytes(foreign)
         else counts.digests.foreignOwner = shaBytes(foreign)
+        counts.faultInfo = { id: 'after', kind: scenario.afterMutate, phase: ownerPhase() }
         counts.fsFaults += 1
       }
       record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
@@ -777,6 +800,26 @@ try {
         now: '2026-10-27T00:00:02.000Z',
         rights: saveFrame.rights,
       }))
+      const postOwner = await owner()
+      record('post-owner-new', postOwner)
+      if (postOwner.ok) {
+        record('post-owner-get', await postOwner.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      const postCatalog = await catalogModule.namespace.openFixtureTaskCatalog({ sandbox })
+      record('post-catalog-new', postCatalog)
+      if (postCatalog.ok) {
+        record('post-catalog-get', await postCatalog.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+      }
+      const postLibrary = await libraryModule.namespace.openFixtureArtifactLibrary({ sandbox })
+      record('post-library-new', postLibrary)
+      if (postLibrary.ok) {
+        record('post-library-delete', await postLibrary.value.delete({
+          schemaVersion: 1,
+          scopeId: frame.scopeId,
+          artifactRef: 'artifact:fixture-bytes-' + 'a'.repeat(32),
+          now: '2026-10-27T00:00:02.000Z',
+        }))
+      }
     }
   } else if (mode === 'twoTasks') {
     const opened = await owner()
@@ -2636,18 +2679,66 @@ const ROW_EVIDENCE = [
   },
 ]
 
-test('R03 the eleven-row matrix reports uniform R / engine-import / three-file digests', () => {
+const ROW_EXPECT = {
+  '1': { fault: { id: 'rename', kind: 'owner', attempt: 1, phase: 'CLAIMED' }, domain: 'FT' },
+  '2': { fault: { id: 'rename', kind: 'artifact', attempt: 1, phase: 'CLAIMED' }, domain: 'FA', ownerState: 'UNKNOWN' },
+  '3': { fault: null, domain: 'NONE', ownerState: 'UNKNOWN' },
+  '4': { fault: { id: 'fsync', action: 'OF', phase: 'CLAIMED', fsync: 2 }, domain: 'FT' },
+  '5': { fault: { id: 'fsync', action: 'AF', phase: 'CLAIMED', fsync: 2 }, domain: 'FA', ownerState: 'UNKNOWN' },
+  '6': { fault: { id: 'rename', kind: 'owner', attempt: 2, phase: 'FINAL' }, domain: 'FT' },
+  '7': { fault: { id: 'lstat', phase: 'FINAL', count: 1 }, domain: 'FT' },
+  '8': { fault: { id: 'joint', kind: 'owner', phase: 'FINAL', jointTaskRead: true }, domain: 'FT' },
+  '9': { fault: { id: 'joint', kind: 'artifact', phase: 'FINAL', jointTaskRead: true }, domain: 'FA', ownerState: 'SAVED' },
+  '10': { fault: { id: 'after', kind: 'OF', phase: 'FINAL' }, domain: 'FT' },
+  '11': { fault: { id: 'after', kind: 'AF', phase: 'FINAL' }, domain: 'FA', ownerState: 'SAVED' },
+}
+
+const FIXED_REASONS = Object.freeze({
+  SAVE_UNKNOWN: 'save outcome unknown',
+  SAVE_ARTIFACT_UNKNOWN: 'artifact import unknown',
+  SAVE_ARTIFACT_REJECTED: 'artifact import rejected',
+  WRITE_REJECTED: 'write rejected',
+  STORE_CHANGED: 'store changed',
+})
+
+function probeLabel(worker, label) {
+  const entry = worker.results.find((item) => item.label === label)
+  return entry ? entry.result : null
+}
+
+test('R03 the eleven-row matrix carries uniform fault, error, control and two-domain evidence', () => {
   for (const row of ROW_EVIDENCE) {
-    const worker = runOwnerWorker({ key: 'key:fixture-r03-' + row.label.split(' ')[0], mode: 'save', ...row.scenario })
+    const number = row.label.split(' ')[0]
+    const expect = ROW_EXPECT[number]
+    assert.ok(expect, 'missing row expectation ' + number)
+    const worker = runOwnerWorker({ key: 'key:fixture-r03-' + number, mode: 'save', ...row.scenario })
     const saved = workerResult(worker, 'save')
-    const detail = JSON.stringify({ row: row.label, saved, renames: worker.counts.renames, counts: worker.counts, digests: worker.digests })
+    const detail = JSON.stringify({ row: row.label, saved, counts: worker.counts, digests: worker.digests })
+
+    // 1. save first error: complete code/path/reason.
     if (row.code === null) {
       assert.equal(saved.ok, true, detail)
       assert.equal(saved.value.ownerState, 'SAVED', detail)
     } else {
       assert.equal(saved.ok, false, detail)
       assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS[row.code], detail)
+      assert.equal(saved.errors[0].path, '$', detail)
+      assert.equal(saved.errors[0].reason, FIXED_REASONS[row.code], detail)
     }
+
+    // 2. exact fault hit, phase and the dedicated window counter (skip 0).
+    if (expect.fault === null) {
+      assert.equal(worker.counts.fsFaults, 0, detail)
+      assert.equal(worker.counts.faultInfo, null, detail)
+    } else {
+      assert.equal(worker.counts.fsFaults, 1, detail)
+      assert.ok(worker.counts.faultInfo, detail)
+      for (const [key, value] of Object.entries(expect.fault)) {
+        assert.equal(worker.counts.faultInfo[key], value, detail)
+      }
+    }
+
+    // 3. R / E-I / three-file digests.
     assert.deepEqual(worker.counts.renames.owner, row.renames.owner, detail)
     assert.deepEqual(worker.counts.renames.artifact, row.renames.artifact, detail)
     assert.equal(worker.counts.engine, row.engine, detail)
@@ -2655,26 +2746,113 @@ test('R03 the eleven-row matrix reports uniform R / engine-import / three-file d
     assert.equal(worker.catalogUnchanged, true, detail)
     assert.equal(worker.files.includes('audio-task-owner-v1.json'), true, detail)
     const d = worker.digests
-    const ownerExpected = row.ownerEnd === 'ownerClaim' ? d.ownerClaim : row.ownerEnd === 'ownerSaved' ? d.ownerSaved : row.ownerEnd === 'foreignOwner' ? d.foreignOwner : null
-    const artifactExpected = row.artifactEnd === 'artifactStored' ? d.artifactStored : row.artifactEnd === 'foreignArtifact' ? d.foreignArtifact : null
+    const ownerExpected =
+      row.ownerEnd === 'ownerClaim'
+        ? d.ownerClaim
+        : row.ownerEnd === 'ownerSaved'
+          ? d.ownerSaved
+          : row.ownerEnd === 'foreignOwner'
+            ? d.foreignOwner
+            : null
+    const artifactExpected =
+      row.artifactEnd === 'artifactStored'
+        ? d.artifactStored
+        : row.artifactEnd === 'foreignArtifact'
+          ? d.foreignArtifact
+          : null
     assert.equal(d.ownerEnd, ownerExpected, detail)
     assert.equal(d.artifactEnd, artifactExpected, detail)
     assert.equal(worker.ownerPhase, row.phase, detail)
+
+    // 4. old/new handle and factory, two-domain lock facts.
+    if (expect.domain === 'FT') {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, false, detail)
+      assert.equal(ownerNew.errors[0].code, TASK_OWNER_ERRORS.OWNER_UNKNOWN, detail)
+      const catalogNew = probeLabel(worker, 'post-catalog-new')
+      assert.equal(catalogNew.ok, false, detail)
+      assert.equal(catalogNew.errors[0].code, 'TASK_CATALOG_CATALOG_UNKNOWN', detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, true, detail)
+      const libraryDelete = probeLabel(worker, 'post-library-delete')
+      assert.equal(libraryDelete.ok, true, detail)
+      assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+    } else if (expect.domain === 'FA') {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, true, detail)
+      const ownerGet = probeLabel(worker, 'post-owner-get')
+      assert.equal(ownerGet.ok, true, detail)
+      assert.equal(ownerGet.value.ownerState, expect.ownerState, detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, false, detail)
+      assert.equal(libraryNew.errors[0].code, 'ARTIFACT_LIBRARY_LIBRARY_UNKNOWN', detail)
+    } else {
+      const ownerNew = probeLabel(worker, 'post-owner-new')
+      assert.equal(ownerNew.ok, true, detail)
+      const ownerGet = probeLabel(worker, 'post-owner-get')
+      assert.equal(ownerGet.ok, true, detail)
+      assert.equal(ownerGet.value.ownerState, expect.ownerState, detail)
+      const libraryNew = probeLabel(worker, 'post-library-new')
+      assert.equal(libraryNew.ok, true, detail)
+      const libraryDelete = probeLabel(worker, 'post-library-delete')
+      assert.equal(libraryDelete.ok, true, detail)
+      assert.equal(libraryDelete.value.outcome, 'NOT_FOUND', detail)
+    }
+
+    // 5. Matching fault-free control for the same Fixture.
+    const control = runOwnerWorker({ key: 'key:fixture-r03ctl-' + number, mode: 'save' })
+    const controlSaved = workerResult(control, 'save')
+    const controlDetail = JSON.stringify({ row: row.label, controlSaved, counts: control.counts })
+    assert.equal(controlSaved.ok, true, controlDetail)
+    assert.equal(controlSaved.value.outcome, 'SAVED', controlDetail)
+    assert.equal(control.counts.fsFaults, 0, controlDetail)
+    assert.equal(control.counts.faultInfo, null, controlDetail)
+    assert.deepEqual(control.counts.renames.owner, { attempt: 2, success: 2 }, controlDetail)
+    assert.deepEqual(control.counts.renames.artifact, { attempt: 1, success: 1 }, controlDetail)
+    assert.equal(control.counts.engine, 1, controlDetail)
+    assert.equal(control.counts.imports, 1, controlDetail)
+    assert.equal(control.digests.ownerEnd, control.digests.ownerSaved, controlDetail)
+    assert.equal(control.digests.artifactEnd, control.digests.artifactStored, controlDetail)
+    assert.equal(control.ownerPhase, 'FINAL', controlDetail)
+    const controlOwnerGet = probeLabel(control, 'post-owner-get')
+    assert.equal(controlOwnerGet.ok, true, controlDetail)
+    assert.equal(controlOwnerGet.value.ownerState, 'SAVED', controlDetail)
   }
 })
 
-test('R04 a concurrent second save returns a fixed EXISTING with no extra engine or import', () => {
-  const worker = runOwnerWorker({ key: 'key:fixture-r04-concurrent', mode: 'save', concurrentSave: true })
-  const left = workerResult(worker, 'save')
-  const right = workerResult(worker, 'save-b')
-  const outcomes = [left, right].map((r) => (r.ok ? r.value.outcome : 'ERR:' + r.errors[0].code)).sort()
-  assert.deepEqual(outcomes, ['EXISTING', 'SAVED'], JSON.stringify([left, right]).slice(0, 500))
-  const existing = left.ok && left.value.outcome === 'EXISTING' ? left : right
-  assert.equal(existing.value.artifact, null)
-  assert.equal(existing.value.revision, 2)
+test('R03 row 3 freezes the injected bad-ref proof and delegates exactly once', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r03-row3', mode: 'save', badProof: true })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false)
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(worker.counts.proofInjected, 1)
+  assert.equal(worker.counts.proofFrozen, true)
+  assert.equal(worker.counts.writerCalls, 2)
+  assert.equal(worker.counts.fsFaults, 0)
+  // The wrong ref is a local binding fact: it is rejected by the writer's pre gate before any fresh
+  // artifact-library read, and the real writer was still the one that rejected it.
+  assert.equal(worker.counts.freshArtifactReads, 0)
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+})
+
+test('R02 negative bound: fullScaleSampleCount=-1 is rejected before the first fresh store read', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-r02-neg', mode: 'save', badProofStatic: 'fullScaleNegative' })
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, false, JSON.stringify(saved).slice(0, 300))
+  assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.WRITE_REJECTED)
+  assert.equal(saved.errors[0].path, '$')
+  assert.equal(saved.errors[0].reason, FIXED_REASONS.WRITE_REJECTED)
+  assert.equal(worker.freshArtifactReads, 0)
   assert.equal(worker.counts.engine, 1)
   assert.equal(worker.counts.imports, 1)
-  assert.equal(worker.digests.ownerEnd, worker.digests.ownerSaved)
-  assert.equal(worker.counts.renames.owner.attempt, 2)
-  assert.equal(worker.counts.renames.artifact.attempt, 1)
+  assert.equal(worker.getterCalls, 0)
+  assert.equal(worker.counts.proofInjected, 1)
+  assert.equal(worker.counts.proofFrozen, true)
+  assert.equal(worker.counts.writerCalls, 2)
+  assert.equal(worker.counts.fsFaults, 0)
+  assert.equal(worker.ownerPhase, 'CLAIMED')
+  assert.equal(worker.digests.ownerEnd, worker.digests.ownerClaim)
+  assert.equal(worker.digests.artifactEnd, worker.digests.artifactStored)
+  assert.equal(worker.catalogUnchanged, true)
 })

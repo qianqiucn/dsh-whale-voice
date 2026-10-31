@@ -631,6 +631,7 @@ function proofFieldsOnly(proof) {
   ) {
     rejectWrite()
   }
+  if (artifact.inspection.fullScaleSampleCount < 0) rejectWrite()
   if (
     artifact.inspection.fullScaleSampleCount >
     artifact.inspection.frameCount * artifact.inspection.channels
