@@ -293,3 +293,16 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
 **删除提交后公开额外确认故障 → WRITE_UNKNOWN + 全 handle 锁**、cap/marker/硬链接/符号链接
 （平台不支持时显式 skip）/清理信任失败以及 Task 域隔离。全量回归、build、语法与 client 同步由
 仓库常规命令另行执行。
+
+## 10. 与 Task 保存候选契约的关系（PLANNED）
+
+同一 claim 保存事务的候选契约见
+[TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) v1.6
+（`PLANNED` / `DESIGN_REVIEW_REQUIRED`，运行时未实现）。
+
+- 本文的库合同**不变**：唯一 import 实现（七键输入）、`origin: FIXTURE_IMPORT`、`(scope, requestKey)` 幂等、
+  入队前 owned copy、重新 inspector、原子包写入与墓碑删除。
+- **导入身份 ≠ Task 关联**：`artifactIdentityHash(scopeId, requestKey, byteSha256, expiresAt, rights)`
+  只覆盖这些字段，不含 taskId 或 claim；同字节或同 requestKey 都不证明任何 Task ownership。
+- 候选方案只在 owner 侧用 `record.outputArtifactRef` + 库权威读取（`readStoredForSave`）建立关联；
+  库不新增 Task 字段、不新增 origin、不反向依赖 owner。
