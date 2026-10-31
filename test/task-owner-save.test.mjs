@@ -485,26 +485,82 @@ function otherBirthHash(sandbox, taskId) {
 
 /* ------------------------------------------------------------------ S05 */
 
-test('S05 a blocked task keeps the old FINAL path and never imports an artifact', async () => {
+test('S05 a legal OFFLINE result records the settled SIMULATED FINAL and never imports', async () => {
   const ex = example()
   await withSandbox(async (sandbox) => {
     const b = await birth(sandbox, ex, 'key:fixture-s05')
     const owner = await openFixtureTaskOwner({ sandbox })
-    const blocked = clone(b.input)
-    blocked.context = { ...blocked.context, scenario: 'BLOCKED' }
-    const saved = await owner.value.save(saveFrame(b, (frame) => (frame.input = blocked)))
-    if (saved.ok === true) {
-      assert.equal(saved.value.artifact, null)
-      assert.notEqual(saved.value.ownerState, 'SAVED')
-      assert.equal(fs.existsSync(filePath(sandbox, ARTIFACT_FILE_NAME)), false)
-    } else {
-      // A scenario that the engine refuses outright is a fixed SAVE_UNKNOWN, never a fake save.
-      assert.equal(saved.errors[0].code, TASK_OWNER_ERRORS.SAVE_UNKNOWN)
-      assert.equal(fs.existsSync(filePath(sandbox, ARTIFACT_FILE_NAME)), false)
-    }
+    const input = clone(b.input)
+    input.context = { ...input.context, scenario: 'OFFLINE' }
+    const saved = await owner.value.save(saveFrame(b, (frame) => (frame.input = input)))
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    assert.equal(saved.value.outcome, 'RECORDED')
+    assert.equal(saved.value.ownerState, 'SIMULATED')
+    assert.equal(saved.value.reason, null)
+    assert.equal(saved.value.revision, 2)
+    assert.equal(saved.value.artifact, null)
+    assert.equal(saved.value.task.state, 'FAILED')
+    assert.equal(saved.value.task.hasOutput, false)
+    assert.equal(saved.value.task.outputArtifactRef, undefined)
+    assert.equal(saved.value.mockOnly, true)
+    assert.equal(saved.value.realOperationAllowed, false)
+    assert.equal(saved.value.submitAllowed, false)
+    assert.equal(saved.value.automaticRetryAllowed, false)
+    assert.equal(fs.existsSync(filePath(sandbox, ARTIFACT_FILE_NAME)), false)
+    const snapshot = readJson(sandbox, OWNER_FILE)
+    assert.equal(snapshot.schemaVersion, 1)
+    assert.equal(snapshot.revision, 2)
+    assert.equal(snapshot.entries.length, 1)
+    assert.equal(snapshot.entries[0].phase, 'FINAL')
+    assert.deepEqual(snapshot.entries[0].completion, { kind: 'SIMULATED', reason: null })
+    assert.deepEqual(readJson(sandbox, CATALOG_FILE).entries.length, 1)
+    const got = await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId })
+    assert.equal(got.ok, true, JSON.stringify(got))
+    assert.equal(got.value.outcome, 'FOUND')
+    assert.equal(got.value.ownerState, 'SIMULATED')
+    assert.equal(got.value.task.state, 'FAILED')
+    const again = await owner.value.save(saveFrame(b, (frame) => (frame.input = input)))
+    assert.equal(again.ok, true)
+    assert.equal(again.value.outcome, 'EXISTING')
+    assert.equal(readJson(sandbox, OWNER_FILE).revision, 2)
   })
 })
 
+test('S05b a legal source-blocked result records the original NO_EXECUTION FINAL', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s05b')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    const input = clone(b.input)
+    input.sourceInput.artifactLibrary.artifacts[0].availability = 'ABSENT'
+    const saved = await owner.value.save(saveFrame(b, (frame) => (frame.input = input)))
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    assert.equal(saved.value.outcome, 'RECORDED')
+    assert.equal(saved.value.ownerState, 'NO_EXECUTION')
+    assert.equal(saved.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+    assert.equal(saved.value.revision, 2)
+    assert.equal(saved.value.artifact, null)
+    assert.equal(saved.value.task.state, 'CREATED')
+    assert.equal(saved.value.task.hasOutput, false)
+    assert.equal(saved.value.mockOnly, true)
+    assert.equal(saved.value.realOperationAllowed, false)
+    assert.equal(saved.value.submitAllowed, false)
+    assert.equal(saved.value.automaticRetryAllowed, false)
+    assert.equal(fs.existsSync(filePath(sandbox, ARTIFACT_FILE_NAME)), false)
+    const snapshot = readJson(sandbox, OWNER_FILE)
+    assert.equal(snapshot.schemaVersion, 1)
+    assert.equal(snapshot.entries[0].phase, 'FINAL')
+    assert.deepEqual(snapshot.entries[0].completion, {
+      kind: 'NO_EXECUTION',
+      reason: 'TASK_FIXTURE_SOURCE_BLOCKED',
+    })
+    assert.deepEqual(snapshot.entries[0].record, readJson(sandbox, CATALOG_FILE).entries[0].record)
+    const got = await owner.value.get({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId })
+    assert.equal(got.ok, true, JSON.stringify(got))
+    assert.equal(got.value.ownerState, 'NO_EXECUTION')
+    assert.equal(got.value.reason, 'TASK_FIXTURE_SOURCE_BLOCKED')
+  })
+})
 /* ------------------------------------------------------------------ S06 */
 
 test('S06 the helper reports STORED/DELETED/EXPIRED/MISSING from fresh canonical entries', async () => {
