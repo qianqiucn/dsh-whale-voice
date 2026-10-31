@@ -124,7 +124,7 @@ import cryptoReal from 'node:crypto'
 
 const base = ${JSON.stringify(base)}
 const scenario = JSON.parse(process.env.OWNER_SCENARIO)
-const counts = { engine: 0, fsFaults: 0, ownerRenames: 0 }
+const counts = { engine: 0, imports: 0, fsFaults: 0, ownerRenames: 0 }
 let birthsDone = false
 let hits = 0
 let faultAt = null
@@ -322,7 +322,35 @@ const engineModule = new vm.SyntheticModule(
     this.setExport('runExistingFixtureTaskOnce', wrappedEngine)
     // Plan 08-E-C: the real bytes entry is forwarded unchanged; the legacy fault wrapper above keeps
     // its own original scope and never becomes a fake success for the save path.
-    this.setExport('runExistingFixtureTaskBytesOnce', real.engine.runExistingFixtureTaskBytesOnce)
+    this.setExport('runExistingFixtureTaskBytesOnce', (bytesFrame) => {
+      counts.engine += 1
+      const out = real.engine.runExistingFixtureTaskBytesOnce(bytesFrame)
+      const fault = scenario.bytesFault
+      if (!fault || counts.engine !== 1) return out
+      if (fault === 'resizable') {
+        const copy = JSON.parse(JSON.stringify(out))
+        copy.production.bytes = new Uint8Array(new ArrayBuffer(16, { maxByteLength: 64 }))
+        copy.production.inspection.sha256 = '0'.repeat(64)
+        return copy
+      }
+      const copy = JSON.parse(JSON.stringify(out))
+      if (fault === 'channels') copy.production.inspection.channels = 3
+      else if (fault === 'execution') copy.result.value.execution = 'not-an-object'
+      else if (fault === 'flags') copy.production.realOperationAllowed = true
+      else if (fault === 'missing-production') delete copy.production
+      else if (fault === 'states-getter') {
+        const states = copy.result.value.states.slice()
+        Object.defineProperty(states, states.length - 1, {
+          enumerable: true,
+          get() {
+            getterCalls.count += 1
+            return 'PROCESSING'
+          },
+        })
+        copy.result.value.states = states
+      }
+      return copy
+    })
   },
   { identifier: engineUrl },
 )
@@ -338,18 +366,71 @@ await baseModule.link(async (specifier) => {
 })
 await baseModule.evaluate()
 
-const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
-const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
-await storeModule.link(async (specifier, referencing) => {
+const artifactUrl = new URL('fixture-artifact-store-internal.mjs', base).href
+const artifactModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(artifactUrl), 'utf8'), {
+  identifier: artifactUrl,
+})
+await artifactModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
-  if (url === engineUrl) return engineModule
   if (url === baseUrl) return baseModule
   if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
   if (specifier === 'node:path') return synth('node:path', { default: pathReal })
   if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
   return synth(url, await import(url))
 })
+await artifactModule.evaluate()
+
+const storeSource = fsReal.readFileSync(new URL(storeUrl), 'utf8')
+const storeModule = new vm.SourceTextModule(storeSource, { identifier: storeUrl })
+await storeModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === engineUrl) return engineModule
+  if (url === baseUrl) return baseModule
+  if (url === artifactUrl) return artifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
 await storeModule.evaluate()
+
+const libraryUrl = new URL('artifact-library.mjs', base).href
+const libraryModule = new vm.SourceTextModule(fsReal.readFileSync(new URL(libraryUrl), 'utf8'), {
+  identifier: libraryUrl,
+})
+await libraryModule.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url === storeUrl) return storeModule
+  if (url === artifactUrl) return artifactModule
+  if (specifier === 'node:fs') return synth('node:fs', { default: fsProxy })
+  if (specifier === 'node:path') return synth('node:path', { default: pathReal })
+  if (specifier === 'node:crypto') return synth('node:crypto', { default: cryptoReal })
+  return synth(url, await import(url))
+})
+await libraryModule.evaluate()
+
+// The owner must see the same library instance; only the counting wrapper is added here.
+const libraryNamespace = libraryModule.namespace
+const ownerLibraryModule = new vm.SyntheticModule(
+  [
+    'ARTIFACT_LIBRARY_SCHEMA_VERSION',
+    'ARTIFACT_LIBRARY_LIMITS',
+    'ARTIFACT_LIBRARY_ERRORS',
+    'openFixtureArtifactLibrary',
+    'importInQueue',
+  ],
+  function () {
+    this.setExport('ARTIFACT_LIBRARY_SCHEMA_VERSION', libraryNamespace.ARTIFACT_LIBRARY_SCHEMA_VERSION)
+    this.setExport('ARTIFACT_LIBRARY_LIMITS', libraryNamespace.ARTIFACT_LIBRARY_LIMITS)
+    this.setExport('ARTIFACT_LIBRARY_ERRORS', libraryNamespace.ARTIFACT_LIBRARY_ERRORS)
+    this.setExport('openFixtureArtifactLibrary', libraryNamespace.openFixtureArtifactLibrary)
+    this.setExport('importInQueue', (state, input) => {
+      counts.imports += 1
+      return libraryNamespace.importInQueue(state, input)
+    })
+  },
+  { identifier: libraryUrl },
+)
 
 const catalogSource = fsReal.readFileSync(new URL(catalogUrl), 'utf8')
 const catalogModule = new vm.SourceTextModule(catalogSource, { identifier: catalogUrl })
@@ -366,6 +447,8 @@ await ownerModule.link(async (specifier, referencing) => {
   const url = new URL(specifier, referencing.identifier).href
   if (url === storeUrl) return storeModule
   if (url === engineUrl) return engineModule
+  if (url === artifactUrl) return artifactModule
+  if (url === libraryUrl) return ownerLibraryModule
   return synth(url, await import(url))
 })
 await ownerModule.evaluate()
@@ -446,6 +529,31 @@ try {
     const again = await owner()
     if (!again.ok) record('second-open', again)
     else record('second', await again.value.run(frame))
+  } else if (mode === 'save') {
+    const opened = await owner()
+    if (!opened.ok) {
+      record('open', opened)
+    } else {
+      const saveFrame = {
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        requestKey: scenario.requestKey || 'save:fixture-worker-1',
+        now: '2026-10-27T00:00:01.000Z',
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        rights: { state: 'GRANTED', proofRef: 'fixture-rights:worker-1' },
+        input: frame.input,
+      }
+      record('save', await opened.value.save(saveFrame))
+      record('status', await opened.value.artifactStatus({
+        schemaVersion: 1,
+        scopeId: frame.scopeId,
+        taskId: frame.taskId,
+        now: '2026-10-27T00:00:02.000Z',
+        rights: saveFrame.rights,
+      }))
+      record('get', await opened.value.get({ schemaVersion: 1, scopeId: frame.scopeId, taskId: frame.taskId }))
+    }
   } else if (mode === 'twoTasks') {
     const opened = await owner()
     record('task-a', await opened.value.run(frame))
@@ -1887,4 +1995,26 @@ test('B01 store-base extraction keeps one binding, one class and the real fs bou
   assert.equal(result.ok, false)
   assert.equal(result.errors[0].code, TASK_OWNER_ERRORS.SANDBOX_INVALID)
   assert.equal(result.errors[0].path, '$')
+})
+
+/* ------------------------------------------------------------------ V01 */
+
+test('V01 shared VM graph: one save runs one real engine and one real import, then reads back', () => {
+  const worker = runOwnerWorker({ key: 'key:fixture-v01', mode: 'save' })
+  assert.equal(worker.counts.engine, 1)
+  assert.equal(worker.counts.imports, 1)
+  assert.equal(worker.counts.fsFaults, 0)
+  const saved = workerResult(worker, 'save')
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(saved.value.outcome, 'SAVED')
+  assert.equal(saved.value.ownerState, 'SAVED')
+  assert.equal(saved.value.revision, 2)
+  assert.deepEqual(Object.keys(saved.value.artifact).sort(), ['artifactRef', 'byteLength', 'expiresAt', 'sha256'])
+  const status = workerResult(worker, 'status')
+  assert.equal(status.ok, true, JSON.stringify(status))
+  assert.equal(status.value.state, 'READABLE')
+  assert.equal(status.value.artifactRef, saved.value.artifact.artifactRef)
+  const got = workerResult(worker, 'get')
+  assert.equal(got.ok, true)
+  assert.equal(got.value.ownerState, 'SAVED')
 })
