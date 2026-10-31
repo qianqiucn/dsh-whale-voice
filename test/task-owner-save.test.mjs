@@ -905,3 +905,38 @@ test('S18 a known save field with an accessor keeps its own path and never runs 
     assert.equal(fs.existsSync(filePath(sandbox, OWNER_FILE)), false)
   })
 })
+test('S19 a v2 SAVED store keeps v2 and its SAVED entry when a legacy run appends another task', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const first = await birth(sandbox, ex, 'key:fixture-s19a')
+    const owner = await openFixtureTaskOwner({ sandbox })
+    assert.equal(owner.ok, true)
+    const saved = await owner.value.save(saveFrame(first))
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    const afterSave = readJson(sandbox, OWNER_FILE)
+    assert.equal(afterSave.schemaVersion, 2)
+    assert.equal(afterSave.revision, 2)
+
+    const second = await birth(sandbox, ex, 'key:fixture-s19b')
+    const ran = await owner.value.run({
+      schemaVersion: 1,
+      scopeId: second.scopeId,
+      taskId: second.taskId,
+      input: second.input,
+    })
+    assert.equal(ran.ok, true, JSON.stringify(ran))
+    const afterRun = readJson(sandbox, OWNER_FILE)
+    assert.equal(afterRun.schemaVersion, 2)
+    assert.equal(afterRun.revision, 4)
+    assert.equal(afterRun.entries.length, 2)
+    assert.equal(afterRun.entries[0].completion.kind, 'SAVED')
+    assert.equal(afterRun.entries[1].phase, 'FINAL')
+
+    const gotFirst = await owner.value.get({ schemaVersion: 1, scopeId: first.scopeId, taskId: first.taskId })
+    assert.equal(gotFirst.ok, true)
+    assert.equal(gotFirst.value.ownerState, 'SAVED')
+    const status = await owner.value.artifactStatus(statusFrame(first))
+    assert.equal(status.ok, true)
+    assert.equal(status.value.state, 'READABLE')
+  })
+})
