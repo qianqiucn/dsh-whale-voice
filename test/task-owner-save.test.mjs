@@ -11,6 +11,9 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
+import vm from 'node:vm'
+import { execFileSync } from 'node:child_process'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
@@ -938,5 +941,102 @@ test('S19 a v2 SAVED store keeps v2 and its SAVED entry when a legacy run append
     const status = await owner.value.artifactStatus(statusFrame(first))
     assert.equal(status.ok, true)
     assert.equal(status.value.state, 'READABLE')
+  })
+})
+test('S20 concurrent saves on one capability never duplicate the artifact or the FINAL', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const b = await birth(sandbox, ex, 'key:fixture-s20')
+    const first = await openFixtureTaskOwner({ sandbox })
+    const second = await openFixtureTaskOwner({ sandbox })
+    assert.equal(first.ok, true)
+    assert.equal(second.ok, true)
+    const [left, right] = await Promise.all([first.value.save(saveFrame(b)), second.value.save(saveFrame(b))])
+    const savedResults = [left, right].filter((item) => item.ok === true && item.value.outcome === 'SAVED')
+    assert.equal(savedResults.length, 1, JSON.stringify([left, right]).slice(0, 400))
+    const saved = savedResults[0]
+    const other = saved === left ? right : left
+    if (other.ok) {
+      assert.equal(other.value.outcome, 'EXISTING')
+      assert.equal(other.value.artifact, null)
+    } else {
+      assert.ok(
+        other.errors[0].code === TASK_OWNER_ERRORS.SAVE_UNKNOWN ||
+          other.errors[0].code === TASK_OWNER_ERRORS.WRITE_REJECTED,
+        JSON.stringify(other),
+      )
+    }
+    const pack = readJson(sandbox, ARTIFACT_FILE_NAME)
+    assert.equal(pack.entries.length, 1)
+    assert.equal(pack.entries[0].artifactRef, saved.value.artifact.artifactRef)
+    const doc = readJson(sandbox, OWNER_FILE)
+    assert.equal(doc.revision, 2)
+    assert.equal(doc.entries.length, 1)
+    assert.equal(doc.entries[0].completion.kind, 'SAVED')
+  })
+})
+
+/* ------------------------------------------------------------------ S21 */
+
+const OLD_STORE_WORKER = String.raw`
+import vm from 'node:vm'
+import { execFileSync } from 'node:child_process'
+const oldSource = execFileSync('git', ['show', 'e7f1aad:core/audio/fixture-task-store-internal.mjs'], {
+  encoding: 'utf8',
+  maxBuffer: 16 * 1024 * 1024,
+})
+const base = process.env.OLD_BASE
+const names = ['fixture-input-boundary.mjs', 'fixture-store-base-internal.mjs', 'task-contract.mjs', 'task-fixture-engine-internal.mjs', 'provider-dispatch.mjs']
+const bind = new Map()
+for (const name of names) bind.set(new URL(name, base).href, await import(new URL(name, base).href))
+const module = new vm.SourceTextModule(oldSource, { identifier: new URL('old-store.mjs', base).href })
+await module.link(async (specifier, referencing) => {
+  const url = new URL(specifier, referencing.identifier).href
+  if (url.startsWith('node:')) {
+    return new vm.SyntheticModule(['default'], function () { this.setExport('default', {}) })
+  }
+  const namespace = bind.get(url)
+  if (!namespace) throw new Error('unexpected import ' + url)
+  return new vm.SyntheticModule(Object.keys(namespace), function () {
+    for (const key of Object.keys(namespace)) this.setExport(key, namespace[key])
+  })
+})
+await module.evaluate()
+const bytes = Buffer.from(process.env.OLD_SNAPSHOT, 'base64')
+try {
+  module.namespace.parseOwnerSnapshot(bytes)
+  console.log('ACCEPTED')
+} catch (error) {
+  console.log('REJECTED:' + String(error && error.key))
+}
+`
+
+test('S21 the previous main program still rejects a v2 owner snapshot in isolation', async () => {
+  const ex = example()
+  await withSandbox(async (sandbox) => {
+    const { saved } = await saveOk(sandbox, ex, 'key:fixture-s21')
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    const v2Bytes = fs.readFileSync(filePath(sandbox, OWNER_FILE))
+    assert.equal(JSON.parse(v2Bytes.toString('utf8')).schemaVersion, 2)
+
+    // The previously merged main program is loaded read-only through git; no old source is committed.
+    const base = new URL('../core/audio/', import.meta.url).href
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-old-store-'))
+    const file = path.join(dir, 'worker.mjs')
+    fs.writeFileSync(file, OLD_STORE_WORKER)
+    let output = ''
+    try {
+      output = execFileSync(process.execPath, ['--experimental-vm-modules', file], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          OLD_BASE: base,
+          OLD_SNAPSHOT: v2Bytes.toString('base64'),
+        },
+      })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+    assert.equal(output.trim(), 'REJECTED:STORE_INVALID')
   })
 })
