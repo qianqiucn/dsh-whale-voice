@@ -735,8 +735,8 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 | 12 | 同位置 Artifact 外改 | CLAIMED | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_REJECTED` | 旧包保留 |
 | 13 | Task FINAL rename 未知 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
 | 14 | post 确认失败 | 可能 FINAL | 1 | 1 | 是 | 否 | `WRITE_UNKNOWN` | `SAVE_UNKNOWN` | 保留 |
-| 15a | 联合确认前发现 Task 外改 | CLAIMED/可能 FINAL | 1 | 1 | 是 | 否 | `STORE_CHANGED` | `SAVE_UNKNOWN` + FT | 保留；引用 Task JOINT 行 |
-| 15b | 联合确认前发现 Artifact 外改 | CLAIMED/可能 FINAL | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_UNKNOWN` + FS+FA | 保留；引用 Artifact JOINT 行 |
+| 15a | 联合确认前发现 Task 外改 | foreign Task 字节（FINAL 曾确认后被外改，见 Task JOINT 行） | 1 | 1 | 是 | 否 | `STORE_CHANGED` | `SAVE_UNKNOWN` + FT | 保留；引用 Task JOINT 行 |
+| 15b | 联合确认前发现 Artifact 外改 | FINAL SAVED/O2（仅 Artifact 包外改） | 1 | 1 | 否 | 是 | 库 `STORE_CHANGED` | `SAVE_ARTIFACT_UNKNOWN` + FS+FA | 保留；引用 Artifact JOINT 行 |
 | 16 | 成功返回后外改 | FINAL 已存 | — | — | 仅后读 | 按域 | — | Task 后读→FT；Artifact 后读→FS+FA | 保留 |
 | 17 | 并发/旧 run | 唯一 | ≤1 | ≤1 | 否 | 否 | — | entry 存在→FC/旧非 SAVED FINAL 无编号行/FS；无 entry→无编号行 | 不接管 |
 | 18 | 保存后合法 delete/过期/撤权（无存储未知） | FINAL 不变 | 0 | 0 | 否 | 否 | — | status 按 §4.2；delete 自产未知→原库 WRITE_UNKNOWN/FA | 历史不改 |
@@ -764,7 +764,7 @@ readStoredForSave(artifactState, { scopeId, artifactRef, now })
 | 同阶段仅 Artifact 包被有效 foreign fixture 替换并检测到摘要变化 | `TASK_OWNER_SAVE_ARTIFACT_UNKNOWN/$/artifact import unknown`（底层库 STORE_CHANGED 注明） | 仅 Artifact 锁、Task FINAL SAVED 已确认、资产保留，FS+FA |
 | 保存已成功返回后才外改 Task，下一次 get 发现 | 原保存结果保持成功；下一 get 首错 `TASK_OWNER_STORE_CHANGED/$/store changed` | 下一 fresh 读才 Task 锁，随后 FT，资产不回滚 |
 | 保存已成功返回后才外改 Artifact，下一次 status 以合法当前 rights 发现 | 原保存保持成功；下一 status 首错 `TASK_OWNER_STORE_CHANGED/$/store changed` | 下一 fresh 读才 Artifact 锁，随后 FS+FA；历史 get 仍 SAVED |
-| 无外改的并发 save/旧 run 交叉 | 由已有 entry FC 或 FS 串行分流，不接管，不再 engine/import | Task/Artifact 均无新增锁；每 task 最多 engine 1/import 1 |
+| 无外改的并发 save/旧 run 交叉 | 已有 entry 按 §4.4 的 FC、旧非 SAVED FINAL 无编号行或 FS 串行分流，不接管，不再 engine/import；无 entry 的首次执行按无编号行 | Task/Artifact 均无新增锁；每 task 最多 engine 1/import 1 |
 | 保存后合法 delete/过期/撤权，未发生存储未知 | status 分别 `ok:true DELETED/EXPIRED/RIGHTS_REJECTED/SAVED` 历史，元数据按 §4.2 | 两域均无新增锁，Task FINAL 不变；合法 delete 若自产未知则引用原库 WRITE_UNKNOWN/FA |
 
 ---
