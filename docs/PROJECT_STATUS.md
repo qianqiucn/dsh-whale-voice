@@ -391,3 +391,22 @@ remain IN_PROGRESS.
 
 ### 08-E-C 续修（VM 11 行证据）
 共享 VM 图 + 真实 after-call 注入已覆盖契约 §10 的十一行代表（含第 3 行公开流程坏 proof 与第 9 行 JOINT Artifact），每行记录 engine/import 与实际 rename 计数；worker 从 `-e` 改为临时文件执行，避免 Windows 命令行长度上限。收口后全量 742/739/3 平台 skip，owner+save 专项 59/59；仍未合并，Host/GUI、真实 TTS/media 与投递均未验证。
+### 08-F-A pure Fixture cover stage planner — OFFLINE / PLAN_ONLY / PR pending
+
+Implemented: `core/audio/cover-plan.mjs` (4 exports: schema constant, frozen five-key limits, frozen
+14-key codes, synchronous `planFixtureCover`) validates a complete Fixture `sourceInput` through the
+original `resolveFixtureTaskSource` exactly once plus a strict four-key recipe and three-key Fixture
+capability declaration, and returns a deeply frozen 15-key planning value (`PLANNED`/`BLOCKED`,
+11-key association, 5-key recipe including the accepted `pitchShift`, a symbolic 3- or 4-stage graph,
+`outputSlot: VERIFIED_MASTER`, `taskAuthority: UNVERIFIED`, `outputArtifactRef: null`, fixed safety
+flags). Behaviour covered: protocol/priority order (safe copy -> root/recipe/capabilities -> one real
+source call -> common facts -> SVC-only association -> instrumental/separator/mixer), SOURCE_BLOCKED
+precedence, legal TTS rejection, the three legal stage graphs, gain/pitch boundaries, bad dependency
+protocols through a real-resolver VM facade, and two complete documented positive roots plus one
+complete negative root parsed verbatim from `docs/COVER_PLAN_OFFLINE.md`. Local evidence: cover-plan
+tests 19/19 and `node --test` **774 tests, 771 pass, 3 platform skips (symlink EPERM), 0 fail**;
+`node build.mjs` regenerates `client.js` with no diff. The planner has no engine, producer, import,
+save, store, file, network, process, clock or random call; no Task is created or executed and no
+audio is generated or saved. Not implemented / not verified: real Cover execution and StageArtifact
+lifecycle, resources/cancellation, dynamic evidence, the parent Fake Model/Audio/Relay E2E, real
+Host/GUI or any production capability. Parent Plan 08 remains IN_PROGRESS.
