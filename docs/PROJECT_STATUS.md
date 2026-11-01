@@ -464,3 +464,20 @@ the explicit checked rollback (`test/cover-rollback.test.mjs`). Contract §15/§
 as-built state. Full suite 831/828 pass/3 platform skips/0 fail; build unchanged. Branch
 `feature/plan08-cover-execution`, PR #43 open and unmerged; status stays OFFLINE / FIXTURE_ONLY /
 NOT_INTEGRATED and parent Plan 08 is not complete.
+The v1.76 review (104-R01..R06) is now addressed offline on the same branch: the executor re-checks
+the current entry inside the single-writer queue (concurrent same/different keys claim once; terminal
+FAILED/CANCELLED never rerun, `test/cover-concurrency.test.mjs`); `resumeCoverFinal` requires the
+exact attempt/request identity, returns the real terminal and only continues a claim with a
+persisted checkpoint[4] receipt plus rebuilt attachment lineage (`test/cover-recovery.test.mjs`,
+including a real checkpoint[4] state and zero second import); the save transaction persists
+checkpoint[4] with the library import key and holds the Artifact queue across import → fresh proof →
+FINAL → post-commit confirmation, with an uncertain FINAL rename locking the store; the store probes
+legacy files safely and validates v3 entries on read/write (`test/cover-store-hardening.test.mjs`);
+`cover-lease-internal.mjs` gives one exclusive local-GPU lease per sandbox (CPU/cloud `gpu:'NONE'`),
+readiness rejects future evidence and authorized-but-not-ready SVC clouds, and an optional
+`dependencies` bundle validates the real voice binding/provider readiness against the Intent
+(`test/cover-lease.test.mjs`, `cover-dependencies.test.mjs`); the legacy parent test now drives its
+persisted SAVED record into handoff/Fake Relay (SENT/EXISTING/UNKNOWN) and keeps the real Cover
+record delivery-free. Full suite 856/852 pass/4 platform skips/0 fail; build unchanged. Contract
+§15.4 records the as-built matrix and the remaining OPEN boundaries. PR #43 remains open/unmerged;
+status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

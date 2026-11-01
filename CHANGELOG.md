@@ -6,6 +6,22 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: 090 review close-out (104-R01..R06). The executor now re-checks the birth/Intent/current
+  entry **inside** the single-writer queue, so concurrent same-key and different-key calls claim once
+  and terminal FAILED/CANCELLED states never rerun. `resumeCoverFinal` requires the exact
+  attempt/request identity, returns the real SAVED/CANCELLED/FAILED terminal, and only continues a
+  claim with a persisted checkpoint[4] receipt, a rebuilt attachment lineage and a fresh library
+  proof. The save transaction persists checkpoint[4] with the library import key, holds the Artifact
+  queue across import → fresh JOINT proof → FINAL → post-commit owner+artifact confirmation, and
+  locks on an uncertain FINAL rename. The store probes the legacy file with lstat/size/bounded read,
+  falls back only for valid known v1/v2 snapshots and rejects corrupt/unknown/symlinked/oversized
+  files; v3 entries are deeply validated on read and write. New `cover-lease-internal.mjs` gives one
+  exclusive local-GPU lease per sandbox (CPU/cloud leases use `gpu:'NONE'`), the executor acquires it
+  before the claim and releases it in `finally`, the readiness evaluator rejects future evidence and
+  authorized-but-not-ready SVC clouds, and an optional `dependencies` bundle validates the real
+  voice binding and provider readiness against the Intent. The legacy parent test now drives its
+  persisted SAVED record through handoff into the Fake Relay (SENT/EXISTING/UNKNOWN) and proves the
+  real Cover record stays `deliveryRequested=false`. 25 new tests; full suite 856/852 pass/4 skips.
 - Feat/docs: 090 Cover close-out. Same-file v3 integration is now real: `resolveCoverFile` writes the
   v3 snapshot to the legacy catalog/owner filenames in a fresh sandbox, keeps using an existing v3
   file there, and falls back to the dedicated `audio-cover-*-v3.json` files when a v1/v2 snapshot

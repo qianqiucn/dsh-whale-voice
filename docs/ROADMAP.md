@@ -483,3 +483,14 @@ persisted request/ack/stop/release/cleanup evidence, and the explicit
 refusing mixed legacy data, an existing target or an unreadable file. Full suite 831/828 pass/3
 platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED: no real separation, RVC,
 mixing, GPU, audio device, WeChat or installation path changed, and parent Plan 08 is not complete.
+The v1.76 review (104-R01..R06) is addressed on the same branch: queue-internal single-claim recheck
+with terminal no-rerun; resume identity/real-terminal/receipt/proof validation with a real
+checkpoint[4] crash state and zero second import; durable checkpoint[4] plus an Artifact-queue
+critical section around import → FINAL → post-commit confirmation and an uncertain-write lock; safe
+legacy-file probing with deep v3 read/write validation; one exclusive local-GPU lease per sandbox
+(CPU/cloud `gpu:'NONE'`), readiness fixes for future evidence and authorized-but-not-ready SVC
+clouds, an execution readiness gate and an optional real voice-binding/provider dependency bundle;
+and a parent Fake chain driven by the persisted legacy SAVED record into handoff/Fake Relay
+(SENT/EXISTING/UNKNOWN) with the Cover record staying delivery-free. Full suite 856/852 pass/4
+platform skips/0 fail. Status remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and
+parent Plan 08 is not complete.

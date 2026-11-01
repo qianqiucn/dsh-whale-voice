@@ -584,3 +584,27 @@ snapshot from the legacy filenames back to the dedicated files byte-for-byte and
 data, an existing target or an unreadable file without changing anything. Full suite 831/828 pass/3
 platform skips/0 fail; build unchanged. Branch `feature/plan08-cover-execution`, PR #43 open and
 unmerged. Status **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; parent Plan 08 is not complete.
+
+### 104-R01..R06 review close-out
+
+The executor re-reads birth/Intent/current entry inside the single-writer queue, so concurrent
+same-key and different-key calls claim once and FAILED/CANCELLED terminals never rerun
+(`test/cover-concurrency.test.mjs`). `resumeCoverFinal` checks the exact attempt/request identity,
+returns the real SAVED/CANCELLED/FAILED terminal and only continues a claim with a persisted
+checkpoint[4] receipt plus a rebuilt attachment lineage
+(`test/cover-recovery.test.mjs`, real checkpoint[4] bytes restored after a normal run). The save
+transaction persists checkpoint[4] with the library import key, holds the Artifact queue across
+import → fresh proof → FINAL → post-commit confirmation, locks on an uncertain FINAL rename and
+resumes with zero second import. The store probes legacy files with lstat/size/bounded read, falls
+back only for valid known v1/v2 and deeply validates v3 entries on read and write
+(`test/cover-store-hardening.test.mjs`). `cover-lease-internal.mjs` provides one exclusive local-GPU
+lease per sandbox (CPU/cloud `gpu:'NONE'`); the executor acquires before claim and releases in
+`finally`. Readiness now rejects future evidence and authorized-but-not-ready SVC clouds, gates the
+actual run, and an optional `dependencies` bundle validates the real voice binding and provider
+readiness against the Intent (`test/cover-lease.test.mjs`, `cover-dependencies.test.mjs`). The
+legacy parent test drives its persisted SAVED record into handoff and the Fake Relay
+(SENT/EXISTING/UNKNOWN) and keeps the real Cover record delivery-free. Full suite 856/852 pass/4
+platform skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; the
+attachment remains a derived proof (owner v3 entry is 14 keys), real Provider/GPU/media/WeChat/
+install paths remain unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not
+complete.

@@ -1058,8 +1058,9 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 |---|---|
 | canonical Intent / 稳定源身份 / draft 校验 | **已实现**（`cover-intent-internal.mjs`），基础与五变体向量测试通过 |
 | 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
-| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL attachment / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`） |
+| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL proof/attachment 校验 / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），队列内二次 claim 复核、终态不重跑 |
 | 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
+| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4，104-R01..R06） |
 | Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
 | 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
 | Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
@@ -1111,3 +1112,21 @@ try {
   removeConfigSandbox(sandbox)
 }
 ```
+
+### 15.4 并发、恢复、保存事务、选路、租约与依赖（as-built，104-R01..R06）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| R01 并发去重 | `executeCover` 外层读取只是快路径；在唯一写入权的 cover 队列内重读 catalog/owner，复核 birth/Intent 与同 task 现有 entry，只允许一次 claim；FINAL/CLAIMED 直接返回既有结果，FAILED/CANCELLED/UNKNOWN 终态不重跑 | `test/cover-concurrency.test.mjs`（同 key/异 key 并发、双任务、FAILED/CANCELLED 重试、锁存） |
+| R02 恢复身份与终态 | `resumeCoverFinal` 必须先核 `attemptId` 与 `requestKey`（不符 `NOT_FOUND`）；FINAL 返回真实 `EXISTING/SAVED`、`CANCELLED`、`FAILED`，不再固定 SAVED；CLAIMED 必须有 checkpoint[4] receipt，并重建/校验 attachment 谱系后走同一个 FINAL 事务 | `test/cover-recovery.test.mjs`（真实 checkpoint[4] 状态恢复、错误身份、CANCELLED/FAILED 终态） |
+| R03 保存事务 | checkpoint[4]（含 receipt）在 import 后**持久写**；receipt.requestKey 使用库签发/导入 key；Artifact 队列临界区贯穿 import → receipt → fresh JOINT proof → FINAL → post-commit owner+artifact 复核；FINAL 未知写锁存且不重跑；resume 不第二次 import | `test/cover-recovery.test.mjs`（崩溃窗口、库删除竞争、FINAL rename 不确定、0 第二 import） |
+| R04 选路与深校验 | `resolveCoverFile` 先 lstat/限长/有界读，只对合法已知 v1/v2 回退；损坏、未知版本、符号链接、超大 fail-closed；owner/catalog v3 条目在读写两侧深校验（键集/Intent hash/receipt/record/attachment 谱系可重建），畸形候选写前拒绝且不改文件 | `test/cover-store-hardening.test.mjs`、`cover-store-mixed*`、`cover-store-fallback` |
+| R05 共享资源与依赖 | 新 `cover-lease-internal.mjs`：同 sandbox 本地 GPU 租约独占，CPU/cloud 租约占 `gpu:'NONE'` 且不阻塞 GPU；executor 在 claim 前获取、所有终态 finally 释放，冲突返回 `RESOURCE_LIMIT` 且 0 claim。readiness 修正未来 observedAt 与“仅 authorized 的 SVC 云”漏洞，并在真实执行中用 source proof/GPU lease/evidence/confirmation/可选 model 事实做门禁；可选 `dependencies` 用既有 `resolveFixtureVoiceBinding` + `negotiateReadyFixtureProvider` 校验 voice/profile/asset/instance/candidate/modelRef/provider，任一不符 fail-closed | `test/cover-lease.test.mjs`、`cover-readiness.test.mjs`、`cover-dependencies.test.mjs` |
+| R06 父 Fake 链 | 真实 legacy catalog + owner save 产出的持久 SAVED 记录（含真实 outputArtifactRef 与 deliveryRequested=true）直接构造 handoff candidate → 测试 Fake Relay 首次 SENT、重复/重开 EXISTING、UNKNOWN 不重发；真实 Cover SAVED 记录 `deliveryRequested=false` 被 handoff 拒绝 | `test/cover-legacy-owner-chain.test.mjs` 第二测试 |
+
+**仍 OPEN / 边界：**
+
+1. owner v3 条目按合同固定 14 键，不持久化独立 `attachment` 字段；attachment 由 manifest+receipt 重建并校验，属于派生 proof，不是第二权威。
+2. 帧级取消合作点只覆盖本实现的 Synthetic chunked stage；真实 Provider/流式推理、GPU/显存/进程实测仍未实现。
+3. `dependencies` 是可选参数：legacy 8 键调用方不提供真实 voice binding/provider readiness 时，只走 source/readiness/lease 门禁；提供即 fail-closed 校验。真实调用方应传入真实事实。
+4. 真实模型/媒体/GPU/设备/微信/安装/发送仍未实现、未授权；父 Plan08 未完成。
