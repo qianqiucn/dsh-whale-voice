@@ -169,7 +169,8 @@ function inspectOrFail(bytes) {
   return result.value
 }
 
-function stageRecord(role, samples, sampleRate, inputHash) {
+/** Build one owned stage record (bytes, hash, samples, parent link). */
+export function buildCoverStageRecord(role, samples, sampleRate, inputHash) {
   const bytes = wavFromSamples(samples, sampleRate)
   return Object.freeze({
     role,
@@ -181,6 +182,112 @@ function stageRecord(role, samples, sampleRate, inputHash) {
   })
 }
 
+/** Build the owned MASTER record with the real inspector's canonical facts. */
+export function buildCoverMasterRecord(samples, sampleRate) {
+  const bytes = wavFromSamples(samples, sampleRate)
+  return Object.freeze({
+    role: 'MASTER',
+    byteLength: bytes.length,
+    byteSha256: sha256(bytes),
+    samples,
+    bytes,
+    inspection: inspectOrFail(bytes),
+  })
+}
+
+/** Build the owned SOURCE record (canonical WAV parse + real inspector verification). */
+export function prepareCoverSource(sourceBytes, sampleRate) {
+  const parsed = samplesFromWav(sourceBytes)
+  if (sampleRate !== parsed.sampleRate) fail(COVER_STAGE_CODES.INPUT_INVALID, 'sampleRate')
+  const owned = Buffer.from(sourceBytes)
+  return Object.freeze({
+    role: 'SOURCE',
+    byteLength: owned.length,
+    byteSha256: sha256(owned),
+    samples: parsed.samples,
+    bytes: owned,
+    inspection: inspectOrFail(owned),
+  })
+}
+
+/** Validate the three graph shapes before any byte work starts. */
+export function validateCoverGraphShape(sourceLayout, mixMode) {
+  if (sourceLayout !== 'MIXED' && sourceLayout !== 'CLEAN_VOCAL') fail(COVER_STAGE_CODES.INPUT_INVALID, 'sourceLayout')
+  if (mixMode !== 'VOCAL_ONLY' && mixMode !== 'WITH_INSTRUMENTAL') fail(COVER_STAGE_CODES.INPUT_INVALID, 'mixMode')
+  if (sourceLayout === 'CLEAN_VOCAL' && mixMode === 'WITH_INSTRUMENTAL') fail(COVER_STAGE_CODES.INPUT_INVALID, 'mixMode')
+}
+
+/* ----------------------------------------- cooperative cancellation -------------------------- */
+
+/**
+ * Contract §8.1 cooperation points: a cheap synchronous fence check before every 4,096-frame slice
+ * and a real macrotask yield at least every 65,536 frames. The callback returns `false` when the
+ * caller must stop and discard the partial arrays (no checkpoint, no import, no MASTER).
+ */
+export const COVER_CANCEL_CHECK_FRAMES = 4096
+export const COVER_CANCEL_YIELD_FRAMES = 65536
+
+async function cooperativeSlices(length, hooks, write) {
+  let sinceYield = 0
+  for (let start = 0; start < length; start += COVER_CANCEL_CHECK_FRAMES) {
+    if (hooks && typeof hooks.isCancelled === 'function' && hooks.isCancelled()) return false
+    const end = Math.min(length, start + COVER_CANCEL_CHECK_FRAMES)
+    write(start, end)
+    sinceYield += end - start
+    if (sinceYield >= COVER_CANCEL_YIELD_FRAMES && hooks && typeof hooks.yieldNow === 'function') {
+      sinceYield = 0
+      await hooks.yieldNow()
+      if (typeof hooks.isCancelled === 'function' && hooks.isCancelled()) return false
+    }
+  }
+  return true
+}
+
+/** Chunked SEPARATING stage; returns `{cancelled:true}` when a cancel was observed. */
+export async function separateTwoStemCooperative(samples, hooks) {
+  if (!Array.isArray(samples) || samples.length < 1) fail(COVER_STAGE_CODES.INPUT_INVALID, 'samples')
+  const vocal = new Array(samples.length)
+  const instrumental = new Array(samples.length)
+  const completed = await cooperativeSlices(samples.length, hooks, (start, end) => {
+    for (let i = start; i < end; i += 1) {
+      const half = Math.trunc(samples[i] / 2)
+      vocal[i] = half
+      instrumental[i] = samples[i] - half
+    }
+  })
+  return completed ? { cancelled: false, vocal, instrumental } : { cancelled: true }
+}
+
+/** Chunked CONVERTING stage; returns `{cancelled:true}` when a cancel was observed. */
+export async function convertVocalCooperative(samples, pitchShift, hooks) {
+  if (!Number.isInteger(pitchShift) || pitchShift < -12 || pitchShift > 12) {
+    fail(COVER_STAGE_CODES.INPUT_INVALID, 'pitchShift')
+  }
+  const factor = 1000 + 25 * pitchShift
+  const out = new Array(samples.length)
+  const completed = await cooperativeSlices(samples.length, hooks, (start, end) => {
+    for (let i = start; i < end; i += 1) out[i] = clamp16(Math.trunc((samples[i] * factor) / 1000))
+  })
+  return completed ? { cancelled: false, samples: out } : { cancelled: true }
+}
+
+/** Chunked MIXING stage; returns `{cancelled:true}` when a cancel was observed. */
+export async function mixStemsCooperative({ converted, instrumental, vocalGainDb, instrumentalGainDb }, hooks) {
+  const vocalFactor = gainPermille(vocalGainDb)
+  const instrumentalFactor = instrumental === null ? null : gainPermille(instrumentalGainDb)
+  if (instrumental !== null && instrumental.length !== converted.length) fail(COVER_STAGE_CODES.INPUT_INVALID, 'instrumental')
+  const out = new Array(converted.length)
+  const completed = await cooperativeSlices(converted.length, hooks, (start, end) => {
+    for (let i = start; i < end; i += 1) {
+      out[i] =
+        instrumentalFactor === null
+          ? clamp16(Math.trunc((converted[i] * vocalFactor) / 1000))
+          : clamp16(Math.trunc((converted[i] * vocalFactor + instrumental[i] * instrumentalFactor) / 1000))
+    }
+  })
+  return completed ? { cancelled: false, samples: out } : { cancelled: true }
+}
+
 /**
  * Run one of the three contract graphs over `sourceBytes` and return the owned synthetic stages.
  * @param {{sourceBytes: Buffer, sampleRate: number, sourceLayout: 'MIXED'|'CLEAN_VOCAL', mixMode: 'VOCAL_ONLY'|'WITH_INSTRUMENTAL', pitchShift: number, vocalGainDb: number, instrumentalGainDb: number}} input
@@ -188,45 +295,27 @@ function stageRecord(role, samples, sampleRate, inputHash) {
 export function runCoverGraph(input) {
   if (!input || typeof input !== 'object') fail(COVER_STAGE_CODES.INPUT_INVALID, '$')
   const { sourceBytes, sourceLayout, mixMode, pitchShift, vocalGainDb, instrumentalGainDb } = input
-  const parsed = samplesFromWav(sourceBytes)
+  validateCoverGraphShape(sourceLayout, mixMode)
   const sampleRate = input.sampleRate
-  if (sampleRate !== parsed.sampleRate) fail(COVER_STAGE_CODES.INPUT_INVALID, 'sampleRate')
-  if (sourceLayout === 'CLEAN_VOCAL' && mixMode === 'WITH_INSTRUMENTAL') fail(COVER_STAGE_CODES.INPUT_INVALID, 'mixMode')
-  const source = Object.freeze({
-    role: 'SOURCE',
-    byteLength: Buffer.from(sourceBytes).length,
-    byteSha256: sha256(Buffer.from(sourceBytes)),
-    samples: parsed.samples,
-    bytes: Buffer.from(sourceBytes),
-    inspection: inspectOrFail(Buffer.from(sourceBytes)),
-  })
+  const source = prepareCoverSource(sourceBytes, sampleRate)
   let vocal = null
   let instrumental = null
   let conversionInput = source.samples
-  const parentLinks = []
   if (sourceLayout === 'MIXED') {
     const stems = separateTwoStem(source.samples)
-    vocal = stageRecord('VOCAL', stems.vocal, sampleRate, source.byteSha256)
-    instrumental = stageRecord('INSTRUMENTAL', stems.instrumental, sampleRate, source.byteSha256)
+    vocal = buildCoverStageRecord('VOCAL', stems.vocal, sampleRate, source.byteSha256)
+    instrumental = buildCoverStageRecord('INSTRUMENTAL', stems.instrumental, sampleRate, source.byteSha256)
     conversionInput = stems.vocal
   }
   const convertedSamples = convertVocal(conversionInput, pitchShift)
-  const converted = stageRecord('CONVERTED_VOCAL', convertedSamples, sampleRate, vocal ? vocal.byteSha256 : source.byteSha256)
+  const converted = buildCoverStageRecord('CONVERTED_VOCAL', convertedSamples, sampleRate, vocal ? vocal.byteSha256 : source.byteSha256)
   const mixedSamples = mixStems({
     converted: convertedSamples,
     instrumental: mixMode === 'WITH_INSTRUMENTAL' ? instrumental.samples : null,
     vocalGainDb,
     instrumentalGainDb,
   })
-  const masterBytes = wavFromSamples(mixedSamples, sampleRate)
-  const master = Object.freeze({
-    role: 'MASTER',
-    byteLength: masterBytes.length,
-    byteSha256: sha256(masterBytes),
-    samples: mixedSamples,
-    bytes: masterBytes,
-    inspection: inspectOrFail(masterBytes),
-  })
+  const master = buildCoverMasterRecord(mixedSamples, sampleRate)
   return Object.freeze({
     graphVersion: COVER_STAGE_GRAPH_VERSION,
     sourceLayout,

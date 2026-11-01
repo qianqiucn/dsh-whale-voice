@@ -1,10 +1,13 @@
 /**
  * Cover executor — the offline single-claim chain over the approved contract.
  *
- * AS-BUILT: uses the dedicated Cover v3 store (see cover-store-internal.mjs) and the real Fixture
- * artifact library for source bytes and the MASTER import. The legacy catalog/owner files and the
- * frozen v1.6 save writer are untouched. All synthetic media is produced by cover-stage-bytes; no
- * real model, audio device, network or WeChat path is involved.
+ * AS-BUILT: uses the Cover v3 store (contract §15.1) and the real Fixture artifact library for the
+ * source bytes and the MASTER import. The legacy catalog/owner files and the frozen v1.6 save writer
+ * are never rewritten; a fresh sandbox carries the v3 snapshot in the legacy filenames, a legacy
+ * v1/v2 snapshot forces the dedicated v3 files. Cancellation follows §8.1/§15.2 with a 4,096-frame
+ * synchronous fence, a 65,536-frame macrotask yield and separate request/ack/stop/release/cleanup
+ * evidence. All synthetic media is produced by cover-stage-bytes; no real model, audio device,
+ * network or WeChat path is involved.
  */
 import crypto from 'node:crypto'
 
@@ -18,7 +21,15 @@ import {
   normalizeIntentDraft,
   sourceEntryIdentityHash,
 } from './cover-intent-internal.mjs'
-import { runCoverGraph } from './cover-stage-bytes-internal.mjs'
+import {
+  buildCoverMasterRecord,
+  buildCoverStageRecord,
+  convertVocalCooperative,
+  mixStemsCooperative,
+  prepareCoverSource,
+  separateTwoStemCooperative,
+  validateCoverGraphShape,
+} from './cover-stage-bytes-internal.mjs'
 import {
   COVER_CATALOG_FILE,
   COVER_OWNER_FILE,
@@ -635,21 +646,16 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       return failure('SOURCE_CHANGED', 'sourceInput')
     }
 
+    const sampleRate = entry.intent.outputProfile.sampleRate
     let graph
     try {
-      graph = runCoverGraph({
-        sourceBytes: source.bytes,
-        sourceLayout: entry.intent.recipe.sourceLayout,
-        mixMode: entry.intent.recipe.mixMode,
-        pitchShift: entry.intent.pitchShift,
-        vocalGainDb: entry.intent.recipe.vocalGainDb,
-        instrumentalGainDb: entry.intent.recipe.instrumentalGainDb,
-        sampleRate: entry.intent.outputProfile.sampleRate,
-      })
+      validateCoverGraphShape(entry.intent.recipe.sourceLayout, entry.intent.recipe.mixMode)
+      graph = { source: prepareCoverSource(source.bytes, sampleRate) }
     } catch (error) {
       await finalizeTerminal(state, entry, 'FAILED', 'STAGE_REJECTED')
       return failure('STAGE_REJECTED')
     }
+    graph.mediaProfile = Object.freeze({ format: 'WAV', codec: 'PCM_S16LE', sampleRate, channels: 1 })
 
     entry.manifest.source = {
       manifestVersion: 1,
@@ -686,36 +692,80 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
         : null
       return Boolean(current && current.cancel && current.cancel.requested)
     }
+    // Contract §8.1: the cheap synchronous fence read before every 4,096-frame slice, and a real
+    // macrotask yield at least every 65,536 frames so an external cancel callback can be delivered.
+    const hooks = {
+      isCancelled: () => Boolean(fenceOf(state, taskId)),
+      yieldNow: () => yieldMacrotask(),
+    }
 
+    if (await cancelled()) return cancelNow(state, entry, requestNow)
     await yieldMacrotask()
-    if (graph.vocal) {
+
+    const guardedStage = async (run) => {
+      try {
+        return { ok: true, value: await run() }
+      } catch {
+        await finalizeTerminal(state, entry, 'FAILED', 'STAGE_REJECTED')
+        return { ok: false }
+      }
+    }
+
+    let conversionInput = graph.source.samples
+    if (entry.intent.recipe.sourceLayout === 'MIXED') {
+      const stemResult = await guardedStage(() => separateTwoStemCooperative(graph.source.samples, hooks))
+      if (!stemResult.ok) return failure('STAGE_REJECTED')
+      const stems = stemResult.value
+      if (stems.cancelled) return cancelNow(state, entry, requestNow)
+      graph.vocal = buildCoverStageRecord('VOCAL', stems.vocal, sampleRate, graph.source.byteSha256)
+      graph.instrumental = buildCoverStageRecord('INSTRUMENTAL', stems.instrumental, sampleRate, graph.source.byteSha256)
+      conversionInput = stems.vocal
       entry.manifest.vocal = compactOf(graph.vocal)
       entry.manifest.instrumental = compactOf(graph.instrumental)
       entry.checkpoints.push({ index: 1, stage: 'SEPARATED', at: requestNow, status: 'DONE', tempSummary: { role: 'VOCAL', byteSha256: graph.vocal.byteSha256, byteLength: graph.vocal.byteLength }, importReceipt: null })
-      if (await cancelled()) return cancelNow(state, entry)
+      if (await cancelled()) return cancelNow(state, entry, requestNow)
       try {
         writeOwner(state, readCoverOwner(state), entry, 'same')
       } catch (error) {
         const mapped = mapStoreError(error)
         return mapped || failure('INTERNAL_FAILURE')
       }
+      await yieldMacrotask()
     }
-    await yieldMacrotask()
-    if (await cancelled()) return cancelNow(state, entry)
+
+    const convertResult = await guardedStage(() => convertVocalCooperative(conversionInput, entry.intent.pitchShift, hooks))
+    if (!convertResult.ok) return failure('STAGE_REJECTED')
+    const converted = convertResult.value
+    if (converted.cancelled) return cancelNow(state, entry, requestNow)
+    graph.converted = buildCoverStageRecord('CONVERTED_VOCAL', converted.samples, sampleRate, graph.vocal ? graph.vocal.byteSha256 : graph.source.byteSha256)
     entry.manifest.converted = compactOf(graph.converted)
     entry.checkpoints.push({ index: 2, stage: 'CONVERTED', at: requestNow, status: 'DONE', tempSummary: { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256, byteLength: graph.converted.byteLength }, importReceipt: null })
-    if (await cancelled()) return cancelNow(state, entry)
+    if (await cancelled()) return cancelNow(state, entry, requestNow)
     try {
       writeOwner(state, readCoverOwner(state), entry, 'same')
     } catch (error) {
       const mapped = mapStoreError(error)
       return mapped || failure('INTERNAL_FAILURE')
     }
-
     await yieldMacrotask()
-    if (await cancelled()) return cancelNow(state, entry)
+
+    const mixResult = await guardedStage(() =>
+      mixStemsCooperative(
+        {
+          converted: converted.samples,
+          instrumental: entry.intent.recipe.mixMode === 'WITH_INSTRUMENTAL' ? graph.instrumental.samples : null,
+          vocalGainDb: entry.intent.recipe.vocalGainDb,
+          instrumentalGainDb: entry.intent.recipe.instrumentalGainDb,
+        },
+        hooks,
+      ),
+    )
+    if (!mixResult.ok) return failure('STAGE_REJECTED')
+    const mixed = mixResult.value
+    if (mixed.cancelled) return cancelNow(state, entry, requestNow)
+    graph.master = buildCoverMasterRecord(mixed.samples, sampleRate)
     entry.checkpoints.push({ index: 3, stage: 'MIXED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
-    if (await cancelled()) return cancelNow(state, entry)
+    if (await cancelled()) return cancelNow(state, entry, requestNow)
 
     let imported
     try {
@@ -780,6 +830,9 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
         requestKey: entry.attempt.requestKey,
       },
     })
+    // A cancel observed during the import keeps the already STORED MASTER (never deleted) and stops
+    // before FINAL SAVED; the receipt stays readable for status/cleanup evidence.
+    if (fenceOf(state, taskId)) return cancelNow(state, entry, requestNow)
     entry.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.master.byteSha256 }
     entry.checkpoints.push({ index: 5, stage: 'VERIFIED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
 
@@ -807,21 +860,74 @@ async function finalizeTerminal(state, entry, kind, code) {
   } catch {
     // A failed terminal write leaves the claim in place; the caller reports the original failure.
   }
+  clearFence(state, entry.taskId)
 }
 
-async function cancelNow(state, entry) {
-  const owner = readCoverOwner(state)
+async function cancelNow(state, entry, requestedAt) {
+  const stoppedAt = new Date().toISOString()
+  const ackAt = requestedAt || stoppedAt
+  // Fact 2 (ack): the run observed the fence and persists the acknowledgement as its own short
+  // owner write *before* stopping, so status/disk prove ACKNOWLEDGED separately from STOPPED.
+  let acknowledged = false
+  try {
+    const ackOwner = readCoverOwner(state)
+    const ackEntry = ackOwner.snapshot
+      ? ackOwner.snapshot.entries.find((item) => item.scopeId === entry.scopeId && item.taskId === entry.taskId)
+      : null
+    if (ackEntry && ackEntry.phase !== 'FINAL') {
+      const next = clone(entry)
+      next.cancel = {
+        requested: true,
+        requestedAt: (ackEntry.cancel && ackEntry.cancel.requestedAt) || ackAt,
+        acknowledgedAt: ackAt,
+        confirmedAt: null,
+        reason: 'USER_REQUEST',
+      }
+      writeOwner(state, ackOwner, next, 'same')
+      acknowledged = true
+      await yieldMacrotask()
+    }
+  } catch {
+    // A failed ack write still stops the run; the FINAL write below records both timestamps.
+  }
+
+  let current
+  try {
+    const owner = readCoverOwner(state)
+    current = owner.snapshot
+      ? owner.snapshot.entries.find((item) => item.scopeId === entry.scopeId && item.taskId === entry.taskId)
+      : null
+  } catch {
+    return failure('SAVE_UNKNOWN')
+  }
+  if (current && current.phase === 'FINAL' && current.completion && current.completion.kind === 'SAVED') {
+    // The cancel lost the race against FINAL; keep the SAVED result and report it as too late.
+    clearFence(state, current.taskId)
+    return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId: current.attempt.attemptId, statusState: 'SAVED', messageZh: MESSAGES.TOO_LATE, value: null })
+  }
+  // The in-memory entry is authoritative for this attempt (it may already hold checkpoint 4 from an
+  // import that completed just before the fence check); only the cancel timestamps come from disk.
+  const diskCancel = current && current.cancel ? current.cancel : null
   const next = clone(entry)
   next.phase = 'FINAL'
   next.completion = { kind: 'CANCELLED', reason: 'USER_REQUEST' }
   next.record.state = 'CANCELLED'
   next.record.cancel = { requested: true, confirmed: true }
+  next.record.lastError = null
   next.attempt.status = 'CANCELLED'
-  next.attempt.finishedAt = new Date().toISOString()
-  if (next.attempt.lease) next.attempt.lease.releasedAt = next.attempt.finishedAt
-  next.cancel = { requested: true, requestedAt: next.cancel.requestedAt || next.attempt.finishedAt, acknowledgedAt: next.attempt.finishedAt, confirmedAt: next.attempt.finishedAt, reason: 'USER_REQUEST' }
+  next.attempt.error = null
+  next.attempt.finishedAt = stoppedAt
+  if (next.attempt.lease) next.attempt.lease.releasedAt = stoppedAt
+  next.cancel = {
+    requested: true,
+    requestedAt: (diskCancel && diskCancel.requestedAt) || (entry.cancel && entry.cancel.requestedAt) || ackAt,
+    acknowledgedAt:
+      (diskCancel && diskCancel.acknowledgedAt) || (entry.cancel && entry.cancel.acknowledgedAt) || (acknowledged ? ackAt : stoppedAt),
+    confirmedAt: stoppedAt,
+    reason: 'USER_REQUEST',
+  }
   try {
-    writeOwner(state, owner, next, 'increment')
+    writeOwner(state, readCoverOwner(state), next, 'increment')
   } catch {
     return failure('SAVE_UNKNOWN')
   }
@@ -854,6 +960,7 @@ async function finalizeSaved(state, entry, graph, masterRef, now) {
   } catch {
     return failure('SAVE_UNKNOWN')
   }
+  clearFence(state, next.taskId)
   return success({
     schemaVersion: 1,
     outcome: 'SAVED',
