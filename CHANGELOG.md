@@ -6,6 +6,18 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Docs: the Cover contract candidate was revised again for the `0093` incremental review (still
+  **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Cover birth is now internal-only (no public
+  `reserveCover`; the caller cannot supply source facts), the source record is 8 measured fields
+  with top-level expiry, all four new owner methods share one `{ok:true,value}` /
+  `{ok:false,errors}` envelope with full success/error/EXISTING examples, the canonical Intent is
+  1,140 B (`c34f059d…db35`) with five variants, the adapter matches the real gateway patterns
+  (`artifact:fixture-*`, `audio/wav`, `CONFIRMED_FIXTURE`, `request:fixture-*`,
+  `gateway:fixture-rvc`) and separates metadata from the internal byte producer, `checkpoint[4]`
+  carries a 5-key `importReceipt` plus a new `resumeCoverFinal` method, the FINAL critical section
+  holds Artifact through import→write→JOINT, cancellation uses a real macrotask yield, and the
+  budget uses the full candidate pack (`2,177 B` example), exact owner sizes (entry `8,874 B`,
+  snapshot `8,919 B`) and a 32 MiB explicit-Buffer peak (`29,360,128 B`).
 - Docs: the Cover execution / StageArtifact **contract candidate** was revised for the six review
   groups `092-R01..R06` (still **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Birth now has a public
   `reserveCover` (schema 1) with a 19-key `intentDraft` + measured 7-key `sourceEntry` and a

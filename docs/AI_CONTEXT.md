@@ -515,3 +515,12 @@ intent with recomputed canonical vectors; library `GRANTED` rights mapping and a
 exact M revision sequence and delta-only `coverAttachment`; per-zone cancel answers with a `now`
 clock; crash/reopen and requestKey dedup; and the real entry-length budget (1,399,070 B,
 P <= 4,892,386 B) with a 20 MiB exact import peak. No runtime, code, tests or media work is added.
+
+### 0093 revision
+
+Birth is internal-only (caller cannot forge source facts); four owner methods share the ok/errors
+envelope; the canonical Intent is 1,140 B with recomputed vectors; the gateway adapter matches the
+real M patterns and metadata is not bytes; `checkpoint[4].importReceipt` plus `resumeCoverFinal`
+provide the only physical ref for recovery; FINAL holds Artifact through import/write/JOINT; cancel
+yields with `setImmediate`; and the budget uses the full candidate pack, real owner bytes and a
+32 MiB explicit-Buffer peak. Still NOT_IMPLEMENTED.

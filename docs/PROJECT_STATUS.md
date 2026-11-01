@@ -430,3 +430,8 @@ mapping and physical source refs, field-level RVC gateway adapter (mono), typed 
 shapes, exact revision/attachment/crash/cancel semantics and exact capacity/peak budgets. The
 document remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no product code, tests, contracts or media
 were changed in this revision, and parent P08/Plan 08 stays IN_PROGRESS.
+The contract candidate was revised for the `0093` incremental review: internal-only birth, unified
+envelope with complete examples, 1,140 B canonical Intent, real gateway patterns with metadata-only
+returns, `importReceipt` + `resumeCoverFinal`, Artifact held through the FINAL critical section,
+macrotask cancel yield, full-pack admission and a 32 MiB explicit-Buffer peak. It remains
+CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or media changed and P08 stays OPEN.

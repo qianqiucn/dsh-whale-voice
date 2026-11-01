@@ -454,3 +454,8 @@ library-rights/physical-source mapping, a field-level adapter to the existing RV
 typed owner/StageArtifact shapes, the exact M revision/attachment/cancel/crash rules and exact
 capacity/peak budgets. It is still NOT_IMPLEMENTED and does not change the Cover execution,
 resources/cancellation, dynamic evidence, parent Fake E2E or real-capability status.
+The 08-F-B contract candidate was revised for the `0093` incremental review: internal-only birth,
+one envelope, real gateway field constraints, `importReceipt`/`resumeCoverFinal`, the Artifact-held
+FINAL critical section, a real macrotask cancel yield, and full-pack/32 MiB budgets. It is still
+NOT_IMPLEMENTED and does not change Cover execution, resources/cancellation, dynamic evidence, the
+parent Fake E2E or any real capability.
