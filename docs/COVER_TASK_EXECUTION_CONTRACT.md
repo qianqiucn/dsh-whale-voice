@@ -1060,7 +1060,7 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
 | 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL proof/attachment 校验 / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），队列内二次 claim 复核、终态不重跑 |
 | 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
-| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.5，104-R01..R06 + v1.77 A/B/C） |
+| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.6，104-R01..R06 + v1.77 A/B/C + v1.78 A/B1/B2） |
 | Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
 | 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
 | Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
@@ -1140,3 +1140,13 @@ try {
 | C 依赖门禁 | `dependencies` 必需：`verifyCoverDependencies` 校验真实 voice binding（FIXTURE_BOUND、profile/asset/instance/candidate/modelRef 与 Intent 一致）、provider readiness（FIXTURE_READY）、model present/revision、evidence 的 observedAt/expiresAt/realReady、confirmation/cloud 形状；省略、模型 revision 变化、asset revision 变化、provider 撤除、shared provider 失效、未来 evidence 均在 claim 前或 readiness 门禁处阻断；不存在的“默认 model/gpu/evidence”捷径已删除 | `test/cover-dependencies.test.mjs`、`test/cover-readiness.test.mjs`；所有成功执行测试统一通过 `test/support/cover-run.mjs` 注入真实 bundle |
 
 **仍 OPEN / 边界：** owner v3 条目仍为 14 键、attachment 仍为派生 proof；帧级合作点只覆盖 Synthetic chunked stage；真实 Provider/GPU/媒体/设备/微信/安装/发送未实现未授权；父 Plan08 未完成。
+
+### 15.6 v1.78 A/B1/B2 复核修复（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| A 完整 inspection/verification | `validateCoverLineage` 要求 MASTER inspection 恰为合同 19 键、`manifest.verification` 恰 4 键且 state=PASSED/masterSha256 对齐；`finalizeCoverSaved` 把 fresh 库 inspection 的每个字段（含 peak/fullScaleSampleCount/durationMs/validationState）与 checkpoint[4] 快照逐项比较，任一不符不得 SAVED 且不新增 import | `test/cover-proof-hardening.test.mjs`（peak 定点变异被 writer 拒绝；绕过 writer 后 resume 失败） |
+| B1 统一租约收束 | `executeCover` 的 finally 不再逐路径补布尔值，而是**读取 owner 文件确认本次 attempt 的 FINAL SAVED/CANCELLED/FAILED** 后才释放租约；claim 写未知、checkpoint 写未知、cancel FINAL 写失败、terminal FINAL 写失败均保留 claim+租约，磁盘 `lease.releasedAt` 保持 null，新 LOCAL_GPU 租约被拒 | `test/cover-lease-retention.test.mjs`（claim/checkpoint/cancel/terminal 四类故障） |
+| B2 长短临界区分离 | claim 只在共享写队列内完成；separate/convert/mix 长计算在队列外运行（保留 4,096 帧 fence/65,536 帧让出）；每个 checkpoint 通过短队列写并合并磁盘上的 cancel 字段；FINAL 用“cover 短队列 → Artifact 队列”临界区，保持既有锁序；同 task 单 claim、GPU 冲突与 UNKNOWN 保留不回退 | `test/cover-queue-concurrency.test.mjs`（真实长 GPU run 期间 CPU 执行完成、GPU 新任务 `RESOURCE_LIMIT`、完成顺序 B→A） |
+
+**仍 OPEN / 边界：** 与 §15.5 相同；以上均为 Synthetic Fixture + 逻辑租约，不代表真实 GPU/Provider/微信/安装能力；父 Plan08 未完成，PR #43 未合并。

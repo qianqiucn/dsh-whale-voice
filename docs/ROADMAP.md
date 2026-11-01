@@ -504,3 +504,11 @@ claim (omission, model/asset revision, provider removal, shared invalidation and
 block). Full suite 868/864 pass/4 platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY /
 NOT_INTEGRATED; the attachment remains derived, real Provider/GPU/media/WeChat/install paths stay
 unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not complete.
+The v1.78 review (A/B1/B2) is addressed on the same branch: full MASTER inspection and PASSED
+verification are validated and the fresh library inspection is compared field-by-field; lease
+release is unified on a confirmed FINAL, so claim/checkpoint/cancel/terminal write failures keep the
+claim and the GPU lease; and the long separate/convert/mix work runs outside the shared cover write
+queue, with short claim/checkpoint/FINAL critical sections and a real long-GPU-run test where a CPU
+execution completes first (B→A) while a second GPU execution is refused. Full suite 874/870 pass/4
+platform skips (including the 2 `test/support` helper files as empty entries). Status remains
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.

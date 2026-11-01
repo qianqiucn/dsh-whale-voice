@@ -627,3 +627,18 @@ inject the real bundle through `test/support/cover-run.mjs`. Full suite 868/864 
 skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; the attachment
 remains derived, real Provider/GPU/media/WeChat/install paths remain unimplemented and unauthorized,
 PR #43 is unmerged and parent Plan 08 is not complete.
+
+### v1.78 A/B1/B2 close-out
+
+`validateCoverLineage` requires the exact 19-key MASTER inspection and the 4-key PASSED
+verification; `finalizeCoverSaved` compares every fresh library inspection field (peak,
+fullScaleSampleCount, durationMs, validationState, …) with the checkpoint[4] snapshot, so a mutated
+peak cannot become SAVED. Lease release is unified: the finally block releases only when the owner
+file confirms this attempt's FINAL SAVED/CANCELLED/FAILED; claim-write, checkpoint-write,
+cancel-FINAL and terminal-FINAL failures retain the claim and GPU lease with `releasedAt:null`.
+The long separate/convert/mix work runs outside the shared cover write queue: claim, checkpoint
+writes and the FINAL transaction use short critical sections, checkpoint writes merge disk cancel
+fields, and a real long GPU run no longer blocks a CPU/cloud execution (order B→A) while a second
+GPU execution gets `RESOURCE_LIMIT`. Full suite 874/870 pass/4 platform skips (including the 2
+`test/support` helper files as empty entries); build unchanged. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.

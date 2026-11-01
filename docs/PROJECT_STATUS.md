@@ -492,3 +492,12 @@ removal, shared invalidation and future evidence negatives. All successful execu
 real bundle via `test/support/cover-run.mjs`. Full suite 868/864 pass/4 platform skips/0 fail; build
 unchanged. Contract §15.5 records the as-built state and the remaining OPEN boundaries. PR #43
 remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.78 review (A/B1/B2) is now addressed offline: the full 19-key inspection and 4-key PASSED
+verification are validated and the fresh library inspection is compared field-by-field (mutated peak
+cannot become SAVED); lease release is unified on a confirmed FINAL (claim/checkpoint/cancel/terminal
+write failures keep claim + lease); and the long separate/convert/mix work runs outside the shared
+cover write queue, with short claim/checkpoint/FINAL critical sections, cancel-field merge and a real
+long-GPU-run test where a CPU execution completes first (B→A) while a second GPU execution is
+refused. Full suite 874/870 pass/4 platform skips (including the 2 `test/support` helper files as
+empty entries); build unchanged. Contract §15.6 records the as-built state. PR #43 remains
+open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

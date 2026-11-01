@@ -6,6 +6,18 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: 090 v1.78 A/B1/B2 close-out. The recovery proof now compares **every** MASTER inspection
+  field (peak, fullScaleSampleCount, durationMs, validationState, …) against the fresh library
+  inspection instead of trusting hash/length; a mutated peak is rejected by the writer and by resume
+  without a second import. The executor's lease release is unified: the finally block reads the owner
+  file and releases only when this attempt's FINAL SAVED/CANCELLED/FAILED is confirmed, so claim-write,
+  checkpoint-write, cancel-FINAL and terminal-FINAL failures all retain the claim and the GPU lease
+  (disk `releasedAt:null`, new LOCAL_GPU acquire refused). The long separate/convert/mix work now runs
+  outside the shared cover write queue: claim, checkpoint writes and the FINAL transaction use short
+  critical sections, checkpoint writes merge the disk cancel fields, and a real long GPU run no longer
+  blocks a CPU/cloud execution (verified with completion order B→A) while a second GPU execution is
+  refused explicitly. 6 new behaviour tests; full suite 874/870 pass/4 platform skips (the total also
+  counts the 2 `test/support` helper files as empty test entries).
 - Feat: 090 v1.77 A/B/C close-out. The recovery/save proof is now complete: `validateCoverLineage`
   checks the source identity against the Intent, every manifest parent link, the MASTER inspection,
   rights/expiry and the `import:cover-master:<attempt-suffix>` receipt before a derived attachment is
