@@ -533,3 +533,12 @@ Cover methods; resume returns EXISTING for a SAVED reopen; the source read names
 `readStoredForSave`/`readBytes` calls and their distinct private-proof/public-metadata facts; and
 the temporary Buffer budget is a four-row per-stage table (max 34,668,544 B) under 64 MiB while the
 old persistent limits stay unchanged. Still NOT_IMPLEMENTED.
+
+### Cover offline implementation (IN PROGRESS, OFFLINE)
+
+The implementation branch adds four Cover modules and 23 tests: canonical Intent, deterministic
+three-graph synthetic bytes, a dedicated Cover v3 store, and an executor with birth, single claim,
+checkpoints, one MASTER import, FINAL attachment, status, a busy-run cancel fence and
+resumeCoverFinal. As-built the Cover snapshots live in dedicated v3 files; merging v3 into the legacy
+catalog/owner files, dynamic dependencies, the parent Fake E2E and full cancel ack/cleanup evidence
+remain open. Contract errata were repaired on the same branch.

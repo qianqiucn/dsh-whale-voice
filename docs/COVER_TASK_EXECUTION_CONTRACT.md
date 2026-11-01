@@ -54,7 +54,7 @@
 | owner entry（6 键） | `scopeId, taskId, birthIdentityHash, phase, record, completion` |
 | `identityHashOf(record)` | `sha256(JSON.stringify({schemaVersion, feature, taskType, source:{kind,ref}, voiceProfileId, deliveryRequested, rights:{state}}))`，UTF-8；不含配方/pitch/模型修订 |
 | 库 entry（公有投影 8 键） | `artifactRef, scopeId, requestKey, origin, createdAt, expiresAt, rights, inspection`；`rights` 恰 2 键 `{state, proofRef}` |
-| 库读取 | `readStoredForSave({scopeId, artifactRef})` 返回 import 事务可直接使用的 STORED 事实；`readBytes({scopeId, artifactRef, now})` 返回 owned bytes；`import` 返回合法 ref |
+| 库读取 | `readStoredForSave(state, {scopeId, artifactRef, now})` 返回 STORED 事实；`readBytes` 请求恰 5 键（含 rights）→ `FOUND` 的 owned bytes + 公有 metadata8；`import` 返回合法 ref。完整流程见 §5.1 |
 | 私有 SaveProof.artifact（8 键） | `artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection` |
 | SaveProof root（11 键） | `schemaVersion, scopeId, taskId, birthIdentityHash, birthObservedAt, claimRevision, claimDigest, candidateRevision, recordIdentityHash, artifact, evaluatedAt` |
 | WAV inspection（19 键） | `schemaVersion, format, codec, bitsPerSample, sampleRate, channels, byteLength, dataByteLength, frameCount, durationMs, peak, fullScaleSampleCount, sha256, validationState, mockOnly, realOperationAllowed, submitAllowed, automaticRetryAllowed, messageZh` |
@@ -322,11 +322,7 @@ c34f059d4ef6beab90c0d112c58e511382a934a68a4fb5301a13defc7e3edb35
 
 | 字段 | 来源（内部出生代码） | 说明 |
 |---|---|---|
-| `artifactRef` | proof8.artifactRef（与 metadata8 对照） | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}## 5. FUTURE：真实源、Provider 适配与 Stage 来源（092-R02）
-
-### 5.1 实测 sourceFacts（8 键，仅内部产生）
-
- |
+| `artifactRef` | proof8.artifactRef（与 metadata8 对照） | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}$` |
 | `scopeId` | **公有 metadata8.scopeId** | 必须等于请求 scope |
 | `requestKey` | proof8.requestKey / metadata8.requestKey | 该次 import 的请求键 |
 | `origin` | **公有 metadata8.origin** | `FIXTURE_IMPORT` 等 |
@@ -872,10 +868,10 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 - 判据不是“现有字节 + 单条 entry”，而是**完整候选 pack**：
   `utf8(serializePack({schemaVersion:1, sandboxId, revision: current.revision+1, entries: [...current.entries, candidateEntry]})) ≤ 6,291,456`。
 - 该序列化包含：已有非空 entries 之间的逗号、JSON 空白规则、`revision` 位数变化、每个 entry 的完整 11 键；与 writer 实际写盘同一实现，不做常数估算。
-- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **{{PACK_BYTES}} B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
+- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **2177 B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
 - 解码总量：`currentDecodedBytes + masterBytes ≤ 4,194,304`（MASTER 最大时 D ≤ 3,145,728）。
 - 条目：`currentEntries + 1 ≤ 32`（含 tombstone）。
-- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **{{ENTRY_BYTES}} B**、snapshot **{{SNAP_BYTES}} B**（revision 2，含 6 checkpoint 与 importReceipt）。
+- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **8874 B**、snapshot **8919 B**（revision 2，含 6 checkpoint 与 importReceipt）。
 - 以上在入场与 import/FINAL 前按当时实际字节 fresh 重算；任一不满足 → `COVER_RESOURCE_LIMIT`，0 新入库。
 
 ### 9.3 受控 Buffer 峰值（含 writer 实际存活阶段）
@@ -1035,9 +1031,9 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | birthIdentityHash / source identity | `bf3c034e…ffedc` / `04cd12de…eade61`（实算） |
 | revision | 单任务 claim1 → FINAL2；跨任务示例 proof.claimRevision=2、candidate=3 |
 | 媒体向量 | 7 个 52 B WAV SHA 不变（复用 0092 复算） |
-| 完整 pack 示例 | {{PACK_BYTES}} B < 6,291,456 |
+| 完整 pack 示例 | 2177 B < 6,291,456 |
 | Buffer 峰值 | 四行最大 34,668,544 ≤ 67,108,864（64 MiB） |
-| owner 字节 | entry {{ENTRY_BYTES}} B / snapshot {{SNAP_BYTES}} B |
+| owner 字节 | entry 8874 B / snapshot 8919 B |
 
 > 只证明文档自洽与向量可复算，不证明 FUTURE 已实现。
 

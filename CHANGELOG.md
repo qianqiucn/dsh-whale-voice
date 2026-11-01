@@ -6,6 +6,19 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: offline Cover execution slice. New `core/audio/cover-intent-internal.mjs` (canonical 25-key
+  Intent, documented hashes, stable source identity), `core/audio/cover-stage-bytes-internal.mjs`
+  (deterministic three-graph Synthetic Fixture bytes with the integer gain table and real inspector
+  verification), `core/audio/cover-store-internal.mjs` (dedicated Cover v3 snapshots with bounded
+  reads, digest-checked atomic writes and an unknown-outcome lock) and
+  `core/audio/cover-executor-internal.mjs` (trusted birth over the real Fixture library, single
+  claim, checkpoints, one MASTER import, FINAL attachment, status, side-channel cancel fence and
+  `resumeCoverFinal`). 23 behaviour tests. AS-BUILT: the legacy catalog/owner files remain untouched
+  (Cover lives in `audio-cover-catalog-v3.json` / `audio-cover-owner-v3.json`); dynamic dependencies
+  and the parent Fake E2E are still open.
+- Docs: repaired the contract's duplicated §5.1 heading/row, the physical-ref regex tail, the
+  `readStoredForSave`/`readBytes` shorthand, and replaced the PACK/ENTRY/SNAP placeholders with the
+  measured 2177/8874/8919 values.
 - Docs: the Cover contract candidate was revised for the `0094` review (still **CONTRACT_CANDIDATE /
   NOT_IMPLEMENTED**). The catalog v3 birth example is restored (root 3 keys; Cover entry 9 keys;
   Task record 16 keys; non-empty expiry) with matching identity/Intent hashes; the owner method

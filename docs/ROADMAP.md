@@ -463,3 +463,7 @@ The 08-F-B contract candidate was revised for the `0094` review: restored catalo
 synced method/version tables, resume EXISTING, real read-source calls with private-proof/public-
 metadata provenance, and a per-stage explicit-Buffer peak table under 64 MiB. It is still
 NOT_IMPLEMENTED and changes no runtime, test or capability status.
+Plan 08 Cover offline execution started after the contract merge: Intent, synthetic stage bytes,
+dedicated Cover v3 store and a single-claim executor are implemented and tested offline. The
+remaining 090 units (v3 into the legacy files, dynamic dependencies, parent Fake E2E, complete
+cancel/cleanup evidence) are OPEN; no real model, media, device or WeChat capability changed.

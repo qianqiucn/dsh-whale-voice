@@ -440,3 +440,9 @@ synced method/version tables (supported v3 vs unknown), resume EXISTING, correct
 read-source calls and field provenance, and a four-row explicit-Buffer peak table under a 64 MiB
 temporary budget. It remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or
 media changed and P08 stays OPEN.
+Cover offline execution is now IN PROGRESS / OFFLINE on `feature/plan08-cover-execution` (from the
+merged contract M): canonical Intent + three-graph synthetic bytes + dedicated Cover v3 store +
+executor (birth/claim/checkpoints/one MASTER import/FINAL/status/busy cancel/resume) with 23 tests
+(797/794/3 full suite). The legacy catalog/owner files are untouched and Cover uses dedicated v3
+files; v3-into-legacy integration, dynamic dependencies, the parent Fake E2E and complete
+cancel/cleanup evidence remain open. This is not an integrated or real capability.
