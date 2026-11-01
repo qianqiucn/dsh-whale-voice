@@ -14,8 +14,10 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover } from './support/cover-run.mjs'
+import { executeCover as rawExecuteCover } from '../core/audio/cover-executor-internal.mjs'
 import { COVER_DEPENDENCY_CODES, verifyCoverDependencies } from '../core/audio/cover-dependencies-internal.mjs'
+import { computeCoverReadiness } from '../core/audio/cover-readiness-internal.mjs'
 
 const SCOPE = 'scope:fixture-demo'
 const PROOF = 'fixture-rights:demo-1'
@@ -94,6 +96,10 @@ function dependenciesFor(sourceRef, taskId, { assetRevision = 1, providerInstall
       expectation: { scopeId: SCOPE, profileRevision: 1, assetRevision },
     },
     provider: { negotiation: binding.negotiation, readiness },
+    model: { present: true, revision: 1, requiredRevision: 1 },
+    evidence: { observedAt: NOW, expiresAt: EXPIRES, realReady: false, source: 'FIXTURE' },
+    confirmation: { firstVisit: false, confirmed: false },
+    cloud: { authorized: false, providerReady: false },
   }
 }
 
@@ -151,6 +157,89 @@ test('a matching dependency bundle lets the real execution reach SAVED', async (
   }
 })
 
+test('omitting the dependency facts is a hard block, not a default-ready shortcut', async () => {
+  const { sandbox, birth } = await setup()
+  try {
+    const run = await rawExecuteCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:omitted', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent,
+    })
+    assert.equal(run.ok, false)
+    assert.equal(run.errors[0].code, COVER_EXECUTION_CODES.DEPENDENCY_FAILURE)
+    assert.equal(run.errors[0].path, 'dependencies')
+    assert.equal(fs.existsSync(path.join(sandbox.root, OWNER_FILE)), false)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('a deleted/reinstalled model revision blocks before any claim', async () => {
+  const { sandbox, birth, sourceRef } = await setup()
+  try {
+    const dependencies = dependenciesFor(sourceRef, birth.value.taskId)
+    dependencies.model = { present: true, revision: 0, requiredRevision: 1 }
+    const run = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:model', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent, dependencies,
+    })
+    assert.equal(run.ok, false)
+    assert.equal(run.errors[0].code, COVER_EXECUTION_CODES.DEPENDENCY_FAILURE)
+    assert.equal(run.errors[0].path, 'model')
+    assert.equal(fs.existsSync(path.join(sandbox.root, OWNER_FILE)), false)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('a shared provider invalidation blocks the next task while the saved one stays intact', async () => {
+  const { sandbox, birth, sourceRef } = await setup()
+  try {
+    const first = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:shared-a', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent,
+      dependencies: dependenciesFor(sourceRef, birth.value.taskId),
+    })
+    assert.equal(first.value.outcome, 'SAVED')
+    const second = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:shared-b', intentDraft: draft(sourceRef), observedAt: NOW })
+    assert.equal(second.ok, true)
+    const broken = dependenciesFor(sourceRef, second.value.taskId, { providerInstallation: 'MISSING' })
+    const blocked = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: second.value.taskId, requestKey: 'cover-exec:shared-b', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: second.value.intent, dependencies: broken,
+    })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.errors[0].path, 'provider')
+    const firstStatus = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
+    assert.equal(firstStatus.value.state, 'SAVED')
+    const secondStatus = await coverStatus({ sandbox, scopeId: SCOPE, taskId: second.value.taskId, now: NOW })
+    assert.equal(secondStatus.value.state, 'NO_ATTEMPT')
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('TTS and SVC alternate on the same facts with different cloud requirements', async () => {
+  const { sandbox, birth, sourceRef } = await setup()
+  try {
+    const svcRun = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:alternate', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent, dependencies: dependenciesFor(sourceRef, birth.value.taskId),
+    })
+    assert.equal(svcRun.value.outcome, 'SAVED')
+    const evidence = { observedAt: NOW, expiresAt: EXPIRES, realReady: false, source: 'FIXTURE' }
+    const confirmation = { firstVisit: false, confirmed: false }
+    const ttsDenied = computeCoverReadiness({ mode: 'TTS', sourceType: 'TEXT', cloud: { authorized: false, providerReady: false }, evidence, confirmation, now: NOW })
+    assert.equal(ttsDenied.value.ready, false)
+    assert.equal(ttsDenied.value.blockedBy.some((item) => item.code === 'COVER_READINESS_CLOUD_NOT_AUTHORIZED'), true)
+    const ttsReady = computeCoverReadiness({ mode: 'TTS', sourceType: 'TEXT', cloud: { authorized: true, providerReady: true }, evidence, confirmation, now: NOW })
+    assert.equal(ttsReady.value.ready, true)
+    const svcStatus = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
+    assert.equal(svcStatus.value.state, 'SAVED')
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
 test('the readiness evidence gate blocks the actual run when evidence is in the future', async () => {
   const { sandbox, birth, sourceRef } = await setup()
   try {
@@ -164,7 +253,7 @@ test('the readiness evidence gate blocks the actual run when evidence is in the 
     assert.equal(run.errors[0].code, COVER_EXECUTION_CODES.DEPENDENCY_FAILURE)
     assert.equal(run.errors[0].path, 'evidence')
     const status = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
-    assert.equal(status.value.state, 'FAILED')
+    assert.equal(status.value.state, 'NO_ATTEMPT')
   } finally {
     removeConfigSandbox(sandbox)
   }

@@ -26,7 +26,7 @@ import {
   separateTwoStemCooperative,
   wavFromSamples,
 } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { coverStatus, createCoverTask, executeCover, requestCoverCancel } from '../core/audio/cover-executor-internal.mjs'
+import { coverStatus, createCoverTask, executeCover, requestCoverCancel } from './support/cover-run.mjs'
 
 const SCOPE = 'scope:fixture-cancel'
 const PROOF = 'fixture-rights:cover-cancel'

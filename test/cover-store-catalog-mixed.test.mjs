@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
-import { createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { createCoverTask, executeCover } from './support/cover-run.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
 import { identityHashOf } from '../core/audio/fixture-task-store-internal.mjs'
 
@@ -32,8 +32,8 @@ test('a v3 catalog file keeps a legacy entry while a Cover birth is appended', a
     })
     const draft = {
       intentVersion: 1, scopeId: SCOPE, sourceRef: imported.value.artifact.artifactRef, sourceRevision: 1, rightsState: 'GRANTED',
-      rightsProofRef: PROOF, rightsExpiresAt: EXPIRES, voiceProfileId: 'voice:demo-hero', profileRevision: 1, modelAssetId: 'asset:a',
-      modelRevision: 1, modelIntegrityTruth: 'DECLARED_FIXTURE', instanceId: 'instance:rvc', candidateId: 'rvc', modelRef: 'rvc-model:a',
+      rightsProofRef: PROOF, rightsExpiresAt: EXPIRES, voiceProfileId: 'voice:demo-hero', profileRevision: 1, modelAssetId: 'asset:fixture-model-a',
+      modelRevision: 1, modelIntegrityTruth: 'DECLARED_FIXTURE', instanceId: 'instance:rvc', candidateId: 'rvc', modelRef: 'rvc-model:fixture-a',
       backendRevision: 1, pitchShift: 0,
       recipe: { sourceLayout: 'MIXED', separationPreset: 'FIXTURE_TWO_STEM', mixMode: 'WITH_INSTRUMENTAL', vocalGainDb: 0, instrumentalGainDb: 0 },
       outputProfile: { format: 'WAV', codec: 'PCM_S16LE', sampleRate: 44100, channels: 1 },

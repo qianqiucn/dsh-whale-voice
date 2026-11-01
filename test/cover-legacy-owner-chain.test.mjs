@@ -17,7 +17,7 @@ import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
 import { openFixtureTaskOwner } from '../core/audio/task-owner.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { coverStatus, createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { coverStatus, createCoverTask, executeCover } from './support/cover-run.mjs'
 import { buildRelayHandoffCandidate } from '../core/audio/relay-handoff.mjs'
 import { createFakeRelay } from '../core/audio/cover-fake-relay-internal.mjs'
 

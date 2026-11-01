@@ -7,7 +7,7 @@ import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
 import { buildRelayHandoffCandidate } from '../core/audio/relay-handoff.mjs'
-import { createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { createCoverTask, executeCover } from './support/cover-run.mjs'
 import { createFakeRelay } from '../core/audio/cover-fake-relay-internal.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
 

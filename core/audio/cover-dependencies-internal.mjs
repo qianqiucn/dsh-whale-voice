@@ -17,7 +17,17 @@ export const COVER_DEPENDENCY_CODES = Object.freeze({
   VOICE_BINDING_MISMATCH: 'COVER_DEPENDENCY_VOICE_BINDING_MISMATCH',
   PROVIDER_NOT_READY: 'COVER_DEPENDENCY_PROVIDER_NOT_READY',
   PROVIDER_MISMATCH: 'COVER_DEPENDENCY_PROVIDER_MISMATCH',
+  MODEL_NOT_READY: 'COVER_DEPENDENCY_MODEL_NOT_READY',
+  EVIDENCE_INVALID: 'COVER_DEPENDENCY_EVIDENCE_INVALID',
+  CLOUD_INVALID: 'COVER_DEPENDENCY_CLOUD_INVALID',
 })
+
+function isoOrNull(value) {
+  if (typeof value !== 'string') return null
+  const ms = Date.parse(value)
+  if (!Number.isFinite(ms) || new Date(ms).toISOString() !== value) return null
+  return value
+}
 
 function failure(key, errorPath) {
   return Object.freeze({
@@ -73,6 +83,32 @@ export function verifyCoverDependencies({ intent, dependencies, now }) {
   if (gate.value.instanceId !== intent.instanceId || gate.value.candidateId !== intent.candidateId) {
     return failure('PROVIDER_MISMATCH', 'provider')
   }
+
+  const model = dependencies.model
+  if (!model || model.present !== true || model.revision !== intent.modelRevision || model.requiredRevision !== intent.modelRevision) {
+    return failure('MODEL_NOT_READY', 'model')
+  }
+  const evidence = dependencies.evidence
+  const observedAt = evidence ? isoOrNull(evidence.observedAt) : null
+  const expiresAt = evidence ? isoOrNull(evidence.expiresAt) : null
+  if (
+    !evidence ||
+    observedAt === null ||
+    expiresAt === null ||
+    evidence.realReady !== false ||
+    Date.parse(observedAt) > Date.parse(now) ||
+    Date.parse(expiresAt) <= Date.parse(now)
+  ) {
+    return failure('EVIDENCE_INVALID', 'evidence')
+  }
+  const confirmation = dependencies.confirmation === undefined ? { firstVisit: false, confirmed: false } : dependencies.confirmation
+  if (!confirmation || typeof confirmation.firstVisit !== 'boolean' || typeof confirmation.confirmed !== 'boolean') {
+    return failure('EVIDENCE_INVALID', 'confirmation')
+  }
+  const cloud = dependencies.cloud === undefined ? { authorized: false, providerReady: false } : dependencies.cloud
+  if (!cloud || typeof cloud.authorized !== 'boolean' || typeof cloud.providerReady !== 'boolean') {
+    return failure('CLOUD_INVALID', 'cloud')
+  }
   return Object.freeze({
     ok: true,
     value: Object.freeze({
@@ -82,6 +118,10 @@ export function verifyCoverDependencies({ intent, dependencies, now }) {
       realReady: false,
       instanceId: gate.value.instanceId,
       candidateId: gate.value.candidateId,
+      model: Object.freeze({ present: true, revision: model.revision, requiredRevision: model.requiredRevision }),
+      evidence: Object.freeze({ observedAt, expiresAt, realReady: false }),
+      confirmation: Object.freeze({ firstVisit: confirmation.firstVisit, confirmed: confirmation.confirmed }),
+      cloud: Object.freeze({ authorized: cloud.authorized, providerReady: cloud.providerReady }),
     }),
   })
 }

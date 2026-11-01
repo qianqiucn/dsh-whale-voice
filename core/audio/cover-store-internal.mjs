@@ -104,6 +104,62 @@ function validCheckpoint(checkpoint) {
   return true
 }
 
+function parentLink(object, role, hash) {
+  return Array.isArray(object.parentLinks) && object.parentLinks.some((link) => link.role === role && link.byteSha256 === hash)
+}
+
+/**
+ * Full lineage proof for a receipted Cover entry (contract §7.5–7.8). Any mismatch between the
+ * Intent source identity, the manifest stages, the MASTER inspection and the checkpoint[4] receipt
+ * invalidates the entry; there is no partial acceptance.
+ */
+export function validateCoverLineage(entry) {
+  const intent = entry.intent
+  const manifest = entry.manifest
+  if (!isPlainObject(intent) || !isPlainObject(manifest)) return false
+  const source = manifest.source
+  const converted = manifest.converted
+  const master = manifest.master
+  if (!isPlainObject(source) || !isPlainObject(converted) || !isPlainObject(master)) return false
+  const sourceHash = source.byteSha256
+  const vocalHash = manifest.vocal ? manifest.vocal.byteSha256 : null
+  const instrumentalHash = manifest.instrumental ? manifest.instrumental.byteSha256 : null
+  if (source.role !== 'SOURCE' || source.taskId !== entry.taskId || source.scopeId !== entry.scopeId) return false
+  if (source.intentHash !== entry.intentHash || source.attemptId !== entry.attempt.attemptId) return false
+  if (sourceHash !== intent.sourceByteSha256 || source.byteLength !== intent.sourceByteLength) return false
+  if (source.rootSourceSha256 !== intent.sourceByteSha256 || source.rootSourceIdentityHash !== intent.sourceEntryIdentityHash) return false
+  if (!isPlainObject(source.rights) || source.rights.state !== 'GRANTED' || source.rights.proofRef !== intent.rightsProofRef) return false
+  if (source.expiresAt !== intent.rightsExpiresAt || !isPlainObject(source.inspection)) return false
+  if (source.inspection.sha256 !== sourceHash || source.inspection.byteLength !== source.byteLength) return false
+  if (manifest.vocal) {
+    if (manifest.vocal.role !== 'VOCAL' || !parentLink(manifest.vocal, 'SOURCE', sourceHash)) return false
+  }
+  if (manifest.instrumental) {
+    if (manifest.instrumental.role !== 'INSTRUMENTAL' || !parentLink(manifest.instrumental, 'SOURCE', sourceHash)) return false
+  }
+  if (converted.role !== 'CONVERTED_VOCAL' || !parentLink(converted, 'SOURCE', vocalHash || sourceHash)) return false
+  if (master.role !== 'MASTER' || master.taskId !== entry.taskId || master.scopeId !== entry.scopeId) return false
+  if (master.intentHash !== entry.intentHash || master.attemptId !== entry.attempt.attemptId) return false
+  if (!parentLink(master, 'CONVERTED_VOCAL', converted.byteSha256)) return false
+  if (instrumentalHash === null) {
+    if (master.parentLinks.some((link) => link.role === 'INSTRUMENTAL')) return false
+  } else if (!parentLink(master, 'INSTRUMENTAL', instrumentalHash)) return false
+  if (master.parentLinks.length !== (instrumentalHash === null ? 1 : 2)) return false
+  if (master.rootSourceSha256 !== intent.sourceByteSha256 || master.rootSourceIdentityHash !== intent.sourceEntryIdentityHash) return false
+  if (!isPlainObject(master.inspection) || master.inspection.sha256 !== master.byteSha256 || master.inspection.byteLength !== master.byteLength) return false
+  if (master.expiresAt !== intent.rightsExpiresAt || !isPlainObject(master.rights)) return false
+  if (master.rights.state !== 'GRANTED' || master.rights.proofRef !== intent.rightsProofRef) return false
+  if (master.modelRevision !== intent.modelRevision || master.profileRevision !== intent.profileRevision) return false
+  if (master.backendRevision !== intent.backendRevision) return false
+  const receiptCheckpoint = (entry.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
+  if (!receiptCheckpoint) return false
+  const receipt = receiptCheckpoint.importReceipt
+  if (receipt.requestKey !== 'import:cover-master:' + entry.attempt.attemptId.slice(-16)) return false
+  if (receipt.byteSha256 !== master.byteSha256 || receipt.byteLength !== master.byteLength) return false
+  if (receipt.expiresAt !== intent.rightsExpiresAt) return false
+  return typeof receipt.artifactRef === 'string'
+}
+
 function validOwnerCoverEntry(entry) {
   if (!exactKeys(entry, OWNER_ENTRY_KEYS)) return false
   if (entry.entryVersion !== 1 || entry.kind !== 'COVER') return false
@@ -139,20 +195,26 @@ function validOwnerCoverEntry(entry) {
     if (entry.completion !== null || entry.attempt.status !== 'RUNNING') return false
     if (entry.attempt.finishedAt !== null) return false
     if (entry.attempt.lease !== null && entry.attempt.lease.releasedAt !== null) return false
+    // A claim before any stage has an all-null manifest; once the source is known it must match the
+    // Intent exactly, and once the MASTER receipt exists the complete lineage must verify.
+    if (entry.manifest.source !== null) {
+      if (!isPlainObject(entry.manifest.source) || entry.manifest.source.byteSha256 !== entry.intent.sourceByteSha256) return false
+      if (entry.manifest.source.byteLength !== entry.intent.sourceByteLength) return false
+    }
+    if (entry.manifest.master !== null) return validateCoverLineage(entry)
     return true
   }
   if (!exactKeys(entry.completion, ['kind', 'reason'])) return false
   if (!COMPLETIONS.has(entry.completion.kind)) return false
   if (entry.attempt.status !== entry.completion.kind || !isIso(entry.attempt.finishedAt)) return false
   if (entry.attempt.lease !== null && !isIso(entry.attempt.lease.releasedAt)) return false
+  if (entry.manifest.master !== null && !validateCoverLineage(entry)) return false
   if (entry.completion.kind === 'SAVED') {
     if (entry.record.state !== 'SAVED' || typeof entry.record.outputArtifactRef !== 'string') return false
     const receipt = entry.checkpoints.find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt !== null)
-    if (!receipt) return false
-    const proof = receipt.importReceipt
-    if (proof.artifactRef !== entry.record.outputArtifactRef) return false
-    if (!entry.manifest.master || entry.manifest.master.availability !== 'STORED') return false
-    if (entry.manifest.master.byteSha256 !== proof.byteSha256 || !isPlainObject(entry.manifest.master.inspection)) return false
+    if (!receipt || !entry.manifest.master) return false
+    if (receipt.importReceipt.artifactRef !== entry.record.outputArtifactRef) return false
+    if (entry.manifest.master.availability !== 'STORED') return false
     return true
   }
   if (entry.record.state !== entry.completion.kind) return false
@@ -419,6 +481,65 @@ function writeAtomic(state, name, bytes) {
  * `mode: 'increment'` requires `candidate.revision === current.revision + 1`;
  * `mode: 'same'` keeps the current revision and only allows content updates.
  */
+function sameValue(left, right) {
+  return stableStringify(left) === stableStringify(right)
+}
+
+/** Only explicit legal deltas may replace an existing owner entry (contract §7.5–7.8). */
+function validateOwnerTransition(before, after) {
+  if (!isPlainObject(before) || !isPlainObject(after)) return false
+  if (before.kind !== 'COVER') return sameValue(before, after)
+  if (after.kind !== 'COVER') return false
+  for (const key of ['entryVersion', 'kind', 'scopeId', 'taskId', 'birthIdentityHash', 'intentHash', 'intent']) {
+    if (!sameValue(before[key], after[key])) return false
+  }
+  if (!isPlainObject(before.attempt) || !isPlainObject(after.attempt)) return false
+  for (const key of ['attemptId', 'attemptSeq', 'requestKey', 'startedAt']) {
+    if (!sameValue(before.attempt[key], after.attempt[key])) return false
+  }
+  if (before.phase === 'CLAIMED' && after.phase === 'CLAIMED' && !sameValue(before.record, after.record)) return false
+  const oldCheckpoints = before.checkpoints || []
+  const newCheckpoints = after.checkpoints || []
+  if (newCheckpoints.length < oldCheckpoints.length) return false
+  for (let i = 0; i < oldCheckpoints.length; i += 1) {
+    if (!sameValue(oldCheckpoints[i], newCheckpoints[i])) return false
+  }
+  for (const key of MANIFEST_KEYS) {
+    if (before.manifest[key] !== null && !sameValue(before.manifest[key], after.manifest[key])) return false
+  }
+  if (before.cancel.requested === true && after.cancel.requested !== true) return false
+  if (before.phase === 'FINAL') return false
+  return after.phase === 'CLAIMED' || after.phase === 'FINAL'
+}
+
+function assertSnapshotDelta(current, candidate, isCatalog) {
+  const oldEntries = current.snapshot ? current.snapshot.entries : []
+  const newEntries = candidate.entries
+  if (newEntries.length !== oldEntries.length && newEntries.length !== oldEntries.length + 1) {
+    raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+  }
+  let changed = -1
+  const compared = Math.min(oldEntries.length, newEntries.length)
+  for (let i = 0; i < compared; i += 1) {
+    if (sameValue(oldEntries[i], newEntries[i])) continue
+    if (isCatalog) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    if (changed !== -1) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    if (!validateOwnerTransition(oldEntries[i], newEntries[i])) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    changed = i
+  }
+  if (newEntries.length === oldEntries.length + 1) {
+    if (changed !== -1) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    if (isCatalog) return
+    const appended = newEntries[newEntries.length - 1]
+    if (!isPlainObject(appended) || appended.kind !== 'COVER' || appended.phase !== 'CLAIMED') {
+      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    }
+    if (!Array.isArray(appended.checkpoints) || appended.checkpoints.length !== 1) {
+      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    }
+  }
+}
+
 export function writeCoverSnapshot(state, name, candidate, options) {
   const mode = options && options.mode === 'same' ? 'same' : 'increment'
   const baseDigest = options ? options.baseDigest : undefined
@@ -441,6 +562,7 @@ export function writeCoverSnapshot(state, name, candidate, options) {
   if (baseDigest !== currentDigest) {
     raise(COVER_STORE_CODES.STORE_CHANGED, '$')
   }
+  assertSnapshotDelta(current, candidate, isCatalog)
   const expectedRevision = current.snapshot ? current.snapshot.revision : 0
   if (mode === 'increment') {
     if (candidate.revision !== expectedRevision + 1) raise(COVER_STORE_CODES.WRITE_REJECTED, 'revision')

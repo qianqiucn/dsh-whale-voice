@@ -6,7 +6,7 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel, resumeCoverFinal } from '../core/audio/cover-executor-internal.mjs'
+import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel, resumeCoverFinal } from './support/cover-run.mjs'
 
 const SCOPE = 'scope:fixture-cover'
 const PROOF = 'fixture-rights:cover-e2e'
@@ -351,7 +351,7 @@ test('busy cancel leaves confirmed cancel and released lease evidence', async ()
   }
 })
 
-test('resume refuses an incomplete hand-built manifest instead of fabricating SAVED', async () => {
+test('an incomplete receipted claim is rejected by the store instead of becoming SAVED', async () => {
   const { sandbox, library, sourceRef } = await setup()
   try {
     const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-resume', intentDraft: draft({ sourceRef }), observedAt: NOW })
@@ -395,15 +395,15 @@ test('resume refuses an incomplete hand-built manifest instead of fabricating SA
       },
       cancel: { requested: false, requestedAt: null, acknowledgedAt: null, confirmedAt: null, reason: null },
     }
-    const { getCoverState, readCoverOwner, writeCoverSnapshot, COVER_OWNER_FILE } = await import('../core/audio/cover-store-internal.mjs')
+    const { getCoverState, readCoverOwner, writeCoverSnapshot, COVER_OWNER_FILE, CoverStoreFailure } = await import('../core/audio/cover-store-internal.mjs')
     const state = getCoverState(sandbox)
     const ownerBefore = readCoverOwner(state)
-    writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' })
-    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-exec:resume', now: NOW })
-    assert.equal(resume.ok, false)
-    assert.equal(resume.errors[0].code, COVER_EXECUTION_CODES.EXECUTION_UNKNOWN)
+    assert.throws(
+      () => writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' }),
+      (error) => error instanceof CoverStoreFailure && error.key === 'COVER_STORE_INVALID',
+    )
     const after = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
-    assert.equal(after.value.state, 'CLAIMED')
+    assert.equal(after.value.state, 'NO_ATTEMPT')
     const master = await library.value.get({ schemaVersion: 1, scopeId: SCOPE, artifactRef: metadata.artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF } })
     assert.equal(master.value.outcome, 'FOUND')
   } finally {

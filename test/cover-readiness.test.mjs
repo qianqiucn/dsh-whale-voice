@@ -5,7 +5,7 @@ import { computeCoverReadiness } from '../core/audio/cover-readiness-internal.mj
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { buildRelayHandoffCandidate } from '../core/audio/relay-handoff.mjs'
-import { createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { createCoverTask, executeCover } from './support/cover-run.mjs'
 import { createFakeRelay, FAKE_RELAY_CODES } from '../core/audio/cover-fake-relay-internal.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
 
@@ -164,22 +164,22 @@ test('the real Fixture chain reaches SAVED and then stops at the delivery bounda
     const library = await openFixtureArtifactLibrary({ sandbox })
     const source = wavFromSamples([1000, -2000, 32767, -32768], 44100)
     const imported = await library.value.import({
-      schemaVersion: 1, scopeId: 'scope:e2e', requestKey: 'import:source', bytes: source, now: NOW, expiresAt: EXPIRES,
+      schemaVersion: 1, scopeId: 'scope:fixture-e2e', requestKey: 'import:source', bytes: source, now: NOW, expiresAt: EXPIRES,
       rights: { state: 'GRANTED', proofRef: 'fixture-rights:e2e' },
     })
     const sourceRef = imported.value.artifact.artifactRef
     const draft = {
-      intentVersion: 1, scopeId: 'scope:e2e', sourceRef, sourceRevision: 1, rightsState: 'GRANTED',
+      intentVersion: 1, scopeId: 'scope:fixture-e2e', sourceRef, sourceRevision: 1, rightsState: 'GRANTED',
       rightsProofRef: 'fixture-rights:e2e', rightsExpiresAt: EXPIRES, voiceProfileId: 'voice:demo-hero', profileRevision: 1,
       modelAssetId: 'asset:fixture-model-a', modelRevision: 1, modelIntegrityTruth: 'DECLARED_FIXTURE',
       instanceId: 'instance:rvc', candidateId: 'rvc', modelRef: 'rvc-model:fixture-a', backendRevision: 1, pitchShift: 0,
       recipe: { sourceLayout: 'MIXED', separationPreset: 'FIXTURE_TWO_STEM', mixMode: 'WITH_INSTRUMENTAL', vocalGainDb: 0, instrumentalGainDb: 0 },
       outputProfile: { format: 'WAV', codec: 'PCM_S16LE', sampleRate: 44100, channels: 1 },
     }
-    const birth = await createCoverTask({ sandbox, scopeId: 'scope:e2e', idempotencyKey: 'cover:e2e', intentDraft: draft, observedAt: NOW })
+    const birth = await createCoverTask({ sandbox, scopeId: 'scope:fixture-e2e', idempotencyKey: 'cover:e2e', intentDraft: draft, observedAt: NOW })
     assert.equal(birth.ok, true)
     const run = await executeCover({
-      sandbox, scopeId: 'scope:e2e', taskId: birth.value.taskId, requestKey: 'exec:e2e', now: NOW, expiresAt: EXPIRES,
+      sandbox, scopeId: 'scope:fixture-e2e', taskId: birth.value.taskId, requestKey: 'exec:e2e', now: NOW, expiresAt: EXPIRES,
       rights: { state: 'GRANTED', proofRef: 'fixture-rights:e2e' }, intent: birth.value.intent,
     })
     assert.equal(run.value.outcome, 'SAVED')

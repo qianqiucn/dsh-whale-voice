@@ -51,6 +51,7 @@ import {
   readCoverCatalog,
   readCoverOwner,
   resolveCoverFile,
+  validateCoverLineage,
   writeCoverSnapshot,
 } from './cover-store-internal.mjs'
 
@@ -300,21 +301,15 @@ function fullManifest(stage, { intentHash, attemptId, rootSourceIdentityHash, tr
  * accepted when it matches the Intent, attempt, manifest stages and MASTER receipt exactly.
  */
 function attachmentFromEntry(entry) {
+  if (!validateCoverLineage(entry)) return null
   const manifest = entry.manifest
-  if (!manifest || !manifest.source || !manifest.converted || !manifest.master || !manifest.master.inspection) return null
-  if (!isSha256Hex(manifest.source.byteSha256) || !isSha256Hex(manifest.converted.byteSha256)) return null
-  if (!manifest.master.parentLinks || !Array.isArray(manifest.master.parentLinks)) return null
   const receiptCheckpoint = (entry.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
   if (!receiptCheckpoint) return null
   const proof = receiptCheckpoint.importReceipt
-  const intentHash = intentHashOf(entry.intent)
-  if (intentHash !== entry.intentHash) return null
-  if (proof.byteSha256 !== manifest.master.byteSha256) return null
   const instrumentalSha = manifest.instrumental ? manifest.instrumental.byteSha256 : null
-  if (manifest.master.parentLinks.some((link) => link.role === 'INSTRUMENTAL') !== (instrumentalSha !== null)) return null
-  const attachment = {
+  return {
     attachmentVersion: 1,
-    intentHash,
+    intentHash: entry.intentHash,
     attemptId: entry.attempt.attemptId,
     sourceEntryIdentityHash: entry.intent.sourceEntryIdentityHash,
     lineage: {
@@ -323,7 +318,7 @@ function attachmentFromEntry(entry) {
       instrumentalSha256: instrumentalSha,
       convertedSha256: manifest.converted.byteSha256,
     },
-    masterSha256: manifest.master.byteSha256,
+    masterSha256: proof.byteSha256,
     verification: {
       validationState: manifest.master.inspection.validationState,
       peak: manifest.master.inspection.peak,
@@ -331,16 +326,6 @@ function attachmentFromEntry(entry) {
       durationMs: manifest.master.inspection.durationMs,
     },
   }
-  for (const key of ['sourceSha256', 'vocalInputSha256', 'convertedSha256', 'masterSha256']) {
-    const value = key === 'masterSha256' ? attachment.masterSha256 : attachment.lineage[key]
-    if (!isSha256Hex(value)) return null
-  }
-  if (attachment.lineage.instrumentalSha256 !== null && !isSha256Hex(attachment.lineage.instrumentalSha256)) return null
-  return attachment
-}
-
-function isSha256Hex(value) {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 }
 
 /**
@@ -362,6 +347,10 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   const receiptCheckpoint = (claimed.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
   if (!receiptCheckpoint) return { kind: 'EXECUTION_UNKNOWN' }
   const receipt = receiptCheckpoint.importReceipt
+  const expectedImportKey = 'import:cover-master:' + attemptId.slice(-16)
+  if (receipt.requestKey !== expectedImportKey || receipt.expiresAt !== claimed.intent.rightsExpiresAt) {
+    return { kind: 'EXECUTION_UNKNOWN' }
+  }
   const attachment = attachmentFromEntry(claimed)
   if (!attachment || attachment.masterSha256 !== receipt.byteSha256) return { kind: 'EXECUTION_UNKNOWN' }
   let fresh
@@ -372,7 +361,14 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   }
   if (!fresh || fresh.ok !== true || fresh.value.state !== 'STORED') return { kind: 'ARTIFACT_MISSING' }
   const proof = fresh.value.artifact
+  if (proof.requestKey !== expectedImportKey || proof.expiresAt !== receipt.expiresAt) return { kind: 'ARTIFACT_CHANGED' }
   if (proof.byteSha256 !== receipt.byteSha256 || proof.byteLength !== receipt.byteLength) return { kind: 'ARTIFACT_CHANGED' }
+  if (!proof.inspection || proof.inspection.sha256 !== receipt.byteSha256 || proof.inspection.byteLength !== receipt.byteLength) {
+    return { kind: 'ARTIFACT_CHANGED' }
+  }
+  if (!proof.rights || proof.rights.state !== 'GRANTED' || proof.rights.proofRef !== claimed.intent.rightsProofRef) {
+    return { kind: 'ARTIFACT_RIGHTS' }
+  }
   if (Date.parse(proof.expiresAt) <= Date.parse(requestNow)) return { kind: 'ARTIFACT_EXPIRED' }
 
   const finishedAt = new Date().toISOString()
@@ -690,10 +686,11 @@ function findOwnerEntry(snapshot, scopeId, taskId) {
   return snapshot.entries.find((entry) => entry.scopeId === scopeId && entry.taskId === taskId) || null
 }
 
-export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies }) {
+export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies, compute = 'LOCAL_GPU' }) {
   if (!sandbox || typeof scopeId !== 'string' || typeof taskId !== 'string' || typeof requestKey !== 'string') {
     return failure('INPUT_INVALID')
   }
+  if (compute !== 'LOCAL_GPU' && compute !== 'CPU_CLOUD') return failure('INPUT_INVALID', 'compute')
   const requestNow = canonicalIso(now)
   if (requestNow === null) return failure('INPUT_INVALID', 'now')
   if (!intent || typeof intent !== 'object') return failure('INPUT_INVALID', 'intent')
@@ -702,10 +699,9 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
   if (!rights || rights.state !== 'GRANTED' || rights.proofRef !== intent.rightsProofRef) {
     return failure('RIGHTS_REJECTED', 'rights')
   }
-  if (dependencies !== undefined && dependencies !== null) {
-    const verified = verifyCoverDependencies({ intent, dependencies, now: requestNow })
-    if (!verified.ok) return failure('DEPENDENCY_FAILURE', verified.errors[0].path)
-  }
+  if (!dependencies || typeof dependencies !== 'object') return failure('DEPENDENCY_FAILURE', 'dependencies')
+  const verifiedDependencies = verifyCoverDependencies({ intent, dependencies, now: requestNow })
+  if (!verifiedDependencies.ok) return failure('DEPENDENCY_FAILURE', verifiedDependencies.errors[0].path)
   const state = getCoverState(sandbox)
   if (isCoverStoreLocked(state)) return failure('UNKNOWN')
 
@@ -750,8 +746,9 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     // single-claim check must repeat here after the previous holder released the tail.
     const existingNow = findOwnerEntry(ownerNow.snapshot, scopeId, taskId)
     if (existingNow) return resultForExisting(existingNow)
-    const lease = acquireCoverLease({ sandbox, compute: 'LOCAL_GPU', now: requestNow })
+    const lease = acquireCoverLease({ sandbox, compute, now: requestNow })
     if (!lease.ok) return failure('RESOURCE_LIMIT', 'gpu')
+    let retainLease = false
     try {
     const attempt = makeAttempt(requestKey, requestNow, lease.value)
     const entry = {
@@ -817,18 +814,11 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       mode: 'SVC',
       sourceType: 'AUDIO_REF',
       source: { present: true, rightsState: source.metadata.rights.state, expiresAt: source.metadata.expiresAt },
-      model:
-        dependencies && dependencies.model
-          ? dependencies.model
-          : { present: true, revision: entry.intent.modelRevision, requiredRevision: entry.intent.modelRevision },
-      gpu: { available: true },
-      cloud: dependencies && dependencies.cloud ? dependencies.cloud : { authorized: false, providerReady: false },
-      evidence:
-        dependencies && dependencies.evidence
-          ? dependencies.evidence
-          : { observedAt: requestNow, expiresAt: entry.intent.rightsExpiresAt, realReady: false, source: 'FIXTURE_LIBRARY_PROOF' },
-      confirmation:
-        dependencies && dependencies.confirmation ? dependencies.confirmation : { firstVisit: false, confirmed: false },
+      model: verifiedDependencies.value.model,
+      gpu: { available: compute === 'LOCAL_GPU' },
+      cloud: verifiedDependencies.value.cloud,
+      evidence: verifiedDependencies.value.evidence,
+      confirmation: verifiedDependencies.value.confirmation,
       now: requestNow,
     })
     if (!readiness.ok || readiness.value.ready !== true) {
@@ -1046,20 +1036,33 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
         return finalizeCoverSaved(state, artifactState, { scopeId, taskId, attemptId: attempt.attemptId, requestNow })
       })
     } catch {
+      retainLease = true
       return failure('EXECUTION_UNKNOWN')
     }
     if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
     if (outcome.kind === 'CANCEL_DURING_IMPORT') return cancelNow(state, entry, requestNow)
-    if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
-    if (outcome.kind === 'CHECKPOINT_FAILED' || outcome.kind === 'FINAL_FAILED') return outcome.mapped || failure('SAVE_UNKNOWN')
-    if (outcome.kind === 'SAVE_UNKNOWN') return failure('SAVE_UNKNOWN')
-    if (outcome.kind === 'ARTIFACT_LOCKED') return failure('DEPENDENCY_FAILURE')
+    if (outcome.kind === 'EXECUTION_UNKNOWN') {
+      retainLease = true
+      return failure('EXECUTION_UNKNOWN')
+    }
+    if (outcome.kind === 'CHECKPOINT_FAILED' || outcome.kind === 'FINAL_FAILED') {
+      retainLease = true
+      return outcome.mapped || failure('SAVE_UNKNOWN')
+    }
+    if (outcome.kind === 'SAVE_UNKNOWN') {
+      retainLease = true
+      return failure('SAVE_UNKNOWN')
+    }
+    if (outcome.kind === 'ARTIFACT_LOCKED') {
+      retainLease = true
+      return failure('DEPENDENCY_FAILURE')
+    }
     const failureKey =
       outcome.kind === 'ARTIFACT_EXPIRED' ? 'EXPIRED' : outcome.kind === 'ARTIFACT_RIGHTS' ? 'RIGHTS_REJECTED' : 'SAVE_REJECTED'
     await finalizeTerminal(state, entry, 'FAILED', failureKey)
     return failure(failureKey)
     } finally {
-      releaseCoverLease({ sandbox, leaseId: lease.value.leaseId })
+      if (!retainLease) releaseCoverLease({ sandbox, leaseId: lease.value.leaseId })
     }
   })
 }

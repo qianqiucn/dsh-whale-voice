@@ -15,7 +15,8 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel, resumeCoverFinal } from '../core/audio/cover-executor-internal.mjs'
+import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel, resumeCoverFinal } from './support/cover-run.mjs'
+import { acquireCoverLease, isCoverGpuBusy } from '../core/audio/cover-lease-internal.mjs'
 
 const SCOPE = 'scope:fixture-recovery'
 const PROOF = 'fixture-rights:cover-recovery'
@@ -180,17 +181,23 @@ test('an uncertain FINAL rename locks the store and never reruns silently', asyn
     let imported = false
     let ownerRenames = 0
     fs.renameSync = function patchedRename(from, to) {
-      original(from, to)
-      if (typeof to === 'string' && path.basename(to) === ARTIFACT_FILE) imported = true
       if (imported && typeof to === 'string' && path.basename(to) === OWNER_FILE) {
         ownerRenames += 1
         if (ownerRenames === 2) throw new Error('injected uncertain FINAL rename')
       }
+      original(from, to)
+      if (typeof to === 'string' && path.basename(to) === ARTIFACT_FILE) imported = true
     }
     const result = await run(sandbox, birth, EXEC_KEY)
     fs.renameSync = original
     assert.equal(result.ok, false)
     assert.equal(result.errors[0].code, COVER_EXECUTION_CODES.SAVE_UNKNOWN)
+    assert.equal(isCoverGpuBusy(sandbox), true)
+    const retryLease = acquireCoverLease({ sandbox, compute: 'LOCAL_GPU', now: NOW })
+    assert.equal(retryLease.ok, false)
+    assert.equal(retryLease.errors[0].code, 'COVER_LEASE_BUSY')
+    const ownerDoc = JSON.parse(fs.readFileSync(path.join(sandbox.root, OWNER_FILE), 'utf8'))
+    assert.equal(ownerDoc.entries[0].attempt.lease.releasedAt, null)
     const status = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
     assert.equal(status.ok, false)
     assert.equal(status.errors[0].code, COVER_EXECUTION_CODES.UNKNOWN)

@@ -13,7 +13,7 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel } from '../core/audio/cover-executor-internal.mjs'
+import { COVER_EXECUTION_CODES, coverStatus, createCoverTask, executeCover, requestCoverCancel } from './support/cover-run.mjs'
 import { getCoverState, lockCoverStore } from '../core/audio/cover-store-internal.mjs'
 
 const SCOPE = 'scope:fixture-concurrency'

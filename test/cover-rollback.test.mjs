@@ -14,7 +14,7 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { coverStatus, createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { coverStatus, createCoverTask, executeCover } from './support/cover-run.mjs'
 import { applyCoverV3Rollback, planCoverV3Rollback, COVER_ROLLBACK_CODES } from '../core/audio/cover-rollback-internal.mjs'
 
 const SCOPE = 'scope:fixture-rollback'

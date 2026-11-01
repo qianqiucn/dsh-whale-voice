@@ -13,13 +13,14 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { COVER_EXECUTION_CODES, createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { COVER_EXECUTION_CODES, createCoverTask, executeCover } from './support/cover-run.mjs'
 import {
   acquireCoverLease,
   coverCpuLeaseCount,
   isCoverGpuBusy,
   releaseCoverLease,
 } from '../core/audio/cover-lease-internal.mjs'
+import { coverDependencies } from './support/cover-dependencies.mjs'
 
 const SCOPE = 'scope:fixture-lease'
 const PROOF = 'fixture-rights:cover-lease'
@@ -83,6 +84,18 @@ function ownerEntries(sandbox) {
   return JSON.parse(fs.readFileSync(file, 'utf8')).entries
 }
 
+function cloudDependencies(birth) {
+  return coverDependencies({
+    scopeId: SCOPE,
+    sourceRef: birth.value.intent.sourceRef,
+    taskId: birth.value.taskId,
+    now: NOW,
+    expiresAt: EXPIRES,
+    intent: birth.value.intent,
+    overrides: { cloud: { authorized: true, providerReady: true } },
+  })
+}
+
 test('one local GPU lease is exclusive, while CPU/cloud leases never take the GPU', () => {
   const sandbox = createConfigSandbox()
   try {
@@ -133,6 +146,59 @@ test('a conflicting executor run is refused before any claim and releases on suc
     const entry = ownerEntries(sandbox)[0]
     assert.equal(entry.attempt.lease.gpu, 'EXCLUSIVE')
     assert.equal(typeof entry.attempt.lease.releasedAt, 'string')
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('a CPU/cloud execution uses gpu:NONE and makes progress while a GPU lease is held', async () => {
+  const { sandbox, birth } = await setup()
+  try {
+    const cpuOnly = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:cpu', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent, compute: 'CPU_CLOUD', dependencies: cloudDependencies(birth),
+    })
+    assert.equal(cpuOnly.ok, true)
+    assert.equal(cpuOnly.value.outcome, 'SAVED')
+    assert.equal(isCoverGpuBusy(sandbox), false)
+    assert.equal(ownerEntries(sandbox)[0].attempt.lease.gpu, 'NONE')
+
+    const second = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:lease-cpu-2', intentDraft: draft(birth.value.intent.sourceRef), observedAt: NOW })
+    const held = acquireCoverLease({ sandbox, compute: 'LOCAL_GPU', now: NOW })
+    assert.equal(held.ok, true)
+    const whileHeld = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: second.value.taskId, requestKey: 'cover-exec:cpu-2', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: second.value.intent, compute: 'CPU_CLOUD', dependencies: cloudDependencies(second),
+    })
+    assert.equal(whileHeld.ok, true)
+    assert.equal(whileHeld.value.outcome, 'SAVED')
+    const blocked = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:lease-cpu-3', intentDraft: draft(birth.value.intent.sourceRef), observedAt: NOW })
+    assert.equal(blocked.ok, true)
+    const gpuBlocked = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: blocked.value.taskId, requestKey: 'cover-exec:gpu-3', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: blocked.value.intent,
+    })
+    assert.equal(gpuBlocked.ok, false)
+    assert.equal(gpuBlocked.errors[0].code, COVER_EXECUTION_CODES.RESOURCE_LIMIT)
+    releaseCoverLease({ sandbox, leaseId: held.value.leaseId })
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('a CPU/cloud execution without cloud facts blocks after the claim and releases its lease', async () => {
+  const { sandbox, birth } = await setup()
+  try {
+    const runWithoutCloud = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:cpu-denied', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent, compute: 'CPU_CLOUD',
+    })
+    assert.equal(runWithoutCloud.ok, false)
+    assert.equal(runWithoutCloud.errors[0].code, COVER_EXECUTION_CODES.DEPENDENCY_FAILURE)
+    const entry = ownerEntries(sandbox)[0]
+    assert.equal(entry.completion.kind, 'FAILED')
+    assert.equal(entry.attempt.lease.releasedAt !== null, true)
+    assert.equal(isCoverGpuBusy(sandbox), false)
   } finally {
     removeConfigSandbox(sandbox)
   }

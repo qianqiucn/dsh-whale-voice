@@ -13,7 +13,7 @@ import path from 'node:path'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { createCoverTask, executeCover } from './support/cover-run.mjs'
 import {
   CoverStoreFailure,
   LEGACY_CATALOG_FILE,
