@@ -6,6 +6,12 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Fix: normal Cover cancellation now actually releases the shared lease. Every `cancelNow(...)`
+  return in `executeCover` is awaited before the try/finally settles, so the finally sees the
+  FINAL CANCELLED entry and releases; previously the finally read CLAIMED and kept the GPU lease,
+  blocking later tasks even though the disk was terminal. CPU/cloud cancel also returns its lease
+  count to zero, while a failed cancel FINAL write still retains claim + lease. 2 regression tests;
+  full suite 876/872 pass/4 platform skips.
 - Feat: 090 v1.78 A/B1/B2 close-out. The recovery proof now compares **every** MASTER inspection
   field (peak, fullScaleSampleCount, durationMs, validationState, …) against the fresh library
   inspection instead of trusting hash/length; a mutated peak is rejected by the writer and by resume

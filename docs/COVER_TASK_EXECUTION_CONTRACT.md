@@ -1150,3 +1150,5 @@ try {
 | B2 长短临界区分离 | claim 只在共享写队列内完成；separate/convert/mix 长计算在队列外运行（保留 4,096 帧 fence/65,536 帧让出）；每个 checkpoint 通过短队列写并合并磁盘上的 cancel 字段；FINAL 用“cover 短队列 → Artifact 队列”临界区，保持既有锁序；同 task 单 claim、GPU 冲突与 UNKNOWN 保留不回退 | `test/cover-queue-concurrency.test.mjs`（真实长 GPU run 期间 CPU 执行完成、GPU 新任务 `RESOURCE_LIMIT`、完成顺序 B→A） |
 
 **仍 OPEN / 边界：** 与 §15.5 相同；以上均为 Synthetic Fixture + 逻辑租约，不代表真实 GPU/Provider/微信/安装能力；父 Plan08 未完成，PR #43 未合并。
+
+**v1.79 补正（正常取消释放回归）：** `executeCover` 的所有 `cancelNow(...)` 返回点改为 `return await`，确保 `finally` 在 FINAL CANCELLED 写完成之后才读取 owner；正常取消后 `isCoverGpuBusy=false`、CPU/cloud 租约计数归零，后续同 sandbox GPU 任务可执行；取消 FINAL 写失败仍保留 claim + 租约（四类写未知证据不变）。

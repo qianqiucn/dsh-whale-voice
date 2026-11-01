@@ -501,3 +501,8 @@ long-GPU-run test where a CPU execution completes first (B→A) while a second G
 refused. Full suite 874/870 pass/4 platform skips (including the 2 `test/support` helper files as
 empty entries); build unchanged. Contract §15.6 records the as-built state. PR #43 remains
 open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.79 regression is fixed: every `cancelNow(...)` return is awaited before the try/finally, so a
+normal CANCELLED releases the GPU lease (`isCoverGpuBusy=false`) and CPU/cloud lease count returns to
+zero; later same-sandbox tasks can run, while a failed cancel FINAL write still retains claim + lease.
+Full suite 876/872 pass/4 platform skips; build unchanged. Contract §15.6 carries the v1.79 addendum.
+PR #43 remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

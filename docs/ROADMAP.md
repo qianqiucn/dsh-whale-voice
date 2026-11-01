@@ -512,3 +512,8 @@ queue, with short claim/checkpoint/FINAL critical sections and a real long-GPU-r
 execution completes first (B→A) while a second GPU execution is refused. Full suite 874/870 pass/4
 platform skips (including the 2 `test/support` helper files as empty entries). Status remains
 OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.
+The v1.79 regression is fixed: every `cancelNow(...)` return is awaited before the try/finally, so a
+normal CANCELLED releases the GPU lease and CPU/cloud lease count returns to zero, while a failed
+cancel FINAL write still retains claim + lease. Full suite 876/872 pass/4 platform skips. Status
+remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not
+complete.

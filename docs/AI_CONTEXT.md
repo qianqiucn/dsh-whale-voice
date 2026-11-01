@@ -642,3 +642,12 @@ fields, and a real long GPU run no longer blocks a CPU/cloud execution (order Bâ
 GPU execution gets `RESOURCE_LIMIT`. Full suite 874/870 pass/4 platform skips (including the 2
 `test/support` helper files as empty entries); build unchanged. Still OFFLINE / FIXTURE_ONLY /
 NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.
+
+### v1.79 normal-cancel release fix
+
+Every `cancelNow(...)` return in `executeCover` is now `return await`, so the try/finally runs after
+the async cancel queue has written FINAL CANCELLED; the finally then sees the terminal entry and
+releases. Previously a normal cancellation left `isCoverGpuBusy=true` and blocked later GPU tasks
+even though the disk entry was FINAL. CPU/cloud cancellation also returns its lease count to zero,
+and a failed cancel FINAL write still retains claim + lease. 2 regression tests; full suite 876/872
+pass/4 platform skips.
