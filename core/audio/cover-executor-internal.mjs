@@ -48,6 +48,7 @@ import {
   enqueueCover,
   getCoverState,
   isCoverStoreLocked,
+  lockCoverStore,
   readCoverCatalog,
   readCoverOwner,
   resolveCoverFile,
@@ -344,6 +345,11 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   if (!claimed || claimed.kind !== 'COVER' || claimed.phase !== 'CLAIMED' || claimed.attempt.attemptId !== attemptId) {
     return { kind: 'EXECUTION_UNKNOWN' }
   }
+  // An accepted cancel must never be silently bypassed by a resume/execute FINAL step; the caller
+  // finishes the cancellation (keeping any STORED MASTER) instead of writing SAVED.
+  if (fenceOf(state, taskId) || (claimed.cancel && claimed.cancel.requested)) {
+    return { kind: 'CANCEL_DURING_IMPORT' }
+  }
   const receiptCheckpoint = (claimed.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
   if (!receiptCheckpoint) return { kind: 'EXECUTION_UNKNOWN' }
   const receipt = receiptCheckpoint.importReceipt
@@ -427,10 +433,12 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   try {
     confirmedArtifact = readStoredForSave(artifactState, { scopeId, artifactRef: receipt.artifactRef, now: requestNow })
   } catch {
+    lockCoverStore(state)
     lockArtifact(artifactState)
     return { kind: 'SAVE_UNKNOWN' }
   }
   if (!confirmedArtifact || confirmedArtifact.ok !== true || confirmedArtifact.value.state !== 'STORED') {
+    lockCoverStore(state)
     lockArtifact(artifactState)
     return { kind: 'SAVE_UNKNOWN' }
   }
@@ -444,6 +452,13 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
       expiresAt: proof.expiresAt,
     },
   }
+}
+
+/** Release the exact attempt lease only after its FINAL entry is confirmed on disk. */
+function settleCoverLease(sandbox, entry) {
+  if (!entry || !entry.attempt || !entry.attempt.lease) return
+  if (typeof entry.attempt.lease.leaseId !== 'string') return
+  releaseCoverLease({ sandbox, leaseId: entry.attempt.lease.leaseId })
 }
 
 function resultForSaved(entry, master) {
@@ -906,13 +921,24 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       verification: { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.source.byteSha256 },
     }
 
-    const cancelled = async () => {
-      if (fenceOf(state, taskId)) return true
-      const fresh = readCoverOwner(state)
+    const cancellationState = async () => {
+      if (fenceOf(state, taskId)) return { cancelled: true }
+      let fresh
+      try {
+        fresh = readCoverOwner(state)
+      } catch (error) {
+        return { cancelled: false, failure: mapStoreError(error) || failure('INTERNAL_FAILURE') }
+      }
       const current = fresh.snapshot
         ? fresh.snapshot.entries.find((item) => item.scopeId === scopeId && item.taskId === taskId)
         : null
-      return Boolean(current && current.cancel && current.cancel.requested)
+      return { cancelled: Boolean(current && current.cancel && current.cancel.requested) }
+    }
+    const stopIfCancelled = async () => {
+      const current = await cancellationState()
+      if (current.failure) return current.failure
+      if (!current.cancelled) return null
+      return await cancelNow(state, entry, requestNow)
     }
     // Contract §8.1: the cheap synchronous fence read before every 4,096-frame slice, and a real
     // macrotask yield at least every 65,536 frames so an external cancel callback can be delivered.
@@ -921,7 +947,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       yieldNow: () => yieldMacrotask(),
     }
 
-    if (await cancelled()) return await cancelNow(state, entry, requestNow)
+    const initialStop = await stopIfCancelled()
+    if (initialStop) return initialStop
     await yieldMacrotask()
 
     const guardedStage = async (run) => {
@@ -945,7 +972,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       entry.manifest.vocal = compactOf(graph.vocal)
       entry.manifest.instrumental = compactOf(graph.instrumental)
       entry.checkpoints.push({ index: 1, stage: 'SEPARATED', at: requestNow, status: 'DONE', tempSummary: { role: 'VOCAL', byteSha256: graph.vocal.byteSha256, byteLength: graph.vocal.byteLength }, importReceipt: null })
-      if (await cancelled()) return await cancelNow(state, entry, requestNow)
+      const stopAfterSeparated = await stopIfCancelled()
+      if (stopAfterSeparated) return stopAfterSeparated
       const lostSeparated = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
       if (lostSeparated) return lostSeparated
       await yieldMacrotask()
@@ -958,7 +986,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     graph.converted = buildCoverStageRecord('CONVERTED_VOCAL', converted.samples, sampleRate, graph.vocal ? graph.vocal.byteSha256 : graph.source.byteSha256)
     entry.manifest.converted = compactOf(graph.converted)
     entry.checkpoints.push({ index: 2, stage: 'CONVERTED', at: requestNow, status: 'DONE', tempSummary: { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256, byteLength: graph.converted.byteLength }, importReceipt: null })
-    if (await cancelled()) return await cancelNow(state, entry, requestNow)
+    const stopBeforeConvert = await stopIfCancelled()
+    if (stopBeforeConvert) return stopBeforeConvert
     const lostConverted = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
     if (lostConverted) return lostConverted
     await yieldMacrotask()
@@ -979,7 +1008,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     if (mixed.cancelled) return await cancelNow(state, entry, requestNow)
     graph.master = buildCoverMasterRecord(mixed.samples, sampleRate)
     entry.checkpoints.push({ index: 3, stage: 'MIXED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
-    if (await cancelled()) return await cancelNow(state, entry, requestNow)
+    const stopBeforeMix = await stopIfCancelled()
+    if (stopBeforeMix) return stopBeforeMix
 
     const artifactState = getArtifactState(sandbox)
     if (isArtifactLocked(artifactState)) {
@@ -1083,6 +1113,20 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       outcome.kind === 'ARTIFACT_EXPIRED' ? 'EXPIRED' : outcome.kind === 'ARTIFACT_RIGHTS' ? 'RIGHTS_REJECTED' : 'SAVE_REJECTED'
     await finalizeTerminal(state, entry, 'FAILED', failureKey)
     return failure(failureKey)
+  } catch (error) {
+    // Unified unexpected-error boundary: map expected store failures to the fixed envelope, never
+    // reject the public promise; a concurrent FINAL is returned as its real terminal state.
+    const mapped = mapStoreError(error)
+    try {
+      const ownerNow = readCoverOwner(state)
+      const current = findOwnerEntry(ownerNow.snapshot, scopeId, taskId)
+      if (current && current.phase === 'FINAL' && current.attempt && current.attempt.attemptId === attemptId) {
+        return resultForExisting(current)
+      }
+    } catch {
+      // stay with the mapped/internal failure below
+    }
+    return mapped || failure('INTERNAL_FAILURE')
   } finally {
     // Unified rule: the lease is released only when the owner file itself confirms this attempt's
     // FINAL SAVED/CANCELLED/FAILED. Any unreadable/locked/CLAIMED state keeps the claim and lease.
@@ -1285,28 +1329,32 @@ export async function resumeCoverFinal({ sandbox, scopeId, taskId, attemptId, re
   if (requestNow === null) return failure('INPUT_INVALID', 'now')
   const state = getCoverState(sandbox)
   if (isCoverStoreLocked(state)) return failure('UNKNOWN')
-  let owner
-  try {
-    owner = readCoverOwner(state)
-  } catch (error) {
-    const mapped = mapStoreError(error)
-    return mapped || failure('INTERNAL_FAILURE')
-  }
-  const existing = findOwnerEntry(owner.snapshot, scopeId, taskId)
-  if (!existing || existing.kind !== 'COVER') return failure('NOT_FOUND')
-  // Identity first: a resume may only continue the exact attempt/request that owns the claim.
-  if (existing.attempt.attemptId !== attemptId) return failure('NOT_FOUND', 'attemptId')
-  if (existing.attempt.requestKey !== requestKey) return failure('NOT_FOUND', 'requestKey')
-  if (existing.phase === 'FINAL') return resultForExisting(existing)
-  if (existing.attempt.status !== 'RUNNING') return failure('EXECUTION_UNKNOWN')
-  if (!(existing.checkpoints || []).some((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)) {
-    return failure('EXECUTION_UNKNOWN')
-  }
   const artifactState = getArtifactState(sandbox)
-  if (isArtifactLocked(artifactState)) return failure('DEPENDENCY_FAILURE')
   return enqueueCover(state, async () => {
     try {
+      // Identity and phase are re-checked inside the short queue: a concurrent resume must see the
+      // completed FINAL and return the real existing result, not a second attempt or UNKNOWN.
+      const owner = readCoverOwner(state)
+      const entry = findOwnerEntry(owner.snapshot, scopeId, taskId)
+      if (!entry || entry.kind !== 'COVER') return failure('NOT_FOUND')
+      if (entry.attempt.attemptId !== attemptId) return failure('NOT_FOUND', 'attemptId')
+      if (entry.attempt.requestKey !== requestKey) return failure('NOT_FOUND', 'requestKey')
+      if (entry.phase === 'FINAL') {
+        settleCoverLease(sandbox, entry)
+        return resultForExisting(entry)
+      }
+      if (entry.attempt.status !== 'RUNNING') return failure('EXECUTION_UNKNOWN')
+      if (!(entry.checkpoints || []).some((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)) {
+        return failure('EXECUTION_UNKNOWN')
+      }
+      // An accepted cancel owns the attempt: finish the stop/cleanup and keep the STORED MASTER.
+      if (fenceOf(state, taskId) || (entry.cancel && entry.cancel.requested)) {
+        const cancelled = await cancelNowInQueue(state, entry, requestNow)
+        if (cancelled.ok) settleCoverLease(sandbox, entry)
+        return cancelled
+      }
       let outcome
+      if (isArtifactLocked(artifactState)) return failure('DEPENDENCY_FAILURE')
       try {
         // No second import: a resume only finishes an already receipted claim.
         outcome = await enqueueArtifact(artifactState, () =>
@@ -1315,7 +1363,15 @@ export async function resumeCoverFinal({ sandbox, scopeId, taskId, attemptId, re
       } catch {
         return failure('EXECUTION_UNKNOWN')
       }
-      if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
+      if (outcome.kind === 'SAVED') {
+        settleCoverLease(sandbox, outcome.entry)
+        return resultForSaved(outcome.entry, outcome.master)
+      }
+      if (outcome.kind === 'CANCEL_DURING_IMPORT') {
+        const cancelled = await cancelNowInQueue(state, entry, requestNow)
+        if (cancelled.ok) settleCoverLease(sandbox, entry)
+        return cancelled
+      }
       if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
       if (outcome.kind === 'FINAL_FAILED') return outcome.mapped || failure('SAVE_UNKNOWN')
       if (outcome.kind === 'SAVE_UNKNOWN') return failure('SAVE_UNKNOWN')

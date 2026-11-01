@@ -1,7 +1,7 @@
 /**
- * Cover store — the durable v3 snapshots for the offline Cover chain.
+ * Cover store 鈥?the durable v3 snapshots for the offline Cover chain.
  *
- * File selection follows contract §15.1: a fresh sandbox writes the v3 snapshot directly to the
+ * File selection follows contract 搂15.1: a fresh sandbox writes the v3 snapshot directly to the
  * legacy catalog/owner filename; an existing v3 file there is read/written in place; a legacy v1/v2
  * snapshot makes the store fall back to the dedicated `audio-cover-catalog-v3.json` /
  * `audio-cover-owner-v3.json` files so the old writer is never rewritten. All variants use the same
@@ -110,7 +110,7 @@ function parentLink(object, role, hash) {
 }
 
 /**
- * Full lineage proof for a receipted Cover entry (contract §7.5–7.8). Any mismatch between the
+ * Full lineage proof for a receipted Cover entry (contract 搂7.5鈥?.8). Any mismatch between the
  * Intent source identity, the manifest stages, the MASTER inspection and the checkpoint[4] receipt
  * invalidates the entry; there is no partial acceptance.
  */
@@ -307,7 +307,7 @@ function probeLegacySnapshot(state, kind) {
  * Resolve which file carries the Cover v3 snapshot. The legacy filename is used when it is absent or
  * already holds a valid v3 snapshot; a valid known v1/v2 snapshot forces the dedicated fallback. A
  * damaged, oversized, symlinked or unknown-version legacy file fails closed instead of being silently
- * treated as a fallback (contract §15.1 / 104-R04).
+ * treated as a fallback (contract 搂15.1 / 104-R04).
  */
 export function resolveCoverFile(state, kind) {
   checkSandbox(state)
@@ -494,7 +494,7 @@ function sameValue(left, right) {
   return stableStringify(left) === stableStringify(right)
 }
 
-/** Only explicit legal deltas may replace an existing owner entry (contract §7.5–7.8). */
+/** Only explicit legal deltas may replace an existing owner entry (contract 搂7.5鈥?.8). */
 function validateOwnerTransition(before, after) {
   if (!isPlainObject(before) || !isPlainObject(after)) return false
   if (before.kind !== 'COVER') return sameValue(before, after)
