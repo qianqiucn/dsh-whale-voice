@@ -1,13 +1,11 @@
 /**
- * Cover store — the dedicated durable v3 files for the offline Cover chain.
+ * Cover store — the durable v3 snapshots for the offline Cover chain.
  *
- * AS-BUILT NOTE: the approved contract describes typed legacy/Cover entries inside the *same*
- * catalog/owner files. The offline implementation keeps those legacy files untouched and stores the
- * Cover v3 snapshots in two dedicated files (`audio-cover-catalog-v3.json`,
- * `audio-cover-owner-v3.json`) under the same trusted sandbox root, using the same durability rules
- * (bounded read, strict JSON, single temp+fsync+rename, digest check). Merging v3 into the legacy
- * openOwnerFile/openCatalogFile writers remains OPEN and is reported as such; nothing here weakens or
- * rewrites the legacy v1/v2 files.
+ * File selection follows contract §15.1: a fresh sandbox writes the v3 snapshot directly to the
+ * legacy catalog/owner filename; an existing v3 file there is read/written in place; a legacy v1/v2
+ * snapshot makes the store fall back to the dedicated `audio-cover-catalog-v3.json` /
+ * `audio-cover-owner-v3.json` files so the old writer is never rewritten. All variants use the same
+ * durability rules (bounded read, strict JSON, single temp+fsync+rename, digest check).
  *
  * Pure schedule: one serial tail per sandbox capability; any unknown outcome locks the capability.
  */
