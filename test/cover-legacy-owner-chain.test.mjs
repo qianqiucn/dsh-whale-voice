@@ -18,6 +18,8 @@ import { openFixtureTaskOwner } from '../core/audio/task-owner.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
 import { coverStatus, createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
+import { buildRelayHandoffCandidate } from '../core/audio/relay-handoff.mjs'
+import { createFakeRelay } from '../core/audio/cover-fake-relay-internal.mjs'
 
 const SCOPE = 'scope:fixture-demo'
 const PROOF = 'fixture-rights:demo-1'
@@ -41,7 +43,7 @@ function example() {
   return JSON.parse(doc.slice(fence + 7, close).trim())
 }
 
-async function reserveLegacyTask(catalog, artifactRef, key) {
+async function reserveLegacyTask(catalog, artifactRef, key, deliveryRequested = false) {
   const reserved = await catalog.value.reserve({
     schemaVersion: 1,
     scopeId: SCOPE,
@@ -52,7 +54,7 @@ async function reserveLegacyTask(catalog, artifactRef, key) {
       taskType: 'SVC',
       source: { kind: 'AUDIO_REF', ref: artifactRef },
       voiceProfileId: 'voice:demo-hero',
-      deliveryRequested: false,
+      deliveryRequested,
       rights: { state: 'CONFIRMED_FIXTURE' },
     },
     observedAt: NOW,
@@ -201,6 +203,77 @@ test('the legacy owner run/save engine chain and a Cover run share one real Fixt
     const sources = owners.entries.map((entry) => entry.record.source.ref)
     assert.deepEqual(new Set(sources), new Set([artifactRef]))
     assert.equal(birth.value.intent.sourceRef, artifactRef)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('the real legacy SAVED record reaches the Fake Relay and dedups on reopen', async () => {
+  const sandbox = createConfigSandbox()
+  try {
+    const library = await openFixtureArtifactLibrary({ sandbox })
+    const imported = await library.value.import({
+      schemaVersion: 1, scopeId: SCOPE, requestKey: 'import:relay-source', bytes: wavFromSamples([1000, -2000, 32767, -32768], 44100),
+      now: NOW, expiresAt: EXPIRES, rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(imported.ok, true)
+    const artifactRef = imported.value.artifact.artifactRef
+    const catalog = await openFixtureTaskCatalog({ sandbox })
+    const taskId = await reserveLegacyTask(catalog, artifactRef, 'key:fixture-relay', true)
+    const owner = await openFixtureTaskOwner({ sandbox })
+    assert.equal(owner.ok, true)
+    const input = bindExample(example(), taskId, artifactRef)
+    input.sourceInput.voiceBinding.taskDraft.deliveryRequested = true
+    const saved = await owner.value.save(saveFrame(taskId, input, 'save:relay'))
+    assert.equal(saved.ok, true, saved.ok ? '' : JSON.stringify(saved.errors))
+    assert.equal(saved.value.outcome, 'SAVED')
+
+    const ownerDoc = JSON.parse(fs.readFileSync(path.join(sandbox.root, OWNER_FILE), 'utf8'))
+    const record = ownerDoc.entries.find((entry) => entry.taskId === taskId).record
+    assert.equal(record.state, 'SAVED')
+    assert.equal(record.deliveryRequested, true)
+    assert.equal(record.outputArtifactRef, saved.value.artifact.artifactRef)
+
+    const candidate = buildRelayHandoffCandidate(record, 'delivery:parent-real')
+    assert.equal(candidate.ok, true, candidate.ok ? '' : JSON.stringify(candidate.errors))
+    assert.equal(candidate.value.stage, 'PROPOSED_NOT_AUTHORIZED')
+    const relay = createFakeRelay()
+    const first = relay.submit(candidate.value)
+    assert.equal(first.value.outcome, 'SENT')
+    const duplicate = relay.submit(candidate.value)
+    assert.equal(duplicate.value.outcome, 'EXISTING')
+
+    // Reopen the owner, re-read the same persisted record and hand it off again: still EXISTING.
+    const reopened = await openFixtureTaskOwner({ sandbox })
+    assert.equal(reopened.ok, true)
+    const got = await reopened.value.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
+    assert.equal(got.ok, true)
+    assert.equal(got.value.ownerState, 'SAVED')
+    const again = buildRelayHandoffCandidate(record, 'delivery:parent-real')
+    assert.equal(again.ok, true)
+    assert.equal(relay.submit(again.value).value.outcome, 'EXISTING')
+
+    relay.simulateUnknown('delivery:parent-real')
+    const resend = relay.submit(candidate.value)
+    assert.equal(resend.ok, false)
+    assert.equal(relay.stats().sent, 1)
+    assert.equal(relay.stats().duplicates, 2)
+
+    // A real Cover SAVED record keeps deliveryRequested=false and is rejected at the handoff.
+    const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:relay', intentDraft: draft(artifactRef), observedAt: NOW })
+    assert.equal(birth.ok, true)
+    const cover = await executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:relay', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent,
+    })
+    assert.equal(cover.value.outcome, 'SAVED')
+    const coverOwner = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'audio-cover-owner-v3.json'), 'utf8'))
+    const coverRecord = coverOwner.entries.find((entry) => entry.taskId === birth.value.taskId).record
+    assert.equal(coverRecord.deliveryRequested, false)
+    const blocked = buildRelayHandoffCandidate(coverRecord, 'delivery:cover-real')
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.errors[0].path, 'deliveryRequested')
+    assert.equal(relay.stats().sent, 1)
   } finally {
     removeConfigSandbox(sandbox)
   }

@@ -11,8 +11,14 @@
  */
 import crypto from 'node:crypto'
 
-import { openFixtureArtifactLibrary } from './artifact-library.mjs'
-import { getArtifactState, readStoredForSave } from './fixture-artifact-store-internal.mjs'
+import { importInQueue, openFixtureArtifactLibrary } from './artifact-library.mjs'
+import {
+  enqueueArtifact,
+  getArtifactState,
+  isArtifactLocked,
+  lockArtifact,
+  readStoredForSave,
+} from './fixture-artifact-store-internal.mjs'
 import { identityHashOf } from './fixture-task-store-internal.mjs'
 import {
   buildIntent,
@@ -30,6 +36,9 @@ import {
   separateTwoStemCooperative,
   validateCoverGraphShape,
 } from './cover-stage-bytes-internal.mjs'
+import { computeCoverReadiness } from './cover-readiness-internal.mjs'
+import { verifyCoverDependencies } from './cover-dependencies-internal.mjs'
+import { acquireCoverLease, releaseCoverLease } from './cover-lease-internal.mjs'
 import {
   COVER_CATALOG_FILE,
   COVER_OWNER_FILE,
@@ -98,6 +107,7 @@ const MESSAGES = Object.freeze({
   SAVED: '演示翻唱已保存到本地演示资产库；这不是真实生成，也没有发送到微信。',
   CANCELLED: '演示翻唱已取消；未保存成品。',
   FAILED: '演示翻唱执行失败。',
+  UNKNOWN: '演示翻唱处于不确定状态；未自动重跑。',
   ACCEPTED: '已收到演示取消请求；尚未确认阶段停止。',
   TOO_LATE: '保存已提交，不能再取消。',
 })
@@ -165,7 +175,7 @@ function buildRecord({ taskId, draft, observedAt }) {
   }
 }
 
-function makeAttempt(requestKey, now) {
+function makeAttempt(requestKey, now, lease) {
   return {
     attemptId: 'cover-attempt:' + crypto.randomBytes(16).toString('hex'),
     attemptSeq: COVER_ATTEMPT_SEQ,
@@ -175,10 +185,10 @@ function makeAttempt(requestKey, now) {
     status: 'RUNNING',
     error: null,
     lease: {
-      leaseId: 'lease:cover:' + crypto.randomBytes(12).toString('hex'),
+      leaseId: lease.leaseId,
       kind: 'LOGICAL_FIXTURE',
-      gpu: 'EXCLUSIVE',
-      acquiredAt: now,
+      gpu: lease.gpu,
+      acquiredAt: lease.acquiredAt,
       releasedAt: null,
     },
   }
@@ -284,26 +294,169 @@ function fullManifest(stage, { intentHash, attemptId, rootSourceIdentityHash, tr
   }
 }
 
-function attachmentOf({ intent, attemptId, graph }) {
-  return {
+/**
+ * Rebuild the 7-key attachment from the persisted 14-key owner entry and verify every lineage link.
+ * The owner v3 entry shape has no attachment key, so the attachment is a derived proof: it is only
+ * accepted when it matches the Intent, attempt, manifest stages and MASTER receipt exactly.
+ */
+function attachmentFromEntry(entry) {
+  const manifest = entry.manifest
+  if (!manifest || !manifest.source || !manifest.converted || !manifest.master || !manifest.master.inspection) return null
+  if (!isSha256Hex(manifest.source.byteSha256) || !isSha256Hex(manifest.converted.byteSha256)) return null
+  if (!manifest.master.parentLinks || !Array.isArray(manifest.master.parentLinks)) return null
+  const receiptCheckpoint = (entry.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
+  if (!receiptCheckpoint) return null
+  const proof = receiptCheckpoint.importReceipt
+  const intentHash = intentHashOf(entry.intent)
+  if (intentHash !== entry.intentHash) return null
+  if (proof.byteSha256 !== manifest.master.byteSha256) return null
+  const instrumentalSha = manifest.instrumental ? manifest.instrumental.byteSha256 : null
+  if (manifest.master.parentLinks.some((link) => link.role === 'INSTRUMENTAL') !== (instrumentalSha !== null)) return null
+  const attachment = {
     attachmentVersion: 1,
-    intentHash: intentHashOf(intent),
-    attemptId,
-    sourceEntryIdentityHash: intent.sourceEntryIdentityHash,
+    intentHash,
+    attemptId: entry.attempt.attemptId,
+    sourceEntryIdentityHash: entry.intent.sourceEntryIdentityHash,
     lineage: {
-      sourceSha256: graph.source.byteSha256,
-      vocalInputSha256: graph.vocal ? graph.vocal.byteSha256 : graph.source.byteSha256,
-      instrumentalSha256: graph.instrumental ? graph.instrumental.byteSha256 : null,
-      convertedSha256: graph.converted.byteSha256,
+      sourceSha256: manifest.source.byteSha256,
+      vocalInputSha256: manifest.vocal ? manifest.vocal.byteSha256 : manifest.source.byteSha256,
+      instrumentalSha256: instrumentalSha,
+      convertedSha256: manifest.converted.byteSha256,
     },
-    masterSha256: graph.master.byteSha256,
+    masterSha256: manifest.master.byteSha256,
     verification: {
-      validationState: graph.master.inspection.validationState,
-      peak: graph.master.inspection.peak,
-      fullScaleSampleCount: graph.master.inspection.fullScaleSampleCount,
-      durationMs: graph.master.inspection.durationMs,
+      validationState: manifest.master.inspection.validationState,
+      peak: manifest.master.inspection.peak,
+      fullScaleSampleCount: manifest.master.inspection.fullScaleSampleCount,
+      durationMs: manifest.master.inspection.durationMs,
     },
   }
+  for (const key of ['sourceSha256', 'vocalInputSha256', 'convertedSha256', 'masterSha256']) {
+    const value = key === 'masterSha256' ? attachment.masterSha256 : attachment.lineage[key]
+    if (!isSha256Hex(value)) return null
+  }
+  if (attachment.lineage.instrumentalSha256 !== null && !isSha256Hex(attachment.lineage.instrumentalSha256)) return null
+  return attachment
+}
+
+function isSha256Hex(value) {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+}
+
+/**
+ * Shared FINAL transaction used by execute and resume. The caller holds the Artifact queue and has
+ * already persisted checkpoint[4] with the receipt. This function performs the fresh JOINT proof,
+ * the FINAL SAVED write and the post-commit owner+artifact confirmation.
+ */
+async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attemptId, requestNow }) {
+  let owner
+  try {
+    owner = readCoverOwner(state)
+  } catch {
+    return { kind: 'EXECUTION_UNKNOWN' }
+  }
+  const claimed = findOwnerEntry(owner.snapshot, scopeId, taskId)
+  if (!claimed || claimed.kind !== 'COVER' || claimed.phase !== 'CLAIMED' || claimed.attempt.attemptId !== attemptId) {
+    return { kind: 'EXECUTION_UNKNOWN' }
+  }
+  const receiptCheckpoint = (claimed.checkpoints || []).find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
+  if (!receiptCheckpoint) return { kind: 'EXECUTION_UNKNOWN' }
+  const receipt = receiptCheckpoint.importReceipt
+  const attachment = attachmentFromEntry(claimed)
+  if (!attachment || attachment.masterSha256 !== receipt.byteSha256) return { kind: 'EXECUTION_UNKNOWN' }
+  let fresh
+  try {
+    fresh = readStoredForSave(artifactState, { scopeId, artifactRef: receipt.artifactRef, now: requestNow })
+  } catch {
+    return { kind: 'EXECUTION_UNKNOWN' }
+  }
+  if (!fresh || fresh.ok !== true || fresh.value.state !== 'STORED') return { kind: 'ARTIFACT_MISSING' }
+  const proof = fresh.value.artifact
+  if (proof.byteSha256 !== receipt.byteSha256 || proof.byteLength !== receipt.byteLength) return { kind: 'ARTIFACT_CHANGED' }
+  if (Date.parse(proof.expiresAt) <= Date.parse(requestNow)) return { kind: 'ARTIFACT_EXPIRED' }
+
+  const finishedAt = new Date().toISOString()
+  const next = clone(claimed)
+  next.phase = 'FINAL'
+  next.completion = { kind: 'SAVED', reason: null }
+  next.record.state = 'SAVED'
+  next.record.outputArtifactRef = receipt.artifactRef
+  next.record.observedAt = requestNow
+  next.attempt.status = 'SAVED'
+  next.attempt.finishedAt = finishedAt
+  if (next.attempt.lease) next.attempt.lease.releasedAt = finishedAt
+  next.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: receipt.byteSha256 }
+  if (!next.checkpoints.some((checkpoint) => checkpoint.index === 5)) {
+    next.checkpoints.push({
+      index: 5,
+      stage: 'VERIFIED',
+      at: requestNow,
+      status: 'DONE',
+      tempSummary: { role: 'MASTER', byteSha256: receipt.byteSha256, byteLength: receipt.byteLength },
+      importReceipt: null,
+    })
+  }
+  try {
+    writeOwner(state, owner, next, 'increment')
+  } catch (error) {
+    return { kind: 'FINAL_FAILED', mapped: mapStoreError(error) }
+  }
+
+  let confirmedOwner
+  try {
+    confirmedOwner = readCoverOwner(state)
+  } catch {
+    lockCoverStore(state)
+    lockArtifact(artifactState)
+    return { kind: 'SAVE_UNKNOWN' }
+  }
+  const finalEntry = findOwnerEntry(confirmedOwner.snapshot, scopeId, taskId)
+  if (!finalEntry || finalEntry.phase !== 'FINAL' || !finalEntry.completion || finalEntry.completion.kind !== 'SAVED') {
+    lockCoverStore(state)
+    lockArtifact(artifactState)
+    return { kind: 'SAVE_UNKNOWN' }
+  }
+  let confirmedArtifact
+  try {
+    confirmedArtifact = readStoredForSave(artifactState, { scopeId, artifactRef: receipt.artifactRef, now: requestNow })
+  } catch {
+    lockArtifact(artifactState)
+    return { kind: 'SAVE_UNKNOWN' }
+  }
+  if (!confirmedArtifact || confirmedArtifact.ok !== true || confirmedArtifact.value.state !== 'STORED') {
+    lockArtifact(artifactState)
+    return { kind: 'SAVE_UNKNOWN' }
+  }
+  return {
+    kind: 'SAVED',
+    entry: finalEntry,
+    master: {
+      artifactRef: receipt.artifactRef,
+      byteLength: proof.byteLength,
+      sha256: proof.byteSha256,
+      expiresAt: proof.expiresAt,
+    },
+  }
+}
+
+function resultForSaved(entry, master) {
+  return success({
+    schemaVersion: 1,
+    outcome: 'SAVED',
+    attemptId: entry.attempt.attemptId,
+    statusState: 'SAVED',
+    messageZh: MESSAGES.SAVED,
+    value: {
+      taskId: entry.taskId,
+      scopeId: entry.scopeId,
+      intentHash: entry.intentHash,
+      attemptId: entry.attempt.attemptId,
+      master: { artifactRef: master.artifactRef, byteLength: master.byteLength, sha256: master.sha256, expiresAt: master.expiresAt },
+      inspection: entry.manifest.master.inspection,
+      messageZh: MESSAGES.SAVED,
+      mockOnly: true,
+    },
+  })
 }
 
 function writeOwner(state, owner, entry, mode) {
@@ -514,7 +667,30 @@ function sameIntent(entry, request) {
   return intentHashOf(JSON.parse(canonical)) === entry.intentHash
 }
 
-export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent }) {
+function resultForExisting(existing) {
+  const attemptId = existing.attempt && existing.attempt.attemptId ? existing.attempt.attemptId : null
+  if (existing.phase !== 'FINAL') {
+    return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId, statusState: 'CLAIMED', messageZh: MESSAGES.EXISTING, value: null })
+  }
+  const kind = existing.completion ? existing.completion.kind : 'UNKNOWN'
+  if (kind === 'SAVED') {
+    return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId, statusState: 'SAVED', messageZh: MESSAGES.EXISTING, value: null })
+  }
+  if (kind === 'CANCELLED') {
+    return success({ schemaVersion: 1, outcome: 'CANCELLED', attemptId, statusState: 'CANCELLED', messageZh: MESSAGES.CANCELLED, value: null })
+  }
+  if (kind === 'FAILED') {
+    return success({ schemaVersion: 1, outcome: 'FAILED', attemptId, statusState: 'FAILED', messageZh: MESSAGES.FAILED, value: null })
+  }
+  return success({ schemaVersion: 1, outcome: 'UNKNOWN', attemptId, statusState: 'UNKNOWN', messageZh: MESSAGES.UNKNOWN, value: null })
+}
+
+function findOwnerEntry(snapshot, scopeId, taskId) {
+  if (!snapshot) return null
+  return snapshot.entries.find((entry) => entry.scopeId === scopeId && entry.taskId === taskId) || null
+}
+
+export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies }) {
   if (!sandbox || typeof scopeId !== 'string' || typeof taskId !== 'string' || typeof requestKey !== 'string') {
     return failure('INPUT_INVALID')
   }
@@ -525,6 +701,10 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
   if (Date.parse(intent.rightsExpiresAt) <= Date.parse(requestNow)) return failure('EXPIRED', 'expiresAt')
   if (!rights || rights.state !== 'GRANTED' || rights.proofRef !== intent.rightsProofRef) {
     return failure('RIGHTS_REJECTED', 'rights')
+  }
+  if (dependencies !== undefined && dependencies !== null) {
+    const verified = verifyCoverDependencies({ intent, dependencies, now: requestNow })
+    if (!verified.ok) return failure('DEPENDENCY_FAILURE', verified.errors[0].path)
   }
   const state = getCoverState(sandbox)
   if (isCoverStoreLocked(state)) return failure('UNKNOWN')
@@ -541,31 +721,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
   const birth = findCatalogEntry(catalog.snapshot, scopeId, taskId, null)
   if (!birth) return failure('BIRTH_REQUIRED')
   if (!sameIntent(birth, { intent })) return failure('INTENT_MISMATCH', 'intent')
-  const existing = owner.snapshot
-    ? owner.snapshot.entries.find((entry) => entry.scopeId === scopeId && entry.taskId === taskId)
-    : null
-  if (existing && existing.phase === 'FINAL') {
-    const kind = existing.completion ? existing.completion.kind : 'UNKNOWN'
-    const outcome = kind === 'SAVED' ? 'EXISTING' : kind === 'CANCELLED' ? 'CANCELLED' : kind === 'FAILED' ? 'FAILED' : 'UNKNOWN'
-    return success({
-      schemaVersion: 1,
-      outcome,
-      attemptId: existing.attempt.attemptId,
-      statusState: kind === 'SAVED' ? 'SAVED' : kind,
-      messageZh: outcome === 'EXISTING' ? MESSAGES.EXISTING : MESSAGES[kind] || MESSAGES.UNKNOWN,
-      value: null,
-    })
-  }
-  if (existing && existing.phase === 'CLAIMED') {
-    return success({
-      schemaVersion: 1,
-      outcome: 'EXISTING',
-      attemptId: existing.attempt.attemptId,
-      statusState: 'CLAIMED',
-      messageZh: MESSAGES.EXISTING,
-      value: null,
-    })
-  }
+  const existing = findOwnerEntry(owner.snapshot, scopeId, taskId)
+  if (existing) return resultForExisting(existing)
 
   let library
   try {
@@ -588,7 +745,15 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     }
     const birthNow = findCatalogEntry(catalogNow.snapshot, scopeId, taskId, null)
     if (!birthNow) return failure('BIRTH_REQUIRED')
-    const attempt = makeAttempt(requestKey, requestNow)
+    if (!sameIntent(birthNow, { intent })) return failure('INTENT_MISMATCH', 'intent')
+    // The outer read is only a fast path; the queue is the single writer, so the authoritative
+    // single-claim check must repeat here after the previous holder released the tail.
+    const existingNow = findOwnerEntry(ownerNow.snapshot, scopeId, taskId)
+    if (existingNow) return resultForExisting(existingNow)
+    const lease = acquireCoverLease({ sandbox, compute: 'LOCAL_GPU', now: requestNow })
+    if (!lease.ok) return failure('RESOURCE_LIMIT', 'gpu')
+    try {
+    const attempt = makeAttempt(requestKey, requestNow, lease.value)
     const entry = {
       entryVersion: 1,
       kind: 'COVER',
@@ -644,6 +809,32 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     if (sourceEntryIdentityHash(source.facts) !== entry.intent.sourceEntryIdentityHash) {
       await finalizeTerminal(state, entry, 'FAILED', 'SOURCE_CHANGED')
       return failure('SOURCE_CHANGED', 'sourceInput')
+    }
+
+    // The same readiness evaluator used by the UI now gates the actual execution with the real
+    // source proof, model revisions, GPU lease, evidence validity and first-visit confirmation.
+    const readiness = computeCoverReadiness({
+      mode: 'SVC',
+      sourceType: 'AUDIO_REF',
+      source: { present: true, rightsState: source.metadata.rights.state, expiresAt: source.metadata.expiresAt },
+      model:
+        dependencies && dependencies.model
+          ? dependencies.model
+          : { present: true, revision: entry.intent.modelRevision, requiredRevision: entry.intent.modelRevision },
+      gpu: { available: true },
+      cloud: dependencies && dependencies.cloud ? dependencies.cloud : { authorized: false, providerReady: false },
+      evidence:
+        dependencies && dependencies.evidence
+          ? dependencies.evidence
+          : { observedAt: requestNow, expiresAt: entry.intent.rightsExpiresAt, realReady: false, source: 'FIXTURE_LIBRARY_PROOF' },
+      confirmation:
+        dependencies && dependencies.confirmation ? dependencies.confirmation : { firstVisit: false, confirmed: false },
+      now: requestNow,
+    })
+    if (!readiness.ok || readiness.value.ready !== true) {
+      await finalizeTerminal(state, entry, 'FAILED', 'DEPENDENCY_FAILURE')
+      const blockedPath = readiness.ok && readiness.value.blockedBy.length > 0 ? readiness.value.blockedBy[0].path : 'readiness'
+      return failure('DEPENDENCY_FAILURE', blockedPath)
     }
 
     const sampleRate = entry.intent.outputProfile.sampleRate
@@ -767,76 +958,109 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     entry.checkpoints.push({ index: 3, stage: 'MIXED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
     if (await cancelled()) return cancelNow(state, entry, requestNow)
 
-    let imported
+    const artifactState = getArtifactState(sandbox)
+    if (isArtifactLocked(artifactState)) {
+      await finalizeTerminal(state, entry, 'FAILED', 'DEPENDENCY_FAILURE')
+      return failure('DEPENDENCY_FAILURE')
+    }
+    const importKey = 'import:cover-master:' + attempt.attemptId.slice(-16)
+    let outcome
     try {
-      imported = await library.value.import({
-        schemaVersion: 1,
-        scopeId,
-        requestKey: 'import:cover-master:' + attempt.attemptId.slice(-16),
-        bytes: graph.master.bytes,
-        now: requestNow,
-        expiresAt: entry.intent.rightsExpiresAt,
-        rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
+      // One Artifact-queue critical section: import -> receipt checkpoint -> fresh JOINT proof ->
+      // FINAL write -> post-commit confirmation. The Cover queue is held for the whole attempt.
+      outcome = await enqueueArtifact(artifactState, async () => {
+        if (isArtifactLocked(artifactState)) return { kind: 'ARTIFACT_LOCKED' }
+        const imported = importInQueue(artifactState, {
+          schemaVersion: 1,
+          scopeId,
+          requestKey: importKey,
+          bytes: graph.master.bytes,
+          now: requestNow,
+          expiresAt: entry.intent.rightsExpiresAt,
+          rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
+        })
+        if (!imported || imported.ok !== true) return { kind: 'IMPORT_FAILED' }
+        if (imported.value.outcome !== 'STORED' && imported.value.outcome !== 'EXISTING') return { kind: 'IMPORT_FAILED' }
+        const artifactRef = imported.value.artifact.artifactRef
+        const first = readStoredForSave(artifactState, { scopeId, artifactRef, now: requestNow })
+        if (!first || first.ok !== true || first.value.state !== 'STORED') return { kind: 'ARTIFACT_MISSING' }
+        const proof = first.value.artifact
+        if (proof.byteSha256 !== graph.master.byteSha256 || proof.byteLength !== graph.master.byteLength) return { kind: 'ARTIFACT_MISMATCH' }
+        if (Date.parse(proof.expiresAt) <= Date.parse(requestNow)) return { kind: 'ARTIFACT_EXPIRED' }
+        if (!proof.rights || proof.rights.state !== 'GRANTED' || proof.rights.proofRef !== entry.intent.rightsProofRef) {
+          return { kind: 'ARTIFACT_RIGHTS' }
+        }
+
+        entry.manifest.master = {
+          manifestVersion: 1,
+          taskId,
+          scopeId,
+          intentHash: entry.intentHash,
+          attemptId: attempt.attemptId,
+          role: 'MASTER',
+          producedByStage: 'MIXING',
+          sequence: 3,
+          parentLinks: [
+            { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256 },
+            ...(graph.instrumental ? [{ role: 'INSTRUMENTAL', byteSha256: graph.instrumental.byteSha256 }] : []),
+          ],
+          rootSourceIdentityHash: entry.intent.sourceEntryIdentityHash,
+          rootSourceSha256: entry.intent.sourceByteSha256,
+          byteLength: graph.master.byteLength,
+          byteSha256: graph.master.byteSha256,
+          inspection: graph.master.inspection,
+          mediaProfile: graph.mediaProfile,
+          rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
+          expiresAt: entry.intent.rightsExpiresAt,
+          modelRevision: entry.intent.modelRevision,
+          profileRevision: entry.intent.profileRevision,
+          backendRevision: entry.intent.backendRevision,
+          origin: 'SYNTHETIC_FIXTURE',
+          truthLevel: 'MEASURED_SYNTHETIC_VERIFIED',
+          availability: 'STORED',
+          verification: { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.master.byteSha256 },
+        }
+        entry.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.master.byteSha256 }
+        entry.checkpoints.push({
+          index: 4,
+          stage: 'MASTER_IMPORTED',
+          at: requestNow,
+          status: 'DONE',
+          tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength },
+          importReceipt: {
+            artifactRef,
+            byteSha256: proof.byteSha256,
+            byteLength: proof.byteLength,
+            expiresAt: proof.expiresAt,
+            requestKey: proof.requestKey || importKey,
+          },
+        })
+        try {
+          writeOwner(state, readCoverOwner(state), entry, 'same')
+        } catch (error) {
+          return { kind: 'CHECKPOINT_FAILED', mapped: mapStoreError(error) }
+        }
+
+        // Crash window: the claim and the receipt are now durable, but there is no FINAL yet.
+        if (fenceOf(state, taskId)) return { kind: 'CANCEL_DURING_IMPORT' }
+        return finalizeCoverSaved(state, artifactState, { scopeId, taskId, attemptId: attempt.attemptId, requestNow })
       })
     } catch {
-      imported = null
+      return failure('EXECUTION_UNKNOWN')
     }
-    if (!imported || imported.ok !== true) {
-      await finalizeTerminal(state, entry, 'FAILED', 'SAVE_REJECTED')
-      return failure('SAVE_REJECTED')
+    if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
+    if (outcome.kind === 'CANCEL_DURING_IMPORT') return cancelNow(state, entry, requestNow)
+    if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
+    if (outcome.kind === 'CHECKPOINT_FAILED' || outcome.kind === 'FINAL_FAILED') return outcome.mapped || failure('SAVE_UNKNOWN')
+    if (outcome.kind === 'SAVE_UNKNOWN') return failure('SAVE_UNKNOWN')
+    if (outcome.kind === 'ARTIFACT_LOCKED') return failure('DEPENDENCY_FAILURE')
+    const failureKey =
+      outcome.kind === 'ARTIFACT_EXPIRED' ? 'EXPIRED' : outcome.kind === 'ARTIFACT_RIGHTS' ? 'RIGHTS_REJECTED' : 'SAVE_REJECTED'
+    await finalizeTerminal(state, entry, 'FAILED', failureKey)
+    return failure(failureKey)
+    } finally {
+      releaseCoverLease({ sandbox, leaseId: lease.value.leaseId })
     }
-    const masterMetadata = imported.value.artifact || imported.value
-    const masterRef = masterMetadata.artifactRef
-    entry.manifest.master = {
-      manifestVersion: 1,
-      taskId,
-      scopeId,
-      intentHash: entry.intentHash,
-      attemptId: attempt.attemptId,
-      role: 'MASTER',
-      producedByStage: 'MIXING',
-      sequence: 3,
-      parentLinks: [
-        { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256 },
-        ...(graph.instrumental ? [{ role: 'INSTRUMENTAL', byteSha256: graph.instrumental.byteSha256 }] : []),
-      ],
-      rootSourceIdentityHash: entry.intent.sourceEntryIdentityHash,
-      rootSourceSha256: entry.intent.sourceByteSha256,
-      byteLength: graph.master.byteLength,
-      byteSha256: graph.master.byteSha256,
-      inspection: graph.master.inspection,
-      mediaProfile: graph.mediaProfile,
-      rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
-      expiresAt: entry.intent.rightsExpiresAt,
-      modelRevision: entry.intent.modelRevision,
-      profileRevision: entry.intent.profileRevision,
-      backendRevision: entry.intent.backendRevision,
-      origin: 'SYNTHETIC_FIXTURE',
-      truthLevel: 'MEASURED_SYNTHETIC_VERIFIED',
-      availability: 'STORED',
-      verification: { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.master.byteSha256 },
-    }
-    entry.checkpoints.push({
-      index: 4,
-      stage: 'MASTER_IMPORTED',
-      at: requestNow,
-      status: 'DONE',
-      tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength },
-      importReceipt: {
-        artifactRef: masterRef,
-        byteSha256: graph.master.byteSha256,
-        byteLength: graph.master.byteLength,
-        expiresAt: entry.intent.rightsExpiresAt,
-        requestKey: entry.attempt.requestKey,
-      },
-    })
-    // A cancel observed during the import keeps the already STORED MASTER (never deleted) and stops
-    // before FINAL SAVED; the receipt stays readable for status/cleanup evidence.
-    if (fenceOf(state, taskId)) return cancelNow(state, entry, requestNow)
-    entry.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: graph.master.byteSha256 }
-    entry.checkpoints.push({ index: 5, stage: 'VERIFIED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
-
-    return finalizeSaved(state, entry, graph, masterRef, requestNow)
   })
 }
 
@@ -942,43 +1166,7 @@ async function cancelNow(state, entry, requestedAt) {
   })
 }
 
-async function finalizeSaved(state, entry, graph, masterRef, now) {
-  const owner = readCoverOwner(state)
-  const next = clone(entry)
-  next.phase = 'FINAL'
-  next.completion = { kind: 'SAVED', reason: null }
-  next.record.state = 'SAVED'
-  next.record.outputArtifactRef = masterRef
-  next.record.observedAt = now
-  next.attempt.status = 'SAVED'
-  next.attempt.finishedAt = now
-  if (next.attempt.lease) next.attempt.lease.releasedAt = now
-  const attachment = attachmentOf({ intent: next.intent, attemptId: next.attempt.attemptId, graph })
-  next.attachment = attachment
-  try {
-    writeOwner(state, owner, next, 'increment')
-  } catch {
-    return failure('SAVE_UNKNOWN')
-  }
-  clearFence(state, next.taskId)
-  return success({
-    schemaVersion: 1,
-    outcome: 'SAVED',
-    attemptId: next.attempt.attemptId,
-    statusState: 'SAVED',
-    messageZh: MESSAGES.SAVED,
-    value: {
-      taskId: next.taskId,
-      scopeId: next.scopeId,
-      intentHash: next.intentHash,
-      attemptId: next.attempt.attemptId,
-      master: { artifactRef: masterRef, byteLength: graph.master.byteLength, sha256: graph.master.byteSha256, expiresAt: next.intent.rightsExpiresAt },
-      inspection: graph.master.inspection,
-      messageZh: MESSAGES.SAVED,
-      mockOnly: true,
-    },
-  })
-}
+async function finalizeSaved_removed() {}
 
 /* ------------------------------------------------ status/cancel ----------------------------- */
 
@@ -1048,71 +1236,47 @@ export async function requestCoverCancel({ sandbox, scopeId, taskId, attemptId, 
 
 export async function resumeCoverFinal({ sandbox, scopeId, taskId, attemptId, requestKey, now }) {
   if (!sandbox || typeof scopeId !== 'string' || typeof taskId !== 'string') return failure('INPUT_INVALID')
+  if (typeof attemptId !== 'string' || typeof requestKey !== 'string') return failure('INPUT_INVALID', 'attemptId')
   const requestNow = canonicalIso(now)
   if (requestNow === null) return failure('INPUT_INVALID', 'now')
   const state = getCoverState(sandbox)
-  let library
+  if (isCoverStoreLocked(state)) return failure('UNKNOWN')
+  let owner
   try {
-    library = await openFixtureArtifactLibrary({ sandbox })
-  } catch {
-    return failure('DEPENDENCY_FAILURE')
+    owner = readCoverOwner(state)
+  } catch (error) {
+    const mapped = mapStoreError(error)
+    return mapped || failure('INTERNAL_FAILURE')
   }
-  if (!library || library.ok !== true) return failure('DEPENDENCY_FAILURE')
+  const existing = findOwnerEntry(owner.snapshot, scopeId, taskId)
+  if (!existing || existing.kind !== 'COVER') return failure('NOT_FOUND')
+  // Identity first: a resume may only continue the exact attempt/request that owns the claim.
+  if (existing.attempt.attemptId !== attemptId) return failure('NOT_FOUND', 'attemptId')
+  if (existing.attempt.requestKey !== requestKey) return failure('NOT_FOUND', 'requestKey')
+  if (existing.phase === 'FINAL') return resultForExisting(existing)
+  if (existing.attempt.status !== 'RUNNING') return failure('EXECUTION_UNKNOWN')
+  if (!(existing.checkpoints || []).some((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)) {
+    return failure('EXECUTION_UNKNOWN')
+  }
+  const artifactState = getArtifactState(sandbox)
+  if (isArtifactLocked(artifactState)) return failure('DEPENDENCY_FAILURE')
   return enqueueCover(state, async () => {
     try {
-      const owner = readCoverOwner(state)
-      const entry = owner.snapshot
-        ? owner.snapshot.entries.find((item) => item.scopeId === scopeId && item.taskId === taskId)
-        : null
-      if (!entry) return failure('NOT_FOUND')
-      if (entry.phase === 'FINAL') {
-        return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId: entry.attempt.attemptId, statusState: 'SAVED', messageZh: MESSAGES.EXISTING, value: null })
-      }
-      const receiptCheckpoint = entry.checkpoints.find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt)
-      if (!receiptCheckpoint) return failure('EXECUTION_UNKNOWN')
-      const receipt = receiptCheckpoint.importReceipt
-      const fresh = await library.value.get({
-        schemaVersion: 1,
-        scopeId,
-        artifactRef: receipt.artifactRef,
-        now: requestNow,
-        rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
-      })
-      if (!fresh || fresh.ok !== true || fresh.value.outcome !== 'FOUND') return failure('EXECUTION_UNKNOWN')
-      const freshInspection = fresh.value.artifact.inspection || {}
-      if (freshInspection.sha256 !== receipt.byteSha256 || freshInspection.byteLength !== receipt.byteLength) {
+      let outcome
+      try {
+        // No second import: a resume only finishes an already receipted claim.
+        outcome = await enqueueArtifact(artifactState, () =>
+          finalizeCoverSaved(state, artifactState, { scopeId, taskId, attemptId, requestNow }),
+        )
+      } catch {
         return failure('EXECUTION_UNKNOWN')
       }
-      const manifestMaster = entry.manifest.master
-      if (!manifestMaster || manifestMaster.byteSha256 !== receipt.byteSha256) return failure('EXECUTION_UNKNOWN')
-      const next = clone(entry)
-      next.phase = 'FINAL'
-      next.completion = { kind: 'SAVED', reason: null }
-      next.record.state = 'SAVED'
-      next.record.outputArtifactRef = receipt.artifactRef
-      next.record.observedAt = requestNow
-      next.attempt.status = 'SAVED'
-      next.attempt.finishedAt = requestNow
-      if (next.attempt.lease) next.attempt.lease.releasedAt = requestNow
-      next.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: receipt.byteSha256 }
-      writeOwner(state, owner, next, 'increment')
-      return success({
-        schemaVersion: 1,
-        outcome: 'SAVED',
-        attemptId: next.attempt.attemptId,
-        statusState: 'SAVED',
-        messageZh: MESSAGES.SAVED,
-        value: {
-          taskId,
-          scopeId,
-          intentHash: next.intentHash,
-          attemptId: next.attempt.attemptId,
-          master: { artifactRef: receipt.artifactRef, byteLength: receipt.byteLength, sha256: receipt.byteSha256, expiresAt: receipt.expiresAt },
-          inspection: next.manifest.master.inspection,
-          messageZh: MESSAGES.SAVED,
-          mockOnly: true,
-        },
-      })
+      if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
+      if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
+      if (outcome.kind === 'FINAL_FAILED') return outcome.mapped || failure('SAVE_UNKNOWN')
+      if (outcome.kind === 'SAVE_UNKNOWN') return failure('SAVE_UNKNOWN')
+      if (outcome.kind === 'ARTIFACT_EXPIRED') return failure('EXPIRED')
+      return failure('SAVE_REJECTED')
     } catch (error) {
       const mapped = mapStoreError(error)
       return mapped || failure('INTERNAL_FAILURE')

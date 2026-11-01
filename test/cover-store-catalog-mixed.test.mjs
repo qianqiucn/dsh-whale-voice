@@ -7,6 +7,7 @@ import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { createCoverTask, executeCover } from '../core/audio/cover-executor-internal.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
+import { identityHashOf } from '../core/audio/fixture-task-store-internal.mjs'
 
 const NOW = '2026-11-01T00:00:00.000Z'
 const EXPIRES = '2026-11-02T00:00:00.000Z'
@@ -19,9 +20,10 @@ test('a v3 catalog file keeps a legacy entry while a Cover birth is appended', a
     const legacyEntry = {
       scopeId: SCOPE,
       idempotencyKey: 'key:fixture-legacy-1',
-      identityHash: 'f'.repeat(64),
+      identityHash: '',
       record: { schemaVersion: 1, taskId: 'task:fixture-' + 'a'.repeat(32), feature: 'singing', taskType: 'SVC', source: { kind: 'AUDIO_REF', ref: 'artifact:fixture-bytes-' + '0'.repeat(32) }, voiceProfileId: 'voice:demo-hero', deliveryRequested: false, rights: { state: 'CONFIRMED_FIXTURE' }, state: 'CREATED', outputArtifactRef: null, cancel: { requested: false, confirmed: false }, delivery: { state: 'NOT_REQUESTED', deliveryId: null }, lastError: null, observedAt: NOW, mockOnly: true, realOperationAllowed: false },
     }
+    legacyEntry.identityHash = identityHashOf(legacyEntry.record)
     fs.writeFileSync(path.join(sandbox.root, 'audio-task-catalog-v1.json'), JSON.stringify({ schemaVersion: 3, revision: 1, entries: [legacyEntry] }))
     const library = await openFixtureArtifactLibrary({ sandbox })
     const imported = await library.value.import({

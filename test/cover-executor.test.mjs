@@ -240,7 +240,7 @@ test('cancel and resume on a SAVED task are TOO_LATE / EXISTING', async () => {
     const cancel = await requestCoverCancel({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: run.value.attemptId, now: NOW })
     assert.equal(cancel.ok, true)
     assert.equal(cancel.value.cancelState, 'TOO_LATE')
-    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: run.value.attemptId, requestKey: 'cover-resume:1', now: NOW })
+    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: run.value.attemptId, requestKey: 'cover-exec:late', now: NOW })
     assert.equal(resume.ok, true)
     assert.equal(resume.value.outcome, 'EXISTING')
   } finally {
@@ -351,7 +351,7 @@ test('busy cancel leaves confirmed cancel and released lease evidence', async ()
   }
 })
 
-test('resume completes a receipted claim without a second import and then is EXISTING', async () => {
+test('resume refuses an incomplete hand-built manifest instead of fabricating SAVED', async () => {
   const { sandbox, library, sourceRef } = await setup()
   try {
     const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-resume', intentDraft: draft({ sourceRef }), observedAt: NOW })
@@ -399,12 +399,11 @@ test('resume completes a receipted claim without a second import and then is EXI
     const state = getCoverState(sandbox)
     const ownerBefore = readCoverOwner(state)
     writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' })
-    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-resume:2', now: NOW })
-    assert.equal(resume.ok, true)
-    assert.equal(resume.value.outcome, 'SAVED')
-    const second = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-resume:3', now: NOW })
-    assert.equal(second.ok, true)
-    assert.equal(second.value.outcome, 'EXISTING')
+    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-exec:resume', now: NOW })
+    assert.equal(resume.ok, false)
+    assert.equal(resume.errors[0].code, COVER_EXECUTION_CODES.EXECUTION_UNKNOWN)
+    const after = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
+    assert.equal(after.value.state, 'CLAIMED')
     const master = await library.value.get({ schemaVersion: 1, scopeId: SCOPE, artifactRef: metadata.artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF } })
     assert.equal(master.value.outcome, 'FOUND')
   } finally {
@@ -428,7 +427,7 @@ test('resume without a receipt stays EXECUTION_UNKNOWN and writes nothing', asyn
     }
     const ownerBefore = readCoverOwner(state)
     writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' })
-    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: claimed.attempt.attemptId, requestKey: 'cover-resume:n', now: NOW })
+    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: claimed.attempt.attemptId, requestKey: 'cover-exec:n', now: NOW })
     assert.equal(resume.ok, false)
     assert.equal(resume.errors[0].code, COVER_EXECUTION_CODES.EXECUTION_UNKNOWN)
   } finally {

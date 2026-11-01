@@ -14,6 +14,7 @@ import path from 'node:path'
 
 import { sha256, stableStringify, checkSandbox } from './fixture-store-base-internal.mjs'
 import { identityHashOf } from './fixture-task-store-internal.mjs'
+import { COVER_INTENT_KEYS, intentHashOf } from './cover-intent-internal.mjs'
 
 export const COVER_CATALOG_FILE = 'audio-cover-catalog-v3.json'
 export const COVER_OWNER_FILE = 'audio-cover-owner-v3.json'
@@ -45,31 +46,212 @@ export class CoverStoreFailure extends Error {
 
 const STATES = new WeakMap()
 
+/* --------------------------------------------- validation ---------------------------------- */
+
+const COVER_ENTRY_KEYS = ['createdAt', 'entryVersion', 'idempotencyKey', 'identityHash', 'intent', 'intentHash', 'kind', 'record', 'scopeId']
+const OWNER_ENTRY_KEYS = ['attempt', 'birthIdentityHash', 'cancel', 'checkpoints', 'completion', 'entryVersion', 'intent', 'intentHash', 'kind', 'manifest', 'phase', 'record', 'scopeId', 'taskId']
+const ATTEMPT_KEYS = ['attemptId', 'attemptSeq', 'error', 'finishedAt', 'lease', 'requestKey', 'startedAt', 'status']
+const LEASE_KEYS = ['acquiredAt', 'gpu', 'kind', 'leaseId', 'releasedAt']
+const CHECKPOINT_KEYS = ['at', 'importReceipt', 'index', 'stage', 'status', 'tempSummary']
+const RECEIPT_KEYS = ['artifactRef', 'byteLength', 'byteSha256', 'expiresAt', 'requestKey']
+const CANCEL_KEYS = ['acknowledgedAt', 'confirmedAt', 'reason', 'requested', 'requestedAt']
+const MANIFEST_KEYS = ['converted', 'instrumental', 'master', 'source', 'verification', 'vocal']
+const RECORD_KEYS = [
+  'cancel', 'delivery', 'deliveryRequested', 'feature', 'lastError', 'mockOnly', 'observedAt', 'outputArtifactRef',
+  'realOperationAllowed', 'rights', 'schemaVersion', 'source', 'state', 'taskId', 'taskType', 'voiceProfileId',
+]
+const PHASES = new Set(['CLAIMED', 'FINAL'])
+const COMPLETIONS = new Set(['SAVED', 'CANCELLED', 'FAILED'])
+const OWNER_STATES = new Set(['CREATED', 'CANCELLED', 'FAILED', 'SAVED'])
+
+function exactKeys(value, keys) {
+  if (!isPlainObject(value)) return false
+  const actual = Object.keys(value).sort().join(',')
+  return actual === keys.slice().sort().join(',')
+}
+
+function isIso(value) {
+  if (typeof value !== 'string') return false
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) && new Date(ms).toISOString() === value
+}
+
+function isSha256(value) {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+}
+
+function validRecord(record, taskId) {
+  if (!exactKeys(record, RECORD_KEYS)) return false
+  if (record.schemaVersion !== 1 || record.taskId !== taskId || record.deliveryRequested !== false) return false
+  if (record.mockOnly !== true || record.realOperationAllowed !== false) return false
+  return true
+}
+
+function validCheckpoint(checkpoint) {
+  if (!exactKeys(checkpoint, CHECKPOINT_KEYS)) return false
+  if (!Number.isInteger(checkpoint.index) || checkpoint.index < 0 || checkpoint.index > 5) return false
+  if (typeof checkpoint.stage !== 'string' || checkpoint.status !== 'DONE' || !isIso(checkpoint.at)) return false
+  if (checkpoint.tempSummary !== null) {
+    if (!exactKeys(checkpoint.tempSummary, ['byteLength', 'byteSha256', 'role'])) return false
+    if (!isSha256(checkpoint.tempSummary.byteSha256) || !Number.isInteger(checkpoint.tempSummary.byteLength)) return false
+  }
+  if (checkpoint.importReceipt !== null) {
+    if (!exactKeys(checkpoint.importReceipt, RECEIPT_KEYS)) return false
+    if (!isSha256(checkpoint.importReceipt.byteSha256) || typeof checkpoint.importReceipt.artifactRef !== 'string') return false
+    if (typeof checkpoint.importReceipt.requestKey !== 'string' || !isIso(checkpoint.importReceipt.expiresAt)) return false
+    if (!Number.isInteger(checkpoint.importReceipt.byteLength) || checkpoint.importReceipt.byteLength < 1) return false
+  }
+  return true
+}
+
+function validOwnerCoverEntry(entry) {
+  if (!exactKeys(entry, OWNER_ENTRY_KEYS)) return false
+  if (entry.entryVersion !== 1 || entry.kind !== 'COVER') return false
+  if (typeof entry.scopeId !== 'string' || typeof entry.taskId !== 'string') return false
+  if (!PHASES.has(entry.phase) || !isSha256(entry.birthIdentityHash)) return false
+  if (!isPlainObject(entry.intent) || Object.keys(entry.intent).sort().join(',') !== [...COVER_INTENT_KEYS].sort().join(',')) return false
+  if (entry.intent.taskId !== entry.taskId || entry.intent.scopeId !== entry.scopeId) return false
+  if (!isSha256(entry.intentHash) || intentHashOf(entry.intent) !== entry.intentHash) return false
+  if (!validRecord(entry.record, entry.taskId)) return false
+  if (!exactKeys(entry.attempt, ATTEMPT_KEYS)) return false
+  if (typeof entry.attempt.attemptId !== 'string' || !/^cover-attempt:[0-9a-f]{32}$/.test(entry.attempt.attemptId)) return false
+  if (entry.attempt.attemptSeq !== 1 || typeof entry.attempt.requestKey !== 'string') return false
+  if (entry.attempt.status !== 'RUNNING' && entry.attempt.status !== 'SAVED' && entry.attempt.status !== 'CANCELLED' && entry.attempt.status !== 'FAILED') return false
+  if (!isIso(entry.attempt.startedAt)) return false
+  if (entry.attempt.lease !== null) {
+    if (!exactKeys(entry.attempt.lease, LEASE_KEYS)) return false
+    if (typeof entry.attempt.lease.leaseId !== 'string' || entry.attempt.lease.kind !== 'LOGICAL_FIXTURE') return false
+    if (entry.attempt.lease.gpu !== 'EXCLUSIVE' && entry.attempt.lease.gpu !== 'NONE') return false
+    if (!isIso(entry.attempt.lease.acquiredAt)) return false
+    if (entry.attempt.lease.releasedAt !== null && !isIso(entry.attempt.lease.releasedAt)) return false
+  }
+  if (!Array.isArray(entry.checkpoints) || entry.checkpoints.length < 1 || entry.checkpoints.length > 6) return false
+  const indices = new Set()
+  for (const checkpoint of entry.checkpoints) {
+    if (!validCheckpoint(checkpoint)) return false
+    if (indices.has(checkpoint.index)) return false
+    indices.add(checkpoint.index)
+  }
+  if (!exactKeys(entry.manifest, MANIFEST_KEYS)) return false
+  if (!exactKeys(entry.cancel, CANCEL_KEYS)) return false
+
+  if (entry.phase === 'CLAIMED') {
+    if (entry.completion !== null || entry.attempt.status !== 'RUNNING') return false
+    if (entry.attempt.finishedAt !== null) return false
+    if (entry.attempt.lease !== null && entry.attempt.lease.releasedAt !== null) return false
+    return true
+  }
+  if (!exactKeys(entry.completion, ['kind', 'reason'])) return false
+  if (!COMPLETIONS.has(entry.completion.kind)) return false
+  if (entry.attempt.status !== entry.completion.kind || !isIso(entry.attempt.finishedAt)) return false
+  if (entry.attempt.lease !== null && !isIso(entry.attempt.lease.releasedAt)) return false
+  if (entry.completion.kind === 'SAVED') {
+    if (entry.record.state !== 'SAVED' || typeof entry.record.outputArtifactRef !== 'string') return false
+    const receipt = entry.checkpoints.find((checkpoint) => checkpoint.index === 4 && checkpoint.importReceipt !== null)
+    if (!receipt) return false
+    const proof = receipt.importReceipt
+    if (proof.artifactRef !== entry.record.outputArtifactRef) return false
+    if (!entry.manifest.master || entry.manifest.master.availability !== 'STORED') return false
+    if (entry.manifest.master.byteSha256 !== proof.byteSha256 || !isPlainObject(entry.manifest.master.inspection)) return false
+    return true
+  }
+  if (entry.record.state !== entry.completion.kind) return false
+  return true
+}
+
+function validLegacyOwnerEntry(entry) {
+  if (!exactKeys(entry, ['birthIdentityHash', 'completion', 'phase', 'record', 'scopeId', 'taskId'])) return false
+  if (!PHASES.has(entry.phase) || !isPlainObject(entry.record)) return false
+  if (entry.phase === 'CLAIMED') return entry.completion === null
+  return isPlainObject(entry.completion) && typeof entry.completion.kind === 'string'
+}
+
+function validCatalogEntry(entry) {
+  if (!isPlainObject(entry) || typeof entry.scopeId !== 'string' || typeof entry.idempotencyKey !== 'string') return false
+  if (entry.kind === 'COVER') {
+    if (!exactKeys(entry, COVER_ENTRY_KEYS) || entry.entryVersion !== 1) return false
+    if (!isSha256(entry.identityHash) || identityHashOf(entry.record) !== entry.identityHash) return false
+    if (!isPlainObject(entry.intent) || Object.keys(entry.intent).sort().join(',') !== [...COVER_INTENT_KEYS].sort().join(',')) return false
+    if (!isSha256(entry.intentHash) || intentHashOf(entry.intent) !== entry.intentHash) return false
+    if (!isPlainObject(entry.record) || entry.record.deliveryRequested !== false) return false
+    return isIso(entry.createdAt)
+  }
+  if (entry.kind !== undefined) return false
+  if (!exactKeys(entry, ['identityHash', 'idempotencyKey', 'record', 'scopeId'])) return false
+  return isSha256(entry.identityHash) && identityHashOf(entry.record) === entry.identityHash
+}
+
+function probeLegacySnapshot(state, kind) {
+  const name = kind === 'owner' ? LEGACY_OWNER_FILE : LEGACY_CATALOG_FILE
+  const target = path.join(state.sandbox.root, name)
+  let stat
+  try {
+    stat = fs.lstatSync(target)
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return { missing: true }
+    raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()) raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  if (stat.size > COVER_STORE_MAX_BYTES) raise(COVER_STORE_CODES.RESOURCE_LIMIT, '$')
+  let bytes
+  try {
+    bytes = fs.readFileSync(target)
+  } catch {
+    raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  }
+  if (bytes.length > COVER_STORE_MAX_BYTES) raise(COVER_STORE_CODES.RESOURCE_LIMIT, '$')
+  let parsed
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'))
+  } catch {
+    raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  }
+  if (!isPlainObject(parsed) || !Number.isInteger(parsed.revision) || parsed.revision < 0 || !Array.isArray(parsed.entries)) {
+    raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  }
+  if (parsed.schemaVersion === COVER_STORE_SCHEMA_VERSION) {
+    for (const entry of parsed.entries) {
+      if (kind === 'owner' ? !(entry.kind === 'COVER' ? validOwnerCoverEntry(entry) : validLegacyOwnerEntry(entry)) : !validCatalogEntry(entry)) {
+        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+      }
+    }
+    return { v3: true }
+  }
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) raise(COVER_STORE_CODES.STORE_INVALID, 'schemaVersion')
+  for (const entry of parsed.entries) {
+    if (!isPlainObject(entry) || typeof entry.scopeId !== 'string') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    if (kind === 'owner') {
+      if (typeof entry.taskId !== 'string' || (entry.phase !== 'CLAIMED' && entry.phase !== 'FINAL')) {
+        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+      }
+    } else if (typeof entry.idempotencyKey !== 'string') {
+      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    }
+  }
+  return { v3: false }
+}
+
 /** One serialised cover-store state per trusted sandbox capability. */
-/** Resolve which file carries the Cover v3 snapshot: legacy filename when free/v3, dedicated as fallback. */
+/**
+ * Resolve which file carries the Cover v3 snapshot. The legacy filename is used when it is absent or
+ * already holds a valid v3 snapshot; a valid known v1/v2 snapshot forces the dedicated fallback. A
+ * damaged, oversized, symlinked or unknown-version legacy file fails closed instead of being silently
+ * treated as a fallback (contract §15.1 / 104-R04).
+ */
 export function resolveCoverFile(state, kind) {
+  checkSandbox(state)
   const legacyName = kind === 'owner' ? LEGACY_OWNER_FILE : LEGACY_CATALOG_FILE
   const dedicatedName = kind === 'owner' ? COVER_OWNER_FILE : COVER_CATALOG_FILE
-  const legacyPath = path.join(state.sandbox.root, legacyName)
   const dedicatedPath = path.join(state.sandbox.root, dedicatedName)
-  const exists = (target) => {
+  const probe = probeLegacySnapshot(state, kind)
+  if (probe.missing) {
     try {
-      return fs.lstatSync(target).isFile()
+      return fs.lstatSync(dedicatedPath).isFile() ? dedicatedName : legacyName
     } catch {
-      return false
+      return legacyName
     }
   }
-  if (exists(legacyPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(legacyPath, 'utf8'))
-      if (parsed && parsed.schemaVersion === COVER_STORE_SCHEMA_VERSION) return legacyName
-    } catch {
-      // fall through to the dedicated file
-    }
-    return dedicatedName
-  }
-  if (exists(dedicatedPath)) return dedicatedName
-  return legacyName
+  return probe.v3 ? legacyName : dedicatedName
 }
 export function getCoverState(sandbox) {
   let state = STATES.get(sandbox)
@@ -168,21 +350,7 @@ export function readCoverCatalog(state) {
     raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
   }
   for (const entry of parsed.entries) {
-    if (!isPlainObject(entry) || typeof entry.scopeId !== 'string' || typeof entry.idempotencyKey !== 'string') {
-      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-    }
-    if (entry.kind === 'COVER') {
-      const keys = Object.keys(entry).sort().join(',')
-      if (keys !== 'createdAt,entryVersion,idempotencyKey,identityHash,intent,intentHash,kind,record,scopeId') {
-        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-      }
-      if (!isPlainObject(entry.intent) || !isPlainObject(entry.record)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-      if (identityHashOf(entry.record) !== entry.identityHash) {
-        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-      }
-    } else if (entry.kind !== undefined) {
-      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-    }
+    if (!validCatalogEntry(entry)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
   }
   return { snapshot: parsed, digest: raw.digest }
 }
@@ -203,16 +371,10 @@ export function readCoverOwner(state) {
     if (!isPlainObject(entry) || typeof entry.scopeId !== 'string' || typeof entry.taskId !== 'string') {
       raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     }
-    if (entry.phase !== 'CLAIMED' && entry.phase !== 'FINAL') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     if (entry.kind === 'COVER') {
-      if (!isPlainObject(entry.intent) || !isPlainObject(entry.record) || !isPlainObject(entry.attempt)) {
-        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-      }
-    } else {
-      // Mixed legacy entry (6 keys): scopeId/taskId/birthIdentityHash/phase/record/completion.
-      const keys = Object.keys(entry).sort().join(',')
-      if (keys !== 'birthIdentityHash,completion,phase,record,scopeId,taskId') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-      if (!isPlainObject(entry.record)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+      if (!validOwnerCoverEntry(entry)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    } else if (!validLegacyOwnerEntry(entry)) {
+      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     }
   }
   return { snapshot: parsed, digest: raw.digest }
@@ -260,7 +422,21 @@ function writeAtomic(state, name, bytes) {
 export function writeCoverSnapshot(state, name, candidate, options) {
   const mode = options && options.mode === 'same' ? 'same' : 'increment'
   const baseDigest = options ? options.baseDigest : undefined
-  const current = name.includes('catalog') ? readCoverCatalog(state) : readCoverOwner(state)
+  if (!isPlainObject(candidate) || candidate.schemaVersion !== COVER_STORE_SCHEMA_VERSION || !Array.isArray(candidate.entries)) {
+    raise(COVER_STORE_CODES.STORE_INVALID, '$')
+  }
+  if (!Number.isInteger(candidate.revision) || candidate.revision < 0) raise(COVER_STORE_CODES.STORE_INVALID, 'revision')
+  const isCatalog = name.includes('catalog')
+  for (const entry of candidate.entries) {
+    if (isCatalog) {
+      if (!validCatalogEntry(entry)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    } else if (entry && entry.kind === 'COVER') {
+      if (!isPlainObject(entry) || !validOwnerCoverEntry(entry)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    } else if (!validLegacyOwnerEntry(entry)) {
+      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    }
+  }
+  const current = isCatalog ? readCoverCatalog(state) : readCoverOwner(state)
   const currentDigest = current.digest
   if (baseDigest !== currentDigest) {
     raise(COVER_STORE_CODES.STORE_CHANGED, '$')

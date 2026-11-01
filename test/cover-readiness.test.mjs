@@ -51,6 +51,19 @@ test('SVC without GPU falls back to authorized cloud, otherwise both reasons app
   assert.deepEqual(blocked.value.blockedBy.map((item) => item.code), ['COVER_READINESS_GPU_UNAVAILABLE', 'COVER_READINESS_CLOUD_NOT_AUTHORIZED'])
 })
 
+test('an authorized but not-ready SVC cloud never becomes ready', () => {
+  const cloud = svc({ gpu: { available: false }, cloud: { authorized: true, providerReady: false } })
+  assert.equal(cloud.value.ready, false)
+  assert.deepEqual(cloud.value.blockedBy.map((item) => item.code), ['COVER_READINESS_GPU_UNAVAILABLE', 'COVER_READINESS_PROVIDER_NOT_READY'])
+})
+
+test('a future observedAt is invalid evidence, not a valid fixture', () => {
+  const future = svc({ evidence: { observedAt: '2026-11-03T00:00:00.000Z', expiresAt: '2026-11-04T00:00:00.000Z', realReady: false } })
+  assert.equal(future.value.ready, false)
+  assert.equal(future.value.evidence.state, 'UNKNOWN')
+  assert.equal(future.value.blockedBy.some((item) => item.code === 'COVER_READINESS_EVIDENCE_UNKNOWN'), true)
+})
+
 test('a missing or mismatched model blocks SVC', () => {
   assert.equal(svc({ model: { present: false, revision: 0, requiredRevision: 2 } }).value.ready, false)
   assert.equal(svc({ model: { present: true, revision: 1, requiredRevision: 2 } }).value.ready, false)

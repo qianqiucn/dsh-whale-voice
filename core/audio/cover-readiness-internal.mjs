@@ -93,7 +93,8 @@ export function computeCoverReadiness(input) {
   const evidenceExpires = evidence ? isoOrNull(evidence.expiresAt) : null
   let evidenceState = 'UNKNOWN'
   if (evidence && evidenceObserved !== null && evidenceExpires !== null && evidence.realReady === false) {
-    evidenceState = Date.parse(evidenceExpires) > Date.parse(now) ? 'VALID_FIXTURE' : 'STALE'
+    if (Date.parse(evidenceObserved) > Date.parse(now)) evidenceState = 'UNKNOWN'
+    else evidenceState = Date.parse(evidenceExpires) > Date.parse(now) ? 'VALID_FIXTURE' : 'STALE'
   } else if (evidence && evidence.realReady !== false) {
     evidenceState = 'UNKNOWN'
   }
@@ -144,11 +145,12 @@ export function computeCoverReadiness(input) {
     } else {
       push('model', 'MODEL', 'OK', true)
     }
-    const computeReady = gpu.available === true || cloud.authorized === true
+    const computeReady = gpu.available === true || (cloud.authorized === true && cloud.providerReady === true)
     push('compute', 'RUNTIME', computeReady ? 'OK' : 'MISSING', true)
     if (!computeReady) {
       blocked.push(issue('GPU_UNAVAILABLE', 'gpu.available'))
       if (cloud.authorized !== true) blocked.push(issue('CLOUD_NOT_AUTHORIZED', 'cloud.authorized'))
+      else if (cloud.providerReady !== true) blocked.push(issue('PROVIDER_NOT_READY', 'cloud.providerReady'))
     }
   }
 
