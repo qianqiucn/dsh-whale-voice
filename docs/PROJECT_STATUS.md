@@ -424,3 +424,9 @@ entities and flows are explicitly `NOT_IMPLEMENTED`; the frozen v1.6 save contra
 code/tests remain untouched (7 files in M's F-A unit and the rest of the tree unchanged). This unit
 adds no runtime capability and does not close P08-07, Cover execution, resources/cancellation,
 dynamic evidence or the parent Fake E2E; parent Plan 08 stays IN_PROGRESS.
+The contract candidate received a full revision (`092-R01..R06`): public `reserveCover` with a
+19-key draft + measured source entry, 25-key legal intent and recomputed vectors, library rights
+mapping and physical source refs, field-level RVC gateway adapter (mono), typed owner v3/manifest
+shapes, exact revision/attachment/crash/cancel semantics and exact capacity/peak budgets. The
+document remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no product code, tests, contracts or media
+were changed in this revision, and parent P08/Plan 08 stays IN_PROGRESS.

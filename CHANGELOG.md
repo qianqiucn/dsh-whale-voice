@@ -6,6 +6,19 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Docs: the Cover execution / StageArtifact **contract candidate** was revised for the six review
+  groups `092-R01..R06` (still **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Birth now has a public
+  `reserveCover` (schema 1) with a 19-key `intentDraft` + measured 7-key `sourceEntry` and a
+  no-second-ID duplicate sequence; legal intent is 25 keys with recomputed canonical/SHA vectors
+  (`44223ddf…0f13`, five variants); the library-domain `GRANTED` rights mapping and a physical
+  `artifact:fixture-bytes-*` source binding replace the declaration shortcuts; the derived VOCAL
+  adapter maps field-by-field onto the existing 7-key RVC Fake gateway request (mono only); the
+  owner v3 Cover entry is 14 keys with an 8-key attempt, 5-key checkpoints and a typed 6-slot
+  manifest (24/7/24/4); revision is now the exact M sequence (claim +1, checkpoints +0, FINAL =
+  claim+1, example revision 2); the writer takes an optional 5th `coverAttachment` only for the
+  current delta's Cover FINAL; cancel answers are fixed per zone with a `now` clock; crash/reopen
+  and requestKey dedup rules are explicit; and the budget uses the real serialized entry length
+  (1,399,070 B, P <= 4,892,386 B) plus an exact 20 MiB import peak (17,477,296 B term-by-term).
 - Docs: Plan 08-F-B complete Cover execution / StageArtifact transaction **contract candidate**
   (`docs/COVER_TASK_EXECUTION_CONTRACT.md`, new; **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED**):
   a full, versioned, implementable design for one atomic Cover birth intent on the existing catalog

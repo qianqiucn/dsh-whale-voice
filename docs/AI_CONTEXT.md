@@ -504,3 +504,14 @@ and cleanup/cache boundary, exact peak/admission budgets, the old/new program ×
 `TASK_OWNER_COVER_` codes plus 3 catalog codes and a 15-row state/failure matrix. No runtime, planner,
 validator, tests or media work is added; the frozen save contract v1.6 is untouched and parent Plan
 08 remains IN_PROGRESS.
+
+### 092-R01..R06 revision (still NOT_IMPLEMENTED)
+
+The contract candidate now fixes the six review groups: public `reserveCover` (schema 1) with a
+19-key intentDraft and measured sourceEntry, one no-second-ID duplicate sequence, a 25-key legal
+intent with recomputed canonical vectors; library `GRANTED` rights mapping and a physical
+`artifact:fixture-bytes-*` binding; a field-by-field adapter to the existing 7-key RVC Fake gateway
+(mono only); owner v3 Cover entry 14 keys / attempt 8 / checkpoints 5 / manifest 6 slots typed; the
+exact M revision sequence and delta-only `coverAttachment`; per-zone cancel answers with a `now`
+clock; crash/reopen and requestKey dedup; and the real entry-length budget (1,399,070 B,
+P <= 4,892,386 B) with a 20 MiB exact import peak. No runtime, code, tests or media work is added.

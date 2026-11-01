@@ -448,3 +448,9 @@ algorithms with vectors, queue/checkpoint/recovery/cancel/lease/budget rules, ve
 and error priorities. Everything is `NOT_IMPLEMENTED`; no runtime, tests or media work is added and
 the frozen save contract v1.6 is untouched. This does not complete Cover execution, resources/
 cancellation, dynamic evidence, the parent Fake E2E or any real capability.
+The 08-F-B contract candidate was revised after review (`092-R01..R06`): it now has a single public
+birth protocol and duplicate sequence, a legal canonical Intent (25 keys) with recomputed vectors,
+library-rights/physical-source mapping, a field-level adapter to the existing RVC Fake gateway,
+typed owner/StageArtifact shapes, the exact M revision/attachment/cancel/crash rules and exact
+capacity/peak budgets. It is still NOT_IMPLEMENTED and does not change the Cover execution,
+resources/cancellation, dynamic evidence, parent Fake E2E or real-capability status.
