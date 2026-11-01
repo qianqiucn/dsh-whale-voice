@@ -14,6 +14,7 @@ import path from 'node:path'
 
 import { sha256, stableStringify, checkSandbox } from './fixture-store-base-internal.mjs'
 import { identityHashOf } from './fixture-task-store-internal.mjs'
+import { INSPECTION_KEYS } from './fixture-artifact-store-internal.mjs'
 import { COVER_INTENT_KEYS, intentHashOf } from './cover-intent-internal.mjs'
 
 export const COVER_CATALOG_FILE = 'audio-cover-catalog-v3.json'
@@ -146,7 +147,15 @@ export function validateCoverLineage(entry) {
   } else if (!parentLink(master, 'INSTRUMENTAL', instrumentalHash)) return false
   if (master.parentLinks.length !== (instrumentalHash === null ? 1 : 2)) return false
   if (master.rootSourceSha256 !== intent.sourceByteSha256 || master.rootSourceIdentityHash !== intent.sourceEntryIdentityHash) return false
-  if (!isPlainObject(master.inspection) || master.inspection.sha256 !== master.byteSha256 || master.inspection.byteLength !== master.byteLength) return false
+  if (!isPlainObject(master.inspection) || Object.keys(master.inspection).sort().join(',') !== [...INSPECTION_KEYS].sort().join(',')) return false
+  if (master.inspection.sha256 !== master.byteSha256 || master.inspection.byteLength !== master.byteLength) return false
+  if (
+    !exactKeys(manifest.verification, ['inspectedAt', 'inspector', 'masterSha256', 'state']) ||
+    manifest.verification.state !== 'PASSED' ||
+    manifest.verification.masterSha256 !== master.byteSha256
+  ) {
+    return false
+  }
   if (master.expiresAt !== intent.rightsExpiresAt || !isPlainObject(master.rights)) return false
   if (master.rights.state !== 'GRANTED' || master.rights.proofRef !== intent.rightsProofRef) return false
   if (master.modelRevision !== intent.modelRevision || master.profileRevision !== intent.profileRevision) return false

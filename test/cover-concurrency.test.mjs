@@ -131,18 +131,27 @@ test('two concurrent executions with different request keys still claim once', a
   }
 })
 
-test('different Cover tasks still execute independently and keep separate MASTERs', async () => {
+test('concurrent different Cover tasks conflict on the local GPU lease instead of both running', async () => {
   const { sandbox, sourceRef } = await setup()
   try {
     const a = await birth(sandbox, sourceRef, 'cover:concurrent-task-a')
     const b = await birth(sandbox, sourceRef, 'cover:concurrent-task-b')
     const [first, second] = await Promise.all([run(sandbox, a, 'cover-exec:task-a'), run(sandbox, b, 'cover-exec:task-b')])
-    assert.equal(first.value.outcome, 'SAVED')
-    assert.equal(second.value.outcome, 'SAVED')
-    assert.notEqual(first.value.attemptId, second.value.attemptId)
-    assert.notEqual(first.value.value.master.artifactRef, second.value.value.master.artifactRef)
+    const saved = first.ok ? first : second
+    const blocked = first.ok ? second : first
+    assert.equal(saved.value.outcome, 'SAVED')
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.errors[0].code, COVER_EXECUTION_CODES.RESOURCE_LIMIT)
+    assert.equal(ownerEntries(sandbox).length, 1)
+    assert.equal(packEntries(sandbox).length, 2)
+    const savedTask = first.ok ? a : b
+    const blockedTask = first.ok ? b : a
+    const later = await run(sandbox, blockedTask, 'cover-exec:task-b-later')
+    assert.equal(later.ok, true)
+    assert.equal(later.value.outcome, 'SAVED')
     assert.equal(ownerEntries(sandbox).length, 2)
     assert.equal(packEntries(sandbox).length, 3)
+    assert.equal(savedTask.value.taskId === blockedTask.value.taskId, false)
   } finally {
     removeConfigSandbox(sandbox)
   }

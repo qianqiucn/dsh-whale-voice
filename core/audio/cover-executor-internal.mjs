@@ -369,6 +369,17 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   if (!proof.rights || proof.rights.state !== 'GRANTED' || proof.rights.proofRef !== claimed.intent.rightsProofRef) {
     return { kind: 'ARTIFACT_RIGHTS' }
   }
+  // The manifest inspection is not trusted by hash/length alone: every measured field must match
+  // the fresh library inspection of the same bytes (contract §7.6).
+  const manifestInspection = claimed.manifest.master.inspection
+  if (!manifestInspection || JSON.stringify(Object.keys(manifestInspection).sort()) !== JSON.stringify(Object.keys(proof.inspection).sort())) {
+    return { kind: 'ARTIFACT_CHANGED' }
+  }
+  for (const key of Object.keys(manifestInspection)) {
+    if (JSON.stringify(proof.inspection[key]) !== JSON.stringify(manifestInspection[key])) {
+      return { kind: 'ARTIFACT_CHANGED' }
+    }
+  }
   if (Date.parse(proof.expiresAt) <= Date.parse(requestNow)) return { kind: 'ARTIFACT_EXPIRED' }
 
   const finishedAt = new Date().toISOString()
@@ -686,6 +697,32 @@ function findOwnerEntry(snapshot, scopeId, taskId) {
   return snapshot.entries.find((entry) => entry.scopeId === scopeId && entry.taskId === taskId) || null
 }
 
+async function persistCoverEntry({ state, scopeId, taskId, attemptId, entry }) {
+  const written = await enqueueCover(state, async () => {
+    if (isCoverStoreLocked(state)) return { ok: false, result: failure('UNKNOWN') }
+    let owner
+    try {
+      owner = readCoverOwner(state)
+    } catch (error) {
+      return { ok: false, result: mapStoreError(error) || failure('INTERNAL_FAILURE') }
+    }
+    const current = findOwnerEntry(owner.snapshot, scopeId, taskId)
+    if (!current) return { ok: false, result: failure('EXECUTION_UNKNOWN') }
+    if (current.phase === 'FINAL') return { ok: false, result: resultForExisting(current) }
+    if (!current.attempt || current.attempt.attemptId !== attemptId) return { ok: false, result: failure('EXECUTION_UNKNOWN') }
+    const next = clone(entry)
+    // A cancel request/ack belongs to the same attempt and must survive checkpoint writes.
+    next.cancel = clone(current.cancel)
+    try {
+      writeOwner(state, owner, next, 'same')
+    } catch (error) {
+      return { ok: false, result: mapStoreError(error) || failure('INTERNAL_FAILURE') }
+    }
+    return { ok: true }
+  })
+  return written.ok ? null : written.result
+}
+
 export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies, compute = 'LOCAL_GPU' }) {
   if (!sandbox || typeof scopeId !== 'string' || typeof taskId !== 'string' || typeof requestKey !== 'string') {
     return failure('INPUT_INVALID')
@@ -728,7 +765,7 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
   }
   if (!library || library.ok !== true) return failure('DEPENDENCY_FAILURE')
 
-  return enqueueCover(state, async () => {
+  const claimed = await enqueueCover(state, async () => {
     if (isCoverStoreLocked(state)) return failure('UNKNOWN')
     let catalogNow
     let ownerNow
@@ -748,8 +785,6 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     if (existingNow) return resultForExisting(existingNow)
     const lease = acquireCoverLease({ sandbox, compute, now: requestNow })
     if (!lease.ok) return failure('RESOURCE_LIMIT', 'gpu')
-    let retainLease = false
-    try {
     const attempt = makeAttempt(requestKey, requestNow, lease.value)
     const entry = {
       entryVersion: 1,
@@ -775,6 +810,12 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       const mapped = mapStoreError(error)
       return mapped || failure('INTERNAL_FAILURE')
     }
+    return { entry, attempt, lease: lease.value }
+  })
+  if (!claimed.entry) return claimed
+  const { entry, attempt, lease } = claimed
+  const attemptId = attempt.attemptId
+  try {
     await yieldMacrotask()
 
     // fresh source read at execution time
@@ -905,12 +946,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       entry.manifest.instrumental = compactOf(graph.instrumental)
       entry.checkpoints.push({ index: 1, stage: 'SEPARATED', at: requestNow, status: 'DONE', tempSummary: { role: 'VOCAL', byteSha256: graph.vocal.byteSha256, byteLength: graph.vocal.byteLength }, importReceipt: null })
       if (await cancelled()) return cancelNow(state, entry, requestNow)
-      try {
-        writeOwner(state, readCoverOwner(state), entry, 'same')
-      } catch (error) {
-        const mapped = mapStoreError(error)
-        return mapped || failure('INTERNAL_FAILURE')
-      }
+      const lostSeparated = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
+      if (lostSeparated) return lostSeparated
       await yieldMacrotask()
     }
 
@@ -922,12 +959,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     entry.manifest.converted = compactOf(graph.converted)
     entry.checkpoints.push({ index: 2, stage: 'CONVERTED', at: requestNow, status: 'DONE', tempSummary: { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256, byteLength: graph.converted.byteLength }, importReceipt: null })
     if (await cancelled()) return cancelNow(state, entry, requestNow)
-    try {
-      writeOwner(state, readCoverOwner(state), entry, 'same')
-    } catch (error) {
-      const mapped = mapStoreError(error)
-      return mapped || failure('INTERNAL_FAILURE')
-    }
+    const lostConverted = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
+    if (lostConverted) return lostConverted
     await yieldMacrotask()
 
     const mixResult = await guardedStage(() =>
@@ -958,7 +991,7 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     try {
       // One Artifact-queue critical section: import -> receipt checkpoint -> fresh JOINT proof ->
       // FINAL write -> post-commit confirmation. The Cover queue is held for the whole attempt.
-      outcome = await enqueueArtifact(artifactState, async () => {
+      outcome = await enqueueCover(state, () => enqueueArtifact(artifactState, async () => {
         if (isArtifactLocked(artifactState)) return { kind: 'ARTIFACT_LOCKED' }
         const imported = importInQueue(artifactState, {
           schemaVersion: 1,
@@ -1034,40 +1067,42 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
         // Crash window: the claim and the receipt are now durable, but there is no FINAL yet.
         if (fenceOf(state, taskId)) return { kind: 'CANCEL_DURING_IMPORT' }
         return finalizeCoverSaved(state, artifactState, { scopeId, taskId, attemptId: attempt.attemptId, requestNow })
-      })
+      }))
     } catch {
-      retainLease = true
       return failure('EXECUTION_UNKNOWN')
     }
     if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
     if (outcome.kind === 'CANCEL_DURING_IMPORT') return cancelNow(state, entry, requestNow)
-    if (outcome.kind === 'EXECUTION_UNKNOWN') {
-      retainLease = true
-      return failure('EXECUTION_UNKNOWN')
-    }
+    if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
     if (outcome.kind === 'CHECKPOINT_FAILED' || outcome.kind === 'FINAL_FAILED') {
-      retainLease = true
       return outcome.mapped || failure('SAVE_UNKNOWN')
     }
-    if (outcome.kind === 'SAVE_UNKNOWN') {
-      retainLease = true
-      return failure('SAVE_UNKNOWN')
-    }
-    if (outcome.kind === 'ARTIFACT_LOCKED') {
-      retainLease = true
-      return failure('DEPENDENCY_FAILURE')
-    }
+    if (outcome.kind === 'SAVE_UNKNOWN') return failure('SAVE_UNKNOWN')
+    if (outcome.kind === 'ARTIFACT_LOCKED') return failure('DEPENDENCY_FAILURE')
     const failureKey =
       outcome.kind === 'ARTIFACT_EXPIRED' ? 'EXPIRED' : outcome.kind === 'ARTIFACT_RIGHTS' ? 'RIGHTS_REJECTED' : 'SAVE_REJECTED'
     await finalizeTerminal(state, entry, 'FAILED', failureKey)
     return failure(failureKey)
-    } finally {
-      if (!retainLease) releaseCoverLease({ sandbox, leaseId: lease.value.leaseId })
+  } finally {
+    // Unified rule: the lease is released only when the owner file itself confirms this attempt's
+    // FINAL SAVED/CANCELLED/FAILED. Any unreadable/locked/CLAIMED state keeps the claim and lease.
+    let settled = false
+    try {
+      const ownerNow = readCoverOwner(state)
+      const current = findOwnerEntry(ownerNow.snapshot, scopeId, taskId)
+      settled = Boolean(current && current.phase === 'FINAL' && current.attempt && current.attempt.attemptId === attemptId)
+    } catch {
+      settled = false
     }
-  })
+    if (settled) releaseCoverLease({ sandbox, leaseId: lease.leaseId })
+  }
 }
 
-async function finalizeTerminal(state, entry, kind, code) {
+function finalizeTerminal(state, entry, kind, code) {
+  return enqueueCover(state, () => finalizeTerminalInQueue(state, entry, kind, code))
+}
+
+async function finalizeTerminalInQueue(state, entry, kind, code) {
   try {
     const owner = readCoverOwner(state)
     const next = clone(entry)
@@ -1090,7 +1125,11 @@ async function finalizeTerminal(state, entry, kind, code) {
   clearFence(state, entry.taskId)
 }
 
-async function cancelNow(state, entry, requestedAt) {
+function cancelNow(state, entry, requestedAt) {
+  return enqueueCover(state, () => cancelNowInQueue(state, entry, requestedAt))
+}
+
+async function cancelNowInQueue(state, entry, requestedAt) {
   const stoppedAt = new Date().toISOString()
   const ackAt = requestedAt || stoppedAt
   // Fact 2 (ack): the run observed the fence and persists the acknowledgement as its own short
@@ -1127,10 +1166,12 @@ async function cancelNow(state, entry, requestedAt) {
   } catch {
     return failure('SAVE_UNKNOWN')
   }
-  if (current && current.phase === 'FINAL' && current.completion && current.completion.kind === 'SAVED') {
-    // The cancel lost the race against FINAL; keep the SAVED result and report it as too late.
+  if (current && current.phase === 'FINAL') {
     clearFence(state, current.taskId)
-    return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId: current.attempt.attemptId, statusState: 'SAVED', messageZh: MESSAGES.TOO_LATE, value: null })
+    if (current.completion && current.completion.kind === 'SAVED') {
+      return success({ schemaVersion: 1, outcome: 'EXISTING', attemptId: current.attempt.attemptId, statusState: 'SAVED', messageZh: MESSAGES.TOO_LATE, value: null })
+    }
+    return resultForExisting(current)
   }
   // The in-memory entry is authoritative for this attempt (it may already hold checkpoint 4 from an
   // import that completed just before the fence check); only the cancel timestamps come from disk.

@@ -160,6 +160,25 @@ test('a mutated SOURCE hash is rejected by the writer and never becomes SAVED by
   }
 })
 
+test('a mutated MASTER inspection field is rejected by the writer and never becomes SAVED', async () => {
+  const { sandbox, birth } = await setup()
+  try {
+    await captureCheckpoint4(sandbox, birth)
+    const state = getCoverState(sandbox)
+    const owner = readCoverOwner(state)
+    const mutated = readJson(sandbox)
+    mutated.entries[0].manifest.master.inspection.peak = 0
+    expectStoreInvalid(() => writeCoverSnapshot(state, LEGACY_OWNER_FILE, mutated, { baseDigest: owner.digest, mode: 'same' }))
+    writeJson(sandbox, mutated)
+    const resumed = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: owner.snapshot.entries[0].attempt.attemptId, requestKey: EXEC_KEY, now: NOW })
+    assert.equal(resumed.ok, false)
+    const pack = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'audio-artifacts-v1.json'), 'utf8'))
+    assert.equal(pack.entries.length, 2)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
 test('a rewritten historical checkpoint is rejected by the delta-only writer', async () => {
   const { sandbox, birth } = await setup()
   try {
