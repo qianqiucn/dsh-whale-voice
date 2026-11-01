@@ -454,3 +454,13 @@ E2E; the implementation is still OFFLINE and not integrated.
 Parent-chain E2E is now covered offline (legacy catalog + Fixture library + Cover + handoff; Fake
 Relay dedup/UNKNOWN). Full suite 816/813/3 skip. Still OFFLINE/NOT_INTEGRATED: same-file v3
 integration into the legacy catalog/owner files and the legacy owner run/save engine E2E remain open.
+The same-file v3 integration is now implemented (phase A read/write selection with the dedicated-file
+fallback for existing v1/v2, phase B mixed legacy+Cover entries, phase C old-owner fail-closed), the
+legacy owner run/save engine chain is covered by a real same-source E2E
+(`test/cover-legacy-owner-chain.test.mjs`), cancellation now has frame-level cooperation (4,096-frame
+fence, 65,536-frame macrotask yield) plus separate persisted request/ack/stop/release/cleanup
+evidence (`test/cover-cancel-evidence.test.mjs`), and `core/audio/cover-rollback-internal.mjs` provides
+the explicit checked rollback (`test/cover-rollback.test.mjs`). Contract §15/§15.1–§15.3 record the
+as-built state. Full suite 831/828 pass/3 platform skips/0 fail; build unchanged. Branch
+`feature/plan08-cover-execution`, PR #43 open and unmerged; status stays OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED and parent Plan 08 is not complete.

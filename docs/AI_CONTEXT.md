@@ -558,3 +558,29 @@ A real legacy catalog reserve + Fixture library + Cover run + handoff test now p
 Task id path, the SAVED stop at the delivery boundary, the Fake Relay dedup/UNKNOWN rules and that
 the legacy owner store does not silently execute a Cover task. Contract §15 records the as-built
 matrix; the same-file v3 integration and the legacy owner run/save engine E2E remain open.
+
+### Same-file v3, cancellation and rollback (090 close-out)
+
+This section supersedes the "remain open" notes above. `resolveCoverFile` now selects the snapshot
+file per contract §15.1: a fresh sandbox writes v3 to `audio-task-catalog-v1.json` /
+`audio-task-owner-v1.json`; an existing v3 file there is used in place; an existing v1/v2 snapshot
+forces the dedicated `audio-cover-*-v3.json` files. The v3 readers accept legacy 6-key (owner) and
+4-key (catalog) entries and preserve them byte-for-byte, and the old owner fails closed on a v3 file.
+`test/cover-legacy-owner-chain.test.mjs` is the missing legacy parent E2E: real catalog reserve, real
+legacy owner run (ARTIFACT_READY / SIMULATED) and save (SAVED), then a Cover birth/execute on the same
+Fixture source reaching SAVED, with both legacy files byte-identical and one artifact pack holding
+the source plus two MASTERs.
+
+Cancellation follows §8.1: `cover-stage-bytes-internal.mjs` exposes chunked cooperative stages with a
+synchronous fence read every 4,096 frames and a real macrotask yield at least every 65,536 frames;
+`cover-executor-internal.mjs` persists `acknowledgedAt` before stopping, writes FINAL CANCELLED with
+`confirmedAt`, releases the lease, keeps a cancel-during-import MASTER stored without a FINAL SAVED,
+and exposes the cleaned temp summaries through status. `test/cover-cancel-evidence.test.mjs` proves
+all five facts, including an acknowledged-but-not-confirmed owner snapshot captured at the atomic
+rename before the final write.
+
+`core/audio/cover-rollback-internal.mjs` is the explicit checked rollback: it moves a Cover v3
+snapshot from the legacy filenames back to the dedicated files byte-for-byte and refuses mixed legacy
+data, an existing target or an unreadable file without changing anything. Full suite 831/828 pass/3
+platform skips/0 fail; build unchanged. Branch `feature/plan08-cover-execution`, PR #43 open and
+unmerged. Status **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; parent Plan 08 is not complete.

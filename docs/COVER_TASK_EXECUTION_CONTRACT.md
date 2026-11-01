@@ -1044,11 +1044,11 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 
 ### 14.3 明确未实现
 
-全部 Cover API/catalog v3/owner v3/StageArtifact/三图算法/取消/租约/预算/迁移；真实模型/媒体/GPU/设备/微信/安装发布；父 08 的 Cover/资源/动态 Evidence/Fake E2E。
+本节记录合同编写时的未实现范围（Cover API/catalog v3/owner v3/StageArtifact/三图算法/取消/租约/预算/迁移；真实模型/媒体/GPU/设备/微信/安装发布；父 08 的 Cover/资源/动态 Evidence/Fake E2E）。当前的离线 as-built 与剩余未闭项以 §15 为准；§14 是设计时边界，§15 是本轮实际证据，两者不互相替代。
 
 ### 14.4 状态
 
-**CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED / FIXTURE_ONLY / NOT_INTEGRATED。** 通过只代表设计候选；后续实施必须另有正式执行单元与明确授权。
+**CONTRACT_CANDIDATE / FIXTURE_ONLY / NOT_INTEGRATED。** 设计候选 + 离线 Fixture 实现；不代表真实模型、媒体、GPU、设备、微信或安装能力。
 
 ---
 
@@ -1058,11 +1058,56 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 |---|---|
 | canonical Intent / 稳定源身份 / draft 校验 | **已实现**（`cover-intent-internal.mjs`），基础与五变体向量测试通过 |
 | 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
-| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL attachment / status / 忙阶段取消 / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），8+3 项集成测试 |
-| Cover v3 存储 | **已实现但为专用文件**（`audio-cover-catalog-v3.json` / `audio-cover-owner-v3.json`）；legacy `openCatalogFile/openOwnerFile` 未修改 → 合同要求的同文件 typed entry 集成 **OPEN** |
+| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL attachment / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`） |
+| 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
+| Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
 | 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
 | Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
-| legacy 父链 E2E | **部分**：真实 legacy catalog + Fixture 库 + Cover + handoff 已串；legacy owner 的 run/save 引擎链未串（OPEN） |
+| legacy 父链 E2E | **已实现**：真实 legacy catalog/owner 的 run+save 引擎链与同一 Fixture 源的 Cover 并存，legacy 文件字节不变（`test/cover-legacy-owner-chain.test.mjs`） |
+| 显式回滚 | **已实现**（§15.3，`cover-rollback-internal.mjs`） |
 | 真实模型/媒体/GPU/设备/微信/安装 | **未实现、未授权** |
 
-状态保持 **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED / OFFLINE**：上表仅记录离线代码与测试事实，不表示集成或真实能力。
+上表只记录离线代码与测试事实，不代表集成、真实能力或父 Plan08 完成。
+
+### 15.1 同文件 v3 集成（as-built）
+
+| 阶段 | 行为 | 证据 |
+|---|---|---|
+| A 读/写选择 | `resolveCoverFile`：legacy 文件不存在 → 直接写 v3 到 legacy 文件名；legacy 文件已是 v3 → 继续同文件读写；legacy v1/v2 存在 → 回退专用 `audio-cover-catalog-v3.json` / `audio-cover-owner-v3.json` | `test/cover-executor.test.mjs`（fresh sandbox 与 fallback） |
+| B 混合条目 | owner v3 读取接受 legacy 6 键条目（严格键集/phase）；catalog v3 接受 legacy 4 键条目；写回保留 legacy 条目 deep-equal | `cover-store-mixed.test.mjs` / `cover-store-catalog-mixed.test.mjs` |
+| C 旧程序 | 旧 owner 遇 v3 失败关闭 `TASK_OWNER_STORE_INVALID`，不静默改写、不自动迁移 | `cover-executor.test.mjs` / `cover-parent-e2e.test.mjs` |
+
+非目标：原地改写 legacy v1/v2、双 writer、第二 Task/Artifact authority、自动迁移、删除历史 legacy 条目。
+
+### 15.2 取消 / 租约 / 清理（as-built）
+
+| 事实 | 持久证据 | 代码 |
+|---|---|---|
+| request | `requestCoverCancel` 返回 `ACCEPTED`，写内存 fence + 排队短写 requested/requestedAt | `cover-executor-internal.mjs` |
+| ack | 执行器在合作点观察 fence 后单独短写 `cancel.acknowledgedAt`（confirmedAt 仍 null），随后才停止 | 同上 |
+| stop | FINAL `CANCELLED`：`cancel.confirmedAt`、`completion.kind='CANCELLED'`；不写 FINAL SAVED | 同上 |
+| release | `attempt.lease.releasedAt`；UNKNOWN 不释放 | 同上 |
+| cleanup | attempt 自己产生的 stage 字节只以 compact 记录，status 里 `availability:'CLEANED'`；import 中取消时已 STORED 的 MASTER 保留并记 `STORED`；不删父 SOURCE/共享资源/其他 task | 同上 |
+
+合作点：每 4,096 帧同步读 fence，至少每 65,536 帧执行一次真实宏任务让出；每个 checkpoint 前后、import 前、FINAL 前。帧级让出只在 chunked stage 实现中生效，测试用 20 万/12 万帧输入证明让出次数与取消位置。以上均为 LOGICAL_FIXTURE 逻辑租约，不是 GPU/显存/进程实测。
+
+### 15.3 回滚（as-built）
+
+`planCoverV3Rollback({ sandbox })` 只读计划；`applyCoverV3Rollback({ sandbox })` 把 legacy 文件名中的 v3 快照逐字节移回专用 v3 文件名，失败时恢复已移动文件。拒绝并保持原状的场景：legacy v1/v2（无需回滚，`untouched`）、快照含非 COVER 条目（`COVER_ROLLBACK_LEGACY_DATA`）、专用目标已存在（`COVER_ROLLBACK_TARGET_EXISTS`）、不可读/超大（`STORE_INVALID`/`RESOURCE_LIMIT`）。
+
+可原样执行的虚构示例（仅在隔离 sandbox 内；无路径参数）：
+
+```js
+import { createConfigSandbox, removeConfigSandbox } from './core/config-sandbox.mjs'
+import { planCoverV3Rollback, applyCoverV3Rollback } from './core/audio/cover-rollback-internal.mjs'
+
+const sandbox = createConfigSandbox()
+try {
+  const plan = planCoverV3Rollback({ sandbox })
+  if (plan.ok) console.log(plan.value.moves) // 0..2 个 {kind,from,to,entries,bytes}
+  const applied = applyCoverV3Rollback({ sandbox })
+  if (applied.ok) console.log(applied.value.applied)
+} finally {
+  removeConfigSandbox(sandbox)
+}
+```

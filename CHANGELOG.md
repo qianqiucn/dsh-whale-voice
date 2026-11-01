@@ -6,14 +6,34 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat/docs: 090 Cover close-out. Same-file v3 integration is now real: `resolveCoverFile` writes the
+  v3 snapshot to the legacy catalog/owner filenames in a fresh sandbox, keeps using an existing v3
+  file there, and falls back to the dedicated `audio-cover-*-v3.json` files when a v1/v2 snapshot
+  exists; the v3 readers accept and preserve legacy 6-key owner / 4-key catalog entries and the old
+  owner fails closed. `test/cover-legacy-owner-chain.test.mjs` closes the legacy parent gap: a real
+  legacy catalog reserve, a real legacy owner run (`ARTIFACT_READY`/`SIMULATED`) and save (`SAVED`),
+  then a Cover birth/execute on the same Fixture source to `SAVED`, with both legacy files
+  byte-identical and one artifact pack holding the source plus two MASTERs. Cancellation now follows
+  §8.1 with a synchronous fence read every 4,096 frames and a real macrotask yield at least every
+  65,536 frames, persists `acknowledgedAt` before stopping, writes FINAL `CANCELLED` with
+  `confirmedAt`, releases the lease, keeps a cancel-during-import MASTER stored, and proves the five
+  request/ack/stop/release/cleanup facts in `test/cover-cancel-evidence.test.mjs`. New
+  `core/audio/cover-rollback-internal.mjs` provides the explicit checked rollback (byte-for-byte move
+  back to the dedicated files; mixed legacy data, an existing target or an unreadable file refuse and
+  change nothing) with `test/cover-rollback.test.mjs`. 12 new tests; full suite 831/828 pass/3
+  platform skips/0 fail; build unchanged. Status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+- Docs: the contract now actually contains §15.1–§15.3 (a previous commit had only removed a trailing
+  newline while reports described the section as added). §15.1 records the as-built three-phase
+  same-file v3 integration, §15.2 the cancellation/lease/cleanup evidence, §15.3 the checked rollback
+  with a runnable fictional example; the §15 status table and the §14.3/§14.4 notes were corrected to
+  the real state.
 - Test: parent-chain E2E across the real legacy catalog, the Fixture artifact library, a Cover run
   and the handoff boundary. Proves one legacy singing/SVC reserve mints a single Task id, one real
   source drives both the legacy catalog and a Cover run to SAVED, a Cover SAVED record still cannot
   request delivery, a legacy record with delivery intent reaches the test Fake Relay exactly once
   (duplicate EXISTING, UNKNOWN never resent) and a Cover task id is unknown to the legacy owner
   store (no silent cross-store execution). 5 new tests; full suite 816/813/3 skip/0 fail. Contract
-  §15 now records the as-built status, including the open same-file v3 integration and the legacy
-  owner run/save E2E gap.
+  §15 records the as-built status at that point (superseded by the 090 close-out above).
 - Feat: Cover dynamic dependencies and the Fake Relay boundary. `cover-readiness-internal.mjs`
   computes the minimal dependency set and ordered block reasons for TTS/SVC × AUDIO_REF/TEXT,
   separates first-visit confirmation from availability, rejects stale/unknown/NOT-realReady evidence

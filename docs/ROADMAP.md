@@ -471,3 +471,15 @@ Cover dynamic dependencies and the test-only relay boundary are implemented (OFF
 090 units are legacy v3 store integration and the legacy parent-chain E2E; no real capability changed.
 Parent-chain E2E (legacy catalog + Fixture library + Cover + handoff) is implemented and tested
 offline; same-file v3 integration and the legacy owner run/save engine E2E remain OPEN.
+Same-file v3 integration is now implemented in three phases: a fresh sandbox writes the v3 snapshot
+to the legacy filenames, an existing v3 file there is read/written in place, and an existing v1/v2
+snapshot forces the dedicated v3 files; legacy entries inside a v3 owner/catalog file are preserved.
+The legacy owner run/save engine chain is covered by a real same-source E2E (`cover-legacy-owner-chain`
+test: legacy run reaches ARTIFACT_READY/SIMULATED, legacy save reaches SAVED, both legacy files stay
+byte-identical through a later Cover SAVED). Cancellation has the contract cooperation points (a
+4,096-frame synchronous fence and a real macrotask yield at least every 65,536 frames) with separate
+persisted request/ack/stop/release/cleanup evidence, and the explicit
+`planCoverV3Rollback`/`applyCoverV3Rollback` path moves a v3 snapshot back to the dedicated files while
+refusing mixed legacy data, an existing target or an unreadable file. Full suite 831/828 pass/3
+platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED: no real separation, RVC,
+mixing, GPU, audio device, WeChat or installation path changed, and parent Plan 08 is not complete.
