@@ -4,6 +4,12 @@ This file is the operating contract for every coding agent working on Whale Voic
 changing code. When a user request conflicts with these rules, stop and ask for explicit permission;
 do not silently weaken a safety boundary.
 
+## Whale Voice planning ledger (user-authorized)
+
+The prioritized taskbooks live in [docs/plans/README.md](docs/plans/README.md), with dispatch/completion state in [docs/plans/TASK_STATUS.md](docs/plans/TASK_STATUS.md). They are plans, **not** evidence of implemented behavior. Check this ledger when handing out development tasks, and verify current Git/PR/test evidence first.
+
+For an explicit user request to send the next plan, revise priorities, add an idea, or record a completed task: update the relevant plan files and task status in the **current interaction**, commit to a reviewable branch and report the link. Send **one** new taskbook per user turn; mark completion `DONE` only with sufficient evidence. Do not claim work is happening automatically between turns. Merging, force-pushing, deleting branches, production config writes, service restarts, actual WeChat sending, paid API use, or native Hook/DLL installation still require separate user authorization.
+
 ## 1. Startup workflow (every session)
 
 1. Read this `AGENTS.md`.
