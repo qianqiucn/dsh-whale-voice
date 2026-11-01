@@ -481,3 +481,14 @@ persisted SAVED record into handoff/Fake Relay (SENT/EXISTING/UNKNOWN) and keeps
 record delivery-free. Full suite 856/852 pass/4 platform skips/0 fail; build unchanged. Contract
 §15.4 records the as-built matrix and the remaining OPEN boundaries. PR #43 remains open/unmerged;
 status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.77 incremental review (A/B/C) is now addressed offline: full lineage/receipt/fresh-proof
+validation before SAVED with a delta-only writer (mutation tests in
+`test/cover-proof-hardening.test.mjs`); UNKNOWN outcomes retain the shared GPU lease while only
+determined terminals release it, and `executeCover` gained a real `CPU_CLOUD` compute mode
+(`gpu:'NONE'`, mandatory cloud authorization/provider readiness) with cross-mode conflict/progress
+evidence; dependency facts are mandatory (omission is a hard block) and validate the real voice
+binding/provider/model/evidence/cloud bundle before any claim, with model/asset revision, provider
+removal, shared invalidation and future evidence negatives. All successful executions inject the
+real bundle via `test/support/cover-run.mjs`. Full suite 868/864 pass/4 platform skips/0 fail; build
+unchanged. Contract §15.5 records the as-built state and the remaining OPEN boundaries. PR #43
+remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

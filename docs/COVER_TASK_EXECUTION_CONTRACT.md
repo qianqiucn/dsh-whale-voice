@@ -1060,7 +1060,7 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
 | 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL proof/attachment 校验 / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），队列内二次 claim 复核、终态不重跑 |
 | 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
-| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4，104-R01..R06） |
+| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.5，104-R01..R06 + v1.77 A/B/C） |
 | Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
 | 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
 | Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
@@ -1128,5 +1128,15 @@ try {
 
 1. owner v3 条目按合同固定 14 键，不持久化独立 `attachment` 字段；attachment 由 manifest+receipt 重建并校验，属于派生 proof，不是第二权威。
 2. 帧级取消合作点只覆盖本实现的 Synthetic chunked stage；真实 Provider/流式推理、GPU/显存/进程实测仍未实现。
-3. `dependencies` 是可选参数：legacy 8 键调用方不提供真实 voice binding/provider readiness 时，只走 source/readiness/lease 门禁；提供即 fail-closed 校验。真实调用方应传入真实事实。
+3. `dependencies` 自 v1.77 起为**必需参数**：缺省或字段不全即 `DEPENDENCY_FAILURE`，不存在默认 ready 捷径；调用方必须传入真实 voice binding、provider readiness、model revision 与新鲜 fixture 证据。
 4. 真实模型/媒体/GPU/设备/微信/安装/发送仍未实现、未授权；父 Plan08 未完成。
+
+### 15.5 v1.77 A/B/C 复核修复（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| A 保存/恢复证明 | `validateCoverLineage` 逐字段核对 Intent.sourceByteSha256/byteLength/sourceEntryIdentityHash、source/vocal/instrumental/converted/master 的 parentLinks 链、master inspection 的 sha/len、rights/proof、model/profile/backend revision、checkpoint[4] 的 `import:cover-master:<attempt-suffix>`、expiry 与 byteLength/sha；`attachmentFromEntry` 只在整链通过后重建派生 attachment。FINAL 的 fresh proof 还核对 requestKey、expiry、inspection、rights。`writeCoverSnapshot` 增加 delta-only 准入：只允许 CLAIMED→CLAIMED（identity/record 固定、checkpoint 只追加、manifest 只填 null、cancel 可改）或 CLAIMED→FINAL；FINAL 不可改写；历史条目与 catalog 条目不得改写/重排 | `test/cover-proof-hardening.test.mjs`（receipt key / SOURCE hash 定点变异、历史 checkpoint 改写、FINAL 改写），`test/cover-recovery.test.mjs`（真实 checkpoint[4] 正向恢复） |
+| B UNKNOWN 资源与计算模式 | UNKNOWN/SAVE_UNKNOWN/EXECUTION_UNKNOWN/CHECKPOINT_FAILED/FINAL_FAILED 时保留租约（`isCoverGpuBusy` 仍 true，attempt.lease.releasedAt 仍 null，磁盘 claim 保留）；只有 SAVED/CANCELLED/FAILED 终态或未取得租约时释放。`executeCover` 增加 `compute: 'LOCAL_GPU'|'CPU_CLOUD'`：CPU 模式 `gpu:'NONE'`、readiness 的 `gpu.available=false`、必须 cloud.authorized+providerReady；本地 GPU 冲突 `RESOURCE_LIMIT`，CPU 模式在 GPU 被占时仍可进展 | `test/cover-recovery.test.mjs`（不确定 FINAL 后租约保留）、`test/cover-lease.test.mjs`（CPU gpu:NONE、跨模式冲突、cloud 缺失阻断并释放） |
+| C 依赖门禁 | `dependencies` 必需：`verifyCoverDependencies` 校验真实 voice binding（FIXTURE_BOUND、profile/asset/instance/candidate/modelRef 与 Intent 一致）、provider readiness（FIXTURE_READY）、model present/revision、evidence 的 observedAt/expiresAt/realReady、confirmation/cloud 形状；省略、模型 revision 变化、asset revision 变化、provider 撤除、shared provider 失效、未来 evidence 均在 claim 前或 readiness 门禁处阻断；不存在的“默认 model/gpu/evidence”捷径已删除 | `test/cover-dependencies.test.mjs`、`test/cover-readiness.test.mjs`；所有成功执行测试统一通过 `test/support/cover-run.mjs` 注入真实 bundle |
+
+**仍 OPEN / 边界：** owner v3 条目仍为 14 键、attachment 仍为派生 proof；帧级合作点只覆盖 Synthetic chunked stage；真实 Provider/GPU/媒体/设备/微信/安装/发送未实现未授权；父 Plan08 未完成。

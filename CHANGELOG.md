@@ -6,6 +6,20 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: 090 v1.77 A/B/C close-out. The recovery/save proof is now complete: `validateCoverLineage`
+  checks the source identity against the Intent, every manifest parent link, the MASTER inspection,
+  rights/expiry and the `import:cover-master:<attempt-suffix>` receipt before a derived attachment is
+  accepted; the FINAL fresh proof rechecks requestKey/expiry/inspection/rights; and the writer only
+  admits delta changes (CLAIMED→CLAIMED append-only checkpoints/manifest, CLAIMED→FINAL, never a
+  FINAL rewrite or a historical/catalog rewrite). UNKNOWN outcomes retain the shared GPU lease
+  (`isCoverGpuBusy` stays true, disk claim keeps `releasedAt:null`) while only SAVED/CANCELLED/FAILED
+  release it; `executeCover` now supports `compute:'CPU_CLOUD'` with `gpu:'NONE'`, a real readiness
+  `gpu.available=false` and mandatory cloud.authorized+providerReady, plus cross-mode conflict and
+  progress evidence. Dependency facts are now mandatory: omitting them is a hard
+  `DEPENDENCY_FAILURE`, and the real voice binding/provider/model/evidence/confirmation/cloud bundle
+  is validated before any claim (model revision, asset revision, provider removal, shared
+  invalidation and future evidence all block). All successful-execution tests now inject the real
+  bundle via `test/support/cover-run.mjs`. 12 new tests; full suite 868/864 pass/4 platform skips.
 - Feat: 090 review close-out (104-R01..R06). The executor now re-checks the birth/Intent/current
   entry **inside** the single-writer queue, so concurrent same-key and different-key calls claim once
   and terminal FAILED/CANCELLED states never rerun. `resumeCoverFinal` requires the exact

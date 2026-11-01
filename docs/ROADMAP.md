@@ -494,3 +494,13 @@ and a parent Fake chain driven by the persisted legacy SAVED record into handoff
 (SENT/EXISTING/UNKNOWN) with the Cover record staying delivery-free. Full suite 856/852 pass/4
 platform skips/0 fail. Status remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and
 parent Plan 08 is not complete.
+The v1.77 A/B/C review is addressed on the same branch: full lineage/Intent/receipt/fresh-proof
+validation before SAVED and a delta-only writer (receipt-key, SOURCE-hash, historical-checkpoint and
+FINAL-rewrite mutations all rejected); UNKNOWN outcomes retain the shared GPU lease while only
+SAVED/CANCELLED/FAILED release it; `executeCover` gained a real `CPU_CLOUD` compute mode
+(`gpu:'NONE'`, mandatory cloud facts) with cross-mode conflict/progress evidence; dependency facts
+are mandatory and validate the real voice binding/provider/model/evidence/cloud bundle before any
+claim (omission, model/asset revision, provider removal, shared invalidation and future evidence all
+block). Full suite 868/864 pass/4 platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; the attachment remains derived, real Provider/GPU/media/WeChat/install paths stay
+unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not complete.

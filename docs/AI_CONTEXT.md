@@ -608,3 +608,22 @@ platform skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INT
 attachment remains a derived proof (owner v3 entry is 14 keys), real Provider/GPU/media/WeChat/
 install paths remain unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not
 complete.
+
+### v1.77 A/B/C close-out
+
+`validateCoverLineage` now proves the whole chain before a derived attachment is accepted: Intent
+source hash/length/identity, all manifest parent links, MASTER inspection, rights/expiry and the
+`import:cover-master:<attempt-suffix>` receipt; FINAL additionally rechecks the fresh proof's
+requestKey/expiry/inspection/rights. `writeCoverSnapshot` is delta-only: CLAIMED→CLAIMED may append
+checkpoints/fill null manifests but not change identity/record, CLAIMED→FINAL is allowed, FINAL and
+historical/catalog rewrites are rejected. UNKNOWN outcomes retain the shared GPU lease (in-memory
+busy and disk `releasedAt:null`); only SAVED/CANCELLED/FAILED release it. `executeCover` supports
+`compute:'CPU_CLOUD'` with `gpu:'NONE'`, `gpu.available=false` and mandatory cloud authorization +
+provider readiness, plus cross-mode conflict/progress evidence. Dependency facts are mandatory:
+omitting them is a hard `DEPENDENCY_FAILURE`; the real voice binding/provider/model/evidence/
+confirmation/cloud bundle must validate before any claim, and model revision, asset revision,
+provider removal, shared invalidation and future evidence all block. All successful-execution tests
+inject the real bundle through `test/support/cover-run.mjs`. Full suite 868/864 pass/4 platform
+skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; the attachment
+remains derived, real Provider/GPU/media/WeChat/install paths remain unimplemented and unauthorized,
+PR #43 is unmerged and parent Plan 08 is not complete.
