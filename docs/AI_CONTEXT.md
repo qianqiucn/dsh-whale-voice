@@ -551,3 +551,10 @@ ordered block reasons, first-visit confirmation kept separate, stale/unknown evi
 PROPOSED_NOT_AUTHORIZED candidate only, deduplicates SENT and refuses to resend UNKNOWN. Executor
 tests now also cover busy-cancel evidence and receipt-based resume with zero second import. Still
 open: v3 integration into the legacy catalog/owner files and the legacy parent-chain E2E.
+
+### Parent-chain E2E and as-built status
+
+A real legacy catalog reserve + Fixture library + Cover run + handoff test now proves the single
+Task id path, the SAVED stop at the delivery boundary, the Fake Relay dedup/UNKNOWN rules and that
+the legacy owner store does not silently execute a Cover task. Contract §15 records the as-built
+matrix; the same-file v3 integration and the legacy owner run/save engine E2E remain open.

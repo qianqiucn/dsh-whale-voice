@@ -469,3 +469,5 @@ remaining 090 units (v3 into the legacy files, dynamic dependencies, parent Fake
 cancel/cleanup evidence) are OPEN; no real model, media, device or WeChat capability changed.
 Cover dynamic dependencies and the test-only relay boundary are implemented (OFFLINE). The remaining
 090 units are legacy v3 store integration and the legacy parent-chain E2E; no real capability changed.
+Parent-chain E2E (legacy catalog + Fixture library + Cover + handoff) is implemented and tested
+offline; same-file v3 integration and the legacy owner run/save engine E2E remain OPEN.

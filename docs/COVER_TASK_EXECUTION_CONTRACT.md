@@ -1049,3 +1049,20 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 ### 14.4 状态
 
 **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED / FIXTURE_ONLY / NOT_INTEGRATED。** 通过只代表设计候选；后续实施必须另有正式执行单元与明确授权。
+
+---
+
+## 15. 实施状态（as-built，2026-11-01）
+
+| 项 | 状态 |
+|---|---|
+| canonical Intent / 稳定源身份 / draft 校验 | **已实现**（`cover-intent-internal.mjs`），基础与五变体向量测试通过 |
+| 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
+| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL attachment / status / 忙阶段取消 / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），8+3 项集成测试 |
+| Cover v3 存储 | **已实现但为专用文件**（`audio-cover-catalog-v3.json` / `audio-cover-owner-v3.json`）；legacy `openCatalogFile/openOwnerFile` 未修改 → 合同要求的同文件 typed entry 集成 **OPEN** |
+| 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
+| Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
+| legacy 父链 E2E | **部分**：真实 legacy catalog + Fixture 库 + Cover + handoff 已串；legacy owner 的 run/save 引擎链未串（OPEN） |
+| 真实模型/媒体/GPU/设备/微信/安装 | **未实现、未授权** |
+
+状态保持 **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED / OFFLINE**：上表仅记录离线代码与测试事实，不表示集成或真实能力。

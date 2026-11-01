@@ -6,6 +6,14 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Test: parent-chain E2E across the real legacy catalog, the Fixture artifact library, a Cover run
+  and the handoff boundary. Proves one legacy singing/SVC reserve mints a single Task id, one real
+  source drives both the legacy catalog and a Cover run to SAVED, a Cover SAVED record still cannot
+  request delivery, a legacy record with delivery intent reaches the test Fake Relay exactly once
+  (duplicate EXISTING, UNKNOWN never resent) and a Cover task id is unknown to the legacy owner
+  store (no silent cross-store execution). 5 new tests; full suite 816/813/3 skip/0 fail. Contract
+  §15 now records the as-built status, including the open same-file v3 integration and the legacy
+  owner run/save E2E gap.
 - Feat: Cover dynamic dependencies and the Fake Relay boundary. `cover-readiness-internal.mjs`
   computes the minimal dependency set and ordered block reasons for TTS/SVC × AUDIO_REF/TEXT,
   separates first-visit confirmation from availability, rejects stale/unknown/NOT-realReady evidence

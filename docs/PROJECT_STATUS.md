@@ -451,3 +451,6 @@ skip): dynamic TTS/SVC dependencies with fixture-only evidence, dedup/UNKNOWN-no
 behaviour, busy-cancel evidence and receipt-based resume without a second import. The remaining 090
 gaps are v3 typed-entry integration into the legacy catalog/owner files and the legacy parent-chain
 E2E; the implementation is still OFFLINE and not integrated.
+Parent-chain E2E is now covered offline (legacy catalog + Fixture library + Cover + handoff; Fake
+Relay dedup/UNKNOWN). Full suite 816/813/3 skip. Still OFFLINE/NOT_INTEGRATED: same-file v3
+integration into the legacy catalog/owner files and the legacy owner run/save engine E2E remain open.
