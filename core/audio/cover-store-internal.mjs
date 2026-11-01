@@ -205,10 +205,16 @@ export function readCoverOwner(state) {
     if (!isPlainObject(entry) || typeof entry.scopeId !== 'string' || typeof entry.taskId !== 'string') {
       raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     }
-    if (entry.kind !== 'COVER') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     if (entry.phase !== 'CLAIMED' && entry.phase !== 'FINAL') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
-    if (!isPlainObject(entry.intent) || !isPlainObject(entry.record) || !isPlainObject(entry.attempt)) {
-      raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+    if (entry.kind === 'COVER') {
+      if (!isPlainObject(entry.intent) || !isPlainObject(entry.record) || !isPlainObject(entry.attempt)) {
+        raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+      }
+    } else {
+      // Mixed legacy entry (6 keys): scopeId/taskId/birthIdentityHash/phase/record/completion.
+      const keys = Object.keys(entry).sort().join(',')
+      if (keys !== 'birthIdentityHash,completion,phase,record,scopeId,taskId') raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
+      if (!isPlainObject(entry.record)) raise(COVER_STORE_CODES.STORE_INVALID, 'entries')
     }
   }
   return { snapshot: parsed, digest: raw.digest }
@@ -256,7 +262,7 @@ function writeAtomic(state, name, bytes) {
 export function writeCoverSnapshot(state, name, candidate, options) {
   const mode = options && options.mode === 'same' ? 'same' : 'increment'
   const baseDigest = options ? options.baseDigest : undefined
-  const current = name === COVER_CATALOG_FILE ? readCoverCatalog(state) : readCoverOwner(state)
+  const current = name.includes('catalog') ? readCoverCatalog(state) : readCoverOwner(state)
   const currentDigest = current.digest
   if (baseDigest !== currentDigest) {
     raise(COVER_STORE_CODES.STORE_CHANGED, '$')
