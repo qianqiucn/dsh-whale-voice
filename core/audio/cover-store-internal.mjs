@@ -19,6 +19,8 @@ import { identityHashOf } from './fixture-task-store-internal.mjs'
 
 export const COVER_CATALOG_FILE = 'audio-cover-catalog-v3.json'
 export const COVER_OWNER_FILE = 'audio-cover-owner-v3.json'
+export const LEGACY_CATALOG_FILE = 'audio-task-catalog-v1.json'
+export const LEGACY_OWNER_FILE = 'audio-task-owner-v1.json'
 export const COVER_STORE_MAX_BYTES = 128 * 1024
 export const COVER_STORE_MAX_ENTRIES = 32
 export const COVER_STORE_SCHEMA_VERSION = 3
@@ -46,6 +48,31 @@ export class CoverStoreFailure extends Error {
 const STATES = new WeakMap()
 
 /** One serialised cover-store state per trusted sandbox capability. */
+/** Resolve which file carries the Cover v3 snapshot: legacy filename when free/v3, dedicated as fallback. */
+export function resolveCoverFile(state, kind) {
+  const legacyName = kind === 'owner' ? LEGACY_OWNER_FILE : LEGACY_CATALOG_FILE
+  const dedicatedName = kind === 'owner' ? COVER_OWNER_FILE : COVER_CATALOG_FILE
+  const legacyPath = path.join(state.sandbox.root, legacyName)
+  const dedicatedPath = path.join(state.sandbox.root, dedicatedName)
+  const exists = (target) => {
+    try {
+      return fs.lstatSync(target).isFile()
+    } catch {
+      return false
+    }
+  }
+  if (exists(legacyPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(legacyPath, 'utf8'))
+      if (parsed && parsed.schemaVersion === COVER_STORE_SCHEMA_VERSION) return legacyName
+    } catch {
+      // fall through to the dedicated file
+    }
+    return dedicatedName
+  }
+  if (exists(dedicatedPath)) return dedicatedName
+  return legacyName
+}
 export function getCoverState(sandbox) {
   let state = STATES.get(sandbox)
   if (!state) {
@@ -132,7 +159,7 @@ function isPlainObject(value) {
 
 /** Read the Cover catalog snapshot (`null` when the file does not exist yet). */
 export function readCoverCatalog(state) {
-  const raw = readBounded(state, COVER_CATALOG_FILE)
+  const raw = readBounded(state, resolveCoverFile(state, 'catalog'))
   if (raw.missing) return { snapshot: null, digest: null }
   const parsed = parseJson(raw.bytes)
   if (!isPlainObject(parsed) || parsed.schemaVersion !== COVER_STORE_SCHEMA_VERSION) {
@@ -164,7 +191,7 @@ export function readCoverCatalog(state) {
 
 /** Read the Cover owner snapshot (`null` when the file does not exist yet). */
 export function readCoverOwner(state) {
-  const raw = readBounded(state, COVER_OWNER_FILE)
+  const raw = readBounded(state, resolveCoverFile(state, 'owner'))
   if (raw.missing) return { snapshot: null, digest: null }
   const parsed = parseJson(raw.bytes)
   if (!isPlainObject(parsed) || parsed.schemaVersion !== COVER_STORE_SCHEMA_VERSION) {

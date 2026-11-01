@@ -105,7 +105,8 @@ test('one real source drives both the legacy catalog and a Cover run to SAVED', 
     assert.equal(run.value.outcome, 'SAVED')
     const stored = await library.value.get({ schemaVersion: 1, scopeId: 'scope:fixture-parent', artifactRef: run.value.value.master.artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF } })
     assert.equal(stored.value.outcome, 'FOUND')
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-cover-owner-v3.json')), true)
+    const ownerRaw = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'audio-task-owner-v1.json'), 'utf8'))
+    assert.equal(ownerRaw.schemaVersion, 3)
   } finally {
     removeConfigSandbox(sandbox)
   }
@@ -169,11 +170,8 @@ test('a Cover task id is unknown to the legacy owner store (no silent cross-stor
     const birth = await createCoverTask({ sandbox, scopeId: 'scope:fixture-parent', idempotencyKey: 'cover:parent-5', intentDraft: coverDraft(sourceRef), observedAt: NOW })
     const owner = await import('../core/audio/task-owner.mjs')
     const handle = await owner.openFixtureTaskOwner({ sandbox })
-    assert.equal(handle.ok, true)
-    const read = await handle.value.get({ schemaVersion: 1, scopeId: 'scope:fixture-parent', taskId: birth.value.taskId })
-    assert.equal(read.ok, false)
-    assert.equal(read.errors[0].code, 'TASK_OWNER_NOT_FOUND')
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-task-owner-v1.json')), false)
+    assert.equal(handle.ok, false)
+    assert.equal(handle.errors[0].code, 'TASK_OWNER_STORE_INVALID')
   } finally {
     removeConfigSandbox(sandbox)
   }

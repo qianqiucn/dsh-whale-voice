@@ -30,6 +30,7 @@ import {
   isCoverStoreLocked,
   readCoverCatalog,
   readCoverOwner,
+  resolveCoverFile,
   writeCoverSnapshot,
 } from './cover-store-internal.mjs'
 
@@ -301,7 +302,7 @@ function writeOwner(state, owner, entry, mode) {
   if (index >= 0) next.entries[index] = clone(entry)
   else next.entries.push(clone(entry))
   next.revision = mode === 'same' ? snapshot.revision : snapshot.revision + 1
-  return writeCoverSnapshot(state, COVER_OWNER_FILE, next, { baseDigest: owner.digest, mode })
+  return writeCoverSnapshot(state, resolveCoverFile(state, 'owner'), next, { baseDigest: owner.digest, mode })
 }
 
 function buildStatus(entry) {
@@ -475,7 +476,7 @@ export async function createCoverTask({ sandbox, scopeId, idempotencyKey, intent
       const next = clone(snapshot)
       next.entries.push(entry)
       next.revision = snapshot.revision + 1
-      writeCoverSnapshot(state, COVER_CATALOG_FILE, next, { baseDigest: catalog.digest, mode: 'increment' })
+      writeCoverSnapshot(state, resolveCoverFile(state, 'catalog'), next, { baseDigest: catalog.digest, mode: 'increment' })
     } catch (error) {
       const mapped = mapStoreError(error)
       if (mapped) return mapped

@@ -248,7 +248,7 @@ test('cancel and resume on a SAVED task are TOO_LATE / EXISTING', async () => {
   }
 })
 
-test('the legacy catalog/owner files are untouched by the Cover chain', async () => {
+test('the Cover chain stores v3 under the legacy filenames without dedicated files', async () => {
   const { sandbox, sourceRef } = await setup()
   try {
     const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-files', intentDraft: draft({ sourceRef }), observedAt: NOW })
@@ -262,10 +262,12 @@ test('the legacy catalog/owner files are untouched by the Cover chain', async ()
       rights: { state: 'GRANTED', proofRef: PROOF },
       intent: birth.value.intent,
     })
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-cover-catalog-v3.json')), true)
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-cover-owner-v3.json')), true)
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-task-catalog-v1.json')), false)
-    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-task-owner-v1.json')), false)
+    const catalogRaw = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'audio-task-catalog-v1.json'), 'utf8'))
+    const ownerRaw = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'audio-task-owner-v1.json'), 'utf8'))
+    assert.equal(catalogRaw.schemaVersion, 3)
+    assert.equal(ownerRaw.schemaVersion, 3)
+    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-cover-catalog-v3.json')), false)
+    assert.equal(fs.existsSync(path.join(sandbox.root, 'audio-cover-owner-v3.json')), false)
   } finally {
     removeConfigSandbox(sandbox)
   }
