@@ -524,3 +524,12 @@ real M patterns and metadata is not bytes; `checkpoint[4].importReceipt` plus `r
 provide the only physical ref for recovery; FINAL holds Artifact through import/write/JOINT; cancel
 yields with `setImmediate`; and the budget uses the full candidate pack, real owner bytes and a
 32 MiB explicit-Buffer peak. Still NOT_IMPLEMENTED.
+
+### 0094 revision
+
+The catalog v3 birth example is restored (9-key entry / 16-key Task record / non-empty expiry and
+consistent hashes); method tables separate supported v3 from unknown versions and include all four
+Cover methods; resume returns EXISTING for a SAVED reopen; the source read names the real
+`readStoredForSave`/`readBytes` calls and their distinct private-proof/public-metadata facts; and
+the temporary Buffer budget is a four-row per-stage table (max 34,668,544 B) under 64 MiB while the
+old persistent limits stay unchanged. Still NOT_IMPLEMENTED.

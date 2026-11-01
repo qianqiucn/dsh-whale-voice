@@ -35,7 +35,8 @@
 |---|---|---|
 | `core/audio/task-catalog.mjs` | `openFixtureTaskCatalog({sandbox})` → `{reserve, get}` | 唯一 TaskId 签发者；`reserve` 输入恰 5 键 `schemaVersion(1)/scopeId/idempotencyKey/draft/observedAt`；`get` 输入 3 键；15 个 `TASK_CATALOG_` 错误码；磁盘 `audio-task-catalog-v1.json`，快照 `{schemaVersion, revision, entries}`，当前只接受 `schemaVersion:1` |
 | `core/audio/task-owner.mjs` | `openFixtureTaskOwner({sandbox})` → `{run, get, save, artifactStatus}` | 公开 owner schema 恒 1；磁盘 owner 快照 v1/v2；22 个 `TASK_OWNER_` 错误码 |
-| `core/audio/artifact-library.mjs` | `openFixtureArtifactLibrary({sandbox})` → `{import, get, readBytes, delete}` | 16 个 `ARTIFACT_LIBRARY_` 错误码；库权利域恰 2 键 `{state:'GRANTED', proofRef}`，`expiresAt` 是 entry 的独立顶层字段；单项 1,048,576 B、解码总量 4,194,304 B、条目 32、pack 6,291,456 B |
+| `core/audio/artifact-library.mjs` | `openFixtureArtifactLibrary({sandbox})` → `{import, get, readBytes, delete}` | 16 个 `ARTIFACT_LIBRARY_` 错误码；`readBytes` request 恰 5 键 `{schemaVersion:1, scopeId, artifactRef, now, rights:{state:'GRANTED', proofRef}}`，成功须 `ok:true` 且 `value.outcome==='FOUND'`（`value.artifact` 为公有 metadata 8）；`get` 同形但无 bytes；库权利域恰 2 键，`expiresAt` 是 entry 顶层字段；单项 1,048,576 B、解码总量 4,194,304 B、条目 32、pack 6,291,456 B |
+| `core/audio/fixture-artifact-store-internal.mjs` | `readStoredForSave(state, {scopeId, artifactRef, now})`（内部） | 同 capability 原 Artifact 内部 state；`now` 必填（缺失即 `INTERNAL_FAILURE`）；成功 `{ok:true,value:{state:'STORED'|'MISSING'|'DELETED'|'EXPIRED', artifact:<proof8>}}`；proof8 恰 8 键、**不含 scopeId/origin/createdAt** |
 | `core/audio/source-artifacts.mjs` | `resolveFixtureTaskSource(input)` | 输入 4 键；成功 value 恰 10 键；失败 root 恰 `{ok:false,errors:[{code,path,reason}]}` |
 | `core/audio/voice-assets.mjs` | `resolveFixtureVoiceBinding(input)` | 返回 binding value 恰 13 键；`binding` 内恰 8 键 |
 | `core/audio/svc/rvc-fake-gateway.mjs` | Fake RVC gateway 校验/调用 | request 恰 7 键；`sourceAudioRef` 必须匹配 `^artifact:fixture-[A-Za-z0-9_-]{1,48}$`；`outputFormat` 恒 `audio/wav`；`rights` 恰 `{state:'CONFIRMED_FIXTURE'}`；context 恰 3 键，`requestId` 匹配 `^request:fixture-[A-Za-z0-9_-]{1,32}$`、`endpointId` 恒 `gateway:fixture-rvc`；返回**只有 metadata/ref，没有 bytes** |
@@ -82,7 +83,7 @@
 
 **Cover 是原父 AudioTask v1（`feature:'singing'`, `taskType:'SVC'`）的版本化 intent；不是新主 taskType、不是第二 TaskManager、不新签主 TaskId/DeliveryId。**
 
-- **公开 schema 不变**：catalog/owner/Task 公开 `schemaVersion` 恒 1；公开 catalog handle 仍只有 `reserve/get`，公开 owner handle 仍只有 `run/get/save/artifactStatus`。
+- **公开 schema 不变**：catalog/owner/Task 公开 `schemaVersion` 恒 1；公开 catalog handle 仍只有 `reserve/get`；公开 owner handle **保留原 `run/get/save/artifactStatus`**，并由新程序**增加四个 Cover 方法**（`executeCover/coverStatus/requestCoverCancel/resumeCoverFinal`，§7.1），原四方法签名/语义不变。
 - **不新增公开出生方法**：Cover 出生由未来内部模块 `cover-birth-internal.mjs` 的 `createCoverTask({sandbox, scopeId, idempotencyKey, intentDraft, observedAt})` 执行；它在**同一受信 sandbox** 内自己打开 Artifact 库、自己读 STORED 字节/权利/expiry/inspection，然后调用 catalog 的**内部写入函数**（非公开 API）完成原子出生。调用者只能提交 `intentDraft` 与 `(scopeId, key)`，**不能提交 sourceEntry/sourceHash/rights 快照**，因此无法伪造出生事实。
 - **私有磁盘版本**：catalog 快照 `schemaVersion:3`（typed legacy/Cover entry）；owner 快照 `schemaVersion:3`（Cover variant）；Artifact pack 保持 v1。`3` 只出现在磁盘文件，不出现在公开请求/响应。
 - 单一 authority：catalog 唯一签发 taskId；唯一 owner writer 仍是 `openOwnerFile(...).write`；不设第二 writer/authority/store。
@@ -93,12 +94,12 @@
 
 **权威读源（唯一，不信任调用者）**：
 
-1. 打开同 sandbox Artifact 库，按 `intentDraft.sourceRef` 取 STORED entry：
-   - `readStoredForSave({scopeId, artifactRef})` 取得 entry 事实（含顶层 `expiresAt`、2 键 `rights`、`inspection`、`requestKey`、`createdAt`、`origin`）；
-   - `readBytes({scopeId, artifactRef, now})` 取 owned copy；
-   - 用原 `inspectFixtureWavBytes` 复检，要求 `inspection.sha256 === byteSha256`、`byteLength` 一致；
-   - 校验：`state==='STORED'`、`rights.state==='GRANTED'`、`proofRef` 非空 1..128、`expiresAt` 为非空 canonical ISO 且 `> observedAt`；
-   - 计算稳定源身份（7 字段，§4.5）。
+1. 打开同 sandbox Artifact 库（同 capability 原内部 state），按 `intentDraft.sourceRef` 取 STORED 事实：
+   - `readStoredForSave(state, {scopeId, artifactRef, now: observedAt})`（**now 必填**；缺失会返回 `INTERNAL_FAILURE`），成功读 `{ok:true,value:{state,artifact}}`，要求 `value.state==='STORED'`；其 `artifact` 是**私有 proof8**（恰 8 键，不含 scopeId/origin/createdAt）；
+   - `readBytes({schemaVersion:1, scopeId, artifactRef, now: observedAt, rights:{state:'GRANTED', proofRef}})`（**恰 5 键、rights 必填**，rights 来自已核可信库事实），要求 `ok:true` 且 `value.outcome==='FOUND'`；取 owned bytes，并以 `value.artifact` 的**公有 metadata8** 提供 `scopeId/origin/createdAt`；
+   - 用原 `inspectFixtureWavBytes` 复检 owned bytes，要求 `inspection.sha256 === proof8.byteSha256`、`byteLength` 一致；
+   - 逐字段对照：proof8 的 `artifactRef/requestKey/expiresAt/rights/inspection` 与 metadata8 的 `artifactRef/requestKey/expiresAt/rights/inspection` 一致；校验 `rights.state==='GRANTED'`、`proofRef` 1..128、`expiresAt` 非空 canonical ISO 且 `> observedAt`；
+   - 用实测 owned bytes 的 hash/length 与上述事实组装 8 键 `sourceFacts`（§5.1），并计算稳定源身份（7 字段，§4.5）。两个域不混写：**FOUND 只提供 bytes+metadata8，STORED 只提供 proof8+state**。
 2. 任一失败：`TASK_CATALOG_COVER_INPUT_INVALID`（格式/枚举）或 `TASK_CATALOG_DEPENDENCY_FAILURE`（库读取不确定），**不落盘、不签 ID**。
 3. 用实测事实组装 `sourceFacts`（8 键，§5.1），再执行 §3.3 的幂等/出生顺序。
 
@@ -112,6 +113,99 @@
 4. 任一步失败不落盘、不签 ID；rename/digest 不确定 → `TASK_CATALOG_CATALOG_UNKNOWN` + capability 锁。
 
 成功 value 恰 9 键：`{schemaVersion:1, outcome, taskId, scopeId, idempotencyKey, intentHash, intent, record, messageZh}`；`outcome ∈ {CREATED, EXISTING}`。
+
+**出生 record（Task v1 十六键，catalog 分配）**：
+
+`{schemaVersion:1, taskId:<catalog 签发>, feature:'singing', taskType:'SVC', source:{kind:'AUDIO_REF', ref:<intentDraft.sourceRef>}, voiceProfileId:<intentDraft.voiceProfileId>, deliveryRequested:false, rights:{state:'CONFIRMED_FIXTURE'}, state:'CREATED', outputArtifactRef:null, cancel:{requested:false, confirmed:false}, delivery:{state:'NOT_REQUESTED', deliveryId:null}, lastError:null, observedAt:<request.observedAt>, mockOnly:true, realOperationAllowed:false}`。
+
+`createdAt`、`birthObservedAt` 与同 key 重算继续沿已签出生事实（0 重新签号）。
+
+**完整 catalog v3 出生示例（root 3 键；Cover entry 9 键；record 16 键；非空 expiry）**
+
+```json
+{
+  "schemaVersion": 3,
+  "revision": 1,
+  "entries": [
+    {
+      "entryVersion": 1,
+      "kind": "COVER",
+      "scopeId": "scope:fixture-demo",
+      "idempotencyKey": "cover:fixture-demo-1",
+      "identityHash": "bf3c034eb609624d27f8d3994c9b5b86500eca247a7171e27466bf4c212ffedc",
+      "intentHash": "c34f059d4ef6beab90c0d112c58e511382a934a68a4fb5301a13defc7e3edb35",
+      "intent": {
+        "intentVersion": 1,
+        "taskId": "task:fixture-0123456789abcdef0123456789abcdef",
+        "scopeId": "scope:fixture-demo",
+        "birthIdentityHash": "bf3c034eb609624d27f8d3994c9b5b86500eca247a7171e27466bf4c212ffedc",
+        "birthObservedAt": "2026-11-01T00:00:00.000Z",
+        "sourceRef": "artifact:fixture-bytes-0123456789abcdef0123456789abcdef",
+        "sourceEntryIdentityHash": "04cd12de8c127b965ed88d92550d0074f292c0df7d40e8d2e4cd6135d5eade61",
+        "sourceByteSha256": "11d76b6130456b150b9822441ba7511c7fcd8ccf585686b25d7c012fa24fa7fd",
+        "sourceByteLength": 52,
+        "sourceRevision": 1,
+        "rightsState": "GRANTED",
+        "rightsProofRef": "fixture-rights:cover-demo-1",
+        "rightsExpiresAt": "2026-11-02T00:00:00.000Z",
+        "voiceProfileId": "voice:demo-hero",
+        "profileRevision": 1,
+        "modelAssetId": "asset:fixture-model-a",
+        "modelRevision": 1,
+        "modelIntegrityTruth": "DECLARED_FIXTURE",
+        "instanceId": "instance:rvc",
+        "candidateId": "rvc",
+        "modelRef": "rvc-model:fixture-a",
+        "backendRevision": 1,
+        "pitchShift": 0,
+        "recipe": {
+          "sourceLayout": "MIXED",
+          "separationPreset": "FIXTURE_TWO_STEM",
+          "mixMode": "WITH_INSTRUMENTAL",
+          "vocalGainDb": 0,
+          "instrumentalGainDb": 0
+        },
+        "outputProfile": {
+          "format": "WAV",
+          "codec": "PCM_S16LE",
+          "sampleRate": 44100,
+          "channels": 1
+        }
+      },
+      "record": {
+        "schemaVersion": 1,
+        "taskId": "task:fixture-0123456789abcdef0123456789abcdef",
+        "feature": "singing",
+        "taskType": "SVC",
+        "source": {
+          "kind": "AUDIO_REF",
+          "ref": "artifact:fixture-bytes-0123456789abcdef0123456789abcdef"
+        },
+        "voiceProfileId": "voice:demo-hero",
+        "deliveryRequested": false,
+        "rights": {
+          "state": "CONFIRMED_FIXTURE"
+        },
+        "state": "CREATED",
+        "outputArtifactRef": null,
+        "cancel": {
+          "requested": false,
+          "confirmed": false
+        },
+        "delivery": {
+          "state": "NOT_REQUESTED",
+          "deliveryId": null
+        },
+        "lastError": null,
+        "observedAt": "2026-11-01T00:00:00.000Z",
+        "mockOnly": true,
+        "realOperationAllowed": false
+      },
+      "createdAt": "2026-11-01T00:00:00.000Z"
+    }
+  ]
+}
+```
 
 ### 3.3 同键/重复矩阵（唯一）
 
@@ -154,17 +248,19 @@
 | FAILED | 非空 | null | FAILED | 终态 |
 | UNKNOWN | 非空或 null | null | UNKNOWN | 只读，不重跑 |
 
+`resumeCoverFinal` 使用同一张 outcome 表：成功完成 FINAL → `SAVED`；已 SAVED 重开 → `EXISTING`（value=null）；其余终态/失败 → 对应 outcome（value=null）。
+
 完整固定错误示例见 §7.9（含 `{ok:false,errors:[…]}` 根）。
 
 ### 3.5 方法兼容矩阵（旧/新 client × legacy/Cover × 状态）
 
-| 调用者/对象 | legacy 出生 | Cover 出生（在途） | Cover 出生（FINAL SAVED） | Cover 出生（FINAL 非 SAVED） | owner/catalog v3 |
-|---|---|---|---|---|---|
-| 旧 client `run/save/get/artifactStatus` | 原行为 | `TASK_OWNER_STORE_INVALID`（旧 parser 不认 v3，0 执行、0 改盘） | 同左 | 同左 | 同左 |
-| 新 client `executeCover` | `TASK_OWNER_COVER_BIRTH_REQUIRED` | 当前状态（`EXISTING`，不重跑） | `EXISTING` | 终态（CANCELLED/FAILED/UNKNOWN，不重跑） | fail-closed |
-| 新 client `coverStatus` | `BIRTH_REQUIRED` | 进度/租约/取消 | SAVED | 终态 | fail-closed |
-| 新 client `requestCoverCancel` | `BIRTH_REQUIRED` | 按 §8.2 区域表 | `TOO_LATE` | 固定终态响应 | fail-closed |
-| 新 client `resumeCoverFinal` | `BIRTH_REQUIRED` | 仅 checkpoint4 receipt 可完成 FINAL | `EXISTING` | 终态 | fail-closed |
+| 调用者/对象 | legacy 出生 | Cover 出生（在途） | Cover 出生（FINAL SAVED） | Cover 出生（FINAL 非 SAVED） | 合法 v3（已支持） | 未知/不支持版本 |
+|---|---|---|---|---|---|---|
+| 旧 client 原四方法 | 原行为 | `TASK_OWNER_STORE_INVALID`（旧 parser 不认 v3，0 执行、0 改盘） | 同左 | 同左 | 同左 | `STORE_INVALID` |
+| 新 client `executeCover` | `TASK_OWNER_COVER_BIRTH_REQUIRED` | 当前状态（`EXISTING`，不重跑） | `EXISTING` | 终态（CANCELLED/FAILED/UNKNOWN，不重跑） | 正常执行/返回当前状态 | fail-closed |
+| 新 client `coverStatus` | `BIRTH_REQUIRED` | 进度/租约/取消 | SAVED | 终态 | 正常读取 | fail-closed |
+| 新 client `requestCoverCancel` | `BIRTH_REQUIRED` | 按 §8.2 区域表 | `TOO_LATE` | 固定终态响应 | 正常取消协议 | fail-closed |
+| 新 client `resumeCoverFinal` | `BIRTH_REQUIRED` | 仅 checkpoint4 receipt 可完成 FINAL | `EXISTING`（value=null） | 终态 | 正常完成/只读 | fail-closed |
 
 - 旧 client 只可能看到 `TASK_OWNER_STORE_INVALID`/`TASK_CATALOG_STORE_INVALID`，**不会看到任何新 Cover 码**（新码只经新方法返回）。
 - 新 client 对 legacy 出生一律 `BIRTH_REQUIRED`；不隐式升级/不换 ID。
@@ -226,14 +322,24 @@ c34f059d4ef6beab90c0d112c58e511382a934a68a4fb5301a13defc7e3edb35
 
 | 字段 | 来源（内部出生代码） | 说明 |
 |---|---|---|
-| `artifactRef` | `readStoredForSave` / 库投影 | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}$` |
-| `scopeId` | 库条目 | 必须等于请求 scope |
-| `requestKey` | 库条目 | 该次 import 的请求键 |
-| `origin` | 库条目 | `FIXTURE_IMPORT` 等 |
-| `createdAt` | 库条目 | canonical ISO |
-| `byteSha256` | `readBytes` + 原 inspector | 真实字节 hash |
+| `artifactRef` | proof8.artifactRef（与 metadata8 对照） | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}## 5. FUTURE：真实源、Provider 适配与 Stage 来源（092-R02）
+
+### 5.1 实测 sourceFacts（8 键，仅内部产生）
+
+ |
+| `scopeId` | **公有 metadata8.scopeId** | 必须等于请求 scope |
+| `requestKey` | proof8.requestKey / metadata8.requestKey | 该次 import 的请求键 |
+| `origin` | **公有 metadata8.origin** | `FIXTURE_IMPORT` 等 |
+| `createdAt` | **公有 metadata8.createdAt** | canonical ISO |
+| `byteSha256` | `readBytes` owned bytes + 原 inspector | 真实字节 hash |
 | `byteLength` | inspector | 真实长度 |
-| `expiresAt` | 库 entry 顶层字段 | **非空 canonical ISO**，`expiresAt > observedAt` |
+| `expiresAt` | proof8.expiresAt / metadata8.expiresAt | **非空 canonical ISO**，`expiresAt > observedAt` |
+
+读取调用（唯一，已按真实接口）：
+
+1. `readStoredForSave(state, {scopeId, artifactRef, now: observedAt})`（内部 state 来自同 cap 原 Artifact 域；`now` 必填）→ 成功 `{ok:true,value:{state:'STORED',artifact:proof8}}`；
+2. `readBytes({schemaVersion:1, scopeId, artifactRef, now: observedAt, rights:{state:'GRANTED',proofRef}})`（恰 5 键；rights 由可信库事实给出）→ 成功 `ok:true` 且 `value.outcome==='FOUND'`，取 `value.bytes` 与 `value.artifact`（metadata8）；`value.artifact` 提供 scopeId/origin/createdAt，proof8 提供 ref/requestKey/expiry/rights/inspection；两域逐字段对照后再算 hash/length。
+3. 出生 `now = observedAt`；执行/提交使用当时请求时间。
 
 - `rights` 单独为库 2 键 `{state:'GRANTED', proofRef}`；**不存在 rights.expiresAt 子字段**；Intent `rightsExpiresAt` 复制 `sourceFacts.expiresAt`。
 - 出生时该对象只在内部代码内构造，不经过公开 JSON；`reserveCover` 不存在（§3.1），因此调用者无法自造。
@@ -281,7 +387,7 @@ c34f059d4ef6beab90c0d112c58e511382a934a68a4fb5301a13defc7e3edb35
 | `pitchShift` | `intent.pitchShift` | 原范围校验 |
 | `outputFormat` | `'audio/wav'` | 恒 `audio/wav` |
 | `inputAudio` | 派生 owned bytes 的**实测** `{durationMs, byteLength, sampleRate, channels}` | 原 inputAudio 校验 |
-| `rights` | `{state:'CONFIRMED_FIXTURE'}`（gateway 域） | gateway 恰 2 键枚举 |
+| `rights` | `{state:'CONFIRMED_FIXTURE'}`（gateway 域） | gateway 恰 **1** 键枚举 |
 | context.requestId | `request:fixture-cover-<16 hex>` | `^request:fixture-[A-Za-z0-9_-]{1,32}$` |
 | context.endpointId | `gateway:fixture-rvc` | 恒等 |
 | context.scenario | `SUCCESS` | 6 个有效 scenario 之一 |
@@ -384,7 +490,7 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 
 **requestCoverCancel request 恰 5 键**：`{schemaVersion, scopeId, taskId, attemptId, now}`；内层 value 恰 5 键：`{schemaVersion, cancelRequested, cancelState, acknowledgedAt, messageZh}`；`cancelState ∈ {ACCEPTED, ACKNOWLEDGED, STOPPED, TOO_LATE}`（不可读时走错误码，不出现 UNKNOWN cancelState）。
 
-**resumeCoverFinal request 恰 6 键**：`{schemaVersion, scopeId, taskId, attemptId, requestKey, now}`；内层 value 同 executeCover 6 键；仅允许 CLAIMED + checkpoint4 receipt（§7.5），0 第二 import。
+**resumeCoverFinal request 恰 6 键**：`{schemaVersion, scopeId, taskId, attemptId, requestKey, now}`；内层 value 同 executeCover 6 键；仅允许 CLAIMED + checkpoint4 receipt（§7.5），0 第二 import；已 SAVED 重开返回 `EXISTING`（value=null），不重写。
 
 ### 7.2 owner v3 Cover entry（14 键）
 
@@ -455,7 +561,7 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | FAILED | 若已过 checkpoint1 则必须；更早失败可 null | 仅当失败发生在 import 后 | 同 master | `FAILED` | null | `{code}` |
 | UNKNOWN | 不写 FINAL（保持 CLAIMED） | — | — | 保持出生态 | null | — |
 
-- 旧 `get` 投影：SAVED→`SAVED`；CANCELLED/FAILED→`UNKNOWN`（旧读者不谎报）；UNKNOWN→`UNKNOWN`；新 `coverStatus` 显示精确终态。
+- **新程序中的原 `get` 方法**投影：SAVED→`SAVED`；CANCELLED/FAILED→`UNKNOWN`（不谎报）；UNKNOWN→`UNKNOWN`；新 `coverStatus` 显示精确终态。**旧程序**遇 v3 仍直接 `STORE_INVALID`。
 - 不写假 MASTER 满足 FINAL；`completion.kind` 与 record 状态一一对应。
 
 ### 7.8 崩溃/重开/执行去重（092-R05）
@@ -474,6 +580,8 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 - `resumeCoverFinal` 只完成已有 receipt 的 FINAL；普通 `status/get` 不写盘、不迁移、不自动恢复。
 
 ### 7.9 完整虚构 JSON 示例（NOT_IMPLEMENTED）
+
+一次对照：新程序 + 合法 v3 可 `executeCover/coverStatus/requestCoverCancel/resumeCoverFinal`；旧程序 + v3 一律 `STORE_INVALID`；`resumeCoverFinal` 对已 SAVED 返回 `EXISTING`（0 执行）；catalog 出生例 9 键、record 16 键可解析且 `identityHash`/`intentHash` 与 Intent 一致。
 
 **executeCover 成功返回（公开根 `ok:true`，内层 value 6 键，value 内 8 键）**
 
@@ -764,30 +872,27 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 - 判据不是“现有字节 + 单条 entry”，而是**完整候选 pack**：
   `utf8(serializePack({schemaVersion:1, sandboxId, revision: current.revision+1, entries: [...current.entries, candidateEntry]})) ≤ 6,291,456`。
 - 该序列化包含：已有非空 entries 之间的逗号、JSON 空白规则、`revision` 位数变化、每个 entry 的完整 11 键；与 writer 实际写盘同一实现，不做常数估算。
-- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **2177 B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
+- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **{{PACK_BYTES}} B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
 - 解码总量：`currentDecodedBytes + masterBytes ≤ 4,194,304`（MASTER 最大时 D ≤ 3,145,728）。
 - 条目：`currentEntries + 1 ≤ 32`（含 tombstone）。
-- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **8874 B**、snapshot **8919 B**（revision 2，含 6 checkpoint 与 importReceipt）。
+- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **{{ENTRY_BYTES}} B**、snapshot **{{SNAP_BYTES}} B**（revision 2，含 6 checkpoint 与 importReceipt）。
 - 以上在入场与 import/FINAL 前按当时实际字节 fresh 重算；任一不满足 → `COVER_RESOURCE_LIMIT`，0 新入库。
 
 ### 9.3 受控 Buffer 峰值（含 writer 实际存活阶段）
 
-最坏场景：候选 pack 取上限 `N=6,291,456`，既有解码 `D=3,145,728`，MASTER `M=1,048,576`；writerg 写 pack 时以下 Buffer 可以同时存活，逐项计入（不是 V8/GC 隐含堆）：
+最坏场景：候选 pack 取上限 `N=6,291,456`，既有解码 `D=3,145,728`，MASTER `M=1,048,576`，`READ_CHUNK=65,536`。按实际阶段拆成四行，每行只列该阶段**仍持有**的显式 Buffer（不是 V8/GC 隐含堆；不同调用顺序的临时对象不同时乱加）：
 
-| 项 | 字节 | 说明 |
-|---|---:|---|
-| 已解码既有 payload D | 3,145,728 | 解析现有条目 |
-| MASTER request owned copy M | 1,048,576 | import 请求 |
-| MASTER inspector 副本 | 1,048,576 | inspector 内部 |
-| 候选 pack UTF8 Buffer N | 6,291,456 | writer 序列化结果 |
-| 回读 chunks 合计 N | 6,291,456 | `readBoundedFd` 读完 |
-| `Buffer.concat` 结果 N+D+M | 10,485,760 | 严格自检 |
-| **合计** | **29,360,128** | ≤ **33,554,432（32 MiB）** |
+| 阶段 | 仍持有的显式 Buffer | 合计 |
+|---|---|---:|
+| 入场/源读取 | 既有 decoded D + SOURCE owned copy ≤1 MiB + inspector 副本 ≤1 MiB + 当前 READ_CHUNK + SOURCE concat ≤1 MiB | **6,356,992** |
+| 阶段计算 | SOURCE + VOCAL + INSTRUMENTAL（各 ≤1 MiB）+ inspector 副本 ≤1 MiB | **4,194,304** |
+| import writer（self-validation/pre-read/tempRead/finalTmp/post-read） | decoded D + request M + inspector M + 候选 selfValidated decoded(D+M) + writer UTF8 N + 此前保留 tempRead N + finalTmp N + 当前 READ_CHUNK + JSON.parse UTF8 复核副本 N | **34,668,544** |
+| FINAL/JOINT fresh 校验 | decoded D + M + inspector M + manifest JSON ≤16 KiB | **5,259,264** |
 
-- **import/FINAL 受控 Buffer 预算 = 33,554,432 B（32 MiB）**；超出 → `COVER_RESOURCE_LIMIT`。
-- **阶段计算受控预算 = 3,145,728 B**（SOURCE/VOCAL/INSTRUMENTAL 各 1 MiB 的最坏图；MIXING 同）。
-- 明确排除的只有 V8/字符串内部表示与 GC 临时副本；上表全部为**显式分配的 Buffer**，不得以“GC 会回收”为由不计数。
-- 释放：SOURCE 在 SEPARATED 后、VOCAL 在 CONVERTED 后、INSTRUMENTAL/CONVERTED 在 MIXING 后、MASTER 在 FINAL+JOINT 后；UNKNOWN 保留 claim/lease 与 manifest 事实。
+- **本轮新临时 Buffer 预算 = 67,108,864 B（64 MiB）**；上表最大行 34,668,544 B ≤ 64 MiB，任一实算超限则入场拒绝（`COVER_RESOURCE_LIMIT`），不宣称自动满足。
+- 旧持久限制（1 MiB/4 MiB/32 条/6 MiB/128 KiB）**不扩大**；64 MiB 只覆盖这次 import/FINAL 的显式 Buffer。
+- 明确排除的只有 V8/字符串内部表示与 GC 临时副本；上表全部为显式分配/持有，不得以“GC 会回收”为由不计数。
+- 释放点：SOURCE 在 SEPARATED 后、VOCAL 在 CONVERTED 后、INSTRUMENTAL/CONVERTED 在 MIXING 后、tempRead 在 finalTmp 校验后、finalTmp/parse 副本在 post-read 后、MASTER 在 FINAL+JOINT 后；UNKNOWN 保留 claim/lease 与 manifest 事实。
 
 ### 9.4 容量示例
 
@@ -924,15 +1029,15 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 
 | 检查 | 结果 |
 |---|---|
-| JSON 块解析 | 通过（7 个：execute 成功、固定错误、EXISTING、status、cancel、owner v3、attachment） |
+| JSON 块解析 | 通过（8 个：catalog v3 出生、execute 成功、固定错误、EXISTING、status、cancel、owner v3、attachment） |
 | 键计数 | intent 25、intentDraft 19、catalog Cover entry 9、record 16、owner entry 14、attempt 8、checkpoint 6、importReceipt 5、manifest 6、source/master 24、compact 7、verification 4、attachment 7、status 15、execute request 8、result 6/value 8、cancel 5 |
 | canonical Intent | 1,140 B；`c34f059d…db35`；五变体 `2d374e51…`/`5b0d1e3b…`/`10404b39…`/`e487db0c…`/`701d72fe…` |
 | birthIdentityHash / source identity | `bf3c034e…ffedc` / `04cd12de…eade61`（实算） |
 | revision | 单任务 claim1 → FINAL2；跨任务示例 proof.claimRevision=2、candidate=3 |
 | 媒体向量 | 7 个 52 B WAV SHA 不变（复用 0092 复算） |
-| 完整 pack 示例 | 2177 B < 6,291,456 |
-| Buffer 峰值 | 29,360,128 ≤ 33,554,432 |
-| owner 字节 | entry 8874 B / snapshot 8919 B |
+| 完整 pack 示例 | {{PACK_BYTES}} B < 6,291,456 |
+| Buffer 峰值 | 四行最大 34,668,544 ≤ 67,108,864（64 MiB） |
+| owner 字节 | entry {{ENTRY_BYTES}} B / snapshot {{SNAP_BYTES}} B |
 
 > 只证明文档自洽与向量可复算，不证明 FUTURE 已实现。
 

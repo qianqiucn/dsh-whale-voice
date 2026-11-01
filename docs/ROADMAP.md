@@ -459,3 +459,7 @@ one envelope, real gateway field constraints, `importReceipt`/`resumeCoverFinal`
 FINAL critical section, a real macrotask cancel yield, and full-pack/32 MiB budgets. It is still
 NOT_IMPLEMENTED and does not change Cover execution, resources/cancellation, dynamic evidence, the
 parent Fake E2E or any real capability.
+The 08-F-B contract candidate was revised for the `0094` review: restored catalog birth example,
+synced method/version tables, resume EXISTING, real read-source calls with private-proof/public-
+metadata provenance, and a per-stage explicit-Buffer peak table under 64 MiB. It is still
+NOT_IMPLEMENTED and changes no runtime, test or capability status.

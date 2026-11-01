@@ -6,6 +6,16 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Docs: the Cover contract candidate was revised for the `0094` review (still **CONTRACT_CANDIDATE /
+  NOT_IMPLEMENTED**). The catalog v3 birth example is restored (root 3 keys; Cover entry 9 keys;
+  Task record 16 keys; non-empty expiry) with matching identity/Intent hashes; the owner method
+  tables now list the four Cover methods alongside the original four and split "supported v3" from
+  "unknown/unsupported version"; `resumeCoverFinal` includes `EXISTING` for a SAVED reopen; the
+  source read now names the real calls (`readStoredForSave(state, {scopeId, artifactRef, now})`
+  returning the 8-key private proof, and the 5-key `readBytes` request with rights, requiring
+  `outcome==='FOUND'` and using the public metadata for scopeId/origin/createdAt); and the peak
+  budget is now a four-row per-stage table over explicit still-alive Buffers (max 34,668,544 B)
+  under a new 64 MiB temporary budget, without changing the old persistent limits.
 - Docs: the Cover contract candidate was revised again for the `0093` incremental review (still
   **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Cover birth is now internal-only (no public
   `reserveCover`; the caller cannot supply source facts), the source record is 8 measured fields

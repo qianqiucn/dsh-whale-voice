@@ -435,3 +435,8 @@ envelope with complete examples, 1,140 B canonical Intent, real gateway patterns
 returns, `importReceipt` + `resumeCoverFinal`, Artifact held through the FINAL critical section,
 macrotask cancel yield, full-pack admission and a 32 MiB explicit-Buffer peak. It remains
 CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or media changed and P08 stays OPEN.
+The contract candidate was revised for the `0094` review: restored catalog birth shape and example,
+synced method/version tables (supported v3 vs unknown), resume EXISTING, corrected real
+read-source calls and field provenance, and a four-row explicit-Buffer peak table under a 64 MiB
+temporary budget. It remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or
+media changed and P08 stays OPEN.
