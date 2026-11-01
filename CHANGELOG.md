@@ -6,6 +6,20 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Docs: Plan 08-F-B complete Cover execution / StageArtifact transaction **contract candidate**
+  (`docs/COVER_TASK_EXECUTION_CONTRACT.md`, new; **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED**):
+  a full, versioned, implementable design for one atomic Cover birth intent on the existing catalog
+  (private catalog snapshot v3 typed legacy/Cover entries, same single TaskId), the 25-key canonical
+  Intent with SHA-256 vectors, the single-owner `executeCover`/`coverStatus`/`requestCoverCancel` API,
+  a 14-key owner v3 Cover entry, the 7-key `coverAttachment` branch of the only writer, trusted
+  STORED SOURCE bytes and stable source identity, the derived VOCAL adapter, the 24-key StageArtifact
+  manifest with exact old-shape mapping, the three deterministic Fake byte graphs with computed
+  vectors, queue/lease/checkpoint/recovery rules, the cooperative cancel fence, the logical lease and
+  cleanup/cache boundary, exact peak budgets, the old/new program × catalog/owner version matrix, 21
+  new `TASK_OWNER_COVER_` codes plus 3 catalog Cover codes with a fixed priority, a 15-row state /
+  failure matrix, the future implementation table and seven finite acceptance groups. Documentation
+  only: no runtime, planner, validator, tests, writer, store or media work is added; every FUTURE
+  item stays NOT_IMPLEMENTED and the frozen save contract v1.6 is untouched.
 - Plan 08-F-A pure Fixture cover stage planner (`core/audio/cover-plan.mjs`, **new**, 4 exports, 19 tests;
   `docs/COVER_PLAN_OFFLINE.md`): one synchronous side-effect-free `planFixtureCover(payload)` validates a
   complete Fixture `sourceInput` through the original `resolveFixtureTaskSource` exactly once, a strict

@@ -438,3 +438,13 @@ verify/save audio, or touch storage, network, clock or randomness. Documented in
 examples. Local suite **774/771/3 platform skips/0 fail**. This does not complete Cover execution,
 resource/cancellation work, dynamic-dependency evidence, the parent Fake E2E or any real capability;
 parent Plan 08 stays IN_PROGRESS.
+### Plan 08-F-B — Cover execution / StageArtifact contract candidate (docs only, PR pending)
+
+A complete implementable design for one atomic Cover intent birth and a single-claim execution that
+ends in exactly one MASTER save: canonical Intent with hash vectors, typed catalog v3 / owner v3
+entries, one execute/status/cancel API on the same owner, a `coverAttachment` writer branch,
+trusted STORED SOURCE bytes and derived lineage, the StageArtifact manifest, deterministic Fake byte
+algorithms with vectors, queue/checkpoint/recovery/cancel/lease/budget rules, version compatibility
+and error priorities. Everything is `NOT_IMPLEMENTED`; no runtime, tests or media work is added and
+the frozen save contract v1.6 is untouched. This does not complete Cover execution, resources/
+cancellation, dynamic evidence, the parent Fake E2E or any real capability.

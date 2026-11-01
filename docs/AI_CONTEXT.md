@@ -490,3 +490,17 @@ complete positive roots plus one complete negative root that the tests run verba
 created or executed, no audio is generated or saved and the module has no I/O, clock or random
 side effect. `OFFLINE` / `FIXTURE_ONLY` / `PLAN_ONLY` / `NOT_INTEGRATED`; parent Plan 08 is still
 `IN_PROGRESS`.
+## 08-F-B Cover execution / StageArtifact contract candidate (documentation only)
+
+`docs/COVER_TASK_EXECUTION_CONTRACT.md` (new) is a **CONTRACT_CANDIDATE / PLANNED_RUNTIME /
+NOT_IMPLEMENTED** design: one atomic Cover intent bound in the live catalog (private snapshot v3
+with typed legacy/Cover entries, same single TaskId), a 25-key canonical Intent with five
+recomputed SHA-256 variants, the single-owner `executeCover` / `coverStatus` / `requestCoverCancel`
+API, a 14-key owner v3 Cover entry, the 7-key `coverAttachment` branch of the only writer, trusted
+STORED SOURCE bytes plus a stable source identity, the derived VOCAL adapter, the 24-key
+StageArtifact manifest with exact old-shape mapping, deterministic three-graph Fake byte algorithms
+with computed WAV vectors, queue/checkpoint/recovery and cooperative cancel rules, the logical lease
+and cleanup/cache boundary, exact peak/admission budgets, the old/new program × version matrix, 21
+`TASK_OWNER_COVER_` codes plus 3 catalog codes and a 15-row state/failure matrix. No runtime, planner,
+validator, tests or media work is added; the frozen save contract v1.6 is untouched and parent Plan
+08 remains IN_PROGRESS.
