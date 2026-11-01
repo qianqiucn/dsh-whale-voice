@@ -440,3 +440,76 @@ synced method/version tables (supported v3 vs unknown), resume EXISTING, correct
 read-source calls and field provenance, and a four-row explicit-Buffer peak table under a 64 MiB
 temporary budget. It remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or
 media changed and P08 stays OPEN.
+Cover offline execution is now IN PROGRESS / OFFLINE on `feature/plan08-cover-execution` (from the
+merged contract M): canonical Intent + three-graph synthetic bytes + dedicated Cover v3 store +
+executor (birth/claim/checkpoints/one MASTER import/FINAL/status/busy cancel/resume) with 23 tests
+(797/794/3 full suite). The legacy catalog/owner files are untouched and Cover uses dedicated v3
+files; v3-into-legacy integration, dynamic dependencies, the parent Fake E2E and complete
+cancel/cleanup evidence remain open. This is not an integrated or real capability.
+Cover readiness and the test-only Fake Relay boundary are now implemented and tested (811/808/3
+skip): dynamic TTS/SVC dependencies with fixture-only evidence, dedup/UNKNOWN-no-resend relay
+behaviour, busy-cancel evidence and receipt-based resume without a second import. The remaining 090
+gaps are v3 typed-entry integration into the legacy catalog/owner files and the legacy parent-chain
+E2E; the implementation is still OFFLINE and not integrated.
+Parent-chain E2E is now covered offline (legacy catalog + Fixture library + Cover + handoff; Fake
+Relay dedup/UNKNOWN). Full suite 816/813/3 skip. Still OFFLINE/NOT_INTEGRATED: same-file v3
+integration into the legacy catalog/owner files and the legacy owner run/save engine E2E remain open.
+The same-file v3 integration is now implemented (phase A read/write selection with the dedicated-file
+fallback for existing v1/v2, phase B mixed legacy+Cover entries, phase C old-owner fail-closed), the
+legacy owner run/save engine chain is covered by a real same-source E2E
+(`test/cover-legacy-owner-chain.test.mjs`), cancellation now has frame-level cooperation (4,096-frame
+fence, 65,536-frame macrotask yield) plus separate persisted request/ack/stop/release/cleanup
+evidence (`test/cover-cancel-evidence.test.mjs`), and `core/audio/cover-rollback-internal.mjs` provides
+the explicit checked rollback (`test/cover-rollback.test.mjs`). Contract §15/§15.1–§15.3 record the
+as-built state. Full suite 831/828 pass/3 platform skips/0 fail; build unchanged. Branch
+`feature/plan08-cover-execution`, PR #43 open and unmerged; status stays OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED and parent Plan 08 is not complete.
+The v1.76 review (104-R01..R06) is now addressed offline on the same branch: the executor re-checks
+the current entry inside the single-writer queue (concurrent same/different keys claim once; terminal
+FAILED/CANCELLED never rerun, `test/cover-concurrency.test.mjs`); `resumeCoverFinal` requires the
+exact attempt/request identity, returns the real terminal and only continues a claim with a
+persisted checkpoint[4] receipt plus rebuilt attachment lineage (`test/cover-recovery.test.mjs`,
+including a real checkpoint[4] state and zero second import); the save transaction persists
+checkpoint[4] with the library import key and holds the Artifact queue across import → fresh proof →
+FINAL → post-commit confirmation, with an uncertain FINAL rename locking the store; the store probes
+legacy files safely and validates v3 entries on read/write (`test/cover-store-hardening.test.mjs`);
+`cover-lease-internal.mjs` gives one exclusive local-GPU lease per sandbox (CPU/cloud `gpu:'NONE'`),
+readiness rejects future evidence and authorized-but-not-ready SVC clouds, and an optional
+`dependencies` bundle validates the real voice binding/provider readiness against the Intent
+(`test/cover-lease.test.mjs`, `cover-dependencies.test.mjs`); the legacy parent test now drives its
+persisted SAVED record into handoff/Fake Relay (SENT/EXISTING/UNKNOWN) and keeps the real Cover
+record delivery-free. Full suite 856/852 pass/4 platform skips/0 fail; build unchanged. Contract
+§15.4 records the as-built matrix and the remaining OPEN boundaries. PR #43 remains open/unmerged;
+status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.77 incremental review (A/B/C) is now addressed offline: full lineage/receipt/fresh-proof
+validation before SAVED with a delta-only writer (mutation tests in
+`test/cover-proof-hardening.test.mjs`); UNKNOWN outcomes retain the shared GPU lease while only
+determined terminals release it, and `executeCover` gained a real `CPU_CLOUD` compute mode
+(`gpu:'NONE'`, mandatory cloud authorization/provider readiness) with cross-mode conflict/progress
+evidence; dependency facts are mandatory (omission is a hard block) and validate the real voice
+binding/provider/model/evidence/cloud bundle before any claim, with model/asset revision, provider
+removal, shared invalidation and future evidence negatives. All successful executions inject the
+real bundle via `test/support/cover-run.mjs`. Full suite 868/864 pass/4 platform skips/0 fail; build
+unchanged. Contract §15.5 records the as-built state and the remaining OPEN boundaries. PR #43
+remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.78 review (A/B1/B2) is now addressed offline: the full 19-key inspection and 4-key PASSED
+verification are validated and the fresh library inspection is compared field-by-field (mutated peak
+cannot become SAVED); lease release is unified on a confirmed FINAL (claim/checkpoint/cancel/terminal
+write failures keep claim + lease); and the long separate/convert/mix work runs outside the shared
+cover write queue, with short claim/checkpoint/FINAL critical sections, cancel-field merge and a real
+long-GPU-run test where a CPU execution completes first (B→A) while a second GPU execution is
+refused. Full suite 874/870 pass/4 platform skips (including the 2 `test/support` helper files as
+empty entries); build unchanged. Contract §15.6 records the as-built state. PR #43 remains
+open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.79 regression is fixed: every `cancelNow(...)` return is awaited before the try/finally, so a
+normal CANCELLED releases the GPU lease (`isCoverGpuBusy=false`) and CPU/cloud lease count returns to
+zero; later same-sandbox tasks can run, while a failed cancel FINAL write still retains claim + lease.
+Full suite 876/872 pass/4 platform skips; build unchanged. Contract §15.6 carries the v1.79 addendum.
+PR #43 remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.80 lifecycle review (R01–R04) is addressed: resume re-checks identity/phase inside the queue,
+settles the exact attempt lease, a real interrupted receipt resumes and lets the next task run, a
+concurrent resume returns EXISTING, accepted cancels are not bypassed by resume, unconfirmed
+owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained, and cancellation
+observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips; build
+unchanged. Contract §15.7 records the as-built state. PR #43 remains open/unmerged; status stays
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

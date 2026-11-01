@@ -533,3 +533,132 @@ Cover methods; resume returns EXISTING for a SAVED reopen; the source read names
 `readStoredForSave`/`readBytes` calls and their distinct private-proof/public-metadata facts; and
 the temporary Buffer budget is a four-row per-stage table (max 34,668,544 B) under 64 MiB while the
 old persistent limits stay unchanged. Still NOT_IMPLEMENTED.
+
+### Cover offline implementation (IN PROGRESS, OFFLINE)
+
+The implementation branch adds four Cover modules and 23 tests: canonical Intent, deterministic
+three-graph synthetic bytes, a dedicated Cover v3 store, and an executor with birth, single claim,
+checkpoints, one MASTER import, FINAL attachment, status, a busy-run cancel fence and
+resumeCoverFinal. As-built the Cover snapshots live in dedicated v3 files; merging v3 into the legacy
+catalog/owner files, dynamic dependencies, the parent Fake E2E and full cancel ack/cleanup evidence
+remain open. Contract errata were repaired on the same branch.
+
+### Cover dynamic dependencies and relay boundary
+
+`cover-readiness-internal.mjs` gives the TTS/SVC × AUDIO_REF/TEXT minimal dependency matrix with
+ordered block reasons, first-visit confirmation kept separate, stale/unknown evidence rejected and
+`realReady:false`. `cover-fake-relay-internal.mjs` is test-only: it accepts the inert
+PROPOSED_NOT_AUTHORIZED candidate only, deduplicates SENT and refuses to resend UNKNOWN. Executor
+tests now also cover busy-cancel evidence and receipt-based resume with zero second import. Still
+open: v3 integration into the legacy catalog/owner files and the legacy parent-chain E2E.
+
+### Parent-chain E2E and as-built status
+
+A real legacy catalog reserve + Fixture library + Cover run + handoff test now proves the single
+Task id path, the SAVED stop at the delivery boundary, the Fake Relay dedup/UNKNOWN rules and that
+the legacy owner store does not silently execute a Cover task. Contract §15 records the as-built
+matrix; the same-file v3 integration and the legacy owner run/save engine E2E remain open.
+
+### Same-file v3, cancellation and rollback (090 close-out)
+
+This section supersedes the "remain open" notes above. `resolveCoverFile` now selects the snapshot
+file per contract §15.1: a fresh sandbox writes v3 to `audio-task-catalog-v1.json` /
+`audio-task-owner-v1.json`; an existing v3 file there is used in place; an existing v1/v2 snapshot
+forces the dedicated `audio-cover-*-v3.json` files. The v3 readers accept legacy 6-key (owner) and
+4-key (catalog) entries and preserve them byte-for-byte, and the old owner fails closed on a v3 file.
+`test/cover-legacy-owner-chain.test.mjs` is the missing legacy parent E2E: real catalog reserve, real
+legacy owner run (ARTIFACT_READY / SIMULATED) and save (SAVED), then a Cover birth/execute on the same
+Fixture source reaching SAVED, with both legacy files byte-identical and one artifact pack holding
+the source plus two MASTERs.
+
+Cancellation follows §8.1: `cover-stage-bytes-internal.mjs` exposes chunked cooperative stages with a
+synchronous fence read every 4,096 frames and a real macrotask yield at least every 65,536 frames;
+`cover-executor-internal.mjs` persists `acknowledgedAt` before stopping, writes FINAL CANCELLED with
+`confirmedAt`, releases the lease, keeps a cancel-during-import MASTER stored without a FINAL SAVED,
+and exposes the cleaned temp summaries through status. `test/cover-cancel-evidence.test.mjs` proves
+all five facts, including an acknowledged-but-not-confirmed owner snapshot captured at the atomic
+rename before the final write.
+
+`core/audio/cover-rollback-internal.mjs` is the explicit checked rollback: it moves a Cover v3
+snapshot from the legacy filenames back to the dedicated files byte-for-byte and refuses mixed legacy
+data, an existing target or an unreadable file without changing anything. Full suite 831/828 pass/3
+platform skips/0 fail; build unchanged. Branch `feature/plan08-cover-execution`, PR #43 open and
+unmerged. Status **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; parent Plan 08 is not complete.
+
+### 104-R01..R06 review close-out
+
+The executor re-reads birth/Intent/current entry inside the single-writer queue, so concurrent
+same-key and different-key calls claim once and FAILED/CANCELLED terminals never rerun
+(`test/cover-concurrency.test.mjs`). `resumeCoverFinal` checks the exact attempt/request identity,
+returns the real SAVED/CANCELLED/FAILED terminal and only continues a claim with a persisted
+checkpoint[4] receipt plus a rebuilt attachment lineage
+(`test/cover-recovery.test.mjs`, real checkpoint[4] bytes restored after a normal run). The save
+transaction persists checkpoint[4] with the library import key, holds the Artifact queue across
+import → fresh proof → FINAL → post-commit confirmation, locks on an uncertain FINAL rename and
+resumes with zero second import. The store probes legacy files with lstat/size/bounded read, falls
+back only for valid known v1/v2 and deeply validates v3 entries on read and write
+(`test/cover-store-hardening.test.mjs`). `cover-lease-internal.mjs` provides one exclusive local-GPU
+lease per sandbox (CPU/cloud `gpu:'NONE'`); the executor acquires before claim and releases in
+`finally`. Readiness now rejects future evidence and authorized-but-not-ready SVC clouds, gates the
+actual run, and an optional `dependencies` bundle validates the real voice binding and provider
+readiness against the Intent (`test/cover-lease.test.mjs`, `cover-dependencies.test.mjs`). The
+legacy parent test drives its persisted SAVED record into handoff and the Fake Relay
+(SENT/EXISTING/UNKNOWN) and keeps the real Cover record delivery-free. Full suite 856/852 pass/4
+platform skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; the
+attachment remains a derived proof (owner v3 entry is 14 keys), real Provider/GPU/media/WeChat/
+install paths remain unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not
+complete.
+
+### v1.77 A/B/C close-out
+
+`validateCoverLineage` now proves the whole chain before a derived attachment is accepted: Intent
+source hash/length/identity, all manifest parent links, MASTER inspection, rights/expiry and the
+`import:cover-master:<attempt-suffix>` receipt; FINAL additionally rechecks the fresh proof's
+requestKey/expiry/inspection/rights. `writeCoverSnapshot` is delta-only: CLAIMED→CLAIMED may append
+checkpoints/fill null manifests but not change identity/record, CLAIMED→FINAL is allowed, FINAL and
+historical/catalog rewrites are rejected. UNKNOWN outcomes retain the shared GPU lease (in-memory
+busy and disk `releasedAt:null`); only SAVED/CANCELLED/FAILED release it. `executeCover` supports
+`compute:'CPU_CLOUD'` with `gpu:'NONE'`, `gpu.available=false` and mandatory cloud authorization +
+provider readiness, plus cross-mode conflict/progress evidence. Dependency facts are mandatory:
+omitting them is a hard `DEPENDENCY_FAILURE`; the real voice binding/provider/model/evidence/
+confirmation/cloud bundle must validate before any claim, and model revision, asset revision,
+provider removal, shared invalidation and future evidence all block. All successful-execution tests
+inject the real bundle through `test/support/cover-run.mjs`. Full suite 868/864 pass/4 platform
+skips/0 fail; build unchanged. Still **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**; the attachment
+remains derived, real Provider/GPU/media/WeChat/install paths remain unimplemented and unauthorized,
+PR #43 is unmerged and parent Plan 08 is not complete.
+
+### v1.78 A/B1/B2 close-out
+
+`validateCoverLineage` requires the exact 19-key MASTER inspection and the 4-key PASSED
+verification; `finalizeCoverSaved` compares every fresh library inspection field (peak,
+fullScaleSampleCount, durationMs, validationState, …) with the checkpoint[4] snapshot, so a mutated
+peak cannot become SAVED. Lease release is unified: the finally block releases only when the owner
+file confirms this attempt's FINAL SAVED/CANCELLED/FAILED; claim-write, checkpoint-write,
+cancel-FINAL and terminal-FINAL failures retain the claim and GPU lease with `releasedAt:null`.
+The long separate/convert/mix work runs outside the shared cover write queue: claim, checkpoint
+writes and the FINAL transaction use short critical sections, checkpoint writes merge disk cancel
+fields, and a real long GPU run no longer blocks a CPU/cloud execution (order B→A) while a second
+GPU execution gets `RESOURCE_LIMIT`. Full suite 874/870 pass/4 platform skips (including the 2
+`test/support` helper files as empty entries); build unchanged. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.
+
+### v1.79 normal-cancel release fix
+
+Every `cancelNow(...)` return in `executeCover` is now `return await`, so the try/finally runs after
+the async cancel queue has written FINAL CANCELLED; the finally then sees the terminal entry and
+releases. Previously a normal cancellation left `isCoverGpuBusy=true` and blocked later GPU tasks
+even though the disk entry was FINAL. CPU/cloud cancellation also returns its lease count to zero,
+and a failed cancel FINAL write still retains claim + lease. 2 regression tests; full suite 876/872
+pass/4 platform skips.
+
+### v1.80 lifecycle unification
+
+`resumeCoverFinal` re-checks identity/phase inside the short queue, returns the real FINAL result and
+releases the exact attempt lease by `leaseId`; a real interrupted receipt resumes to SAVED, the next
+task can run, and a concurrent resume returns EXISTING instead of EXECUTION_UNKNOWN. Accepted
+`cancel.requested`/fence is honored by `finalizeCoverSaved` and resume completes the cancellation
+while keeping a STORED MASTER. A failed owner/Artifact post-FINAL JOINT confirmation locks both
+domains, so status/retry/resume stay UNKNOWN and the lease is retained. Cancellation-observation
+read errors are mapped through `stopIfCancelled` and a top-level error boundary to the fixed envelope
+instead of rejecting. 6 lifecycle tests; full suite 882/878 pass/4 platform skips.

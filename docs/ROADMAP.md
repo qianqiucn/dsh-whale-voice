@@ -463,3 +463,64 @@ The 08-F-B contract candidate was revised for the `0094` review: restored catalo
 synced method/version tables, resume EXISTING, real read-source calls with private-proof/public-
 metadata provenance, and a per-stage explicit-Buffer peak table under 64 MiB. It is still
 NOT_IMPLEMENTED and changes no runtime, test or capability status.
+Plan 08 Cover offline execution started after the contract merge: Intent, synthetic stage bytes,
+dedicated Cover v3 store and a single-claim executor are implemented and tested offline. The
+remaining 090 units (v3 into the legacy files, dynamic dependencies, parent Fake E2E, complete
+cancel/cleanup evidence) are OPEN; no real model, media, device or WeChat capability changed.
+Cover dynamic dependencies and the test-only relay boundary are implemented (OFFLINE). The remaining
+090 units are legacy v3 store integration and the legacy parent-chain E2E; no real capability changed.
+Parent-chain E2E (legacy catalog + Fixture library + Cover + handoff) is implemented and tested
+offline; same-file v3 integration and the legacy owner run/save engine E2E remain OPEN.
+Same-file v3 integration is now implemented in three phases: a fresh sandbox writes the v3 snapshot
+to the legacy filenames, an existing v3 file there is read/written in place, and an existing v1/v2
+snapshot forces the dedicated v3 files; legacy entries inside a v3 owner/catalog file are preserved.
+The legacy owner run/save engine chain is covered by a real same-source E2E (`cover-legacy-owner-chain`
+test: legacy run reaches ARTIFACT_READY/SIMULATED, legacy save reaches SAVED, both legacy files stay
+byte-identical through a later Cover SAVED). Cancellation has the contract cooperation points (a
+4,096-frame synchronous fence and a real macrotask yield at least every 65,536 frames) with separate
+persisted request/ack/stop/release/cleanup evidence, and the explicit
+`planCoverV3Rollback`/`applyCoverV3Rollback` path moves a v3 snapshot back to the dedicated files while
+refusing mixed legacy data, an existing target or an unreadable file. Full suite 831/828 pass/3
+platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED: no real separation, RVC,
+mixing, GPU, audio device, WeChat or installation path changed, and parent Plan 08 is not complete.
+The v1.76 review (104-R01..R06) is addressed on the same branch: queue-internal single-claim recheck
+with terminal no-rerun; resume identity/real-terminal/receipt/proof validation with a real
+checkpoint[4] crash state and zero second import; durable checkpoint[4] plus an Artifact-queue
+critical section around import → FINAL → post-commit confirmation and an uncertain-write lock; safe
+legacy-file probing with deep v3 read/write validation; one exclusive local-GPU lease per sandbox
+(CPU/cloud `gpu:'NONE'`), readiness fixes for future evidence and authorized-but-not-ready SVC
+clouds, an execution readiness gate and an optional real voice-binding/provider dependency bundle;
+and a parent Fake chain driven by the persisted legacy SAVED record into handoff/Fake Relay
+(SENT/EXISTING/UNKNOWN) with the Cover record staying delivery-free. Full suite 856/852 pass/4
+platform skips/0 fail. Status remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and
+parent Plan 08 is not complete.
+The v1.77 A/B/C review is addressed on the same branch: full lineage/Intent/receipt/fresh-proof
+validation before SAVED and a delta-only writer (receipt-key, SOURCE-hash, historical-checkpoint and
+FINAL-rewrite mutations all rejected); UNKNOWN outcomes retain the shared GPU lease while only
+SAVED/CANCELLED/FAILED release it; `executeCover` gained a real `CPU_CLOUD` compute mode
+(`gpu:'NONE'`, mandatory cloud facts) with cross-mode conflict/progress evidence; dependency facts
+are mandatory and validate the real voice binding/provider/model/evidence/cloud bundle before any
+claim (omission, model/asset revision, provider removal, shared invalidation and future evidence all
+block). Full suite 868/864 pass/4 platform skips/0 fail. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; the attachment remains derived, real Provider/GPU/media/WeChat/install paths stay
+unimplemented and unauthorized, PR #43 is unmerged and parent Plan 08 is not complete.
+The v1.78 review (A/B1/B2) is addressed on the same branch: full MASTER inspection and PASSED
+verification are validated and the fresh library inspection is compared field-by-field; lease
+release is unified on a confirmed FINAL, so claim/checkpoint/cancel/terminal write failures keep the
+claim and the GPU lease; and the long separate/convert/mix work runs outside the shared cover write
+queue, with short claim/checkpoint/FINAL critical sections and a real long-GPU-run test where a CPU
+execution completes first (B→A) while a second GPU execution is refused. Full suite 874/870 pass/4
+platform skips (including the 2 `test/support` helper files as empty entries). Status remains
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not complete.
+The v1.79 regression is fixed: every `cancelNow(...)` return is awaited before the try/finally, so a
+normal CANCELLED releases the GPU lease and CPU/cloud lease count returns to zero, while a failed
+cancel FINAL write still retains claim + lease. Full suite 876/872 pass/4 platform skips. Status
+remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not
+complete.
+The v1.80 lifecycle review (R01–R04) is addressed: resume re-checks identity/phase inside the queue,
+settles the exact attempt lease, a real interrupted receipt resumes and lets the next task run, a
+concurrent resume returns EXISTING, accepted cancels are not bypassed by resume, unconfirmed
+owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained, and cancellation
+observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips. Status
+remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not
+complete.

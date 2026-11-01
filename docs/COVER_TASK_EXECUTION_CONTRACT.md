@@ -54,7 +54,7 @@
 | owner entry（6 键） | `scopeId, taskId, birthIdentityHash, phase, record, completion` |
 | `identityHashOf(record)` | `sha256(JSON.stringify({schemaVersion, feature, taskType, source:{kind,ref}, voiceProfileId, deliveryRequested, rights:{state}}))`，UTF-8；不含配方/pitch/模型修订 |
 | 库 entry（公有投影 8 键） | `artifactRef, scopeId, requestKey, origin, createdAt, expiresAt, rights, inspection`；`rights` 恰 2 键 `{state, proofRef}` |
-| 库读取 | `readStoredForSave({scopeId, artifactRef})` 返回 import 事务可直接使用的 STORED 事实；`readBytes({scopeId, artifactRef, now})` 返回 owned bytes；`import` 返回合法 ref |
+| 库读取 | `readStoredForSave(state, {scopeId, artifactRef, now})` 返回 STORED 事实；`readBytes` 请求恰 5 键（含 rights）→ `FOUND` 的 owned bytes + 公有 metadata8；`import` 返回合法 ref。完整流程见 §5.1 |
 | 私有 SaveProof.artifact（8 键） | `artifactRef, identityHash, byteSha256, byteLength, expiresAt, requestKey, rights, inspection` |
 | SaveProof root（11 键） | `schemaVersion, scopeId, taskId, birthIdentityHash, birthObservedAt, claimRevision, claimDigest, candidateRevision, recordIdentityHash, artifact, evaluatedAt` |
 | WAV inspection（19 键） | `schemaVersion, format, codec, bitsPerSample, sampleRate, channels, byteLength, dataByteLength, frameCount, durationMs, peak, fullScaleSampleCount, sha256, validationState, mockOnly, realOperationAllowed, submitAllowed, automaticRetryAllowed, messageZh` |
@@ -322,11 +322,7 @@ c34f059d4ef6beab90c0d112c58e511382a934a68a4fb5301a13defc7e3edb35
 
 | 字段 | 来源（内部出生代码） | 说明 |
 |---|---|---|
-| `artifactRef` | proof8.artifactRef（与 metadata8 对照） | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}## 5. FUTURE：真实源、Provider 适配与 Stage 来源（092-R02）
-
-### 5.1 实测 sourceFacts（8 键，仅内部产生）
-
- |
+| `artifactRef` | proof8.artifactRef（与 metadata8 对照） | 物理 ref，必须匹配 `^artifact:fixture-bytes-[0-9a-f]{32}$` |
 | `scopeId` | **公有 metadata8.scopeId** | 必须等于请求 scope |
 | `requestKey` | proof8.requestKey / metadata8.requestKey | 该次 import 的请求键 |
 | `origin` | **公有 metadata8.origin** | `FIXTURE_IMPORT` 等 |
@@ -872,10 +868,10 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 - 判据不是“现有字节 + 单条 entry”，而是**完整候选 pack**：
   `utf8(serializePack({schemaVersion:1, sandboxId, revision: current.revision+1, entries: [...current.entries, candidateEntry]})) ≤ 6,291,456`。
 - 该序列化包含：已有非空 entries 之间的逗号、JSON 空白规则、`revision` 位数变化、每个 entry 的完整 11 键；与 writer 实际写盘同一实现，不做常数估算。
-- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **{{PACK_BYTES}} B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
+- 可复算示例（虚构）：库内 1 条 52 B SOURCE entry，新增 1 条 52 B MASTER entry，候选 root revision 2 → **2177 B**（< 6,291,456）。该示例不代表所有合法字段的最大值；入场永远按当时实际候选计算。
 - 解码总量：`currentDecodedBytes + masterBytes ≤ 4,194,304`（MASTER 最大时 D ≤ 3,145,728）。
 - 条目：`currentEntries + 1 ≤ 32`（含 tombstone）。
-- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **{{ENTRY_BYTES}} B**、snapshot **{{SNAP_BYTES}} B**（revision 2，含 6 checkpoint 与 importReceipt）。
+- owner：`utf8(owner candidate snapshot) ≤ 131,072` 且 entries ≤ 32；单条设计上限 16,384 B 只是设计界限，入场用**实际 UTF8 字节**。完整示例 entry **8874 B**、snapshot **8919 B**（revision 2，含 6 checkpoint 与 importReceipt）。
 - 以上在入场与 import/FINAL 前按当时实际字节 fresh 重算；任一不满足 → `COVER_RESOURCE_LIMIT`，0 新入库。
 
 ### 9.3 受控 Buffer 峰值（含 writer 实际存活阶段）
@@ -1035,9 +1031,9 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | birthIdentityHash / source identity | `bf3c034e…ffedc` / `04cd12de…eade61`（实算） |
 | revision | 单任务 claim1 → FINAL2；跨任务示例 proof.claimRevision=2、candidate=3 |
 | 媒体向量 | 7 个 52 B WAV SHA 不变（复用 0092 复算） |
-| 完整 pack 示例 | {{PACK_BYTES}} B < 6,291,456 |
+| 完整 pack 示例 | 2177 B < 6,291,456 |
 | Buffer 峰值 | 四行最大 34,668,544 ≤ 67,108,864（64 MiB） |
-| owner 字节 | entry {{ENTRY_BYTES}} B / snapshot {{SNAP_BYTES}} B |
+| owner 字节 | entry 8874 B / snapshot 8919 B |
 
 > 只证明文档自洽与向量可复算，不证明 FUTURE 已实现。
 
@@ -1048,8 +1044,122 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 
 ### 14.3 明确未实现
 
-全部 Cover API/catalog v3/owner v3/StageArtifact/三图算法/取消/租约/预算/迁移；真实模型/媒体/GPU/设备/微信/安装发布；父 08 的 Cover/资源/动态 Evidence/Fake E2E。
+本节记录合同编写时的未实现范围（Cover API/catalog v3/owner v3/StageArtifact/三图算法/取消/租约/预算/迁移；真实模型/媒体/GPU/设备/微信/安装发布；父 08 的 Cover/资源/动态 Evidence/Fake E2E）。当前的离线 as-built 与剩余未闭项以 §15 为准；§14 是设计时边界，§15 是本轮实际证据，两者不互相替代。
 
 ### 14.4 状态
 
-**CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED / FIXTURE_ONLY / NOT_INTEGRATED。** 通过只代表设计候选；后续实施必须另有正式执行单元与明确授权。
+**CONTRACT_CANDIDATE / FIXTURE_ONLY / NOT_INTEGRATED。** 设计候选 + 离线 Fixture 实现；不代表真实模型、媒体、GPU、设备、微信或安装能力。
+
+---
+
+## 15. 实施状态（as-built，2026-11-01）
+
+| 项 | 状态 |
+|---|---|
+| canonical Intent / 稳定源身份 / draft 校验 | **已实现**（`cover-intent-internal.mjs`），基础与五变体向量测试通过 |
+| 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
+| 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL proof/attachment 校验 / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），队列内二次 claim 复核、终态不重跑 |
+| 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
+| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.7，104-R01..R06 + v1.77 A/B/C + v1.78 A/B1/B2 + v1.80 R01–R04） |
+| Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
+| 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
+| Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
+| legacy 父链 E2E | **已实现**：真实 legacy catalog/owner 的 run+save 引擎链与同一 Fixture 源的 Cover 并存，legacy 文件字节不变（`test/cover-legacy-owner-chain.test.mjs`） |
+| 显式回滚 | **已实现**（§15.3，`cover-rollback-internal.mjs`） |
+| 真实模型/媒体/GPU/设备/微信/安装 | **未实现、未授权** |
+
+上表只记录离线代码与测试事实，不代表集成、真实能力或父 Plan08 完成。
+
+### 15.1 同文件 v3 集成（as-built）
+
+| 阶段 | 行为 | 证据 |
+|---|---|---|
+| A 读/写选择 | `resolveCoverFile`：legacy 文件不存在 → 直接写 v3 到 legacy 文件名；legacy 文件已是 v3 → 继续同文件读写；legacy v1/v2 存在 → 回退专用 `audio-cover-catalog-v3.json` / `audio-cover-owner-v3.json` | `test/cover-executor.test.mjs`（fresh sandbox 与 fallback） |
+| B 混合条目 | owner v3 读取接受 legacy 6 键条目（严格键集/phase）；catalog v3 接受 legacy 4 键条目；写回保留 legacy 条目 deep-equal | `cover-store-mixed.test.mjs` / `cover-store-catalog-mixed.test.mjs` |
+| C 旧程序 | 旧 owner 遇 v3 失败关闭 `TASK_OWNER_STORE_INVALID`，不静默改写、不自动迁移 | `cover-executor.test.mjs` / `cover-parent-e2e.test.mjs` |
+
+非目标：原地改写 legacy v1/v2、双 writer、第二 Task/Artifact authority、自动迁移、删除历史 legacy 条目。
+
+### 15.2 取消 / 租约 / 清理（as-built）
+
+| 事实 | 持久证据 | 代码 |
+|---|---|---|
+| request | `requestCoverCancel` 返回 `ACCEPTED`，写内存 fence + 排队短写 requested/requestedAt | `cover-executor-internal.mjs` |
+| ack | 执行器在合作点观察 fence 后单独短写 `cancel.acknowledgedAt`（confirmedAt 仍 null），随后才停止 | 同上 |
+| stop | FINAL `CANCELLED`：`cancel.confirmedAt`、`completion.kind='CANCELLED'`；不写 FINAL SAVED | 同上 |
+| release | `attempt.lease.releasedAt`；UNKNOWN 不释放 | 同上 |
+| cleanup | attempt 自己产生的 stage 字节只以 compact 记录，status 里 `availability:'CLEANED'`；import 中取消时已 STORED 的 MASTER 保留并记 `STORED`；不删父 SOURCE/共享资源/其他 task | 同上 |
+
+合作点：每 4,096 帧同步读 fence，至少每 65,536 帧执行一次真实宏任务让出；每个 checkpoint 前后、import 前、FINAL 前。帧级让出只在 chunked stage 实现中生效，测试用 20 万/12 万帧输入证明让出次数与取消位置。以上均为 LOGICAL_FIXTURE 逻辑租约，不是 GPU/显存/进程实测。
+
+### 15.3 回滚（as-built）
+
+`planCoverV3Rollback({ sandbox })` 只读计划；`applyCoverV3Rollback({ sandbox })` 把 legacy 文件名中的 v3 快照逐字节移回专用 v3 文件名，失败时恢复已移动文件。拒绝并保持原状的场景：legacy v1/v2（无需回滚，`untouched`）、快照含非 COVER 条目（`COVER_ROLLBACK_LEGACY_DATA`）、专用目标已存在（`COVER_ROLLBACK_TARGET_EXISTS`）、不可读/超大（`STORE_INVALID`/`RESOURCE_LIMIT`）。
+
+可原样执行的虚构示例（仅在隔离 sandbox 内；无路径参数）：
+
+```js
+import { createConfigSandbox, removeConfigSandbox } from './core/config-sandbox.mjs'
+import { planCoverV3Rollback, applyCoverV3Rollback } from './core/audio/cover-rollback-internal.mjs'
+
+const sandbox = createConfigSandbox()
+try {
+  const plan = planCoverV3Rollback({ sandbox })
+  if (plan.ok) console.log(plan.value.moves) // 0..2 个 {kind,from,to,entries,bytes}
+  const applied = applyCoverV3Rollback({ sandbox })
+  if (applied.ok) console.log(applied.value.applied)
+} finally {
+  removeConfigSandbox(sandbox)
+}
+```
+
+### 15.4 并发、恢复、保存事务、选路、租约与依赖（as-built，104-R01..R06）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| R01 并发去重 | `executeCover` 外层读取只是快路径；在唯一写入权的 cover 队列内重读 catalog/owner，复核 birth/Intent 与同 task 现有 entry，只允许一次 claim；FINAL/CLAIMED 直接返回既有结果，FAILED/CANCELLED/UNKNOWN 终态不重跑 | `test/cover-concurrency.test.mjs`（同 key/异 key 并发、双任务、FAILED/CANCELLED 重试、锁存） |
+| R02 恢复身份与终态 | `resumeCoverFinal` 必须先核 `attemptId` 与 `requestKey`（不符 `NOT_FOUND`）；FINAL 返回真实 `EXISTING/SAVED`、`CANCELLED`、`FAILED`，不再固定 SAVED；CLAIMED 必须有 checkpoint[4] receipt，并重建/校验 attachment 谱系后走同一个 FINAL 事务 | `test/cover-recovery.test.mjs`（真实 checkpoint[4] 状态恢复、错误身份、CANCELLED/FAILED 终态） |
+| R03 保存事务 | checkpoint[4]（含 receipt）在 import 后**持久写**；receipt.requestKey 使用库签发/导入 key；Artifact 队列临界区贯穿 import → receipt → fresh JOINT proof → FINAL → post-commit owner+artifact 复核；FINAL 未知写锁存且不重跑；resume 不第二次 import | `test/cover-recovery.test.mjs`（崩溃窗口、库删除竞争、FINAL rename 不确定、0 第二 import） |
+| R04 选路与深校验 | `resolveCoverFile` 先 lstat/限长/有界读，只对合法已知 v1/v2 回退；损坏、未知版本、符号链接、超大 fail-closed；owner/catalog v3 条目在读写两侧深校验（键集/Intent hash/receipt/record/attachment 谱系可重建），畸形候选写前拒绝且不改文件 | `test/cover-store-hardening.test.mjs`、`cover-store-mixed*`、`cover-store-fallback` |
+| R05 共享资源与依赖 | 新 `cover-lease-internal.mjs`：同 sandbox 本地 GPU 租约独占，CPU/cloud 租约占 `gpu:'NONE'` 且不阻塞 GPU；executor 在 claim 前获取、所有终态 finally 释放，冲突返回 `RESOURCE_LIMIT` 且 0 claim。readiness 修正未来 observedAt 与“仅 authorized 的 SVC 云”漏洞，并在真实执行中用 source proof/GPU lease/evidence/confirmation/可选 model 事实做门禁；可选 `dependencies` 用既有 `resolveFixtureVoiceBinding` + `negotiateReadyFixtureProvider` 校验 voice/profile/asset/instance/candidate/modelRef/provider，任一不符 fail-closed | `test/cover-lease.test.mjs`、`cover-readiness.test.mjs`、`cover-dependencies.test.mjs` |
+| R06 父 Fake 链 | 真实 legacy catalog + owner save 产出的持久 SAVED 记录（含真实 outputArtifactRef 与 deliveryRequested=true）直接构造 handoff candidate → 测试 Fake Relay 首次 SENT、重复/重开 EXISTING、UNKNOWN 不重发；真实 Cover SAVED 记录 `deliveryRequested=false` 被 handoff 拒绝 | `test/cover-legacy-owner-chain.test.mjs` 第二测试 |
+
+**仍 OPEN / 边界：**
+
+1. owner v3 条目按合同固定 14 键，不持久化独立 `attachment` 字段；attachment 由 manifest+receipt 重建并校验，属于派生 proof，不是第二权威。
+2. 帧级取消合作点只覆盖本实现的 Synthetic chunked stage；真实 Provider/流式推理、GPU/显存/进程实测仍未实现。
+3. `dependencies` 自 v1.77 起为**必需参数**：缺省或字段不全即 `DEPENDENCY_FAILURE`，不存在默认 ready 捷径；调用方必须传入真实 voice binding、provider readiness、model revision 与新鲜 fixture 证据。
+4. 真实模型/媒体/GPU/设备/微信/安装/发送仍未实现、未授权；父 Plan08 未完成。
+
+### 15.5 v1.77 A/B/C 复核修复（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| A 保存/恢复证明 | `validateCoverLineage` 逐字段核对 Intent.sourceByteSha256/byteLength/sourceEntryIdentityHash、source/vocal/instrumental/converted/master 的 parentLinks 链、master inspection 的 sha/len、rights/proof、model/profile/backend revision、checkpoint[4] 的 `import:cover-master:<attempt-suffix>`、expiry 与 byteLength/sha；`attachmentFromEntry` 只在整链通过后重建派生 attachment。FINAL 的 fresh proof 还核对 requestKey、expiry、inspection、rights。`writeCoverSnapshot` 增加 delta-only 准入：只允许 CLAIMED→CLAIMED（identity/record 固定、checkpoint 只追加、manifest 只填 null、cancel 可改）或 CLAIMED→FINAL；FINAL 不可改写；历史条目与 catalog 条目不得改写/重排 | `test/cover-proof-hardening.test.mjs`（receipt key / SOURCE hash 定点变异、历史 checkpoint 改写、FINAL 改写），`test/cover-recovery.test.mjs`（真实 checkpoint[4] 正向恢复） |
+| B UNKNOWN 资源与计算模式 | UNKNOWN/SAVE_UNKNOWN/EXECUTION_UNKNOWN/CHECKPOINT_FAILED/FINAL_FAILED 时保留租约（`isCoverGpuBusy` 仍 true，attempt.lease.releasedAt 仍 null，磁盘 claim 保留）；只有 SAVED/CANCELLED/FAILED 终态或未取得租约时释放。`executeCover` 增加 `compute: 'LOCAL_GPU'|'CPU_CLOUD'`：CPU 模式 `gpu:'NONE'`、readiness 的 `gpu.available=false`、必须 cloud.authorized+providerReady；本地 GPU 冲突 `RESOURCE_LIMIT`，CPU 模式在 GPU 被占时仍可进展 | `test/cover-recovery.test.mjs`（不确定 FINAL 后租约保留）、`test/cover-lease.test.mjs`（CPU gpu:NONE、跨模式冲突、cloud 缺失阻断并释放） |
+| C 依赖门禁 | `dependencies` 必需：`verifyCoverDependencies` 校验真实 voice binding（FIXTURE_BOUND、profile/asset/instance/candidate/modelRef 与 Intent 一致）、provider readiness（FIXTURE_READY）、model present/revision、evidence 的 observedAt/expiresAt/realReady、confirmation/cloud 形状；省略、模型 revision 变化、asset revision 变化、provider 撤除、shared provider 失效、未来 evidence 均在 claim 前或 readiness 门禁处阻断；不存在的“默认 model/gpu/evidence”捷径已删除 | `test/cover-dependencies.test.mjs`、`test/cover-readiness.test.mjs`；所有成功执行测试统一通过 `test/support/cover-run.mjs` 注入真实 bundle |
+
+**仍 OPEN / 边界：** owner v3 条目仍为 14 键、attachment 仍为派生 proof；帧级合作点只覆盖 Synthetic chunked stage；真实 Provider/GPU/媒体/设备/微信/安装/发送未实现未授权；父 Plan08 未完成。
+
+### 15.6 v1.78 A/B1/B2 复核修复（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| A 完整 inspection/verification | `validateCoverLineage` 要求 MASTER inspection 恰为合同 19 键、`manifest.verification` 恰 4 键且 state=PASSED/masterSha256 对齐；`finalizeCoverSaved` 把 fresh 库 inspection 的每个字段（含 peak/fullScaleSampleCount/durationMs/validationState）与 checkpoint[4] 快照逐项比较，任一不符不得 SAVED 且不新增 import | `test/cover-proof-hardening.test.mjs`（peak 定点变异被 writer 拒绝；绕过 writer 后 resume 失败） |
+| B1 统一租约收束 | `executeCover` 的 finally 不再逐路径补布尔值，而是**读取 owner 文件确认本次 attempt 的 FINAL SAVED/CANCELLED/FAILED** 后才释放租约；claim 写未知、checkpoint 写未知、cancel FINAL 写失败、terminal FINAL 写失败均保留 claim+租约，磁盘 `lease.releasedAt` 保持 null，新 LOCAL_GPU 租约被拒 | `test/cover-lease-retention.test.mjs`（claim/checkpoint/cancel/terminal 四类故障） |
+| B2 长短临界区分离 | claim 只在共享写队列内完成；separate/convert/mix 长计算在队列外运行（保留 4,096 帧 fence/65,536 帧让出）；每个 checkpoint 通过短队列写并合并磁盘上的 cancel 字段；FINAL 用“cover 短队列 → Artifact 队列”临界区，保持既有锁序；同 task 单 claim、GPU 冲突与 UNKNOWN 保留不回退 | `test/cover-queue-concurrency.test.mjs`（真实长 GPU run 期间 CPU 执行完成、GPU 新任务 `RESOURCE_LIMIT`、完成顺序 B→A） |
+
+**仍 OPEN / 边界：** 与 §15.5 相同；以上均为 Synthetic Fixture + 逻辑租约，不代表真实 GPU/Provider/微信/安装能力；父 Plan08 未完成，PR #43 未合并。
+
+**v1.79 补正（正常取消释放回归）：** `executeCover` 的所有 `cancelNow(...)` 返回点改为 `return await`，确保 `finally` 在 FINAL CANCELLED 写完成之后才读取 owner；正常取消后 `isCoverGpuBusy=false`、CPU/cloud 租约计数归零，后续同 sandbox GPU 任务可执行；取消 FINAL 写失败仍保留 claim + 租约（四类写未知证据不变）。
+
+### 15.7 v1.80 生命周期统一收束（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| R01 恢复资源收束与队列幂等 | `resumeCoverFinal` 的身份/阶段检查移入短队列；FINAL 直接在队列内返回真实结果并按 `entry.attempt.lease.leaseId` 释放实际租约；SAVED 后同样 settle；并发 resume 第二个返回 `EXISTING` 而非 `EXECUTION_UNKNOWN`。真实中断（checkpoint[4] 后 owner 读取失败）resume 后资源空闲、下一任务可运行 | `test/cover-lifecycle.test.mjs`（真实中断恢复、并发 resume、下一任务） |
+| R02 取消不得被恢复越过 | `finalizeCoverSaved` 在写 FINAL 前检查 fence 与持久 `cancel.requested`，命中返回 `CANCEL_DURING_IMPORT`；resume 在队列内先完成 stop/cleanup（保留已 STORED MASTER），FINAL 后按 TOO_LATE/既有结果处理 | `test/cover-lifecycle.test.mjs`（accepted cancel → resume CANCELLED，master 保留） |
+| R03 JOINT 未确认保持 UNKNOWN | FINAL 写后的 owner/Artifact 后确认失败同时锁 Cover 与 Artifact 两域；execute 返回 SAVE_UNKNOWN，status/retry/resume 均为 UNKNOWN，租约保留，不产生第二 import | `test/cover-lifecycle.test.mjs`（Artifact 侧与 owner 侧注入） |
+| R04 取消观察读取异常映射 | `cancelled()` 拆为 `cancellationState`/`stopIfCancelled`，存储读取异常映射为固定 error envelope 并保留 claim；execute 顶层增加统一异常边界（预期存储错误映射，已 FINAL 则返回真实终态），不 reject 公共 Promise | `test/cover-lifecycle.test.mjs`（阶段取消观察读取失败不 reject） |
+
+**仍 OPEN / 边界：** 以上均为 Synthetic Fixture + 逻辑租约；真实 Provider/GPU/媒体/设备/微信/安装/发送未实现未授权；父 Plan08 未完成，PR #43 未合并。
