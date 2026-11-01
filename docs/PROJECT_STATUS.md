@@ -410,3 +410,33 @@ save, store, file, network, process, clock or random call; no Task is created or
 audio is generated or saved. Not implemented / not verified: real Cover execution and StageArtifact
 lifecycle, resources/cancellation, dynamic evidence, the parent Fake Model/Audio/Relay E2E, real
 Host/GUI or any production capability. Parent Plan 08 remains IN_PROGRESS.
+### 08-F-B Cover execution / StageArtifact contract — CONTRACT_CANDIDATE / NOT_IMPLEMENTED / PR pending
+
+Documentation only: `docs/COVER_TASK_EXECUTION_CONTRACT.md` (new) freezes the complete design for
+one atomic Cover birth intent on the existing catalog (private snapshot v3 typed entries), the
+25-key canonical Intent with recomputed SHA-256 vectors, the single-owner execute/status/cancel API,
+the owner v3 Cover entry and the 7-key `coverAttachment` writer branch, trusted STORED SOURCE bytes
+with a stable source identity, the derived VOCAL adapter, the 24-key StageArtifact manifest and
+old-shape mapping, the three deterministic Fake byte graphs with computed vectors, queue/checkpoint/
+recovery/cancel/lease/cleanup/cache rules, exact peak/admission budgets, the old/new program ×
+version matrix, new Cover error codes with fixed priority, and a state/failure matrix. All new APIs,
+entities and flows are explicitly `NOT_IMPLEMENTED`; the frozen v1.6 save contract and all product
+code/tests remain untouched (7 files in M's F-A unit and the rest of the tree unchanged). This unit
+adds no runtime capability and does not close P08-07, Cover execution, resources/cancellation,
+dynamic evidence or the parent Fake E2E; parent Plan 08 stays IN_PROGRESS.
+The contract candidate received a full revision (`092-R01..R06`): public `reserveCover` with a
+19-key draft + measured source entry, 25-key legal intent and recomputed vectors, library rights
+mapping and physical source refs, field-level RVC gateway adapter (mono), typed owner v3/manifest
+shapes, exact revision/attachment/crash/cancel semantics and exact capacity/peak budgets. The
+document remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no product code, tests, contracts or media
+were changed in this revision, and parent P08/Plan 08 stays IN_PROGRESS.
+The contract candidate was revised for the `0093` incremental review: internal-only birth, unified
+envelope with complete examples, 1,140 B canonical Intent, real gateway patterns with metadata-only
+returns, `importReceipt` + `resumeCoverFinal`, Artifact held through the FINAL critical section,
+macrotask cancel yield, full-pack admission and a 32 MiB explicit-Buffer peak. It remains
+CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or media changed and P08 stays OPEN.
+The contract candidate was revised for the `0094` review: restored catalog birth shape and example,
+synced method/version tables (supported v3 vs unknown), resume EXISTING, corrected real
+read-source calls and field provenance, and a four-row explicit-Buffer peak table under a 64 MiB
+temporary budget. It remains CONTRACT_CANDIDATE / NOT_IMPLEMENTED; no code, tests, contracts or
+media changed and P08 stays OPEN.

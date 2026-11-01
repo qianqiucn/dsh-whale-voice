@@ -438,3 +438,28 @@ verify/save audio, or touch storage, network, clock or randomness. Documented in
 examples. Local suite **774/771/3 platform skips/0 fail**. This does not complete Cover execution,
 resource/cancellation work, dynamic-dependency evidence, the parent Fake E2E or any real capability;
 parent Plan 08 stays IN_PROGRESS.
+### Plan 08-F-B — Cover execution / StageArtifact contract candidate (docs only, PR pending)
+
+A complete implementable design for one atomic Cover intent birth and a single-claim execution that
+ends in exactly one MASTER save: canonical Intent with hash vectors, typed catalog v3 / owner v3
+entries, one execute/status/cancel API on the same owner, a `coverAttachment` writer branch,
+trusted STORED SOURCE bytes and derived lineage, the StageArtifact manifest, deterministic Fake byte
+algorithms with vectors, queue/checkpoint/recovery/cancel/lease/budget rules, version compatibility
+and error priorities. Everything is `NOT_IMPLEMENTED`; no runtime, tests or media work is added and
+the frozen save contract v1.6 is untouched. This does not complete Cover execution, resources/
+cancellation, dynamic evidence, the parent Fake E2E or any real capability.
+The 08-F-B contract candidate was revised after review (`092-R01..R06`): it now has a single public
+birth protocol and duplicate sequence, a legal canonical Intent (25 keys) with recomputed vectors,
+library-rights/physical-source mapping, a field-level adapter to the existing RVC Fake gateway,
+typed owner/StageArtifact shapes, the exact M revision/attachment/cancel/crash rules and exact
+capacity/peak budgets. It is still NOT_IMPLEMENTED and does not change the Cover execution,
+resources/cancellation, dynamic evidence, parent Fake E2E or real-capability status.
+The 08-F-B contract candidate was revised for the `0093` incremental review: internal-only birth,
+one envelope, real gateway field constraints, `importReceipt`/`resumeCoverFinal`, the Artifact-held
+FINAL critical section, a real macrotask cancel yield, and full-pack/32 MiB budgets. It is still
+NOT_IMPLEMENTED and does not change Cover execution, resources/cancellation, dynamic evidence, the
+parent Fake E2E or any real capability.
+The 08-F-B contract candidate was revised for the `0094` review: restored catalog birth example,
+synced method/version tables, resume EXISTING, real read-source calls with private-proof/public-
+metadata provenance, and a per-stage explicit-Buffer peak table under 64 MiB. It is still
+NOT_IMPLEMENTED and changes no runtime, test or capability status.

@@ -490,3 +490,46 @@ complete positive roots plus one complete negative root that the tests run verba
 created or executed, no audio is generated or saved and the module has no I/O, clock or random
 side effect. `OFFLINE` / `FIXTURE_ONLY` / `PLAN_ONLY` / `NOT_INTEGRATED`; parent Plan 08 is still
 `IN_PROGRESS`.
+## 08-F-B Cover execution / StageArtifact contract candidate (documentation only)
+
+`docs/COVER_TASK_EXECUTION_CONTRACT.md` (new) is a **CONTRACT_CANDIDATE / PLANNED_RUNTIME /
+NOT_IMPLEMENTED** design: one atomic Cover intent bound in the live catalog (private snapshot v3
+with typed legacy/Cover entries, same single TaskId), a 25-key canonical Intent with five
+recomputed SHA-256 variants, the single-owner `executeCover` / `coverStatus` / `requestCoverCancel`
+API, a 14-key owner v3 Cover entry, the 7-key `coverAttachment` branch of the only writer, trusted
+STORED SOURCE bytes plus a stable source identity, the derived VOCAL adapter, the 24-key
+StageArtifact manifest with exact old-shape mapping, deterministic three-graph Fake byte algorithms
+with computed WAV vectors, queue/checkpoint/recovery and cooperative cancel rules, the logical lease
+and cleanup/cache boundary, exact peak/admission budgets, the old/new program × version matrix, 21
+`TASK_OWNER_COVER_` codes plus 3 catalog codes and a 15-row state/failure matrix. No runtime, planner,
+validator, tests or media work is added; the frozen save contract v1.6 is untouched and parent Plan
+08 remains IN_PROGRESS.
+
+### 092-R01..R06 revision (still NOT_IMPLEMENTED)
+
+The contract candidate now fixes the six review groups: public `reserveCover` (schema 1) with a
+19-key intentDraft and measured sourceEntry, one no-second-ID duplicate sequence, a 25-key legal
+intent with recomputed canonical vectors; library `GRANTED` rights mapping and a physical
+`artifact:fixture-bytes-*` binding; a field-by-field adapter to the existing 7-key RVC Fake gateway
+(mono only); owner v3 Cover entry 14 keys / attempt 8 / checkpoints 5 / manifest 6 slots typed; the
+exact M revision sequence and delta-only `coverAttachment`; per-zone cancel answers with a `now`
+clock; crash/reopen and requestKey dedup; and the real entry-length budget (1,399,070 B,
+P <= 4,892,386 B) with a 20 MiB exact import peak. No runtime, code, tests or media work is added.
+
+### 0093 revision
+
+Birth is internal-only (caller cannot forge source facts); four owner methods share the ok/errors
+envelope; the canonical Intent is 1,140 B with recomputed vectors; the gateway adapter matches the
+real M patterns and metadata is not bytes; `checkpoint[4].importReceipt` plus `resumeCoverFinal`
+provide the only physical ref for recovery; FINAL holds Artifact through import/write/JOINT; cancel
+yields with `setImmediate`; and the budget uses the full candidate pack, real owner bytes and a
+32 MiB explicit-Buffer peak. Still NOT_IMPLEMENTED.
+
+### 0094 revision
+
+The catalog v3 birth example is restored (9-key entry / 16-key Task record / non-empty expiry and
+consistent hashes); method tables separate supported v3 from unknown versions and include all four
+Cover methods; resume returns EXISTING for a SAVED reopen; the source read names the real
+`readStoredForSave`/`readBytes` calls and their distinct private-proof/public-metadata facts; and
+the temporary Buffer budget is a four-row per-stage table (max 34,668,544 B) under 64 MiB while the
+old persistent limits stay unchanged. Still NOT_IMPLEMENTED.

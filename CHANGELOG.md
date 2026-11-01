@@ -6,6 +6,55 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Docs: the Cover contract candidate was revised for the `0094` review (still **CONTRACT_CANDIDATE /
+  NOT_IMPLEMENTED**). The catalog v3 birth example is restored (root 3 keys; Cover entry 9 keys;
+  Task record 16 keys; non-empty expiry) with matching identity/Intent hashes; the owner method
+  tables now list the four Cover methods alongside the original four and split "supported v3" from
+  "unknown/unsupported version"; `resumeCoverFinal` includes `EXISTING` for a SAVED reopen; the
+  source read now names the real calls (`readStoredForSave(state, {scopeId, artifactRef, now})`
+  returning the 8-key private proof, and the 5-key `readBytes` request with rights, requiring
+  `outcome==='FOUND'` and using the public metadata for scopeId/origin/createdAt); and the peak
+  budget is now a four-row per-stage table over explicit still-alive Buffers (max 34,668,544 B)
+  under a new 64 MiB temporary budget, without changing the old persistent limits.
+- Docs: the Cover contract candidate was revised again for the `0093` incremental review (still
+  **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Cover birth is now internal-only (no public
+  `reserveCover`; the caller cannot supply source facts), the source record is 8 measured fields
+  with top-level expiry, all four new owner methods share one `{ok:true,value}` /
+  `{ok:false,errors}` envelope with full success/error/EXISTING examples, the canonical Intent is
+  1,140 B (`c34f059d…db35`) with five variants, the adapter matches the real gateway patterns
+  (`artifact:fixture-*`, `audio/wav`, `CONFIRMED_FIXTURE`, `request:fixture-*`,
+  `gateway:fixture-rvc`) and separates metadata from the internal byte producer, `checkpoint[4]`
+  carries a 5-key `importReceipt` plus a new `resumeCoverFinal` method, the FINAL critical section
+  holds Artifact through import→write→JOINT, cancellation uses a real macrotask yield, and the
+  budget uses the full candidate pack (`2,177 B` example), exact owner sizes (entry `8,874 B`,
+  snapshot `8,919 B`) and a 32 MiB explicit-Buffer peak (`29,360,128 B`).
+- Docs: the Cover execution / StageArtifact **contract candidate** was revised for the six review
+  groups `092-R01..R06` (still **CONTRACT_CANDIDATE / NOT_IMPLEMENTED**). Birth now has a public
+  `reserveCover` (schema 1) with a 19-key `intentDraft` + measured 7-key `sourceEntry` and a
+  no-second-ID duplicate sequence; legal intent is 25 keys with recomputed canonical/SHA vectors
+  (`44223ddf…0f13`, five variants); the library-domain `GRANTED` rights mapping and a physical
+  `artifact:fixture-bytes-*` source binding replace the declaration shortcuts; the derived VOCAL
+  adapter maps field-by-field onto the existing 7-key RVC Fake gateway request (mono only); the
+  owner v3 Cover entry is 14 keys with an 8-key attempt, 5-key checkpoints and a typed 6-slot
+  manifest (24/7/24/4); revision is now the exact M sequence (claim +1, checkpoints +0, FINAL =
+  claim+1, example revision 2); the writer takes an optional 5th `coverAttachment` only for the
+  current delta's Cover FINAL; cancel answers are fixed per zone with a `now` clock; crash/reopen
+  and requestKey dedup rules are explicit; and the budget uses the real serialized entry length
+  (1,399,070 B, P <= 4,892,386 B) plus an exact 20 MiB import peak (17,477,296 B term-by-term).
+- Docs: Plan 08-F-B complete Cover execution / StageArtifact transaction **contract candidate**
+  (`docs/COVER_TASK_EXECUTION_CONTRACT.md`, new; **CONTRACT_CANDIDATE / PLANNED_RUNTIME / NOT_IMPLEMENTED**):
+  a full, versioned, implementable design for one atomic Cover birth intent on the existing catalog
+  (private catalog snapshot v3 typed legacy/Cover entries, same single TaskId), the 25-key canonical
+  Intent with SHA-256 vectors, the single-owner `executeCover`/`coverStatus`/`requestCoverCancel` API,
+  a 14-key owner v3 Cover entry, the 7-key `coverAttachment` branch of the only writer, trusted
+  STORED SOURCE bytes and stable source identity, the derived VOCAL adapter, the 24-key StageArtifact
+  manifest with exact old-shape mapping, the three deterministic Fake byte graphs with computed
+  vectors, queue/lease/checkpoint/recovery rules, the cooperative cancel fence, the logical lease and
+  cleanup/cache boundary, exact peak budgets, the old/new program × catalog/owner version matrix, 21
+  new `TASK_OWNER_COVER_` codes plus 3 catalog Cover codes with a fixed priority, a 15-row state /
+  failure matrix, the future implementation table and seven finite acceptance groups. Documentation
+  only: no runtime, planner, validator, tests, writer, store or media work is added; every FUTURE
+  item stays NOT_IMPLEMENTED and the frozen save contract v1.6 is untouched.
 - Plan 08-F-A pure Fixture cover stage planner (`core/audio/cover-plan.mjs`, **new**, 4 exports, 19 tests;
   `docs/COVER_PLAN_OFFLINE.md`): one synchronous side-effect-free `planFixtureCover(payload)` validates a
   complete Fixture `sourceInput` through the original `resolveFixtureTaskSource` exactly once, a strict
