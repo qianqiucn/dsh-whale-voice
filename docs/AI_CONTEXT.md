@@ -651,3 +651,14 @@ releases. Previously a normal cancellation left `isCoverGpuBusy=true` and blocke
 even though the disk entry was FINAL. CPU/cloud cancellation also returns its lease count to zero,
 and a failed cancel FINAL write still retains claim + lease. 2 regression tests; full suite 876/872
 pass/4 platform skips.
+
+### v1.80 lifecycle unification
+
+`resumeCoverFinal` re-checks identity/phase inside the short queue, returns the real FINAL result and
+releases the exact attempt lease by `leaseId`; a real interrupted receipt resumes to SAVED, the next
+task can run, and a concurrent resume returns EXISTING instead of EXECUTION_UNKNOWN. Accepted
+`cancel.requested`/fence is honored by `finalizeCoverSaved` and resume completes the cancellation
+while keeping a STORED MASTER. A failed owner/Artifact post-FINAL JOINT confirmation locks both
+domains, so status/retry/resume stay UNKNOWN and the lease is retained. Cancellation-observation
+read errors are mapped through `stopIfCancelled` and a top-level error boundary to the fixed envelope
+instead of rejecting. 6 lifecycle tests; full suite 882/878 pass/4 platform skips.

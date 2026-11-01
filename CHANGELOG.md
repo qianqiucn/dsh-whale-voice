@@ -6,6 +6,16 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
+  short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
+  exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task
+  can run, and a concurrent resume returns EXISTING instead of EXECUTION_UNKNOWN. An accepted
+  `cancel.requested`/fence is no longer bypassed: finalize returns CANCEL_DURING_IMPORT and resume
+  completes the cancellation (keeping a STORED MASTER). A failed owner/Artifact post-FINAL JOINT
+  confirmation now locks both domains, so status/retry/resume stay UNKNOWN and the lease is kept. A
+  cancellation-observation read failure is mapped to the fixed error envelope via the new
+  `stopIfCancelled`/top-level error boundary instead of rejecting. 6 lifecycle tests; full suite
+  882/878 pass/4 platform skips.
 - Fix: normal Cover cancellation now actually releases the shared lease. Every `cancelNow(...)`
   return in `executeCover` is awaited before the try/finally settles, so the finally sees the
   FINAL CANCELLED entry and releases; previously the finally read CLAIMED and kept the GPU lease,

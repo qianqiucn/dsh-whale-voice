@@ -506,3 +506,10 @@ normal CANCELLED releases the GPU lease (`isCoverGpuBusy=false`) and CPU/cloud l
 zero; later same-sandbox tasks can run, while a failed cancel FINAL write still retains claim + lease.
 Full suite 876/872 pass/4 platform skips; build unchanged. Contract §15.6 carries the v1.79 addendum.
 PR #43 remains open/unmerged; status stays OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+The v1.80 lifecycle review (R01–R04) is addressed: resume re-checks identity/phase inside the queue,
+settles the exact attempt lease, a real interrupted receipt resumes and lets the next task run, a
+concurrent resume returns EXISTING, accepted cancels are not bypassed by resume, unconfirmed
+owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained, and cancellation
+observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips; build
+unchanged. Contract §15.7 records the as-built state. PR #43 remains open/unmerged; status stays
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

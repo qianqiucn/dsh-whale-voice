@@ -1060,7 +1060,7 @@ PCM16 LE、WAV 44 B canonical 头；`sampleRate ∈ {16000,22050,24000,32000,441
 | 三图 Synthetic Fixture 字节 / gain 表 / inspector | **已实现**（`cover-stage-bytes-internal.mjs`），7 个向量测试通过 |
 | 出生 / 单 claim / checkpoint / 一次 MASTER import / FINAL proof/attachment 校验 / status / receipt 恢复 | **已实现**（`cover-executor-internal.mjs`），队列内二次 claim 复核、终态不重跑 |
 | 取消 / 租约 / 清理 | **已实现**（§15.2）：4,096 帧同步 fence、65,536 帧宏任务让出、request/ack/stop/release/cleanup 分证；UNKNOWN 仍保留租约 |
-| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.6，104-R01..R06 + v1.77 A/B/C + v1.78 A/B1/B2） |
+| 并发 / 恢复 / 保存事务 / 选路硬化 / 共享租约 / 依赖联动 | **已实现**（§15.4–§15.7，104-R01..R06 + v1.77 A/B/C + v1.78 A/B1/B2 + v1.80 R01–R04） |
 | Cover v3 存储 | **已实现**（§15.1）：全新 sandbox 直接写 legacy 文件名；既有 v3 同文件读写；既有 v1/v2 回退专用文件 |
 | 动态依赖 / fixture 证据 / 两功能交替 | **已实现**（`cover-readiness-internal.mjs`），`realReady:false` |
 | Fake Relay / handoff 边界 | **已实现（测试专用）**（`cover-fake-relay-internal.mjs`）：仅惰性 candidate、SENT 去重、UNKNOWN 不重发 |
@@ -1152,3 +1152,14 @@ try {
 **仍 OPEN / 边界：** 与 §15.5 相同；以上均为 Synthetic Fixture + 逻辑租约，不代表真实 GPU/Provider/微信/安装能力；父 Plan08 未完成，PR #43 未合并。
 
 **v1.79 补正（正常取消释放回归）：** `executeCover` 的所有 `cancelNow(...)` 返回点改为 `return await`，确保 `finally` 在 FINAL CANCELLED 写完成之后才读取 owner；正常取消后 `isCoverGpuBusy=false`、CPU/cloud 租约计数归零，后续同 sandbox GPU 任务可执行；取消 FINAL 写失败仍保留 claim + 租约（四类写未知证据不变）。
+
+### 15.7 v1.80 生命周期统一收束（as-built）
+
+| 组 | as-built | 证据 |
+|---|---|---|
+| R01 恢复资源收束与队列幂等 | `resumeCoverFinal` 的身份/阶段检查移入短队列；FINAL 直接在队列内返回真实结果并按 `entry.attempt.lease.leaseId` 释放实际租约；SAVED 后同样 settle；并发 resume 第二个返回 `EXISTING` 而非 `EXECUTION_UNKNOWN`。真实中断（checkpoint[4] 后 owner 读取失败）resume 后资源空闲、下一任务可运行 | `test/cover-lifecycle.test.mjs`（真实中断恢复、并发 resume、下一任务） |
+| R02 取消不得被恢复越过 | `finalizeCoverSaved` 在写 FINAL 前检查 fence 与持久 `cancel.requested`，命中返回 `CANCEL_DURING_IMPORT`；resume 在队列内先完成 stop/cleanup（保留已 STORED MASTER），FINAL 后按 TOO_LATE/既有结果处理 | `test/cover-lifecycle.test.mjs`（accepted cancel → resume CANCELLED，master 保留） |
+| R03 JOINT 未确认保持 UNKNOWN | FINAL 写后的 owner/Artifact 后确认失败同时锁 Cover 与 Artifact 两域；execute 返回 SAVE_UNKNOWN，status/retry/resume 均为 UNKNOWN，租约保留，不产生第二 import | `test/cover-lifecycle.test.mjs`（Artifact 侧与 owner 侧注入） |
+| R04 取消观察读取异常映射 | `cancelled()` 拆为 `cancellationState`/`stopIfCancelled`，存储读取异常映射为固定 error envelope 并保留 claim；execute 顶层增加统一异常边界（预期存储错误映射，已 FINAL 则返回真实终态），不 reject 公共 Promise | `test/cover-lifecycle.test.mjs`（阶段取消观察读取失败不 reject） |
+
+**仍 OPEN / 边界：** 以上均为 Synthetic Fixture + 逻辑租约；真实 Provider/GPU/媒体/设备/微信/安装/发送未实现未授权；父 Plan08 未完成，PR #43 未合并。
