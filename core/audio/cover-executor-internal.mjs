@@ -921,7 +921,7 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       yieldNow: () => yieldMacrotask(),
     }
 
-    if (await cancelled()) return cancelNow(state, entry, requestNow)
+    if (await cancelled()) return await cancelNow(state, entry, requestNow)
     await yieldMacrotask()
 
     const guardedStage = async (run) => {
@@ -938,14 +938,14 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       const stemResult = await guardedStage(() => separateTwoStemCooperative(graph.source.samples, hooks))
       if (!stemResult.ok) return failure('STAGE_REJECTED')
       const stems = stemResult.value
-      if (stems.cancelled) return cancelNow(state, entry, requestNow)
+      if (stems.cancelled) return await cancelNow(state, entry, requestNow)
       graph.vocal = buildCoverStageRecord('VOCAL', stems.vocal, sampleRate, graph.source.byteSha256)
       graph.instrumental = buildCoverStageRecord('INSTRUMENTAL', stems.instrumental, sampleRate, graph.source.byteSha256)
       conversionInput = stems.vocal
       entry.manifest.vocal = compactOf(graph.vocal)
       entry.manifest.instrumental = compactOf(graph.instrumental)
       entry.checkpoints.push({ index: 1, stage: 'SEPARATED', at: requestNow, status: 'DONE', tempSummary: { role: 'VOCAL', byteSha256: graph.vocal.byteSha256, byteLength: graph.vocal.byteLength }, importReceipt: null })
-      if (await cancelled()) return cancelNow(state, entry, requestNow)
+      if (await cancelled()) return await cancelNow(state, entry, requestNow)
       const lostSeparated = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
       if (lostSeparated) return lostSeparated
       await yieldMacrotask()
@@ -954,11 +954,11 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     const convertResult = await guardedStage(() => convertVocalCooperative(conversionInput, entry.intent.pitchShift, hooks))
     if (!convertResult.ok) return failure('STAGE_REJECTED')
     const converted = convertResult.value
-    if (converted.cancelled) return cancelNow(state, entry, requestNow)
+    if (converted.cancelled) return await cancelNow(state, entry, requestNow)
     graph.converted = buildCoverStageRecord('CONVERTED_VOCAL', converted.samples, sampleRate, graph.vocal ? graph.vocal.byteSha256 : graph.source.byteSha256)
     entry.manifest.converted = compactOf(graph.converted)
     entry.checkpoints.push({ index: 2, stage: 'CONVERTED', at: requestNow, status: 'DONE', tempSummary: { role: 'CONVERTED_VOCAL', byteSha256: graph.converted.byteSha256, byteLength: graph.converted.byteLength }, importReceipt: null })
-    if (await cancelled()) return cancelNow(state, entry, requestNow)
+    if (await cancelled()) return await cancelNow(state, entry, requestNow)
     const lostConverted = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
     if (lostConverted) return lostConverted
     await yieldMacrotask()
@@ -976,10 +976,10 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     )
     if (!mixResult.ok) return failure('STAGE_REJECTED')
     const mixed = mixResult.value
-    if (mixed.cancelled) return cancelNow(state, entry, requestNow)
+    if (mixed.cancelled) return await cancelNow(state, entry, requestNow)
     graph.master = buildCoverMasterRecord(mixed.samples, sampleRate)
     entry.checkpoints.push({ index: 3, stage: 'MIXED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
-    if (await cancelled()) return cancelNow(state, entry, requestNow)
+    if (await cancelled()) return await cancelNow(state, entry, requestNow)
 
     const artifactState = getArtifactState(sandbox)
     if (isArtifactLocked(artifactState)) {
@@ -1072,7 +1072,7 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       return failure('EXECUTION_UNKNOWN')
     }
     if (outcome.kind === 'SAVED') return resultForSaved(outcome.entry, outcome.master)
-    if (outcome.kind === 'CANCEL_DURING_IMPORT') return cancelNow(state, entry, requestNow)
+    if (outcome.kind === 'CANCEL_DURING_IMPORT') return await cancelNow(state, entry, requestNow)
     if (outcome.kind === 'EXECUTION_UNKNOWN') return failure('EXECUTION_UNKNOWN')
     if (outcome.kind === 'CHECKPOINT_FAILED' || outcome.kind === 'FINAL_FAILED') {
       return outcome.mapped || failure('SAVE_UNKNOWN')
