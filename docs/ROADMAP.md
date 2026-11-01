@@ -467,3 +467,5 @@ Plan 08 Cover offline execution started after the contract merge: Intent, synthe
 dedicated Cover v3 store and a single-claim executor are implemented and tested offline. The
 remaining 090 units (v3 into the legacy files, dynamic dependencies, parent Fake E2E, complete
 cancel/cleanup evidence) are OPEN; no real model, media, device or WeChat capability changed.
+Cover dynamic dependencies and the test-only relay boundary are implemented (OFFLINE). The remaining
+090 units are legacy v3 store integration and the legacy parent-chain E2E; no real capability changed.

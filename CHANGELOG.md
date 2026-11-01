@@ -6,6 +6,13 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: Cover dynamic dependencies and the Fake Relay boundary. `cover-readiness-internal.mjs`
+  computes the minimal dependency set and ordered block reasons for TTS/SVC × AUDIO_REF/TEXT,
+  separates first-visit confirmation from availability, rejects stale/unknown/NOT-realReady evidence
+  and keeps `realReady:false`. `cover-fake-relay-internal.mjs` is a test-only relay that accepts only
+  the inert PROPOSED_NOT_AUTHORIZED candidate, deduplicates a sent delivery and refuses to resend an
+  UNKNOWN one. 14 new tests (readiness/relay/real Fixture chain plus cancel-evidence and
+  crash/resume coverage); full suite 811/808/3 skip/0 fail.
 - Feat: offline Cover execution slice. New `core/audio/cover-intent-internal.mjs` (canonical 25-key
   Intent, documented hashes, stable source identity), `core/audio/cover-stage-bytes-internal.mjs`
   (deterministic three-graph Synthetic Fixture bytes with the integer gain table and real inspector

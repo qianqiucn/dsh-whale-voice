@@ -971,7 +971,8 @@ export async function resumeCoverFinal({ sandbox, scopeId, taskId, attemptId, re
         rights: { state: 'GRANTED', proofRef: entry.intent.rightsProofRef },
       })
       if (!fresh || fresh.ok !== true || fresh.value.outcome !== 'FOUND') return failure('EXECUTION_UNKNOWN')
-      if (fresh.value.artifact.byteSha256 !== receipt.byteSha256 || fresh.value.artifact.byteLength !== receipt.byteLength) {
+      const freshInspection = fresh.value.artifact.inspection || {}
+      if (freshInspection.sha256 !== receipt.byteSha256 || freshInspection.byteLength !== receipt.byteLength) {
         return failure('EXECUTION_UNKNOWN')
       }
       const manifestMaster = entry.manifest.master

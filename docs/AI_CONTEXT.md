@@ -542,3 +542,12 @@ checkpoints, one MASTER import, FINAL attachment, status, a busy-run cancel fenc
 resumeCoverFinal. As-built the Cover snapshots live in dedicated v3 files; merging v3 into the legacy
 catalog/owner files, dynamic dependencies, the parent Fake E2E and full cancel ack/cleanup evidence
 remain open. Contract errata were repaired on the same branch.
+
+### Cover dynamic dependencies and relay boundary
+
+`cover-readiness-internal.mjs` gives the TTS/SVC × AUDIO_REF/TEXT minimal dependency matrix with
+ordered block reasons, first-visit confirmation kept separate, stale/unknown evidence rejected and
+`realReady:false`. `cover-fake-relay-internal.mjs` is test-only: it accepts the inert
+PROPOSED_NOT_AUTHORIZED candidate only, deduplicates SENT and refuses to resend UNKNOWN. Executor
+tests now also cover busy-cancel evidence and receipt-based resume with zero second import. Still
+open: v3 integration into the legacy catalog/owner files and the legacy parent-chain E2E.

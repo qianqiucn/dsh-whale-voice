@@ -446,3 +446,8 @@ executor (birth/claim/checkpoints/one MASTER import/FINAL/status/busy cancel/res
 (797/794/3 full suite). The legacy catalog/owner files are untouched and Cover uses dedicated v3
 files; v3-into-legacy integration, dynamic dependencies, the parent Fake E2E and complete
 cancel/cleanup evidence remain open. This is not an integrated or real capability.
+Cover readiness and the test-only Fake Relay boundary are now implemented and tested (811/808/3
+skip): dynamic TTS/SVC dependencies with fixture-only evidence, dedup/UNKNOWN-no-resend relay
+behaviour, busy-cancel evidence and receipt-based resume without a second import. The remaining 090
+gaps are v3 typed-entry integration into the legacy catalog/owner files and the legacy parent-chain
+E2E; the implementation is still OFFLINE and not integrated.

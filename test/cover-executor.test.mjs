@@ -315,3 +315,121 @@ test('a cancel accepted while the run is busy stops the stages and releases the 
     removeConfigSandbox(sandbox)
   }
 })
+test('busy cancel leaves confirmed cancel and released lease evidence', async () => {
+  const { sandbox, sourceRef } = await setup()
+  try {
+    const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-evidence', intentDraft: draft({ sourceRef }), observedAt: NOW })
+    const runPromise = executeCover({
+      sandbox, scopeId: SCOPE, taskId: birth.value.taskId, requestKey: 'cover-exec:evidence', now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF }, intent: birth.value.intent,
+    })
+    let cancel = null
+    for (let i = 0; i < 200 && cancel === null; i += 1) {
+      const status = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
+      if (status.ok && status.value.attemptId && status.value.state === 'CLAIMED') {
+        cancel = await requestCoverCancel({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: status.value.attemptId, now: NOW })
+      } else {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    }
+    const run = await runPromise
+    if (!cancel) {
+      assert.equal(run.value.outcome, 'SAVED')
+      return
+    }
+    assert.equal(run.value.outcome, 'CANCELLED')
+    const status = await coverStatus({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, now: NOW })
+    assert.equal(status.value.state, 'CANCELLED')
+    assert.equal(status.value.cancel.requested, true)
+    assert.equal(typeof status.value.cancel.confirmedAt, 'string')
+    assert.equal(status.value.lease.releasedAt !== null, true)
+    assert.equal(status.value.tempArtifacts.every((item) => item.availability === 'CLEANED' || item.availability === 'STORED'), true)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('resume completes a receipted claim without a second import and then is EXISTING', async () => {
+  const { sandbox, library, sourceRef } = await setup()
+  try {
+    const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-resume', intentDraft: draft({ sourceRef }), observedAt: NOW })
+    assert.equal(birth.ok, true)
+    const masterBytes = wavFromSamples([1000, -2000, 32767, -32768], 44100)
+    const imported = await library.value.import({
+      schemaVersion: 1, scopeId: SCOPE, requestKey: 'import:resume-master', bytes: masterBytes, now: NOW, expiresAt: EXPIRES,
+      rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(imported.ok, true)
+    const metadata = imported.value.artifact
+    const inspection = metadata.inspection
+    const intent = birth.value.intent
+    const attemptId = 'cover-attempt:00112233445566778899aabbccddeeff'
+    const claimed = {
+      entryVersion: 1,
+      kind: 'COVER',
+      scopeId: SCOPE,
+      taskId: birth.value.taskId,
+      birthIdentityHash: intent.birthIdentityHash,
+      phase: 'CLAIMED',
+      record: { ...birth.value.record, state: 'CREATED' },
+      completion: null,
+      intentHash: birth.value.intentHash,
+      intent,
+      attempt: {
+        attemptId, attemptSeq: 1, requestKey: 'cover-exec:resume', startedAt: NOW, finishedAt: null,
+        status: 'RUNNING', error: null,
+        lease: { leaseId: 'lease:resume', kind: 'LOGICAL_FIXTURE', gpu: 'EXCLUSIVE', acquiredAt: NOW, releasedAt: null },
+      },
+      checkpoints: [
+        { index: 0, stage: 'CLAIMED', at: NOW, status: 'DONE', tempSummary: null, importReceipt: null },
+        { index: 4, stage: 'MASTER_IMPORTED', at: NOW, status: 'DONE', tempSummary: null, importReceipt: {
+          artifactRef: metadata.artifactRef, byteSha256: inspection.sha256, byteLength: inspection.byteLength, expiresAt: EXPIRES, requestKey: 'import:resume-master' },
+        },
+      ],
+      manifest: {
+        source: null, vocal: null, instrumental: null, converted: null,
+        master: { manifestVersion: 1, byteSha256: inspection.sha256, byteLength: inspection.byteLength, inspection },
+        verification: null,
+      },
+      cancel: { requested: false, requestedAt: null, acknowledgedAt: null, confirmedAt: null, reason: null },
+    }
+    const { getCoverState, readCoverOwner, writeCoverSnapshot, COVER_OWNER_FILE } = await import('../core/audio/cover-store-internal.mjs')
+    const state = getCoverState(sandbox)
+    const ownerBefore = readCoverOwner(state)
+    writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' })
+    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-resume:2', now: NOW })
+    assert.equal(resume.ok, true)
+    assert.equal(resume.value.outcome, 'SAVED')
+    const second = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId, requestKey: 'cover-resume:3', now: NOW })
+    assert.equal(second.ok, true)
+    assert.equal(second.value.outcome, 'EXISTING')
+    const master = await library.value.get({ schemaVersion: 1, scopeId: SCOPE, artifactRef: metadata.artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF } })
+    assert.equal(master.value.outcome, 'FOUND')
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('resume without a receipt stays EXECUTION_UNKNOWN and writes nothing', async () => {
+  const { sandbox, sourceRef } = await setup()
+  try {
+    const birth = await createCoverTask({ sandbox, scopeId: SCOPE, idempotencyKey: 'cover:e2e-noreceipt', intentDraft: draft({ sourceRef }), observedAt: NOW })
+    const { getCoverState, readCoverOwner, writeCoverSnapshot, COVER_OWNER_FILE } = await import('../core/audio/cover-store-internal.mjs')
+    const state = getCoverState(sandbox)
+    const claimed = {
+      entryVersion: 1, kind: 'COVER', scopeId: SCOPE, taskId: birth.value.taskId, birthIdentityHash: birth.value.intent.birthIdentityHash,
+      phase: 'CLAIMED', record: { ...birth.value.record }, completion: null, intentHash: birth.value.intentHash, intent: birth.value.intent,
+      attempt: { attemptId: 'cover-attempt:ffffffffffffffffffffffffffffffff', attemptSeq: 1, requestKey: 'cover-exec:n', startedAt: NOW, finishedAt: null, status: 'RUNNING', error: null, lease: null },
+      checkpoints: [{ index: 0, stage: 'CLAIMED', at: NOW, status: 'DONE', tempSummary: null, importReceipt: null }],
+      manifest: { source: null, vocal: null, instrumental: null, converted: null, master: null, verification: null },
+      cancel: { requested: false, requestedAt: null, acknowledgedAt: null, confirmedAt: null, reason: null },
+    }
+    const ownerBefore = readCoverOwner(state)
+    writeCoverSnapshot(state, COVER_OWNER_FILE, { schemaVersion: 3, revision: 1, entries: [claimed] }, { baseDigest: ownerBefore.digest, mode: 'increment' })
+    const resume = await resumeCoverFinal({ sandbox, scopeId: SCOPE, taskId: birth.value.taskId, attemptId: claimed.attempt.attemptId, requestKey: 'cover-resume:n', now: NOW })
+    assert.equal(resume.ok, false)
+    assert.equal(resume.errors[0].code, COVER_EXECUTION_CODES.EXECUTION_UNKNOWN)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
