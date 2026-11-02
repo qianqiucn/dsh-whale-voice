@@ -22,6 +22,7 @@ import {
   plan09DraftToChanges,
   plan09EngineScope,
   plan09InstallFailureReason,
+  plan09NoWriteConfirmed,
   plan09ProjectCoordinatorResult,
   plan09ReadWizard,
   plan09ReduceTransaction,
@@ -422,4 +423,84 @@ test('a stale prepared plan can be re-prepared instead of staying disabled', () 
   assert.equal(redone.phase, 'PREPARED')
   assert.equal(redone.plan.planId, 'plan-b')
   assert.equal(plan09CanConfirm(redone, { currentSerial: 'voice-a', contextSerial: 'ctx-a' }), true)
+})
+
+test('a trusted not-written failure can end its association without replaying the plan', () => {
+  const started = plan09ReduceTransaction(preparedEntry(), { type: 'EXECUTE_START' })
+  const failed = plan09ReduceTransaction(started, {
+    type: 'EXECUTE_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: false, state: 'FAILED', transactionId: 'tx-f1', error: { code: 'CONFIG_COORDINATION_SAVE_FAILED', rolledBack: true, writeOutcome: 'NOT_WRITTEN' } },
+  })
+  assert.equal(failed.phase, 'FAILED')
+  assert.equal(failed.txId, 'tx-f1')
+  assert.equal(failed.noWriteConfirmed, true)
+  assert.equal(plan09NoWriteConfirmed(failed.result), true)
+  assert.equal(plan09CanPrepare(failed), false)
+  assert.equal(plan09CanReset(failed), true)
+
+  const checking = plan09ReduceTransaction(failed, { type: 'STATUS_START' })
+  const stillFailed = plan09ReduceTransaction(checking, {
+    type: 'STATUS_DONE',
+    seq: checking.inFlightSeq,
+    result: { ok: true, state: 'FAILED', committed: false, recoveryRequired: false, transactionId: 'tx-f1' },
+  })
+  assert.equal(stillFailed.phase, 'FAILED')
+  assert.equal(stillFailed.txId, 'tx-f1')
+  assert.equal(stillFailed.noWriteConfirmed, true)
+  assert.equal(plan09CanReset(stillFailed), true)
+
+  const reset = plan09ReduceTransaction(stillFailed, { type: 'RESET' })
+  assert.equal(reset.phase, 'DIRTY')
+  assert.equal(reset.txId, null)
+  assert.equal(reset.history[0].txId, 'tx-f1')
+  assert.equal(plan09CanPrepare(reset), true)
+
+  const rejected = plan09ReduceTransaction(started, {
+    type: 'EXECUTE_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: false, state: 'FAILED', transactionId: 'tx-f2', error: { code: 'CONFIG_COORDINATION_APPLY_REJECTED' } },
+  })
+  assert.equal(rejected.phase, 'FAILED')
+  assert.equal(rejected.noWriteConfirmed, false, 'a plain failure must not be labelled never-written')
+  assert.equal(plan09CanReset(rejected), true)
+
+  const unknown = plan09ReduceTransaction(started, {
+    type: 'EXECUTE_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: true, state: 'UNKNOWN', transactionId: 'tx-u1' },
+  })
+  assert.equal(unknown.phase, 'UNKNOWN')
+  assert.equal(plan09CanReset(unknown), false)
+  assert.equal(plan09CanPrepare(unknown), false)
+})
+
+test('a prepare that returns after a context change is stale but recoverable', () => {
+  const started = plan09ReduceTransaction(plan09TransactionInitial(), { type: 'PREPARE_START', contextSerial: 'ctx-a' })
+  const done = plan09ReduceTransaction(started, {
+    type: 'PREPARE_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: true, plan: { planId: 'p-old' } },
+    frozenChanges: {},
+    frozenSerial: 's1',
+    contextSerial: 'ctx-b',
+  })
+  assert.equal(done.phase, 'PREPARED')
+  assert.equal(done.planStale, true)
+  assert.equal(done.error, 'CONTEXT_CHANGED')
+  assert.equal(plan09CanConfirm(done, { currentSerial: 's1', contextSerial: 'ctx-b' }), false)
+  assert.equal(plan09CanPrepare(done, { currentSerial: 's1' }), true)
+
+  const retried = plan09ReduceTransaction(done, { type: 'PREPARE_START', contextSerial: 'ctx-b' })
+  const redone = plan09ReduceTransaction(retried, {
+    type: 'PREPARE_DONE',
+    seq: retried.inFlightSeq,
+    result: { ok: true, plan: { planId: 'p-new' } },
+    frozenChanges: {},
+    frozenSerial: 's1',
+    contextSerial: 'ctx-b',
+  })
+  assert.equal(redone.phase, 'PREPARED')
+  assert.equal(redone.planStale, false)
+  assert.equal(plan09CanConfirm(redone, { currentSerial: 's1', contextSerial: 'ctx-b' }), true)
 })

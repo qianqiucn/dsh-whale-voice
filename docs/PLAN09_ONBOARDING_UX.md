@@ -107,3 +107,10 @@
 - 草稿内容与冻结计划不一致（例如换页回到默认值）时显示内容不一致提示，确认被拒绝，并允许直接重新准备当前草稿，不再需要额外编辑才能恢复。
 - 共享依赖的未完成操作按发起页面退出取消（关闭向导、切模式、卸载、切页），已完成的共享证据仍跨页复用；所有写入都会通知同一身份的当前观察者，不再只更新原组件。
 - 作用域 helper 统一由 `core/plan09-ux-internal.mjs` 提供（`plan09IdentityScope`、`plan09EngineScope`、`plan09DependencyScope`），浏览器运行逻辑不再重复定义同一事实。
+
+## 11. 0116 复核补正
+
+- 可信“未写入/已回滚”的失败可以显式结束关联并准备下一份草稿：Coordinator 只有在适配器声明 `writeOutcome: NOT_WRITTEN` 且此前已保存步骤回滚成功时才返回 `FAILED`；只读恢复再次给出 `FAILED/committed:false/recoveryRequired:false` 时仍保留该结论。结束只清空当前关联并把旧事务记入历史，**不重放已消费的计划**；普通失败不标注“未写入”，UNKNOWN 继续锁存。
+- 准备期间发生上下文/授权变化时，迟到返回的旧计划直接标为 stale（`CONTEXT_CHANGED`），确认按当前权限重新校验，同时允许直接重新准备当前草稿；不再出现“显示 PREPARED 但 prepare/confirm/reset 全部禁用且无提示”的死角。
+- 依赖身份（workspace/profile/manifest/capability）变化时，除了卸载清理，还会用旧身份快照取消本页启动的未完成检查；切 profile/revision 后旧响应不会变成 ready，返回原身份看到的是 cancelled 而不是 ready。
+- 已完成共享证据的跨页复用、按 owner 取消、identity 广播与 reducer/序号门禁保持不变。

@@ -441,6 +441,8 @@ export function plan09TransactionInitial() {
     opSeq: 0,
     inFlightSeq: 0,
     draftVersion: 0,
+    inFlightContext: null,
+    noWriteConfirmed: false,
   }
 }
 
@@ -457,6 +459,20 @@ function plan09TransactionStartNext(current, event) {
     opSeq: seq,
     inFlightSeq: seq,
   }
+}
+
+/**
+ * Trusted "nothing was written" evidence. The Coordinator only reports `FAILED` for an execute when
+ * the adapter declared `writeOutcome: NOT_WRITTEN` and every already-saved step was rolled back;
+ * recovery repeats `FAILED`/`committed:false`. Everything else (unknown write outcome, missing state,
+ * in-flight journal) is `UNKNOWN` and stays latched.
+ */
+export function plan09NoWriteConfirmed(result) {
+  if (!result || typeof result !== 'object') return false
+  if (result.state !== 'FAILED') return false
+  const error = result.error && typeof result.error === 'object' ? result.error : null
+  if (error && (error.rolledBack === true || error.writeOutcome === 'NOT_WRITTEN')) return true
+  return result.committed === false && result.recoveryRequired === false
 }
 
 /**
@@ -478,6 +494,7 @@ function plan09TransactionFinish(current, result) {
     planStale: false,
     contextStale: false,
     outcomeUnknown: classified.phase === 'UNKNOWN' && !txId,
+    noWriteConfirmed: classified.phase === 'FAILED' && plan09NoWriteConfirmed(result),
   }
 }
 
@@ -511,7 +528,15 @@ export function plan09ReduceTransaction(entry, event = {}) {
     case 'PREPARE_START': {
       if (current.busy) return current
       const seq = (current.opSeq || 0) + 1
-      return { ...current, busy: true, inFlight: 'prepare', opSeq: seq, inFlightSeq: seq, error: null }
+      return {
+        ...current,
+        busy: true,
+        inFlight: 'prepare',
+        opSeq: seq,
+        inFlightSeq: seq,
+        inFlightContext: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+        error: null,
+      }
     }
     case 'PREPARE_DONE': {
       if (event.seq !== current.inFlightSeq) return current
@@ -550,6 +575,8 @@ export function plan09ReduceTransaction(entry, event = {}) {
           contextSerial: null,
         }
       }
+      const preparedContext = typeof event.contextSerial === 'string' ? event.contextSerial : null
+      const contextChanged = typeof current.inFlightContext === 'string' && preparedContext !== null && current.inFlightContext !== preparedContext
       return {
         ...current,
         busy: false,
@@ -558,13 +585,13 @@ export function plan09ReduceTransaction(entry, event = {}) {
         plan: result.plan,
         result,
         txId: null,
-        error: null,
+        error: contextChanged ? 'CONTEXT_CHANGED' : null,
         draftDirty: false,
-        planStale: false,
-        contextStale: false,
+        planStale: contextChanged,
+        contextStale: contextChanged,
         frozenChanges: event.frozenChanges || null,
         frozenSerial: typeof event.frozenSerial === 'string' ? event.frozenSerial : null,
-        contextSerial: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+        contextSerial: preparedContext,
       }
     }
     case 'PREPARE_LOST': {
@@ -679,12 +706,17 @@ export function plan09CanReadStatus(entry) {
 
 /**
  * Only a determined outcome may end a transaction and start a new draft. UNKNOWN (with or without a
- * transaction ID) is unresolved: it stays latched until a trusted status check decides it.
+ * transaction ID) is unresolved: it stays latched until a trusted status check decides it. A
+ * Coordinator `FAILED` is determined — and when it also carries trusted no-write/rollback evidence
+ * the UI may say so — but ending the association never replays the consumed plan.
  */
 export function plan09CanReset(entry) {
   const current = entry || plan09TransactionInitial()
   if (current.busy || current.outcomeUnknown === true) return false
-  return PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)
+  if (PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)) return true
+  if (current.phase !== 'FAILED') return false
+  if (current.noWriteConfirmed === true) return true
+  return Boolean(current.result) && current.result.state === 'FAILED'
 }
 
 /** Display projection for the panel: the entry phase decides, never `ok` or a stale result. */
@@ -705,9 +737,11 @@ export function plan09TransactionView(entry) {
     UNKNOWN: ['结果未知 · 只读', 'error'],
   }
   const [label, tone] = map[current.phase] || ['未保存草稿', 'wait']
-  const text = current.phase === 'UNKNOWN'
-    ? '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
-    : '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  let text = '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  if (current.phase === 'UNKNOWN') text = '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
+  else if (current.phase === 'FAILED' && current.noWriteConfirmed === true) text = '已取得可信“未写入/已回滚”结论：结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'FAILED') text = '已确定失败；结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'PREPARED' && current.planStale === true) text = '准备期间上下文/授权已变化：旧计划不可确认，可直接重新准备。'
   return { phase: current.phase, label, tone, text }
 }
 

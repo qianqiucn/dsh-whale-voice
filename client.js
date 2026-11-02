@@ -1651,6 +1651,8 @@ function plan09TransactionInitial() {
     opSeq: 0,
     inFlightSeq: 0,
     draftVersion: 0,
+    inFlightContext: null,
+    noWriteConfirmed: false,
   }
 }
 
@@ -1667,6 +1669,20 @@ function plan09TransactionStartNext(current, event) {
     opSeq: seq,
     inFlightSeq: seq,
   }
+}
+
+/**
+ * Trusted "nothing was written" evidence. The Coordinator only reports `FAILED` for an execute when
+ * the adapter declared `writeOutcome: NOT_WRITTEN` and every already-saved step was rolled back;
+ * recovery repeats `FAILED`/`committed:false`. Everything else (unknown write outcome, missing state,
+ * in-flight journal) is `UNKNOWN` and stays latched.
+ */
+function plan09NoWriteConfirmed(result) {
+  if (!result || typeof result !== 'object') return false
+  if (result.state !== 'FAILED') return false
+  const error = result.error && typeof result.error === 'object' ? result.error : null
+  if (error && (error.rolledBack === true || error.writeOutcome === 'NOT_WRITTEN')) return true
+  return result.committed === false && result.recoveryRequired === false
 }
 
 /**
@@ -1688,6 +1704,7 @@ function plan09TransactionFinish(current, result) {
     planStale: false,
     contextStale: false,
     outcomeUnknown: classified.phase === 'UNKNOWN' && !txId,
+    noWriteConfirmed: classified.phase === 'FAILED' && plan09NoWriteConfirmed(result),
   }
 }
 
@@ -1721,7 +1738,15 @@ function plan09ReduceTransaction(entry, event = {}) {
     case 'PREPARE_START': {
       if (current.busy) return current
       const seq = (current.opSeq || 0) + 1
-      return { ...current, busy: true, inFlight: 'prepare', opSeq: seq, inFlightSeq: seq, error: null }
+      return {
+        ...current,
+        busy: true,
+        inFlight: 'prepare',
+        opSeq: seq,
+        inFlightSeq: seq,
+        inFlightContext: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+        error: null,
+      }
     }
     case 'PREPARE_DONE': {
       if (event.seq !== current.inFlightSeq) return current
@@ -1760,6 +1785,8 @@ function plan09ReduceTransaction(entry, event = {}) {
           contextSerial: null,
         }
       }
+      const preparedContext = typeof event.contextSerial === 'string' ? event.contextSerial : null
+      const contextChanged = typeof current.inFlightContext === 'string' && preparedContext !== null && current.inFlightContext !== preparedContext
       return {
         ...current,
         busy: false,
@@ -1768,13 +1795,13 @@ function plan09ReduceTransaction(entry, event = {}) {
         plan: result.plan,
         result,
         txId: null,
-        error: null,
+        error: contextChanged ? 'CONTEXT_CHANGED' : null,
         draftDirty: false,
-        planStale: false,
-        contextStale: false,
+        planStale: contextChanged,
+        contextStale: contextChanged,
         frozenChanges: event.frozenChanges || null,
         frozenSerial: typeof event.frozenSerial === 'string' ? event.frozenSerial : null,
-        contextSerial: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+        contextSerial: preparedContext,
       }
     }
     case 'PREPARE_LOST': {
@@ -1889,12 +1916,17 @@ function plan09CanReadStatus(entry) {
 
 /**
  * Only a determined outcome may end a transaction and start a new draft. UNKNOWN (with or without a
- * transaction ID) is unresolved: it stays latched until a trusted status check decides it.
+ * transaction ID) is unresolved: it stays latched until a trusted status check decides it. A
+ * Coordinator `FAILED` is determined — and when it also carries trusted no-write/rollback evidence
+ * the UI may say so — but ending the association never replays the consumed plan.
  */
 function plan09CanReset(entry) {
   const current = entry || plan09TransactionInitial()
   if (current.busy || current.outcomeUnknown === true) return false
-  return PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)
+  if (PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)) return true
+  if (current.phase !== 'FAILED') return false
+  if (current.noWriteConfirmed === true) return true
+  return Boolean(current.result) && current.result.state === 'FAILED'
 }
 
 /** Display projection for the panel: the entry phase decides, never `ok` or a stale result. */
@@ -1915,9 +1947,11 @@ function plan09TransactionView(entry) {
     UNKNOWN: ['结果未知 · 只读', 'error'],
   }
   const [label, tone] = map[current.phase] || ['未保存草稿', 'wait']
-  const text = current.phase === 'UNKNOWN'
-    ? '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
-    : '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  let text = '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  if (current.phase === 'UNKNOWN') text = '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
+  else if (current.phase === 'FAILED' && current.noWriteConfirmed === true) text = '已取得可信“未写入/已回滚”结论：结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'FAILED') text = '已确定失败；结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'PREPARED' && current.planStale === true) text = '准备期间上下文/授权已变化：旧计划不可确认，可直接重新准备。'
   return { phase: current.phase, label, tone, text }
 }
 
@@ -3049,6 +3083,8 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
   const entry = plan09TxRead(txKey)
   const draftRef = React.useRef(draft)
   draftRef.current = draft
+  const contextRef = React.useRef(contextSerial)
+  contextRef.current = contextSerial
   const lastDraft = React.useRef(JSON.stringify(draft))
   const changes = plan09DraftToChanges(feature, draft, { senderRevision: context.senderRevision })
   const unsupported = changes.unsupported || []
@@ -3071,6 +3107,10 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
 
   React.useEffect(() => {
     const current = plan09TxRead(txKey)
+    if (current.inFlight === 'prepare') {
+      if (typeof current.inFlightContext === 'string' && current.inFlightContext !== contextSerial) dispatch({ type: 'CONTEXT_CHANGED' })
+      return
+    }
     if (!current.plan || typeof current.contextSerial !== 'string') return
     if (current.contextSerial === contextSerial) return
     dispatch({ type: 'CONTEXT_CHANGED' })
@@ -3086,7 +3126,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     const valid = validate()
     if (!valid.ok) return onNotify('草稿未通过校验，不能准备变更。', 'error')
     if (!plan09CanPrepare(current, { currentSerial: changesSerial })) return
-    const started = dispatch({ type: 'PREPARE_START' })
+    const started = dispatch({ type: 'PREPARE_START', contextSerial })
     if (!started.busy) return
     const seq = started.inFlightSeq
     const versionAtStart = started.draftVersion
@@ -3101,7 +3141,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     }
     const latest = plan09TxRead(txKey)
     const stale = latest.draftVersion !== versionAtStart
-    const next = dispatch({ type: 'PREPARE_DONE', seq, result, stale, frozenChanges, frozenSerial, contextSerial })
+    const next = dispatch({ type: 'PREPARE_DONE', seq, result, stale, frozenChanges, frozenSerial, contextSerial: contextRef.current })
     if (next.phase === 'PREPARED') onNotify('已准备隔离变更计划；请核对字段与 revision 后确认。', 'info')
     else if (next.error === 'STALE_PREPARE') onNotify('草稿在准备期间已变化，迟到的计划已丢弃；请重新准备。', 'info')
   }
@@ -3204,6 +3244,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     !changes.supported ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-unsupported' }, h(Icon, { name: 'info', size: 14 }), h('span', null, unsupported.join(' '))) : null,
     entry.txId ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-tx-authority' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '已发出的隔离事务仍保留：草稿编辑/切页不会丢弃 transactionId；只能只读查证或完成生效检查。')) : null,
     entry.outcomeUnknown && !entry.txId ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-outcome-unknown' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '保存响应不完整或未返回：写入可能已经发生，但没有可查证的 transactionId。不能当作失败，不能结束该事务，也不会自动重试。')) : null,
+    entry.noWriteConfirmed ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-no-write' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已取得可信“未写入/已回滚”结论（源未改变）；可结束关联后准备下一份草稿，旧计划不会重放。')) : null,
     entry.planStale ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-stale' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '计划对应的草稿/上下文已变化，旧计划不可确认；可重新准备当前草稿。')) : null,
     contentMismatch ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-content-mismatch' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已准备的内容与当前草稿不一致（例如换页后回到默认值）；旧计划不可确认，请重新准备。')) : null,
     h('div', { className: 'wv-plan09-txline' },
@@ -3275,6 +3316,15 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
   const draft = feature.id === 'singing' ? singingDraft : voiceDraft
   const setDraft = feature.id === 'singing' ? setSingingDraft : setVoiceDraft
   depsSnapshot.current = { context, mode, engine: draft.engine }
+  const dependencyScope = React.useRef({ identity: plan09IdentityScope(context), context, mode, engine: draft.engine })
+  React.useEffect(() => {
+    const next = { identity: plan09IdentityScope(context), context, mode, engine: draft.engine }
+    const previous = dependencyScope.current
+    if (previous && (previous.identity !== next.identity || previous.mode !== next.mode || previous.engine !== next.engine)) {
+      plan09CancelDeps(previous.context, previous.mode, previous.engine, owner.current)
+    }
+    dependencyScope.current = next
+  })
   React.useEffect(() => () => {
     const snapshot = depsSnapshot.current
     plan09CancelDeps(snapshot.context, snapshot.mode, snapshot.engine, owner.current)

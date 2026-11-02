@@ -895,6 +895,99 @@ await check('plan09 re-prepares a frozen plan after the draft changed across pag
   })
 })
 
+await check('plan09 ends a trusted not-written failure and prepares a new draft', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.failNextExecuteWithoutWrite())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-failed')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-failed')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+    await page.locator('[data-testid="plan09-tx-reset"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+    assert.equal(await page.locator('[data-testid="plan09-tx-history"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+  })
+})
+
+await check('plan09 re-prepares after the context changed during prepare', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 0)
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+  })
+})
+
+await check('plan09 cancels old-identity checks when the profile changes', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:core'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'second-profile' }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'fixture-profile' }))
+    await page.waitForTimeout(450)
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'cancelled')
+    await page.waitForTimeout(300)
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'ready')
+  })
+})
+
+await check('plan09 cancels old-identity checks when the capability revision changes', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:gpu'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 12 }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 1 }))
+    await page.waitForTimeout(450)
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'cancelled')
+  })
+})
+
 await check('plan09 cancels a pending shared check when the wizard closes', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
@@ -1175,6 +1268,72 @@ async function checkRealResponseFault(fault) {
     await rm(sandbox.root, { recursive: true, force: true })
   }
 }
+
+async function checkRealNotWrittenFailure() {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', {
+      document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' },
+      saveFailure: 'CONFIG_COORDINATION_SAVE_FAILED',
+      saveFailureOutcome: 'NOT_WRITTEN',
+    })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED', null, { timeout: 15000 })
+      const txId = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx')
+      assert.notEqual(txId, '', 'a determinate no-write failure still has a transaction id')
+      assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+      assert.equal(sender.saveCount, 1)
+      assert.equal(sender.document.tts.voice, 'whale-v1')
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+      await page.locator('[data-testid="plan09-read-status"]').click()
+      await page.waitForTimeout(1200)
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'FAILED')
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+      assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+      await page.locator('[data-testid="plan09-tx-reset"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+      assert.equal(await page.locator('[data-testid="plan09-tx-history"]').count(), 1)
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      assert.equal(sender.saveCount, 1, 'ending the association must not replay the consumed plan')
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+}
+
+await check('plan09 real not-written failure can end and prepare a new draft', checkRealNotWrittenFailure)
 
 await check('plan09 real lost or empty save responses stay UNKNOWN without claiming failure', async () => {
   for (const fault of ['lost', 'null', 'okonly', 'object']) await checkRealResponseFault(fault)

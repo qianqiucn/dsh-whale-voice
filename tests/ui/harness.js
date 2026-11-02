@@ -413,6 +413,8 @@
     let appliedApply = false
     let loseExecuteResponse = false
     let emptyExecuteResponse = null
+    let failNoWriteExecute = false
+    const failedTransactions = new Map()
     const adapter = {
       calls,
       getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
@@ -439,6 +441,7 @@
       appliedNextApply() { appliedApply = true },
       loseNextExecuteResponse() { loseExecuteResponse = true },
       emptyNextExecuteResponse(kind) { emptyExecuteResponse = kind || 'object' },
+      failNextExecuteWithoutWrite() { failNoWriteExecute = true },
       bumpRevision() { revision += 1 },
       setContext(patch) { Object.assign(context, patch || {}); window.dispatchEvent(new Event('plan09-context-changed')) },
       async prepareChange(draft) {
@@ -456,6 +459,13 @@
         if (throwExecute) { throwExecute = false; throw new Error('fixture execute failure') }
         if (deferExecute) { deferExecute = false; await new Promise((resolve) => { executeResolver = resolve }) }
         if (unknownExecute) { unknownExecute = false; return { ok: false, state: 'UNKNOWN', transactionId: 'fixture-tx-unknown', error: { code: 'CONFIG_COORDINATION_WRITE_UNKNOWN' } } }
+        if (failNoWriteExecute) {
+          failNoWriteExecute = false
+          const transactionId = 'fixture-tx-failed'
+          const failed = { ok: false, state: 'FAILED', saveState: 'FAILED', applyState: 'NOT_APPLIED', activeRevision: null, activeConfirmed: false, transactionId, planId, error: { code: 'CONFIG_COORDINATION_SAVE_FAILED', rolledBack: true, writeOutcome: 'NOT_WRITTEN' }, steps: [] }
+          failedTransactions.set(transactionId, failed)
+          return failed
+        }
         let result
         if (real) {
           result = await real.execute(planId, options)
@@ -499,6 +509,8 @@
       async recover(transactionId, options = {}) {
         record('recover')
         if (throwRecover) { throwRecover = false; throw new Error('fixture recover failure') }
+        const failed = failedTransactions.get(transactionId)
+        if (failed) return { ok: true, state: 'FAILED', phase: 'FAILED', committed: false, recoveryRequired: false, transactionId, version: 1, steps: [], replayed: false }
         if (real) return real.recover(transactionId, options)
         const tx = transactions.get(transactionId)
         return tx ? { ...tx, replayed: false, state: 'PENDING_APPLY' } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
