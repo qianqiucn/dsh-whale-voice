@@ -681,6 +681,133 @@ await check('plan09 scoped dependency evidence resets on context change and uses
   })
 })
 
+await check('plan09 keeps authority after UNKNOWN and edits', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+    await page.locator('[data-testid="plan09-draft-text"]').fill('编辑后的未知事务文本')
+    await page.waitForTimeout(250)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+  })
+})
+
+await check('plan09 late execute keeps authority and context change blocks confirm', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForTimeout(200)
+    await page.locator('[data-testid="plan09-draft-text"]').fill('执行发出后再编辑')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseExecute())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    assert.notEqual(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+  })
+})
+
+await check('plan09 context change blocks a prepared plan', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+  })
+})
+
+await check('plan09 adapter failures clear busy and keep transaction authority', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.nullNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForTimeout(800)
+    const nullPhase = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+    const nullError = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+    assert.equal(nullPhase, 'FAILED', 'null prepare phase=' + nullPhase + ' err=' + nullError)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '0')
+
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '0')
+
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    const txId = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx')
+    assert.notEqual(txId, '')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextRecover())
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+  })
+})
+
+
+await check('plan09 cancels pending dependency checks on mode change', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.locator('[data-testid="plan09-mode-cpu"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(400)
+    await page.locator('[data-testid="plan09-mode-local"]').click()
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'ready')
+  })
+})
+
+await check('plan09 existing mode and manual gateway stay consistent', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-page-mode-existing"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-draft-engine"]').inputValue(), 'gateway')
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-gateway"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-rvc"]').count(), 0)
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+    assert.match(await page.locator('[data-testid="plan09-mode-summary"]').innerText(), /云端服务/)
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-cloud"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').count(), 0)
+  })
+})
+
+
 await check('plan09 browser calls a real isolated Coordinator end to end', async () => {
   const sandbox = createConfigSandbox()
   try {
@@ -697,15 +824,24 @@ await check('plan09 browser calls a real isolated Coordinator end to end', async
       await page.locator('[data-testid="plan09-wizard-browse"]').click()
       await page.locator('[data-testid="plan09-preview"]').click()
       await page.locator('[data-testid="plan09-prepare"]').click()
-      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.waitForTimeout(1200)
+      const phaseAfterPrepare = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterPrepare = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterPrepare, 'PREPARED', 'prepare phase=' + phaseAfterPrepare + ' err=' + errAfterPrepare)
       const frozen = await page.locator('[data-testid="plan09-frozen-preview"]').innerText()
       assert.match(frozen, /demo-voice-a/)
       await page.locator('[data-testid="plan09-confirm-save"]').click()
-      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+      await page.waitForTimeout(1500)
+      const phaseAfterSave = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterSave = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterSave, 'SAVED', 'save phase=' + phaseAfterSave + ' err=' + errAfterSave)
       assert.equal(sender.document.tts.voice, 'demo-voice-a')
       assert.equal(sender.saveCount, 1)
       await page.locator('[data-testid="plan09-apply-check"]').click()
-      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PENDING_APPLY')
+      await page.waitForTimeout(1500)
+      const phaseAfterApply = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterApply = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterApply, 'PENDING_APPLY', 'apply phase=' + phaseAfterApply + ' err=' + errAfterApply)
       const calls = await page.evaluate(() => window.__WHALE_PLAN09_ADAPTER_CALLS__ || [])
       assert.ok(calls.includes('prepareChange') && calls.includes('execute') && calls.includes('apply'))
     }, async (page) => {

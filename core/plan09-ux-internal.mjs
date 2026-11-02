@@ -200,10 +200,10 @@ export function plan09SwitchMode(feature, mode, draft) {
     }
     if (mode === 'cloud' && next.engine !== 'cloud') { next.engine = 'cloud'; cleared.push('engine') }
   } else {
-    if (mode === 'cloud' && next.engine !== 'gateway') { next.engine = 'gateway'; cleared.push('engine') }
-    if (mode !== 'cloud' && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
-    if (mode === 'cloud' && next.voiceProfile !== 'fixture-gateway') { next.voiceProfile = 'fixture-gateway'; cleared.push('voiceProfile') }
-    if (mode !== 'cloud' && next.voiceProfile === 'fixture-gateway') { next.voiceProfile = 'fixture-rvc-female'; cleared.push('voiceProfile') }
+    if ((mode === 'cloud' || mode === 'existing') && next.engine !== 'gateway') { next.engine = 'gateway'; cleared.push('engine') }
+    if ((mode === 'local' || mode === 'cpu') && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
+    if ((mode === 'cloud' || mode === 'existing') && next.voiceProfile !== 'fixture-gateway') { next.voiceProfile = 'fixture-gateway'; cleared.push('voiceProfile') }
+    if ((mode === 'local' || mode === 'cpu') && next.voiceProfile === 'fixture-gateway') { next.voiceProfile = 'fixture-rvc-female'; cleared.push('voiceProfile') }
   }
   return { draft: next, cleared }
 }
@@ -226,6 +226,8 @@ export function plan09ValidateVoiceDraft(draft, { cloudAuthorized = false, mode 
   if (!Number.isFinite(draft.speed) || draft.speed < 0.5 || draft.speed > 2) errors.push({ field: 'speed', message: '语速需为 0.5–2.0 的数字。' })
   if (!Number.isFinite(draft.volume) || draft.volume < 0 || draft.volume > 100) errors.push({ field: 'volume', message: '音量需为 0–100 的数字。' })
   if ((draft.engine === 'cloud' || mode === 'cloud') && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能预览或保存。' })
+  if (mode === 'existing' && draft.engine !== 'custom') errors.push({ field: 'engine', message: '已有服务模式需要自定义/已有服务方案。' })
+  if ((mode === 'local' || mode === 'cpu') && draft.engine !== 'local') errors.push({ field: 'engine', message: '本机/仅 CPU 模式不能使用云端引擎。' })
   if (!draft.text || !draft.text.trim()) errors.push({ field: 'text', message: '请填写演示文本。' })
   return { ok: errors.length === 0, errors }
 }
@@ -238,6 +240,8 @@ export function plan09ValidateSingingDraft(draft, { gpuAvailable = null, cloudAu
   if (draft.engine === 'svc') errors.push({ field: 'engine', message: 'SVC 仅为后续可选，当前不发包、不承诺可用。' })
   if (mode === 'cloud' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '云端模式需要 Gateway/已有服务，不能使用本机 RVC。' })
   if (mode === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端服务尚未授权，不能预览或保存。' })
+  if (mode === 'existing' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '已有服务模式需要 Gateway。' })
+  if ((mode === 'local' || mode === 'cpu') && draft.engine !== 'rvc') errors.push({ field: 'engine', message: '本机/仅 CPU 模式需要 RVC。' })
   if (!PLAN09_SINGING_VOICES.some((voice) => voice.id === draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '请选择音色方案。' })
   else if (PLAN09_SINGING_VOICE_ENGINE[draft.voiceProfile] !== draft.engine) errors.push({ field: 'voiceProfile', message: '音色与所选方案不匹配，请重新选择。' })
   if (!draft.sourceAuthorized) errors.push({ field: 'sourceAuthorized', message: '必须确认演示素材已获授权。' })

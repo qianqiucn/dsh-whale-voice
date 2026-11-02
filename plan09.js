@@ -28,8 +28,8 @@ function plan09Context(adapter) {
   }
 }
 
-function plan09DepScope(context, mode) {
-  return [context.workspace, context.profile, context.manifestRevision, context.capabilityRevision, mode].join('|')
+function plan09DepScope(context, mode, engine = '') {
+  return [context.workspace, context.profile, context.manifestRevision, context.capabilityRevision, mode, engine].join('|')
 }
 
 function plan09DepMapKey(scope, key) {
@@ -104,25 +104,27 @@ function plan09DepRun(scope, key, action, adapter, failure, onUpdate) {
 }
 
 function plan09CancelDepScope(scope) {
+  const prefix = scope + '||'
   for (const [mapKey, timer] of PLAN09_DEP_STORE.timers.entries()) {
-    if (!mapKey.startsWith(scope + '||')) continue
+    if (!mapKey.startsWith(prefix)) continue
     clearTimeout(timer)
     PLAN09_DEP_STORE.timers.delete(mapKey)
-    const key = mapKey.slice(scope.length + 2)
+  }
+  for (const [mapKey, current] of PLAN09_DEP_STORE.states.entries()) {
+    if (!mapKey.startsWith(prefix)) continue
     PLAN09_DEP_STORE.generations.set(mapKey, (PLAN09_DEP_STORE.generations.get(mapKey) || 0) + 1)
-    const current = PLAN09_DEP_STORE.states.get(mapKey)
     if (current && current.busy) PLAN09_DEP_STORE.states.set(mapKey, { ...current, status: 'cancelled', busy: false, reason: 'CANCELLED' })
   }
 }
 
-function Plan09Wizard({ open, feature, mode, setMode, context, sourceLayout = 'MIXED', deliveryRequested = false, onClose, onAcknowledge, onBrowse, notify }) {
+function Plan09Wizard({ open, feature, mode, engine = '', setMode, context, sourceLayout = 'MIXED', deliveryRequested = false, onClose, onAcknowledge, onBrowse, notify }) {
   const [install, setInstall] = React.useState({})
   const [failure, setFailure] = React.useState('NONE')
   const [introChecked, setIntroChecked] = React.useState(false)
   if (!open) return null
   const featureId = feature && feature.id ? feature.id : feature
   const adapter = plan09Adapter()
-  const scope = plan09DepScope(context, mode)
+  const scope = plan09DepScope(context, mode, engine)
   const groups = plan09DependencyGroups(featureId, mode, { sourceLayout, deliveryRequested })
   const refresh = () => setInstall(Object.fromEntries([...PLAN09_DEP_STORE.states.entries()]))
   const run = (key, action) => plan09DepRun(scope, key, action, adapter, failure, refresh)
@@ -208,94 +210,170 @@ function Plan09DraftField({ label, children, hint }) {
   return h('div', { className: 'wv-field' }, h('label', null, label), children, hint ? h('small', { className: 'wv-muted' }, hint) : null)
 }
 
-function Plan09TransactionPanel({ feature, draft, validate, context, onNotify }) {
+const PLAN09_TX_STORE = new Map()
+
+function Plan09TransactionPanel({ feature, draft, validate, context, storageKey, contextSerial, onNotify }) {
   const adapter = plan09Adapter()
-  const [state, setState] = React.useState({ phase: 'DIRTY', result: null, plan: null, busy: false, error: null })
-  const lastDraft = React.useRef(null)
-  const tokenRef = React.useRef(0)
-  const [frozen, setFrozen] = React.useState(null)
-  React.useEffect(() => {
-    const serial = JSON.stringify(draft)
-    if (lastDraft.current !== null && lastDraft.current !== serial) {
-      tokenRef.current += 1
-      setFrozen(null)
-      setState({ phase: 'DIRTY', result: null, plan: null, busy: false, error: 'DRAFT_CHANGED' })
-    }
-    lastDraft.current = serial
-  }, [draft])
+  const initial = (() => {
+    const saved = PLAN09_TX_STORE.get(storageKey)
+    if (saved) return { ...saved, busy: false }
+    return { phase: 'DIRTY', result: null, plan: null, txId: null, busy: false, error: null, draftDirty: false, planStale: false, planContext: null, contextStale: false }
+  })()
+  const [state, setState] = React.useState(initial)
+  const lastDraft = React.useRef(JSON.stringify(draft))
+  const lastContext = React.useRef(contextSerial)
+  const busyRef = React.useRef(false)
+  const prepareToken = React.useRef(0)
   const changes = plan09DraftToChanges(feature, draft, { senderRevision: context.senderRevision })
   const unsupported = changes.unsupported || []
   const disabled = !adapter || !changes.supported || state.busy
-  const runAdapter = async (fn, code) => {
-    const token = tokenRef.current + 1
-    tokenRef.current = token
-    setState((current) => ({ ...current, busy: true, error: null }))
-    try {
-      const result = await fn()
-      if (token !== tokenRef.current) return null
-      return result
-    } catch {
-      if (token !== tokenRef.current) return null
-      setState((current) => ({ ...current, phase: 'FAILED', busy: false, error: code }))
-      return undefined
-    }
+
+  const persist = (next) => {
+    setState(next)
+    if (next.txId || next.plan || next.phase === 'UNKNOWN') PLAN09_TX_STORE.set(storageKey, { ...next, busy: false })
+    else PLAN09_TX_STORE.delete(storageKey)
+    return next
   }
+
+  React.useEffect(() => {
+    const serial = JSON.stringify(draft)
+    if (serial === lastDraft.current) return
+    lastDraft.current = serial
+    setState((current) => {
+      if (current.txId) {
+        const next = { ...current, draftDirty: true }
+        PLAN09_TX_STORE.set(storageKey, { ...next, busy: false })
+        return next
+      }
+      const next = { phase: 'DIRTY', result: null, plan: null, txId: null, busy: false, error: 'DRAFT_CHANGED', draftDirty: true, planStale: false, planContext: null, contextStale: false }
+      PLAN09_TX_STORE.delete(storageKey)
+      return next
+    })
+  }, [draft, storageKey])
+
+  React.useEffect(() => {
+    if (contextSerial === lastContext.current) return
+    lastContext.current = contextSerial
+    setState((current) => {
+      if (current.txId) return { ...current, contextStale: true }
+      if (current.phase === 'PREPARED') return { ...current, planStale: true, error: 'CONTEXT_CHANGED' }
+      return current
+    })
+  }, [contextSerial])
+
   const prepare = async () => {
+    if (busyRef.current) return
     if (!adapter) return onNotify('未接入配置适配器：只能查看草稿，不能保存。', 'error')
+    if (state.txId) return onNotify('已有已发出的隔离事务，请先只读查证或完成生效检查。', 'error')
     const valid = validate()
     if (!valid.ok) return onNotify('草稿未通过校验，不能准备变更。', 'error')
-    const planned = changes
-    const result = await runAdapter(() => adapter.prepareChange(planned.changes), 'ADAPTER_REJECTED')
-    if (result === null) return
-    if (!result || !result.ok || !result.plan) {
-      setState({ phase: 'FAILED', result: result || null, plan: null, busy: false, error: result && result.error ? result.error.code : 'PREPARE_FAILED' })
-      return onNotify('准备变更失败：' + (result && result.error ? result.error.code : '未知错误'), 'error')
+    busyRef.current = true
+    const token = prepareToken.current + 1
+    prepareToken.current = token
+    const serial = JSON.stringify(draft)
+    setState((current) => ({ ...current, busy: true, error: null }))
+    let result
+    try {
+      result = await adapter.prepareChange(changes.changes)
+    } catch {
+      busyRef.current = false
+      return persist({ phase: 'FAILED', result: null, plan: null, txId: null, busy: false, error: 'ADAPTER_REJECTED', draftDirty: false, planStale: false, planContext: null, contextStale: false })
     }
-    setFrozen(planned)
-    setState({ phase: 'PREPARED', result, plan: result.plan, busy: false, error: null })
+    busyRef.current = false
+    if (token !== prepareToken.current || serial !== lastDraft.current) {
+      setState((current) => current.txId ? { ...current, busy: false } : { phase: 'DIRTY', result: null, plan: null, txId: null, busy: false, error: 'STALE_PREPARE', draftDirty: true, planStale: false, planContext: null, contextStale: false })
+      return
+    }
+    if (!result || !result.ok || !result.plan) {
+      return persist({ phase: 'FAILED', result: result || null, plan: null, txId: null, busy: false, error: result && result.error ? result.error.code : 'PREPARE_FAILED', draftDirty: false, planStale: false, planContext: null, contextStale: false })
+    }
+    persist({ phase: 'PREPARED', result, plan: result.plan, txId: null, busy: false, error: null, draftDirty: false, planStale: false, planContext: contextSerial, contextStale: false, frozen: { changes: changes.changes } })
     onNotify('已准备隔离变更计划；请核对字段与 revision 后确认。', 'info')
   }
+
   const confirmSave = async () => {
-    if (!adapter || !state.plan || state.phase === 'UNKNOWN') return
-    const planId = state.plan.planId
-    const result = await runAdapter(() => adapter.execute(planId, { userConfirmed: true, confirmedPlanId: planId }), 'ADAPTER_REJECTED')
-    if (result === null) return
-    if (!result || !result.ok) {
-      const phase = result && result.state === 'CONFLICT' ? 'CONFLICT' : 'FAILED'
-      setState({ phase, result: result || null, plan: state.plan, busy: false, error: result && result.error ? result.error.code : 'SAVE_FAILED' })
-      return onNotify('保存未完成：' + (result && result.error ? result.error.code : '未知错误'), 'error')
+    if (busyRef.current) return
+    if (!adapter || !state.plan) return
+    if (state.planStale || state.planContext !== contextSerial) {
+      setState((current) => ({ ...current, planStale: true, error: 'CONTEXT_CHANGED' }))
+      return onNotify('上下文或授权已变化，旧计划不可确认，请重新准备。', 'error')
     }
-    setState({ phase: 'SAVED', result, plan: state.plan, busy: false, error: null })
+    const valid = validate()
+    if (!valid.ok) {
+      setState((current) => ({ ...current, planStale: true, error: 'AUTHORIZATION_CHANGED' }))
+      return onNotify('当前草稿/授权不再满足条件，已阻止确认。', 'error')
+    }
+    busyRef.current = true
+    const planId = state.plan.planId
+    setState((current) => ({ ...current, busy: true, error: null }))
+    let result
+    try {
+      result = await adapter.execute(planId, { userConfirmed: true, confirmedPlanId: planId })
+    } catch {
+      busyRef.current = false
+      return persist({ ...state, phase: 'FAILED', busy: false, error: 'ADAPTER_REJECTED', planStale: true })
+    }
+    busyRef.current = false
+    if (!result || !result.ok) {
+      const unknown = result && (result.state === 'UNKNOWN' || result.transactionId)
+      const phase = unknown ? 'UNKNOWN' : (result && result.state === 'CONFLICT' ? 'CONFLICT' : 'FAILED')
+      return persist({ ...state, phase, result: result || null, txId: result && result.transactionId ? result.transactionId : state.txId, busy: false, error: result && result.error ? result.error.code : 'SAVE_FAILED', planStale: !unknown })
+    }
+    persist({ ...state, phase: result.state === 'APPLIED' ? 'APPLIED' : 'SAVED', result, txId: result.transactionId || null, busy: false, error: null, planStale: false, draftDirty: false, contextStale: false })
     onNotify(result.applyState === 'PENDING_APPLY' ? '已保存到隔离设施，等待运行组件确认；SAVED 不等于 APPLIED。' : '已保存到隔离设施。', 'success')
   }
+
   const applyCheck = async () => {
-    if (!adapter || !state.result || !state.result.transactionId || state.phase === 'UNKNOWN') return
-    const transactionId = state.result.transactionId
-    const result = await runAdapter(() => adapter.apply(transactionId, { userConfirmed: true }), 'APPLY_UNKNOWN')
-    if (result === null) return
-    const phase = result && result.ok ? (result.state === 'APPLIED' ? 'APPLIED' : 'PENDING_APPLY') : 'UNKNOWN'
-    setState({ phase, result: result || null, plan: state.plan, busy: false, error: result && result.error ? result.error.code : null })
+    if (busyRef.current) return
+    if (!adapter || !state.txId) return
+    if (!['SAVED', 'PENDING_APPLY'].includes(state.phase)) return
+    busyRef.current = true
+    const transactionId = state.txId
+    setState((current) => ({ ...current, busy: true, error: null }))
+    let result
+    try {
+      result = await adapter.apply(transactionId, { userConfirmed: true })
+    } catch {
+      busyRef.current = false
+      return persist({ ...state, phase: 'UNKNOWN', busy: false, error: 'APPLY_REJECTED' })
+    }
+    busyRef.current = false
+    const phase = result && result.state === 'APPLIED' ? 'APPLIED' : (result && (result.state === 'PENDING_APPLY' || result.state === 'SAVED' || result.ok) ? 'PENDING_APPLY' : 'UNKNOWN')
+    persist({ ...state, phase, result: result || state.result, txId: transactionId, busy: false, error: result && result.error ? result.error.code : null })
     onNotify(phase === 'APPLIED' ? '运行组件已确认同一 revision。' : '未取得可信运行确认，保持只读 UNKNOWN/待生效。', phase === 'APPLIED' ? 'success' : 'info')
   }
+
   const readStatus = async () => {
-    if (!adapter || !state.result || !state.result.transactionId) return
-    const transactionId = state.result.transactionId
-    const result = await runAdapter(() => (typeof adapter.recover === 'function' ? adapter.recover(transactionId) : adapter.getStatus(transactionId)), 'STATUS_UNKNOWN')
-    if (result === null) return
+    if (busyRef.current) return
+    if (!adapter || !state.txId) return
+    busyRef.current = true
+    const transactionId = state.txId
+    setState((current) => ({ ...current, busy: true, error: null }))
+    let result
+    try {
+      result = await (typeof adapter.recover === 'function' ? adapter.recover(transactionId) : adapter.getStatus(transactionId))
+    } catch {
+      busyRef.current = false
+      return persist({ ...state, phase: 'UNKNOWN', txId: transactionId, busy: false, error: 'STATUS_UNKNOWN' })
+    }
+    busyRef.current = false
     const projection = plan09ProjectCoordinatorResult(result || { state: 'UNKNOWN' })
-    setState((current) => ({ ...current, phase: projection.phase, result: result || { state: 'UNKNOWN' }, busy: false }))
+    persist({ ...state, phase: projection.phase, result: result || { state: 'UNKNOWN' }, txId: transactionId, busy: false, error: projection.errorCode })
     onNotify('已只读查证事务状态；不会自动重试写入。', 'info')
   }
-  const view = state.result ? plan09ProjectCoordinatorResult(state.result) : { phase: 'DIRTY', label: '未保存草稿', tone: 'wait', text: '尚未准备变更。' }
-  const phase = state.phase === 'PREPARED' ? 'PREPARED' : view.phase
-  const frozenSet = frozen && frozen.changes ? frozen.changes : null
-  const canPrepare = !disabled && ['DIRTY', 'CONFLICT', 'FAILED'].includes(phase)
-  return h('section', { className: 'wv-card pad', 'data-testid': 'plan09-tx-panel', 'data-phase': phase, 'data-busy': state.busy ? '1' : '0', 'data-tx': state.result && state.result.transactionId ? state.result.transactionId : '' },
+
+  const view = state.result ? plan09ProjectCoordinatorResult(state.result) : { phase: state.phase, label: state.phase === 'UNKNOWN' ? '结果未知 · 只读' : '未保存草稿', tone: state.phase === 'UNKNOWN' ? 'error' : 'wait', text: '尚未准备变更。' }
+  const phase = state.phase
+  const frozenSet = state.frozen ? state.frozen.changes : null
+  const canPrepare = !disabled && !state.txId && ['DIRTY', 'CONFLICT', 'FAILED'].includes(phase)
+  return h('section', { className: 'wv-card pad', 'data-testid': 'plan09-tx-panel', 'data-phase': phase, 'data-busy': state.busy ? '1' : '0', 'data-tx': state.txId || '' },
     h('div', { className: 'wv-card-title' },
       h('div', null, h('h2', null, '配置事务 · 隔离 Adapter'), h('p', null, '有效草稿 → 不可变变更预览 → 精确确认 → 隔离保存 → 状态查证；未写生产配置。')),
       h(Badge, { tone: view.tone }, view.label)),
     !adapter ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-no-adapter' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入配置适配器：本页只读草稿，不能准备或保存变更。')) : null,
     !changes.supported ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-unsupported' }, h(Icon, { name: 'info', size: 14 }), h('span', null, unsupported.join(' '))) : null,
+    state.txId ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-tx-authority' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '已发出的隔离事务仍保留：草稿编辑不会丢弃 transactionId；只能只读查证或完成生效检查。')) : null,
+    state.planStale ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-stale' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '上下文/授权已变化，旧计划不可确认；请重新准备。')) : null,
     h('div', { className: 'wv-plan09-txline' },
       h('span', null, '可应用字段：' + (changes.applied.length ? changes.applied.join('、') : '无')),
       unsupported.length ? h('span', { className: 'wv-muted' }, '草稿未应用：' + unsupported.join('、')) : null,
@@ -305,11 +383,12 @@ function Plan09TransactionPanel({ feature, draft, validate, context, onNotify })
       h('pre', { className: 'wv-mono' }, JSON.stringify(frozenSet, null, 2))) : null,
     h('div', { className: 'wv-row wv-wrap', style: { marginTop: 10 } },
       h(Button, { onClick: prepare, disabled: !canPrepare, 'data-testid': 'plan09-prepare' }, state.busy ? '处理中…' : '预览变更'),
-      h(Button, { variant: 'primary', disabled: disabled || phase !== 'PREPARED', onClick: confirmSave, 'data-testid': 'plan09-confirm-save' }, '确认并隔离保存'),
-      h(Button, { variant: 'ghost', disabled: !state.result || !state.result.transactionId || !['SAVED', 'PENDING_APPLY'].includes(phase), onClick: applyCheck, 'data-testid': 'plan09-apply-check' }, '检查是否生效'),
-      h(Button, { variant: 'ghost', disabled: !state.result || !state.result.transactionId, onClick: readStatus, 'data-testid': 'plan09-read-status' }, '只读查证')),
+      h(Button, { variant: 'primary', disabled: disabled || phase !== 'PREPARED' || state.planStale, onClick: confirmSave, 'data-testid': 'plan09-confirm-save' }, '确认并隔离保存'),
+      h(Button, { variant: 'ghost', disabled: disabled || !state.txId || !['SAVED', 'PENDING_APPLY'].includes(phase), onClick: applyCheck, 'data-testid': 'plan09-apply-check' }, '检查是否生效'),
+      h(Button, { variant: 'ghost', disabled: disabled || !state.txId, onClick: readStatus, 'data-testid': 'plan09-read-status' }, '只读查证')),
     state.error ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-tx-error' }, state.error) : null,
-    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, view.text + ' · SAVED 不等于 APPLIED，更不等于 SENT；编辑草稿会作废旧计划。'))
+    state.draftDirty ? h('p', { className: 'wv-muted', 'data-testid': 'plan09-tx-draft-dirty' }, '草稿已编辑，但已发出事务与只读查证入口仍保留；不会自动重试写入。') : null,
+    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, view.text + ' · SAVED 不等于 APPLIED，更不等于 SENT。'))
 }
 
 const PLAN09_LANG_LABEL = { 'zh-CN': '中文（普通话）', 'en-US': '英语', 'ja-JP': '日语', auto: '自动识别' }
@@ -321,6 +400,12 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
   const context = plan09Context(adapter)
   const key = plan09WizardKey({ workspace: context.workspace, profile: context.profile, feature: feature.id, manifestRevision: context.manifestRevision })
   const stored = plan09ReadWizard(window.localStorage, key)
+  const [, forceContext] = React.useState(0)
+  React.useEffect(() => {
+    const onChange = () => forceContext((value) => value + 1)
+    window.addEventListener('plan09-context-changed', onChange)
+    return () => window.removeEventListener('plan09-context-changed', onChange)
+  }, [])
   const [mode, setMode] = React.useState(stored.selectedMode || 'local')
   const [wizardOpen, setWizardOpen] = React.useState(false)
   const [wizardContext, setWizardContext] = React.useState(stored)
@@ -366,7 +451,10 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
     setWizardContext(next || stored)
     setWizardOpen(false)
   }
+  const depScope = plan09DepScope(context, mode, draft.engine)
+  React.useEffect(() => () => plan09CancelDepScope(depScope), [depScope])
   const changeMode = (nextMode) => {
+    plan09CancelDepScope(depScope)
     const switched = plan09SwitchMode(feature.id, nextMode, draft)
     setDraft(switched.draft)
     setMode(nextMode)
@@ -391,12 +479,19 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
     notify('已生成演示预览；没有合成或播放真实音频。', 'info')
   }
   const switchEngine = (engine) => {
+    plan09CancelDepScope(depScope)
     const result = plan09SwitchEngine(feature.id, draft, engine)
+    const nextMode = feature.id === 'singing'
+      ? (engine === 'gateway' ? (mode === 'cloud' ? 'cloud' : 'existing') : (mode === 'cloud' || mode === 'existing' ? 'local' : mode))
+      : (engine === 'cloud' ? 'cloud' : engine === 'custom' ? 'existing' : 'local')
     setDraft(result.draft)
+    setMode(nextMode)
+    plan09WriteWizard(window.localStorage, key, { mode: nextMode })
     setPreview(null)
     setErrors([])
     if (result.cleared.length) notify('已清理不兼容字段：' + result.cleared.join('、') + '。请重新确认参数。', 'info')
   }
+  const contextSerial = JSON.stringify({ workspace: context.workspace, profile: context.profile, manifest: context.manifestRevision, capability: context.capabilityRevision, cloud: context.cloudAuthorized, delivery: context.deliveryAuthorized, mode })
   const groups = plan09DependencyGroups(feature.id, mode, {
     sourceLayout: feature.id === 'singing' ? singingDraft.sourceLayout : 'MIXED',
     deliveryRequested: feature.id === 'singing' ? singingDraft.deliveryRequested : false,
@@ -482,9 +577,10 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
           h(SettingRow, { title: '云端费用与文本', desc: '云端模式会把文本发送到 Provider；真实调用始终禁用。' }, h(Badge, { tone: 'demo' }, '仅说明')),
           h(SettingRow, { title: '真实音频', desc: '不接收、不存储、不输出真实音频或密钥。' }, h(Badge, { tone: 'demo' }, 'Fake')),
           h(SettingRow, { title: '首次说明', desc: '确认只记录读过说明，不等于 READY。' }, h('span', { className: 'wv-muted', 'data-testid': 'plan09-ack-state' }, stored.introAcknowledged ? '本版本已确认' : '未确认')))),
-    h(Plan09TransactionPanel, { feature: feature.id, draft, validate, context, onNotify: notify }),
+    h(Plan09TransactionPanel, { feature: feature.id, draft, validate, context, storageKey: key, contextSerial, onNotify: notify }),
     wizardOpen ? h(Plan09Wizard, {
       open: true, feature, mode, setMode: changeMode, context: { ...context, introAcknowledged: wizardContext.introAcknowledged },
+      engine: draft.engine,
       sourceLayout: feature.id === 'singing' ? singingDraft.sourceLayout : 'MIXED',
       deliveryRequested: feature.id === 'singing' ? singingDraft.deliveryRequested : false,
       onClose: browseWizard,

@@ -396,14 +396,38 @@
     }
     const real = window.__PLAN09_REAL__ || null
     const record = (name) => calls.push(name)
+    let deferCheck = false
+    let checkResolver = null
+    let deferExecute = false
+    let executeResolver = null
+    let throwExecute = false
+    let throwApply = false
+    let throwRecover = false
+    let nullPrepare = false
+    let unknownExecute = false
     const adapter = {
       calls,
       getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
-      async checkDependency(key) { record('check:' + key); if (real) return real.check(key); return { ready: key !== 'gpu' || context.gpuAvailable !== false } },
+      async checkDependency(key) {
+        record('check:' + key)
+        if (deferCheck) { deferCheck = false; return new Promise((resolve) => { checkResolver = resolve }) }
+        if (real) return real.check(key)
+        return { ready: key !== 'gpu' || context.gpuAvailable !== false }
+      },
+      deferNextCheck() { deferCheck = true },
+      releaseCheck(value) { if (checkResolver) { const resolve = checkResolver; checkResolver = null; resolve(value || { ready: true }) } },
+      deferNextExecute() { deferExecute = true },
+      releaseExecute() { if (executeResolver) { const resolve = executeResolver; executeResolver = null; resolve() } },
+      throwNextExecute() { throwExecute = true },
+      throwNextApply() { throwApply = true },
+      throwNextRecover() { throwRecover = true },
+      nullNextPrepare() { nullPrepare = true },
+      unknownNextExecute() { unknownExecute = true },
       bumpRevision() { revision += 1 },
-      setContext(patch) { Object.assign(context, patch || {}) },
+      setContext(patch) { Object.assign(context, patch || {}); window.dispatchEvent(new Event('plan09-context-changed')) },
       async prepareChange(draft) {
         record('prepareChange')
+        if (nullPrepare) { nullPrepare = false; return null }
         if (real) return real.prepare(draft)
         if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
         const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false, changes: draft }
@@ -412,6 +436,9 @@
       },
       async execute(planId, options = {}) {
         record('execute')
+        if (throwExecute) { throwExecute = false; throw new Error('fixture execute failure') }
+        if (deferExecute) { deferExecute = false; await new Promise((resolve) => { executeResolver = resolve }) }
+        if (unknownExecute) { unknownExecute = false; return { ok: false, state: 'UNKNOWN', transactionId: 'fixture-tx-unknown', error: { code: 'CONFIG_COORDINATION_WRITE_UNKNOWN' } } }
         if (real) return real.execute(planId, options)
         const plan = plans.get(planId)
         if (!plan) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
@@ -426,16 +453,18 @@
         transactions.set(transactionId, tx)
         return tx
       },
-      async apply(transactionId) {
+      async apply(transactionId, options = {}) {
         record('apply')
-        if (real) return real.apply(transactionId)
+        if (throwApply) { throwApply = false; throw new Error('fixture apply failure') }
+        if (real) return real.apply(transactionId, options)
         const tx = transactions.get(transactionId)
         if (!tx) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
         return { ...tx, state: 'PENDING_APPLY', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
       },
-      async recover(transactionId) {
+      async recover(transactionId, options = {}) {
         record('recover')
-        if (real) return real.recover(transactionId)
+        if (throwRecover) { throwRecover = false; throw new Error('fixture recover failure') }
+        if (real) return real.recover(transactionId, options)
         const tx = transactions.get(transactionId)
         return tx ? { ...tx, replayed: false, state: 'PENDING_APPLY' } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
       },
