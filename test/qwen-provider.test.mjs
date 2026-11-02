@@ -211,6 +211,9 @@ test('capability matrix, audited models and static metadata inventory stay separ
   assert.equal(inventory.dependencies.length, QWEN_DEPENDENCIES.length)
   assert.equal(inventory.pythonPackage.pythonRequires, '>=3.9')
   assert.equal(inventory.unknown.length >= 4, true)
+  assert.equal(inventory.loadingBoundary.localFilesOnly, true)
+  assert.equal(inventory.loadingBoundary.trustRemoteCode, false)
+  assert.deepEqual(inventory.loadingBoundary.offlineEnvironment, ['HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE'])
 
   const licence = qwenLicenseView()
   assert.equal(licence.license, 'Apache-2.0')
@@ -565,7 +568,10 @@ test('output identity is checked before handoff, not relabelled with the current
       )
       assert.equal(synthesized.ok, false, corrupt)
       assert.equal(synthesized.code, PROVIDER_ERRORS.INVALID_RESPONSE, corrupt)
-      assert.equal(synthesized.qwenCode, QWEN_ERRORS.OUTPUT_IDENTITY_MISMATCH, corrupt)
+      const expectedQwenCode = corrupt.includes('requestId')
+        ? QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH
+        : QWEN_ERRORS.OUTPUT_IDENTITY_MISMATCH
+      assert.equal(synthesized.qwenCode, expectedQwenCode, corrupt)
     })
   }
   await withProvider('ok', {}, async ({ provider }) => {

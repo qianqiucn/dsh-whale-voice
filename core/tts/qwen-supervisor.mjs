@@ -4,15 +4,20 @@
  * network, no retry, no fallback, no killing of unknown processes. Every request is bounded by a
  * positive timeout; a timeout cancels and the outcome becomes UNKNOWN instead of being retried.
  *
- * Lifecycle rules added in the 10-A repair round:
- *  - every start owns one generation; handlers, pending map, stdio buffer and temporary directories
- *    belong to that generation, so a late event from an old process can never release a new one;
+ * Lifecycle rules (095 round):
+ *  - every start owns one generation; handlers, pending map, operation table, stdio buffer and
+ *    temporary directories belong to that generation, so a late event from an old process can never
+ *    release a new one;
  *  - a child `error` event is not an exit: the handle and its temporary directory stay owned until
  *    the process really closes;
- *  - shutdown closes admission to new work, and only a confirmed exit releases ownership; a failed
- *    kill/cleanup is reported as a failure instead of a green `ok`;
- *  - an operation that ended without a definitive terminal answer keeps the worker "occupied" until
- *    a terminal answer or a confirmed exit arrives, so new synthesis cannot silently overlap it.
+ *  - an operation is only released by a terminal message that is correlated through its issued
+ *    message id, its request id and its generation. A never-issued message id, a wrong identity, an
+ *    unexpected response type or a progress event cannot clear another operation's occupancy;
+ *  - cancellation is separated into request, trusted acknowledgement, actual stop and the final
+ *    result: a rejected/timed-out/wrong-identity/non-terminal acknowledgement never fabricates a
+ *    confirmed cancellation, and a late success is discarded rather than promoted;
+ *  - shutdown closes admission immediately; a stop intent that races the handshake keeps admission
+ *    closed, and only a confirmed exit releases ownership.
  */
 
 import { spawn as nodeSpawn } from 'node:child_process'
@@ -84,7 +89,6 @@ export function createQwenSupervisor(options = {}) {
   let protocolErrors = 0
   let lastRequestTimeoutMs = null
   let sequence = 0
-  const unresolvedOperations = new Map()
 
   function cleanupDirs(dirs) {
     const failed = []
@@ -105,9 +109,29 @@ export function createQwenSupervisor(options = {}) {
     else entry.reject(value)
   }
 
-  function endOperation(gen, requestId) {
-    if (requestId) unresolvedOperations.delete(requestId)
-    if (gen) gen.activeOps.delete(requestId)
+  function operationCounts(gen) {
+    let active = 0
+    let unresolved = 0
+    if (gen) {
+      for (const operation of gen.operations.values()) {
+        if (operation.state === 'ACTIVE') active += 1
+        else if (operation.state === 'UNRESOLVED') unresolved += 1
+      }
+    }
+    return { active, unresolved }
+  }
+
+  function markUnresolved(gen, requestId, reason) {
+    const operation = gen && gen.operations.get(requestId)
+    if (!operation) return
+    operation.state = 'UNRESOLVED'
+    operation.reason = reason
+    operation.updatedAt = now()
+  }
+
+  function releaseOperation(gen, requestId) {
+    if (!gen) return
+    gen.operations.delete(requestId)
   }
 
   function finalize(gen, kind, code, signal) {
@@ -120,7 +144,9 @@ export function createQwenSupervisor(options = {}) {
       settle(entry, 'reject', { ok: false, code: QWEN_ERRORS.WORKER_UNAVAILABLE, detail: 'worker exited' })
     }
     gen.pending.clear()
-    for (const requestId of [...gen.activeOps.keys()]) endOperation(gen, requestId)
+    gen.operations.clear()
+    gen.messageOwners.clear()
+    gen.cancelMessages.clear()
     if (gen.tempDirs.size > 0) {
       const failed = cleanupDirs([...gen.tempDirs])
       gen.tempDirs.clear()
@@ -142,43 +168,82 @@ export function createQwenSupervisor(options = {}) {
     }
   }
 
-  function registerOp(gen, message) {
-    if (message.type !== 'synthesize') return
-    const requestId = message.payload && message.payload.requestId ? message.payload.requestId : null
-    if (requestId) {
-      gen.activeOps.set(requestId, { messageId: message.id, startedAt: now() })
-      gen.opIndex.set(message.id, requestId)
+  /**
+   * A message without a pending waiter is late by definition. It may only release an operation when
+   * its *issued* message id belongs to that operation and its claimed request id (if any) matches.
+   * A never-issued message id, a cancel message id, a progress event or a wrong claimed id never
+   * clears anything.
+   */
+  function handleLate(gen, message) {
+    if (message.type !== 'result' && message.type !== 'error') return
+    if (gen.cancelMessages.has(message.id)) {
+      gen.cancelMessages.delete(message.id)
+      return
     }
+    const owner = gen.messageOwners.get(message.id)
+    if (!owner) return
+    const operation = gen.operations.get(owner)
+    if (!operation) {
+      gen.messageOwners.delete(message.id)
+      return
+    }
+    const claimed = message.payload && message.payload.requestId
+    if (claimed !== undefined && claimed !== null && claimed !== operation.requestId) {
+      /* Wrong claimed identity: keep the issued message id so a later real terminal can still be
+       * correlated. This message alone must not clear anything. */
+      return
+    }
+    gen.messageOwners.delete(message.id)
+    if (message.type === 'result') {
+      const state = message.payload && message.payload.state
+      if (state === 'ok' || state === 'cancelled' || state === 'unknown') releaseOperation(gen, owner)
+      return
+    }
+    releaseOperation(gen, owner)
   }
 
   function handleMessage(gen, message) {
     const entry = gen.pending.get(message.id)
     if (!entry) {
       lateResponses += 1
-      if (message.type === 'result' || message.type === 'error') {
-        const requestId = (message.payload && message.payload.requestId) || gen.opIndex.get(message.id)
-        if (requestId) endOperation(gen, requestId)
-        gen.opIndex.delete(message.id)
-      }
+      handleLate(gen, message)
       return
     }
-    if (message.type !== 'error' && Array.isArray(entry.expect) && entry.expect.length > 0 && !entry.expect.includes(message.type)) {
-      gen.pending.delete(message.id)
-      recordProtocolViolation(gen, QWEN_ERRORS.RESPONSE_TYPE_MISMATCH)
-      settle(entry, 'reject', {
-        ok: false,
-        code: QWEN_ERRORS.RESPONSE_TYPE_MISMATCH,
-        detail: `expected ${entry.expect.join('|')} but received ${message.type}`,
-      })
-      return
-    }
-    gen.pending.delete(message.id)
     if (message.type === 'error') {
-      const indexed = gen.opIndex.get(message.id)
-      const claimed = message.payload && message.payload.requestId
-      gen.opIndex.delete(message.id)
-      if (indexed) endOperation(gen, indexed)
-      if (claimed && claimed !== indexed) endOperation(gen, claimed)
+      gen.pending.delete(message.id)
+      if (entry.kind === 'cancel') {
+        gen.cancelMessages.delete(message.id)
+        settle(entry, 'reject', {
+          ok: false,
+          code: String(message.payload.code || QWEN_ERRORS.PROVIDER_NOT_READY),
+          detail: typeof message.payload.message === 'string' ? message.payload.message.slice(0, 240) : '',
+          workerRejected: true,
+        })
+        return
+      }
+      if (entry.kind === 'synthesize') {
+        const claimed = message.payload && message.payload.requestId
+        if (claimed !== undefined && claimed !== null && claimed !== entry.requestId) {
+          recordProtocolViolation(gen, QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH)
+          markUnresolved(gen, entry.requestId, 'error-identity-mismatch')
+          settle(entry, 'reject', {
+            ok: false,
+            code: QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH,
+            unknown: true,
+            detail: 'worker error claimed a different request id',
+          })
+          return
+        }
+        gen.messageOwners.delete(message.id)
+        releaseOperation(gen, entry.requestId)
+        settle(entry, 'reject', {
+          ok: false,
+          code: String(message.payload.code || QWEN_ERRORS.PROVIDER_NOT_READY),
+          detail: typeof message.payload.message === 'string' ? message.payload.message.slice(0, 240) : '',
+          workerError: true,
+        })
+        return
+      }
       settle(entry, 'reject', {
         ok: false,
         code: String(message.payload.code || QWEN_ERRORS.PROVIDER_NOT_READY),
@@ -187,13 +252,45 @@ export function createQwenSupervisor(options = {}) {
       })
       return
     }
-    if (message.type === 'result') {
-      const indexed = gen.opIndex.get(message.id)
-      const claimed = message.payload && message.payload.requestId
-      gen.opIndex.delete(message.id)
-      if (indexed) endOperation(gen, indexed)
-      if (claimed && claimed !== indexed) endOperation(gen, claimed)
+    if (entry.kind === 'cancel') {
+      gen.pending.delete(message.id)
+      gen.cancelMessages.delete(message.id)
+      settle(entry, 'resolve', { ok: true, type: message.type, payload: message.payload })
+      return
     }
+    if (Array.isArray(entry.expect) && entry.expect.length > 0 && !entry.expect.includes(message.type)) {
+      gen.pending.delete(message.id)
+      recordProtocolViolation(gen, QWEN_ERRORS.RESPONSE_TYPE_MISMATCH)
+      if (entry.kind === 'synthesize') markUnresolved(gen, entry.requestId, 'type-mismatch')
+      settle(entry, 'reject', {
+        ok: false,
+        code: QWEN_ERRORS.RESPONSE_TYPE_MISMATCH,
+        unknown: entry.kind === 'synthesize',
+        detail: `expected ${entry.expect.join('|')} but received ${message.type}`,
+      })
+      return
+    }
+    if (entry.kind === 'synthesize') {
+      const claimed = message.payload && message.payload.requestId
+      if (claimed !== undefined && claimed !== null && claimed !== entry.requestId) {
+        gen.pending.delete(message.id)
+        recordProtocolViolation(gen, QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH)
+        markUnresolved(gen, entry.requestId, 'identity-mismatch')
+        settle(entry, 'reject', {
+          ok: false,
+          code: QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH,
+          unknown: true,
+          detail: 'worker result claimed a different request id',
+        })
+        return
+      }
+      gen.pending.delete(message.id)
+      gen.messageOwners.delete(message.id)
+      releaseOperation(gen, entry.requestId)
+      settle(entry, 'resolve', { ok: true, type: message.type, payload: message.payload })
+      return
+    }
+    gen.pending.delete(message.id)
     settle(entry, 'resolve', { ok: true, type: message.type, payload: message.payload })
   }
 
@@ -236,7 +333,7 @@ export function createQwenSupervisor(options = {}) {
     /* An `error` event is not an exit: keep the handle and its ownership until `close`. */
   }
 
-  function send(gen, message, { timeoutMs, expect } = {}) {
+  function send(gen, message, { timeoutMs, expect, kind = 'request', requestId = null } = {}) {
     return new Promise((resolve, reject) => {
       if (!gen || gen.finalized || !gen.child || !gen.child.stdin || !gen.child.stdin.writable) {
         reject({ ok: false, code: QWEN_ERRORS.WORKER_UNAVAILABLE })
@@ -254,15 +351,18 @@ export function createQwenSupervisor(options = {}) {
         QWEN_LIMITS.maxRequestTimeoutMs,
       )
       lastRequestTimeoutMs = effectiveTimeout
-      const entry = { resolve, reject, timer: null, expect: Array.isArray(expect) ? expect : null, requestId: null }
+      const entry = {
+        resolve,
+        reject,
+        timer: null,
+        expect: Array.isArray(expect) ? expect : null,
+        kind,
+        requestId,
+      }
       entry.timer = setTimeout(() => {
         if (!gen.pending.has(message.id)) return
         gen.pending.delete(message.id)
-        const requestId = entry.requestId
-        if (requestId) {
-          unresolvedOperations.set(requestId, { at: now(), reason: 'timeout', generation: gen.id })
-          gen.opIndex.delete(message.id)
-        }
+        if (kind === 'synthesize' && requestId) markUnresolved(gen, requestId, 'timeout')
         reject({
           ok: false,
           code: QWEN_ERRORS.TIMEOUT,
@@ -271,15 +371,12 @@ export function createQwenSupervisor(options = {}) {
           unknown: true,
         })
       }, effectiveTimeout)
-      if (message.type === 'synthesize' && message.payload && message.payload.requestId) {
-        entry.requestId = message.payload.requestId
-      }
       gen.pending.set(message.id, entry)
-      registerOp(gen, message)
       try {
         gen.child.stdin.write(encoded.line + '\n')
       } catch {
         gen.pending.delete(message.id)
+        if (kind === 'synthesize' && requestId) markUnresolved(gen, requestId, 'write-failed')
         settle(entry, 'reject', { ok: false, code: QWEN_ERRORS.WORKER_UNAVAILABLE })
       }
     })
@@ -316,7 +413,6 @@ export function createQwenSupervisor(options = {}) {
       spawnCommand = worker.runtime
       spawnArgs = [resolved, ...worker.args]
     }
-    /* A previous generation's un-cleaned directories stay owned; retry before adding another one. */
     retainedTempDirs = cleanupDirs(retainedTempDirs)
     let tempDir
     try {
@@ -335,18 +431,19 @@ export function createQwenSupervisor(options = {}) {
       errorInfo: null,
       readyInfo: null,
       pending: new Map(),
-      activeOps: new Map(),
-      opIndex: new Map(),
+      operations: new Map(),
+      messageOwners: new Map(),
+      cancelMessages: new Map(),
       tempDirs: new Set([tempDir]),
       exitPromise: null,
       exitResolve: null,
       finalized: false,
       intentionalStop: false,
+      stopRequested: false,
       protocolErrors: 0,
       protocolViolation: null,
     }
     generation = gen
-    unresolvedOperations.clear()
     accepting = false
     try {
       gen.child = spawnProcess(spawnCommand, spawnArgs, {
@@ -379,6 +476,10 @@ export function createQwenSupervisor(options = {}) {
       await stop()
       return failure
     }
+    if (gen.stopRequested || gen !== generation || stopping) {
+      /* A stop raced the handshake: never re-open admission for this generation. */
+      return { ok: false, code: QWEN_ERRORS.STOPPING, detail: 'stop requested during the handshake', generation: gen.id }
+    }
     if (ready.type !== 'ready') {
       await stop()
       return stateError(QWEN_ERRORS.PROTOCOL_INVALID, 'first worker answer was not ready')
@@ -388,13 +489,27 @@ export function createQwenSupervisor(options = {}) {
     return { ok: true, ready: { ...ready.payload }, generation: gen.id }
   }
 
+  function rejectState(error) {
+    return {
+      ok: false,
+      code: (error && error.code) || QWEN_ERRORS.WORKER_UNAVAILABLE,
+      detail: (error && error.detail) || '',
+      unknown: Boolean(error && error.unknown),
+      cancelled: Boolean(error && error.cancelled),
+      cancelConfirmed: Boolean(error && error.cancelConfirmed),
+      workerError: Boolean(error && error.workerError),
+      workerRejected: Boolean(error && error.workerRejected),
+      requestId: (error && error.requestId) || null,
+    }
+  }
+
   async function request(type, payload = {}, { timeoutMs, expect = ['result'] } = {}) {
     if (!generation || !generation.child) return stateError(QWEN_ERRORS.WORKER_UNAVAILABLE)
     if (type === 'synthesize' && (stopping || !accepting)) return stateError(QWEN_ERRORS.STOPPING, 'worker is not accepting work')
     try {
       return await send(generation, { v: QWEN_PROTOCOL_VERSION, id: nextId(type.slice(0, 3)), type, payload }, { timeoutMs, expect })
     } catch (error) {
-      return { ok: false, code: (error && error.code) || QWEN_ERRORS.WORKER_UNAVAILABLE, detail: (error && error.detail) || '' }
+      return rejectState(error)
     }
   }
 
@@ -409,52 +524,87 @@ export function createQwenSupervisor(options = {}) {
   }
 
   async function synthesize(payload, { timeoutMs } = {}) {
+    const gen = generation
+    if (!gen || !gen.child) return stateError(QWEN_ERRORS.WORKER_UNAVAILABLE)
+    if (stopping || !accepting) return stateError(QWEN_ERRORS.STOPPING, 'worker is not accepting work')
     const requestId = payload && payload.requestId ? payload.requestId : null
-    if (requestId && unresolvedOperations.has(requestId)) {
-      return stateError(QWEN_ERRORS.UNRESOLVED_ACTIVITY, 'a previous operation has no confirmed terminal state')
+    if (!requestId) return stateError(QWEN_ERRORS.INVALID_INPUT, 'a request id is required')
+    const { active, unresolved } = operationCounts(gen)
+    if (active > 0 || unresolved > 0) {
+      return stateError(QWEN_ERRORS.UNRESOLVED_ACTIVITY, 'the worker still owns an operation without a trusted terminal answer')
     }
-    if (unresolvedOperations.size > 0) {
-      return stateError(QWEN_ERRORS.UNRESOLVED_ACTIVITY, 'the worker still owns an unconfirmed operation')
+    const messageId = nextId('syn')
+    const operation = { requestId, messageId, state: 'ACTIVE', reason: null, startedAt: now() }
+    gen.operations.set(requestId, operation)
+    gen.messageOwners.set(messageId, requestId)
+    try {
+      return await send(gen, { v: QWEN_PROTOCOL_VERSION, id: messageId, type: 'synthesize', payload }, { timeoutMs, expect: ['result'], kind: 'synthesize', requestId })
+    } catch (error) {
+      const current = gen.operations.get(requestId)
+      if (current && current.state === 'ACTIVE') markUnresolved(gen, requestId, 'send-failed')
+      return rejectState(error)
     }
-    return request('synthesize', payload, { timeoutMs, expect: ['result'] })
   }
 
   /**
-   * Cancel one synthesis by its request id. The original waiter is settled immediately; the worker
-   * stays "occupied" until a terminal answer or a confirmed exit proves the operation ended, so a
-   * subsequent synthesis cannot overlap an unconfirmed one.
+   * Cancel one synthesis. The caller's result is settled as CANCELLED only after a trusted
+   * acknowledgement that names the same request id and a terminal `cancelled` state. A rejection,
+   * timeout, wrong identity or progress event leaves the original operation untouched, and the
+   * worker stays occupied until a correlated terminal message or a confirmed exit arrives.
    */
   async function cancel(requestId, { timeoutMs = QWEN_LIMITS.cancelAckTimeoutMs } = {}) {
     const gen = generation
     if (!gen || !gen.child) return { ok: false, code: QWEN_ERRORS.WORKER_UNAVAILABLE }
     if (typeof requestId !== 'string' || !requestId) return { ok: false, code: QWEN_ERRORS.INVALID_INPUT }
-    const op = gen.activeOps.get(requestId)
-    if (op) {
-      const entry = gen.pending.get(op.messageId)
-      if (entry) {
-        gen.pending.delete(op.messageId)
-        settle(entry, 'reject', { ok: false, code: QWEN_ERRORS.CANCELLED, cancelled: true, requestId })
-      }
-      gen.activeOps.delete(requestId)
-      gen.opIndex.delete(op.messageId)
-      unresolvedOperations.set(requestId, { at: now(), reason: 'cancel-requested', generation: gen.id })
-    }
-    if (!op && !unresolvedOperations.has(requestId)) {
-      return { ok: false, code: QWEN_ERRORS.UNKNOWN_REQUEST }
-    }
-    const result = await send(gen, { v: QWEN_PROTOCOL_VERSION, id: nextId('cnl'), type: 'cancel', payload: { requestId } }, { timeoutMs, expect: ['event', 'result'] })
-      .catch((error) => ({ ok: false, code: (error && error.code) || QWEN_ERRORS.WORKER_UNAVAILABLE }))
+    const operation = gen.operations.get(requestId)
+    if (!operation) return { ok: false, code: QWEN_ERRORS.UNKNOWN_REQUEST }
+    const messageId = nextId('cnl')
+    gen.cancelMessages.set(messageId, requestId)
+    const result = await send(
+      gen,
+      { v: QWEN_PROTOCOL_VERSION, id: messageId, type: 'cancel', payload: { requestId } },
+      { timeoutMs, expect: ['event', 'result'], kind: 'cancel', requestId },
+    ).catch((error) => ({ ok: false, code: (error && error.code) || QWEN_ERRORS.WORKER_UNAVAILABLE, detail: (error && error.detail) || '', workerRejected: Boolean(error && error.workerRejected) }))
+    gen.cancelMessages.delete(messageId)
     if (!result.ok) {
-      if (result.code === QWEN_ERRORS.TIMEOUT) return { ok: false, code: QWEN_ERRORS.UNKNOWN_RESULT, unknown: true, requestId }
-      return { ok: false, code: result.code, requestId }
+      if (result.code === QWEN_ERRORS.TIMEOUT) {
+        return { ok: false, code: QWEN_ERRORS.UNKNOWN_RESULT, unknown: true, confirmed: false, requestId }
+      }
+      return { ok: false, code: result.code, confirmed: false, requestId, workerRejected: result.workerRejected === true }
     }
-    const state = result.payload && result.payload.state ? result.payload.state : 'UNKNOWN'
-    return { ok: true, state, ack: true, requestId }
+    const payload = result.payload || {}
+    if (payload.requestId !== requestId || payload.state !== 'cancelled') {
+      return {
+        ok: false,
+        code: QWEN_ERRORS.CANCEL_NOT_CONFIRMED,
+        confirmed: false,
+        requestId,
+        ackType: result.type,
+        ackState: payload.state || null,
+      }
+    }
+    const entry = gen.pending.get(operation.messageId)
+    if (entry) {
+      gen.pending.delete(operation.messageId)
+      settle(entry, 'reject', {
+        ok: false,
+        code: QWEN_ERRORS.CANCELLED,
+        cancelled: true,
+        cancelConfirmed: true,
+        stopped: false,
+        requestId,
+      })
+    }
+    /* Keep the operation and its issued message id until the worker supplies a correlated terminal
+     * answer or really exits; an acknowledgement is not proof of actual stop. */
+    markUnresolved(gen, requestId, 'cancel-confirmed')
+    return { ok: true, state: 'cancelled', ack: true, confirmed: true, stopped: false, requestId }
   }
 
   async function stop() {
     if (stopping) return stopping
     accepting = false
+    if (generation) generation.stopRequested = true
     stopping = (async () => {
       const gen = generation
       if (gen && gen.child) {
@@ -472,7 +622,6 @@ export function createQwenSupervisor(options = {}) {
           if (gen.exitPromise) await Promise.race([gen.exitPromise, new Promise((resolve) => setTimeout(resolve, killWaitMs))])
         }
         if (gen.child) {
-          /* The process did not exit: keep the handle, the pending work and the temp ownership. */
           return {
             ok: false,
             code: QWEN_ERRORS.EXIT_UNCONFIRMED,
@@ -485,8 +634,10 @@ export function createQwenSupervisor(options = {}) {
       if (gen) {
         for (const [, entry] of gen.pending) settle(entry, 'reject', { ok: false, code: QWEN_ERRORS.WORKER_UNAVAILABLE, detail: 'worker stopped' })
         gen.pending.clear()
+        gen.operations.clear()
+        gen.messageOwners.clear()
+        gen.cancelMessages.clear()
       }
-      unresolvedOperations.clear()
       const dirs = [...(gen ? gen.tempDirs : []), ...retainedTempDirs]
       if (gen) gen.tempDirs.clear()
       retainedTempDirs = []
@@ -515,6 +666,7 @@ export function createQwenSupervisor(options = {}) {
     const workerState = alive
       ? (gen.readyInfo ? 'ready' : 'starting')
       : (stopping ? 'stopping' : gen && gen.exitInfo ? (gen.intentionalStop ? 'stopped' : 'exited') : 'stopped')
+    const counts = operationCounts(gen)
     return {
       state: workerState,
       generation: gen ? gen.id : 0,
@@ -522,13 +674,14 @@ export function createQwenSupervisor(options = {}) {
       alive,
       accepting,
       stopping: Boolean(stopping),
+      stopRequested: Boolean(gen && gen.stopRequested),
       startedAt: gen ? gen.startedAt : null,
       exit: gen && gen.exitInfo ? { ...gen.exitInfo } : null,
       error: gen && gen.errorInfo ? { ...gen.errorInfo } : null,
       ready: gen && gen.readyInfo ? { ...gen.readyInfo } : null,
       pendingRequests: gen ? gen.pending.size : 0,
-      activeOperations: gen ? gen.activeOps.size : 0,
-      unresolvedOperations: unresolvedOperations.size,
+      activeOperations: counts.active,
+      unresolvedOperations: counts.unresolved,
       lateResponses,
       protocolErrors,
       stderrBytes: gen ? gen.stderrText.length : 0,

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { createQwenSupervisor } from '../core/tts/qwen-supervisor.mjs'
 import { createQwenProvider } from '../core/tts/qwen-adapter.mjs'
+import { QWEN_ERRORS } from '../core/tts/qwen-contract.mjs'
 import { PROVIDER_ERRORS } from '../core/tts/provider-contract.mjs'
 import { produceFixtureWav } from '../core/audio/fixture-wav-producer.mjs'
 
@@ -121,6 +122,45 @@ function setFakeMode(workspace, mode) {
   fs.writeFileSync(path.join(dirs[0], 'fake-sdk-mode.json'), JSON.stringify(mode))
 }
 
+function createDirLink(linkPath, target) {
+  fs.rmSync(linkPath, { recursive: true, force: true })
+  fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+}
+
+function removeDirLink(linkPath) {
+  try {
+    fs.rmdirSync(linkPath)
+  } catch {
+    try { fs.unlinkSync(linkPath) } catch { /* already gone */ }
+  }
+}
+
+function makeOutsideRefs() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wv-qwen-outside-'))
+  const produced = produceFixtureWav({ schemaVersion: 1, sampleRate: 24000, channels: 1, frameCount: 2400, pattern: 'EDGE_SEQUENCE' })
+  fs.writeFileSync(path.join(dir, 'ref.wav'), produced.value.bytes)
+  return { dir, dispose: () => fs.rmSync(dir, { recursive: true, force: true }) }
+}
+
+const CLONE_BINDINGS = [{ voiceId: 'clone-bound', name: '绑定音色', kind: 'clone', referenceRef: 'binding:demo-1' }]
+const cloneResolver = (binding) => (binding && binding.voiceId === 'clone-bound' ? { referenceRef: 'binding:demo-1' } : null)
+
+function cloneOptions(workspace) {
+  return {
+    modelDir: workspace.baseModel,
+    modelId: 'Qwen3-TTS-12Hz-1.7B-Base',
+    bindings: CLONE_BINDINGS,
+    bindingResolver: cloneResolver,
+  }
+}
+
+function cloneRequest() {
+  return {
+    request: { text: '克隆资源审计', language: 'zh-CN' },
+    context: { binding: { kind: 'clone', voiceId: 'clone-bound' } },
+  }
+}
+
 async function waitFor(predicate, timeoutMs = 5000) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
@@ -179,6 +219,15 @@ test('official worker maps CustomVoice through the real worker without loading a
       assert.equal(loaded[0].path, fs.realpathSync(workspace.customModel))
       assert.equal(loaded[0].local_files_only, true)
       assert.equal(loaded[0].trust_remote_code, false)
+      assert.equal(loaded[0].offline_env.HF_HUB_OFFLINE, '1')
+      assert.equal(loaded[0].offline_env.TRANSFORMERS_OFFLINE, '1')
+      for (const name of ['nested_AutoConfig', 'nested_AutoModel', 'nested_AutoProcessor']) {
+        assert.equal(calls.some((call) => call.event === name), true, name)
+      }
+      assert.equal(calls.filter((call) => call.event === 'top_network_attempt').every((call) => call.blocked === true), true)
+      const nestedAttempts = calls.filter((call) => call.event === 'nested_network_attempt')
+      assert.equal(nestedAttempts.length >= 3, true)
+      assert.equal(nestedAttempts.every((call) => call.blocked === true && call.error === 'NetworkBlocked'), true)
       const generated = calls.filter((call) => call.event === 'generate_custom_voice')
       assert.equal(generated.length, 1)
       assert.equal(generated[0].language, 'Chinese')
@@ -335,6 +384,236 @@ test('official worker cancellation keeps the ack and does not promote a later co
       assert.equal(result.code, PROVIDER_ERRORS.CANCELLED)
       await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
       assert.equal(supervisor.state().unresolvedOperations, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a changed model configuration is refused before any SDK call', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const configPath = path.join(workspace.baseModel, 'config.json')
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      config.tts_model_size = '0b6'
+      fs.writeFileSync(configPath, JSON.stringify(config))
+      const { request, context } = cloneRequest()
+      const synthesized = await provider.synthesize(request, { taskId: 'task-config-change', ...context })
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 an oversized clone reference is refused before any SDK call', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      fs.truncateSync(path.join(workspace.refs, 'ref.wav'), 20 * 1024 * 1024 + 1)
+      const { request, context } = cloneRequest()
+      const synthesized = await provider.synthesize(request, { taskId: 'task-ref-size', ...context })
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a junction or symlink escaping the allowed root is refused and recovered', { skip: pythonSkip, timeout: 120000 }, async (t) => {
+  const workspace = makeWorkspace()
+  const outside = makeOutsideRefs()
+  const refs = path.join(workspace.refs)
+  const refsReal = path.join(workspace.root, 'refs-real')
+  let linked = false
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      fs.renameSync(refs, refsReal)
+      try {
+        createDirLink(refs, outside.dir)
+        linked = true
+      } catch {
+        fs.renameSync(refsReal, refs)
+        t.skip('directory links are not permitted on this platform')
+        return
+      }
+      const { request, context } = cloneRequest()
+      const escaped = await provider.synthesize(request, { taskId: 'task-ref-escape', ...context })
+      assert.equal(escaped.ok, false)
+      assert.equal(escaped.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone').length, 0)
+      removeDirLink(refs)
+      fs.renameSync(refsReal, refs)
+      linked = false
+      const recovered = await provider.synthesize(request, { taskId: 'task-ref-escape', ...context })
+      assert.equal(recovered.ok, true, JSON.stringify(recovered.code || recovered.qwenCode))
+    })
+  } finally {
+    if (linked) {
+      removeDirLink(refs)
+      try { fs.renameSync(refsReal, refs) } catch { /* best effort */ }
+    }
+    outside.dispose()
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a missing direct runtime dependency fails closed at hello', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    fs.rmSync(path.join(workspace.runtime, 'soundfile'), { recursive: true, force: true })
+    const provider = createQwenProvider({
+      supervisor: makeSupervisor(workspace, [], {}),
+      requestTimeoutMs: 120000,
+    })
+    try {
+      const started = await provider.start()
+      assert.equal(started.ok, false)
+      assert.equal(started.code, PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE)
+      assert.equal(started.qwenCode, 'QWEN_DEPENDENCY_MISSING')
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+    } finally {
+      await provider.shutdown()
+    }
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R03 a cancel arriving with the request prevents the model load', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const begun = await provider.beginSynthesis(
+        { text: '预载取消', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-cancel-before-load' },
+      )
+      assert.equal(begun.ok, true)
+      const ack = await begun.cancel()
+      assert.equal(ack.ok, true)
+      assert.equal(ack.confirmed, true)
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.cancelled, true)
+      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
+      const calls = sdkCalls(workspace)
+      assert.equal(calls.filter((call) => call.event === 'from_pretrained').length, 0)
+      assert.equal(calls.filter((call) => call.event === 'generate_custom_voice').length, 0)
+      const after = await provider.synthesize(
+        { text: '取消后正常', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-cancel-before-load' },
+      )
+      assert.equal(after.ok, true, JSON.stringify(after.code || after.qwenCode))
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 1)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R03 a cancel during loading prevents generation', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中取消', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-cancel-during-load' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const ack = await begun.cancel()
+      assert.equal(ack.ok, true)
+      assert.equal(ack.confirmed, true)
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.cancelled, true)
+      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
+      const calls = sdkCalls(workspace)
+      assert.equal(calls.filter((call) => call.event === 'from_pretrained').length, 1)
+      assert.equal(calls.filter((call) => call.event === 'generate_custom_voice').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a model-directory link escaping the allowed root is refused and recovered', { skip: pythonSkip, timeout: 120000 }, async (t) => {
+  const workspace = makeWorkspace()
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wv-qwen-model-outside-'))
+  const outsideModel = path.join(outsideRoot, 'model')
+  fs.mkdirSync(outsideModel, { recursive: true })
+  fs.writeFileSync(path.join(outsideModel, 'config.json'), JSON.stringify(configFor('custom_voice', '1b7', { speakers: { Vivian: 1, Ryan: 2 } })))
+  const modelPath = workspace.customModel
+  const modelReal = path.join(workspace.root, 'models', 'custom-real')
+  let linked = false
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      fs.renameSync(modelPath, modelReal)
+      try {
+        createDirLink(modelPath, outsideModel)
+        linked = true
+      } catch {
+        fs.renameSync(modelReal, modelPath)
+        t.skip('directory links are not permitted on this platform')
+        return
+      }
+      const escaped = await provider.synthesize(
+        { text: '模型目录越界', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-model-escape' },
+      )
+      assert.equal(escaped.ok, false)
+      assert.equal(escaped.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+      removeDirLink(modelPath)
+      fs.renameSync(modelReal, modelPath)
+      linked = false
+      const recovered = await provider.synthesize(
+        { text: '恢复后正常', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-model-escape' },
+      )
+      assert.equal(recovered.ok, true, JSON.stringify(recovered.code || recovered.qwenCode))
+    })
+  } finally {
+    if (linked) {
+      removeDirLink(modelPath)
+      try { fs.renameSync(modelReal, modelPath) } catch { /* best effort */ }
+    }
+    fs.rmSync(outsideRoot, { recursive: true, force: true })
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a disappeared clone reference is refused before any SDK call', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      fs.rmSync(path.join(workspace.refs, 'ref.wav'))
+      const { request, context } = cloneRequest()
+      const synthesized = await provider.synthesize(request, { taskId: 'task-ref-missing', ...context })
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone').length, 0)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
     })
   } finally {
     workspace.dispose()

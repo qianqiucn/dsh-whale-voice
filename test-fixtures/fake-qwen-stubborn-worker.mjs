@@ -9,8 +9,13 @@
 
 import { produceFixtureWav } from '../core/audio/fixture-wav-producer.mjs'
 
+const argv = new Map(process.argv.slice(2).map((item) => {
+  const [key, ...rest] = item.split('=')
+  return [key.replace(/^--/, ''), rest.join('=')]
+}))
+const helloDelay = Number(argv.get('hello-delay') || 0)
 const backend = 'custom-voice'
-const model = 'Qwen3-TTS-12Hz-1.7B-Base'
+const model = 'Qwen3-TTS-12Hz-1.7B-CustomVoice'
 const VOICES = [
   { id: 'demo-voice-a', name: '示例音色 A', languages: ['zh-CN'] },
   { id: 'demo-voice-b', name: '示例音色 B', languages: ['zh-CN', 'en-US'] },
@@ -65,7 +70,7 @@ function handle(line) {
   if (!message || message.v !== 1 || typeof message.id !== 'string') return
   const { id, type, payload = {} } = message
   if (type === 'hello') {
-    send({
+    const ready = {
       v: 1,
       id,
       type: 'ready',
@@ -84,7 +89,9 @@ function handle(line) {
         loaded: false,
         state: 'ok',
       },
-    })
+    }
+    if (helloDelay > 0) setTimeout(() => send(ready), Math.min(helloDelay, 10000))
+    else send(ready)
     return
   }
   if (type === 'health') {

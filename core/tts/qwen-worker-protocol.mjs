@@ -53,12 +53,13 @@ const REQUEST_PAYLOAD_KEYS = Object.freeze({
 const READY_KEYS = new Set([
   'provider', 'model', 'backend', 'modelSize', 'instructSupported', 'qwenTtsVersion', 'workerVersion',
   'workerProtocol', 'languages', 'voices', 'limits', 'loaded', 'state', 'message', 'code',
+  'networkBlocked', 'dependencies',
 ])
 const RESULT_KEYS = new Set([
   'state', 'reason', 'mime', 'sampleRate', 'channels', 'durationMs', 'bytesBase64', 'model', 'backend',
   'voiceId', 'workerVersion', 'workerProtocol', 'qwenTtsVersion', 'models', 'voices', 'languages',
   'formats', 'limits', 'capabilities', 'requestId', 'warnings', 'loaded', 'closing', 'provider',
-  'message', 'code', 'modelSize', 'instructSupported',
+  'message', 'code', 'modelSize', 'instructSupported', 'networkBlocked', 'dependencies',
 ])
 const ERROR_KEYS = new Set(['code', 'message', 'reason', 'state', 'requestId'])
 const EVENT_KEYS = new Set(['requestId', 'state', 'message', 'code', 'loaded', 'closing'])
@@ -200,6 +201,7 @@ function validateReadyPayload(payload) {
   if (!Number.isInteger(payload.workerProtocol)) return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'workerProtocol')
   if (payload.qwenTtsVersion !== null && typeof payload.qwenTtsVersion !== 'string') return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'qwenTtsVersion')
   if (payload.instructSupported !== undefined && typeof payload.instructSupported !== 'boolean') return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'instructSupported')
+  if (payload.networkBlocked !== undefined && typeof payload.networkBlocked !== 'boolean') return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'networkBlocked')
   if (payload.languages !== undefined && (!Array.isArray(payload.languages) || payload.languages.some((item) => typeof item !== 'string'))) {
     return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'languages')
   }

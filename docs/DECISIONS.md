@@ -403,6 +403,17 @@ terminated without crashing the host. Per-generation ownership prevents a late e
 process from releasing or killing a new one. Protocol depth/node bounds are required because the
 2 MiB line cap alone did not stop a small deeply nested JSON payload from exhausting the host stack.
 
+The 095 repair tightens the same boundary at actual use: trusted local resources (model directory,
+configuration digest, clone reference) are re-audited immediately before each SDK call and the
+reference inode is held for the generation, so a post-health junction, deletion or replacement is
+refused rather than passed to the SDK. The worker sets offline environment variables and installs an
+in-process network guard before importing the official package, covering the nested
+AutoConfig/AutoModel/AutoProcessor chain; a missing directly imported dependency fails closed at
+hello/health without loading a model. Cancellation is split into request, trusted acknowledgement,
+actual stop and final result, and an operation is released only by a terminal message correlated
+through its issued message id, claimed request id and generation. A start/stop race keeps admission
+closed instead of re-opening it after the handshake.
+
 **Rejected alternatives:** Importing `qwen_tts`/torch inside Core; trusting a worker-declared model
 name without an audited model identity and a matching local `config.json`; passing reference audio
 paths, URLs or base64 through the protocol; accepting `ok` from any response type; treating a kill

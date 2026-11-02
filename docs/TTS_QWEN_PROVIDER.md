@@ -32,7 +32,10 @@ Provider 候选：固定上游元数据、官方 SDK 惰性 worker、Provider �
 静态依赖盘点来自固定 `pyproject.toml`：`transformers==4.57.3`、`accelerate==1.12.0`、
 `gradio`、`librosa`、`torchaudio`、`soundfile`、`sox`、`onnxruntime`、`einops`。上游未逐项声明
 许可，故全部为 **UNKNOWN**；Tokenizer 身份/版本只有在真实加载后才能确认，当前也是 **UNKNOWN**。
-安装/权重/私人素材权利皆未验证。
+安装/权重/私人素材权利皆未验证。固定上游的加载链为 `AutoConfig` + `AutoModel.from_pretrained` +
+`AutoProcessor.from_pretrained(<本地目录>)`，speech tokenizer 属于模型权重；worker 在导入官方包
+之前设置 `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1` 并安装进程内网络 guard，嵌套加载器一旦尝试
+联网即失败关闭。`qwenMetadataInventory().loadingBoundary` 记录该边界。
 
 ## 2. 能力矩阵（互不混用）
 
@@ -69,8 +72,19 @@ Provider 候选：固定上游元数据、官方 SDK 惰性 worker、Provider �
   - `voice-design` 不暴露；其余 modality 直接拒绝。
 - 克隆参考音频只从 `--binding-index` 的 `token → {file, text}` 解析，文件必须是允许根内的普通
   文件且 ≤20 MiB；协议里永远不会出现路径、URL、base64 或命令。
-- 同一时间只允许一个合成；`cancel` 立即回 ack 并置取消标记，但**ack 不等于实际停止**，正在
-  运行的生成结束后才会发终止结果；迟到结果不会被晋升为成功。
+- **实际使用边界重新审计**：启动时缓存模型目录/`config.json` 摘要与参考文件的 dev/ino/size；
+  每次合成在 SDK 调用前重新检查允许根归属、存在性、普通文件、大小与身份。模型/配置/参考被替换、
+  删除、改成 junction/symlink 越界或超出 20 MiB 时，在 `from_pretrained`/`generate_*` 之前以
+  `QWEN_RESOURCE_CHANGED` 拒绝；参考文件在整个生成期间保持打开的 fd 与身份校验。
+- **网络 guard**：导入官方包前设置离线环境变量并替换 `socket.socket.connect`、
+  `socket.create_connection`、`urllib.request.urlopen`；嵌套 `AutoConfig`/`AutoModel`/
+  `AutoProcessor` 的缺失回退若尝试联网会得到 `QWEN_NETWORK_BLOCKED`，不会静默下载。
+- **直接依赖健康**：启动时用 `importlib.util.find_spec` 检查 worker 直接导入的 `qwen_tts` 与
+  `soundfile`（不 import 重型包）；缺任一或包版本不符即 `hello` 失败关闭，后续不会加载模型。
+- 同一时间只允许一个合成；`cancel` 立即回 ack 并置取消标记，但**ack 不等于实际停止**；如果取消
+  在加载开始前到达，worker 在 50 ms 预检窗口内直接返回 `cancelled` 而不加载；加载中取消则在加载
+  结束后、`generate_*` 之前返回 `cancelled`。正在运行的生成结束后才会发终止结果，迟到结果不会
+  被晋升为成功。
 - 输出先写自身临时目录的 WAV，再读回 base64；超过 1 MiB 或格式/时长不符则失败。worker 不写
   资产库、不创建 Task、不发起网络、不打印敏感内容；错误只回固定码与短消息。
 - 缺少包/版本不符/配置矛盾/资源越界都会在 `hello` 阶段失败关闭，不会先启动模型再报错。
@@ -99,12 +113,18 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
 - 只在显式配置（`worker.command` + `allowedRoot`，可选 `runtime`）下启动；**无默认命令、无隐式
   启动**。`command` 必须位于允许根内（真实路径校验）；`runtime` 必须是既有绝对路径；
   `shell:false`，只给 `WV_QWEN_PROTOCOL`/`WV_QWEN_TMP`，不继承主机环境。
-- **代际所有权**：每次 start 生成一个 generation，stdout/stderr、pending、临时目录、退出句柄都
-  属于该代；旧代事件（包括迟到 stdout 与 `error`）不能触碰新代。
+- **代际所有权**：每次 start 生成一个 generation，stdout/stderr、pending、操作表、临时目录、
+  退出句柄都属于该代；旧代事件（包括迟到 stdout 与 `error`）不能触碰新代。
+- **操作关联**：每个合成记录 requestId、已签发 messageId、操作状态（ACTIVE/UNRESOLVED）与代际。
+  没有 pending 的迟到 result/error 只有在其**已签发 messageId** 与 claimed requestId 都匹配时才能
+  释放该操作；从未签发的 messageId、cancel messageId、progress 事件、错误 claimed id 都不能清除
+  别的工作。类型不匹配的 pending 会结算为 UNKNOWN 并保留未决占用。
 - `error` 事件**不等于退出**：句柄、pending 与临时目录继续归旧代所有，只有真实 `exit`/`close`
   才结算。
-- `stop()` 先关闭新工作准入（关闭中合成返回 `QWEN_STOPPING`），再 `shutdown` → 宽限期 →
-  仅杀自己的 PID；**只有确认退出才释放**。未确认退出返回 `QWEN_EXIT_UNCONFIRMED` 并保留句柄。
+- `stop()` 同步标记 `stopRequested` 并关闭准入；握手完成时若同代 stop 意图已存在，start 不会
+  重新 `accepting=true`，返回 `QWEN_STOPPING`。`shutdown` → 宽限期 → 仅杀自己的 PID；
+  **只有确认退出才释放**。未确认退出返回 `QWEN_EXIT_UNCONFIRMED` 并保留句柄，后续合成继续
+  被 `QWEN_STOPPING` 拒绝。
 - 临时目录清理失败不吞掉：进入 `retainedTempDirs`，`tempDirActive` 保持 true，`stop()` 返回
   `QWEN_CLEANUP_INCOMPLETE`；后续 start/stop 会重试清理，不以新 start 覆盖旧归属。
 - 只管理自己启动的子进程；退出/崩溃后不重启、不重试；stdout 有界（4 MiB）与 stderr 有界
@@ -122,6 +142,9 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
 - `normalizeQwenDiscovery`：`models`/`languages`/`limits` 必须显式非空且合法，不再用
   `zh-CN` 或 200 字默认值补洞；worker 声明更小的限额（如 `maxChars=1`）会按更小值生效。
   预设/克隆分离；克隆必须有可信登记绑定；预设后端无音色 → 不可用。
+- **能力交集是绑定约束**：某 voice 明确声明的语言与全局语言没有交集时跳过该 voice（不把空交集
+  解释成“全局可用”）；全部无交集则不可用。产物时长按 manifest 的 `maxAudioSeconds` 校验，
+  执行期限取 `min(provider 配置, manifest.timeoutMs)`；worker 公布的更小上限不会被扩大。
 - `validateQwenOutput`：先核对 in-flight 身份（`requestId`/`model`/`backend`/`voiceId` 四项全等），
   再 base64 严格解码 → 字节上限 → 复用 `core/audio/wav-byte-inspector.mjs` 校验
   WAV/PCM16/采样率/声道/时长/峰值/hash → 与 worker 声明格式逐项比对 → 生成 Provider 中立结果。
@@ -138,8 +161,13 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
 - 终态保留真实语义：worker 明确 error `QWEN_UNKNOWN_RESULT` → `unknown:true`；`result.state` 为
   `unknown` → UNKNOWN；为 `cancelled` → `cancelled:true, unknown:false`。已知未知不会被包装成
   确定失败，也不会自动重试。
-- 取消：`beginSynthesis()` 返回同步可用的 `{requestId, cancel, result}` 句柄；取消确认后原请求
-  立即结算为 `CANCELLED`，迟到 success 只计 `lateResponses` 并清除占用，不晋升成功。
+- 取消事实分四层：请求、可信 ack、实际停止、最终结果。`beginSynthesis()` 返回
+  `{requestId, cancel, result}` 句柄；只有 ack 的 `requestId` 与请求一致且 `state='cancelled'` 时，
+  原请求才结算为 `CANCELLED`（`cancelConfirmed:true, stopped:false`）。取消被拒绝、ack 超时、
+  身份不符或只收到 progress 事件时返回 `QWEN_CANCEL_NOT_CONFIRMED`，原请求不被改成确定取消；
+  ack 不等于实际停止，操作保持 `UNRESOLVED` 直到收到正确关联的终止结果或确认退出。迟到 success
+  只计 `lateResponses`，不晋升成功；正确关联的 UNKNOWN 终止可释放占用，但“结果未知”与“执行已
+  结束”仍是两个判断。从未签发的 messageId、cancel messageId 或无关 claimed id 不能清除占用。
 - Task 关联：`provider.synthesize(request, { taskId })` 要求调用方传入既有权威签发的 `taskId`，
   只把它回显在结果里；可选择传入 `taskAuthority(taskId)` 复核既有权威状态（CREATED/PROCESSING），
   未确认则拒绝。Provider 不创建/分配 Task，不写目录，不触碰 owner/catalog。Fake 证据使用
@@ -151,19 +179,27 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
 - `test-fixtures/fake-qwen-worker.mjs`：自有 Fake 子进程，走**同一条** supervisor/协议路径；
   不加载模型、不联网、不写文件，按 argv 选择成功/错误/崩溃/超时/迟到/取消/坏字节/坏格式/超大/
   无音色/版本不符/无关服务/未审计模型/错误协议版本/空 models/空 languages/无 limits/极小限额/
-  深嵌套/事件冒结果/输出身份篡改等模式。
+  深嵌套/事件冒结果/输出身份篡改/幽灵消息/取消拒绝/进度 ack/错误 ack 身份/迟到进度/
+  语言冲突/音频时限/小 timeout 等模式。
 - `test-fixtures/fake-qwen-sdk/`：**测试专用** Fake `qwen_tts` + `soundfile`，通过官方 worker 的
   显式 `--runtime-dir` 注入；记录 `from_pretrained`/`generate_custom_voice`/`generate_voice_clone`
-  调用，用于证明“静态阶段不加载、合成才加载”和官方参数映射。它不包含任何 torch/权重/网络。
+  调用、离线环境变量、嵌套 `AutoConfig`/`AutoModel`/`AutoProcessor` 调用以及被 guard 拒绝的网络
+  尝试，用于证明“静态阶段不加载、合成才加载”、官方参数映射和嵌套加载器不回退联网。它不包含
+  任何 torch/权重/真实网络。
 - `test/qwen-provider.test.mjs`（25 项）：能力矩阵/元数据盘点、模态互斥、协议有界解析与信封/
   类型检查、健康身份与能力交集、发现缺省拒绝、无隐式启动、权威 Task 签发贯穿、请求门禁、
   字节/格式/限额、clone 实际身份、输出四项身份、UNKNOWN/CANCELLED 终态、超时/重入占用、迟到不
   晋升、取消句柄、期限约束、深嵌套隔离、未确认停止、error≠exit 代际、关闭中拒绝新工作、清理失败
   可重试。
-- `test/qwen-official-worker.test.mjs`（4 项，Python 3 可用时执行）：CustomVoice 官方映射、
-  Base 克隆本地引用映射、缺包/配置矛盾/资源越界失败关闭、官方 worker 取消 ack 与迟到结果。
-- 若执行环境禁止子进程管道（EPERM）或没有 Python 3，对应测试按平台跳过并在报告中注明；不得用
-  内存 mock 替代进程生命周期证据。
+- `test/qwen-official-worker.test.mjs`（12 项，Python 3 可用时执行）：CustomVoice 官方映射与
+  嵌套加载/离线 guard、Base 克隆本地引用映射、缺包/配置矛盾/资源越界失败关闭、取消 ack 与迟到
+  结果、模型配置变更/参考超限/参考消失/junction 越界/模型目录 junction 越界、缺 `soundfile`
+  直接依赖、加载前与加载中取消。
+- `test/qwen-095-repair.test.mjs`（12 项）：语音语言空交集、产物时长上限、小 timeout 生效、
+  取消拒绝/超时/错身份/progress、幽灵 messageId、错误身份/类型占用、正确关联 UNKNOWN 释放、
+  错误 claimed 迟到、迟到 progress、启停竞态。
+- 若执行环境禁止子进程管道（EPERM）、目录链接或没有 Python 3，对应测试按平台跳过并在报告中注明；
+  不得用内存 mock 替代进程生命周期证据。
 
 ## 9. 明确未完成（Plan10 集成 OPEN）
 

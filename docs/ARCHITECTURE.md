@@ -174,12 +174,17 @@ committed API key. Qwen3-TTS is the current reference implementation, not a glob
 **Qwen local worker (10-A candidate, OFFLINE):** the Qwen3-TTS provider is a separate explicitly
 configured child process (`workers/qwen3_tts_worker.py`) behind a narrow versioned NDJSON protocol and
 `core/tts/qwen-supervisor.mjs`. Core never imports `qwen_tts`/torch itself. The worker loads the
-audited package and local model only on a real synthesis, with `local_files_only=True` and references
-restricted to a trusted local index inside an explicit allowed root. Each supervisor start owns one
-process generation; an `error` event is not an exit, an unconfirmed exit is a failure, and failed
-temp cleanup stays owned/retryable. The provider result is non-persisted (`PENDING_ROUTER`) and the
-provider never creates a Task or sends WeChat. Real model/Host/Artifact integration remains OPEN; see
-[TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).
+audited package and local model only on a real synthesis, with `local_files_only=True`; it sets
+offline environment variables and installs an in-process network guard before the import so the
+nested loader chain cannot download, and it re-audits the model directory, configuration digest and
+trusted clone reference immediately before each SDK call (realpath inside the allowed root,
+existence, size, dev/ino, held fd) instead of trusting a startup snapshot. Each supervisor start owns
+one process generation with an operation table; an `error` event is not an exit, an unconfirmed exit
+is a failure, failed temp cleanup stays owned/retryable, and occupancy is released only by a terminal
+message correlated through its issued message id, request id and generation. The provider result is
+non-persisted (`PENDING_ROUTER`) and the provider never creates a Task or sends WeChat. Real
+model/Host/Artifact integration remains OPEN; see [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and
+[ADR-018](DECISIONS.md).
 
 **SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
 speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but

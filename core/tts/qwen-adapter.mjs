@@ -47,6 +47,10 @@ const PROVIDER_CODE_BY_QWEN = Object.freeze({
   [QWEN_ERRORS.OUTPUT_FORMAT_MISMATCH]: PROVIDER_ERRORS.UNSUPPORTED_FORMAT,
   [QWEN_ERRORS.OUTPUT_TOO_LARGE]: PROVIDER_ERRORS.INVALID_RESPONSE,
   [QWEN_ERRORS.OUTPUT_IDENTITY_MISMATCH]: PROVIDER_ERRORS.INVALID_RESPONSE,
+  [QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH]: PROVIDER_ERRORS.INVALID_RESPONSE,
+  [QWEN_ERRORS.CANCEL_NOT_CONFIRMED]: PROVIDER_ERRORS.PROVIDER_ERROR,
+  [QWEN_ERRORS.NETWORK_BLOCKED]: PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE,
+  [QWEN_ERRORS.RESOURCE_CHANGED]: PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE,
   [QWEN_ERRORS.UNRELATED_SERVICE]: PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE,
   [QWEN_ERRORS.VERSION_MISMATCH]: PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE,
   [QWEN_ERRORS.WORKER_PROTOCOL_MISMATCH]: PROVIDER_ERRORS.PROVIDER_NOT_AVAILABLE,
@@ -189,7 +193,16 @@ export function normalizeQwenDiscovery({ ready = null, discovery = null, binding
     const declared = discovery && Array.isArray(discovery.voices) ? discovery.voices : []
     for (const voice of declared) {
       if (!voice || typeof voice.id !== 'string' || !/^[a-z][a-z0-9-]{1,63}$/.test(voice.id)) continue
-      const languages = (Array.isArray(voice.languages) ? voice.languages : []).filter((item) => declaredLanguages.includes(item))
+      const declaredVoiceLanguages = Array.isArray(voice.languages)
+        ? voice.languages.filter((item) => typeof item === 'string')
+        : []
+      /* An explicit voice language list that does not intersect the audited global list is a real
+       * conflict: skip the voice instead of letting the provider contract treat an empty list as
+       * "all global languages". */
+      const languages = declaredVoiceLanguages.length > 0
+        ? declaredVoiceLanguages.filter((item) => declaredLanguages.includes(item))
+        : [...declaredLanguages]
+      if (declaredVoiceLanguages.length > 0 && languages.length === 0) continue
       voices.push({ id: voice.id, name: voice.name || voice.id, kind: 'preset', languages })
     }
   } else {
@@ -237,6 +250,7 @@ export function validateQwenOutput({
   emotion,
   createdAt = null,
   maxBytes = QWEN_LIMITS.maxBytes,
+  maxAudioSeconds = QWEN_LIMITS.maxAudioSeconds,
 } = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { ok: false, code: QWEN_ERRORS.OUTPUT_INVALID }
   if (payload.requestId !== requestId) return { ok: false, code: QWEN_ERRORS.OUTPUT_IDENTITY_MISMATCH, field: 'requestId' }
@@ -258,7 +272,7 @@ export function validateQwenOutput({
   if (value.sampleRate !== QWEN_LIMITS.sampleRate || value.channels !== QWEN_LIMITS.channels) {
     return { ok: false, code: QWEN_ERRORS.OUTPUT_FORMAT_MISMATCH }
   }
-  if (durationMs > QWEN_LIMITS.maxAudioSeconds * 1000) return { ok: false, code: QWEN_ERRORS.OUTPUT_TOO_LARGE }
+  if (durationMs > maxAudioSeconds * 1000) return { ok: false, code: QWEN_ERRORS.OUTPUT_TOO_LARGE }
   if (payload.sampleRate !== undefined && payload.sampleRate !== value.sampleRate) return { ok: false, code: QWEN_ERRORS.OUTPUT_FORMAT_MISMATCH }
   if (payload.channels !== undefined && payload.channels !== value.channels) return { ok: false, code: QWEN_ERRORS.OUTPUT_FORMAT_MISMATCH }
   if (payload.mime !== undefined && payload.mime !== mime) return { ok: false, code: QWEN_ERRORS.OUTPUT_FORMAT_MISMATCH }
@@ -452,6 +466,13 @@ export function createQwenProvider(options = {}) {
     })
     if (!checked.ok) return { ok: false, code: checked.code, status: checked.status || null }
     const startedAt = now()
+    /* The published capability intersection is binding: a worker-declared smaller timeout or audio
+     * duration cap must win over the provider configuration, never be widened back to the global
+     * batch defaults. */
+    const effectiveTimeoutMs = Math.max(
+      QWEN_LIMITS.minRequestTimeoutMs,
+      Math.min(requestTimeoutMs, manifest.capabilities.limits.timeoutMs),
+    )
     const payload = {
       requestId,
       text: request.text,
@@ -466,7 +487,7 @@ export function createQwenProvider(options = {}) {
     }
     if (modality.modality === 'clone') payload.bindingRef = voice.referenceRef
     const result = (async () => {
-      const answer = await supervisor.synthesize(payload, { timeoutMs: requestTimeoutMs })
+      const answer = await supervisor.synthesize(payload, { timeoutMs: effectiveTimeoutMs })
       if (!answer.ok) {
         const code = answer.code || QWEN_ERRORS.WORKER_UNAVAILABLE
         if (code === QWEN_ERRORS.CANCELLED || answer.cancelled === true) {
@@ -510,6 +531,7 @@ export function createQwenProvider(options = {}) {
         emotion: checked.emotion,
         createdAt: now(),
         maxBytes: QWEN_LIMITS.maxBytes,
+        maxAudioSeconds: manifest.capabilities.limits.maxAudioSeconds,
       })
       if (!output.ok) {
         return {
@@ -544,6 +566,7 @@ export function createQwenProvider(options = {}) {
       requestId,
       voiceId: checked.voiceId,
       modality: modality.modality,
+      timeoutMs: effectiveTimeoutMs,
       result,
       cancel: () => supervisor.cancel(requestId, { timeoutMs: QWEN_LIMITS.cancelAckTimeoutMs }),
     }

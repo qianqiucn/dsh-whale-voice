@@ -17,13 +17,18 @@
 # never touches WeChat, the DSH host or production configuration.
 
 import base64
+import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import os
 import re
+import socket
+import stat
 import sys
 import tempfile
 import threading
+import urllib.request
 
 PROTOCOL_VERSION = 1
 MAX_LINE_BYTES = 2 * 1024 * 1024
@@ -60,6 +65,8 @@ ERRORS = {
     "INVALID_INPUT": "QWEN_INVALID_INPUT",
     "WORKER_NOT_CONFIGURED": "QWEN_WORKER_NOT_CONFIGURED",
     "RESOURCE_UNVERIFIED": "QWEN_RESOURCE_UNVERIFIED",
+    "RESOURCE_CHANGED": "QWEN_RESOURCE_CHANGED",
+    "NETWORK_BLOCKED": "QWEN_NETWORK_BLOCKED",
     "MODEL_MISMATCH": "QWEN_MODEL_MISMATCH",
     "MODEL_BACKEND_MISMATCH": "QWEN_MODEL_BACKEND_MISMATCH",
     "DEPENDENCY_MISSING": "QWEN_DEPENDENCY_MISSING",
@@ -96,10 +103,115 @@ LOADED = False
 ACTIVE_REQUEST = None
 CANCEL_EVENTS = {}
 CANCEL_LOCK = threading.Lock()
+MODEL_AUDIT = None
+NETWORK_GUARDED = False
+DIRECT_DEPENDENCIES = {"qwenTts": False, "soundfile": False}
 
 
 class DependencyMissing(Exception):
     """The audited upstream package is absent from the configured local runtime."""
+
+
+class ResourceChanged(Exception):
+    """A trusted local resource disappeared, escaped its root or changed after it was audited."""
+
+
+class NetworkBlocked(Exception):
+    """The worker's in-process guard refused a network access attempt."""
+
+
+def install_network_guard():
+    """Disable outbound network access for the whole worker process before the official import.
+
+    Upstream loaders may otherwise fall back to a download when a local file is missing. This guard
+    is process-wide and covers nested loaders (AutoConfig/AutoModel/AutoProcessor) as well as the
+    reference-audio helper; the worker never needs a network.
+    """
+    global NETWORK_GUARDED
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    if NETWORK_GUARDED:
+        return
+
+    def blocked(*_args, **_kwargs):
+        raise NetworkBlocked("network access is disabled for the Qwen worker")
+
+    try:
+        socket.socket.connect = lambda self, *args, **kwargs: blocked()
+        socket.create_connection = blocked
+        urllib.request.urlopen = blocked
+    except (AttributeError, TypeError):
+        # A platform that forbids monkey-patching still has the offline environment variables; the
+        # guard flag stays false so health can report the weaker state honestly.
+        return
+    NETWORK_GUARDED = True
+
+
+def module_available(name):
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
+
+
+def audit_model():
+    """Re-check the trusted local model directory right before it is actually used."""
+    if MODEL_AUDIT is None:
+        raise ResourceChanged("the model directory was not audited")
+    allowed_root = ARGS.get("allowed-root")
+    real = inside(allowed_root, MODEL_AUDIT["real"])
+    if real is None or real != MODEL_AUDIT["real"] or not os.path.isdir(real):
+        raise ResourceChanged("the model directory escaped or disappeared")
+    st = os.stat(real)
+    if (st.st_dev, st.st_ino) != (MODEL_AUDIT["dev"], MODEL_AUDIT["ino"]):
+        raise ResourceChanged("the model directory identity changed")
+    config_path = inside(allowed_root, MODEL_AUDIT["config"])
+    if config_path is None or config_path != MODEL_AUDIT["config"] or not os.path.isfile(config_path):
+        raise ResourceChanged("the model configuration disappeared")
+    try:
+        if os.path.getsize(config_path) > MAX_CONFIG_BYTES:
+            raise ResourceChanged("the model configuration grew beyond its budget")
+        with open(config_path, "rb") as handle:
+            payload = handle.read(MAX_CONFIG_BYTES + 1)
+    except OSError as error:
+        raise ResourceChanged("the model configuration is unreadable") from error
+    if len(payload) > MAX_CONFIG_BYTES or hashlib.sha256(payload).hexdigest() != MODEL_AUDIT["configDigest"]:
+        raise ResourceChanged("the model configuration changed after it was audited")
+
+
+def open_reference(token):
+    """Re-audit a trusted clone reference and hold its inode for the duration of the SDK call."""
+    stored = BINDING_INDEX.get(token)
+    if not stored:
+        raise ResourceChanged("the trusted clone binding is unknown")
+    allowed_root = ARGS.get("allowed-root")
+    real = inside(allowed_root, stored["file"])
+    if real is None or real != stored["real"]:
+        raise ResourceChanged("the clone reference escaped the allowed root")
+    try:
+        st = os.stat(real)
+    except OSError as error:
+        raise ResourceChanged("the clone reference disappeared") from error
+    if not stat.S_ISREG(st.st_mode):
+        raise ResourceChanged("the clone reference is not a regular file")
+    if st.st_size > MAX_REFERENCE_BYTES:
+        raise ResourceChanged("the clone reference exceeds its size budget")
+    if (st.st_dev, st.st_ino, st.st_size) != (stored["dev"], stored["ino"], stored["size"]):
+        raise ResourceChanged("the clone reference changed after it was audited")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    try:
+        fd = os.open(real, flags)
+    except OSError as error:
+        raise ResourceChanged("the clone reference cannot be opened") from error
+    try:
+        held = os.fstat(fd)
+        if (held.st_dev, held.st_ino, held.st_size) != (stored["dev"], stored["ino"], stored["size"]):
+            raise ResourceChanged("the clone reference changed while it was held")
+    except Exception:
+        os.close(fd)
+        raise
+    return fd, real
 
 
 def emit(message):
@@ -196,7 +308,23 @@ def load_binding_index(index_path, allowed_root):
         if text is not None and not isinstance(text, str):
             start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding text must be a string")
             return {}
-        result[token] = {"file": resolved, "text": text}
+        try:
+            st = os.stat(resolved)
+        except OSError:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding file is unreadable")
+            return {}
+        if not stat.S_ISREG(st.st_mode):
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding file is not a regular file")
+            return {}
+        result[token] = {
+            "file": resolved,
+            "real": resolved,
+            "text": text,
+            "dev": st.st_dev,
+            "ino": st.st_ino,
+            "size": st.st_size,
+            "mtimeNs": st.st_mtime_ns,
+        }
     return result
 
 
@@ -237,7 +365,7 @@ def discover_languages(config):
 
 def load_configuration():
     global MODEL_DIR, MODEL_ID, BACKEND, MODEL_TYPE, MODEL_SIZE, INSTRUCT_SUPPORTED
-    global LANGUAGES, VOICES, BINDING_INDEX, PACKAGE_VERSION_DETECTED
+    global LANGUAGES, VOICES, BINDING_INDEX, PACKAGE_VERSION_DETECTED, MODEL_AUDIT
 
     model_dir = ARGS.get("model-dir")
     allowed_root = ARGS.get("allowed-root")
@@ -255,14 +383,55 @@ def load_configuration():
     if resolved is None or not os.path.isdir(resolved):
         start_error(ERRORS["RESOURCE_UNVERIFIED"], "the model directory escapes the allowed root")
         return
-    config = read_json_file(os.path.join(resolved, "config.json"), MAX_CONFIG_BYTES)
+    runtime_dir = ARGS.get("runtime-dir")
+    if runtime_dir:
+        if not isinstance(runtime_dir, str) or not os.path.isabs(runtime_dir):
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "the runtime directory must be an absolute local path")
+            return
+        if inside(allowed_root, runtime_dir) is None or not os.path.isdir(runtime_dir):
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "the runtime directory escapes the allowed root")
+            return
+    config_path = os.path.join(resolved, "config.json")
+    config_real = inside(allowed_root, config_path)
+    if config_real is None or not os.path.isfile(config_real):
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is missing or escapes the root")
+        return
+    try:
+        if os.path.getsize(config_real) > MAX_CONFIG_BYTES:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is oversized")
+            return
+        with open(config_real, "rb") as handle:
+            config_bytes = handle.read(MAX_CONFIG_BYTES + 1)
+    except OSError:
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is unreadable")
+        return
+    if len(config_bytes) > MAX_CONFIG_BYTES:
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is oversized")
+        return
+    try:
+        config = json.loads(config_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is not valid JSON")
+        return
     if not isinstance(config, dict):
-        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is unreadable or oversized")
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the local model configuration is not an object")
         return
     backend, expected_type, expected_size = AUDITED_MODELS[model_id]
     if config.get("tts_model_type") != expected_type or config.get("tts_model_size") != expected_size:
         start_error(ERRORS["MODEL_BACKEND_MISMATCH"], "the local model configuration contradicts the model identity")
         return
+    try:
+        model_stat = os.stat(resolved)
+    except OSError:
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], "the model directory is unreadable")
+        return
+    MODEL_AUDIT = {
+        "real": resolved,
+        "config": config_real,
+        "configDigest": hashlib.sha256(config_bytes).hexdigest(),
+        "dev": model_stat.st_dev,
+        "ino": model_stat.st_ino,
+    }
     MODEL_DIR = resolved
     MODEL_ID = model_id
     BACKEND = backend
@@ -280,9 +449,16 @@ def load_configuration():
     BINDING_INDEX = load_binding_index(ARGS.get("binding-index"), allowed_root)
     if START_ERROR:
         return
+    install_network_guard()
     PACKAGE_VERSION_DETECTED = detect_package_version(ARGS.get("runtime-dir"))
+    DIRECT_DEPENDENCIES["qwenTts"] = module_available("qwen_tts")
+    DIRECT_DEPENDENCIES["soundfile"] = module_available("soundfile")
     if PACKAGE_VERSION_DETECTED != PACKAGE_VERSION:
         start_error(ERRORS["DEPENDENCY_MISSING"], "the audited qwen-tts package version was not found locally")
+        return
+    if not DIRECT_DEPENDENCIES["qwenTts"] or not DIRECT_DEPENDENCIES["soundfile"]:
+        start_error(ERRORS["DEPENDENCY_MISSING"], "a directly imported runtime dependency is missing")
+        return
 
 
 def ready_payload():
@@ -303,19 +479,22 @@ def ready_payload():
             "timeoutMs": REQUEST_TIMEOUT_MS,
         },
         "loaded": LOADED,
+        "networkBlocked": NETWORK_GUARDED,
+        "dependencies": dict(DIRECT_DEPENDENCIES),
         "state": "ok",
     }
 
 
 def ensure_runtime():
     global QWEN_TTS, SOUNDFILE
+    install_network_guard()
     if QWEN_TTS is not None and SOUNDFILE is not None:
         return QWEN_TTS, SOUNDFILE
     runtime_dir = ARGS.get("runtime-dir")
     if isinstance(runtime_dir, str) and runtime_dir:
         runtime_real = inside(ARGS.get("allowed-root"), runtime_dir) if ARGS.get("allowed-root") else None
         if runtime_real is None:
-            raise RuntimeError("runtime directory escapes the allowed root")
+            raise ResourceChanged("runtime directory escapes the allowed root")
     try:
         import qwen_tts  # noqa: F401  (lazy: only a real synthesis imports the heavy package)
         import soundfile  # noqa: F401
@@ -330,6 +509,7 @@ def ensure_model():
     global MODEL, LOADED
     if MODEL is not None:
         return MODEL
+    audit_model()
     qwen, _soundfile = ensure_runtime()
     MODEL = qwen.Qwen3TTSModel.from_pretrained(
         MODEL_DIR,
@@ -410,18 +590,60 @@ def synthesize_once(message):
     thread.start()
 
 
+def emit_cancelled(message, payload, request_id):
+    emit({
+        "v": PROTOCOL_VERSION,
+        "id": message["id"],
+        "type": "result",
+        "payload": {
+            "state": "cancelled",
+            "requestId": request_id,
+            "model": MODEL_ID,
+            "backend": BACKEND,
+            "voiceId": payload.get("voiceId"),
+        },
+    })
+
+
 def run_synthesis(message, payload):
     global ACTIVE_REQUEST, MODEL
     request_id = payload["requestId"]
     event = CANCEL_EVENTS.get(request_id)
+    ref_fd = None
+    ref_path = None
     try:
+        # A short pre-flight window lets a cancellation that arrives together with the request stop
+        # an operation that has not started loading yet. It does not claim to interrupt a real
+        # generation that is already running.
+        if event is not None and event.wait(0.05):
+            emit_cancelled(message, payload, request_id)
+            return
+        try:
+            audit_model()
+            if payload["modality"] == "clone":
+                ref_fd, ref_path = open_reference(payload["bindingRef"])
+        except ResourceChanged as error:
+            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+            return
+        if event is not None and event.is_set():
+            emit_cancelled(message, payload, request_id)
+            return
         try:
             model = ensure_model()
         except DependencyMissing:
             fail(message["id"], ERRORS["DEPENDENCY_MISSING"], "the local qwen-tts package is not importable", request_id)
             return
+        except NetworkBlocked:
+            fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+            return
+        except ResourceChanged as error:
+            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+            return
         except Exception:
             fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local model could not be loaded", request_id)
+            return
+        if event is not None and event.is_set():
+            emit_cancelled(message, payload, request_id)
             return
         try:
             if payload["modality"] == "preset":
@@ -436,26 +658,18 @@ def run_synthesis(message, payload):
                 wavs, samplerate = model.generate_voice_clone(
                     text=payload["text"],
                     language=LANGUAGE_OUT[payload["language"]],
-                    ref_audio=binding["file"],
+                    ref_audio=ref_path,
                     ref_text=binding.get("text"),
                     x_vector_only_mode=binding.get("text") is None,
                 )
+        except NetworkBlocked:
+            fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+            return
         except Exception as error:
             fail(message["id"], ERRORS["PROVIDER_NOT_READY"], "the local synthesis failed (" + type(error).__name__ + ")", request_id)
             return
         if event is not None and event.is_set():
-            emit({
-                "v": PROTOCOL_VERSION,
-                "id": message["id"],
-                "type": "result",
-                "payload": {
-                    "state": "cancelled",
-                    "requestId": request_id,
-                    "model": MODEL_ID,
-                    "backend": BACKEND,
-                    "voiceId": payload.get("voiceId"),
-                },
-            })
+            emit_cancelled(message, payload, request_id)
             return
         if not isinstance(wavs, (list, tuple)) or not wavs:
             fail(message["id"], ERRORS["OUTPUT_INVALID"], "the local model returned no audio", request_id)
@@ -481,9 +695,18 @@ def run_synthesis(message, payload):
                 "requestId": request_id,
             },
         })
+    except NetworkBlocked:
+        fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+    except ResourceChanged as error:
+        fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
     except Exception as error:  # noqa: BLE001 — never leave the caller without a terminal answer
         fail(message["id"], ERRORS["OUTPUT_INVALID"], "the worker could not complete the synthesis (" + type(error).__name__ + ")", request_id)
     finally:
+        if ref_fd is not None:
+            try:
+                os.close(ref_fd)
+            except OSError:
+                pass
         with CANCEL_LOCK:
             ACTIVE_REQUEST = None
             CANCEL_EVENTS.pop(request_id, None)
@@ -511,7 +734,14 @@ def handle_message(message):
             "v": PROTOCOL_VERSION,
             "id": message_id,
             "type": "result",
-            "payload": {"state": "ok", "model": MODEL_ID, "backend": BACKEND, "loaded": LOADED},
+            "payload": {
+                "state": "ok",
+                "model": MODEL_ID,
+                "backend": BACKEND,
+                "loaded": LOADED,
+                "networkBlocked": NETWORK_GUARDED,
+                "dependencies": dict(DIRECT_DEPENDENCIES),
+            },
         })
         return
     if message_type == "discover":
@@ -541,13 +771,14 @@ def handle_message(message):
         request_id = payload.get("requestId")
         with CANCEL_LOCK:
             event = CANCEL_EVENTS.get(request_id)
+            known = event is not None
         if event is not None:
             event.set()
         emit({
             "v": PROTOCOL_VERSION,
             "id": message_id,
             "type": "event",
-            "payload": {"requestId": request_id, "state": "cancelled"},
+            "payload": {"requestId": request_id, "state": "cancelled" if known else "UNKNOWN"},
         })
         return
     if message_type == "shutdown":

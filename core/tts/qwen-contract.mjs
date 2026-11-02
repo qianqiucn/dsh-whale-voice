@@ -61,16 +61,33 @@ export const QWEN_DEPENDENCIES = Object.freeze([
 ])
 
 /**
- * Tokenizer inventory. The tokenizer is loaded through the upstream `AutoProcessor` from the local
- * model directory; its own identity/version is only known after a real load, which this batch does
- * not perform, so it is explicitly unknown instead of guessed.
+ * Tokenizer inventory. The upstream loader calls `AutoConfig`, `AutoModel.from_pretrained` and
+ * `AutoProcessor.from_pretrained` on the same local model directory; the speech tokenizer is part of
+ * the loaded model weights. Nothing may fall back to a network fetch when a local file is missing.
+ * The tokenizer's own identity/version and licence are only known after a real load, which this batch
+ * does not perform, so they stay explicitly unknown instead of guessed.
  */
 export const QWEN_TOKENIZER = Object.freeze({
   name: 'Qwen3-TTS-Tokenizer-12Hz',
-  loader: 'AutoProcessor (Qwen3TTSProcessor) from the local model directory',
+  loader: 'AutoConfig + AutoModel.from_pretrained + AutoProcessor.from_pretrained(local model directory); speech tokenizer is part of the model weights',
   version: null,
   versionStatus: 'UNKNOWN',
   licenseStatus: 'UNKNOWN',
+  networkFallback: 'PROHIBITED',
+  evidence: 'static upstream reading at the fixed commit; not executed in this batch',
+})
+
+/**
+ * Static description of the loading boundary enforced by the worker. This is a contract statement,
+ * not proof that a real model was loaded.
+ */
+export const QWEN_LOADING_BOUNDARY = Object.freeze({
+  modelSource: 'existing local directory inside an explicit allowed root only',
+  localFilesOnly: true,
+  trustRemoteCode: false,
+  offlineEnvironment: Object.freeze(['HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE']),
+  networkGuard: 'in-process socket/urllib guard installed before the official import',
+  referenceAudio: 'trusted local index entry only; re-audited and held at actual use',
 })
 
 /**
@@ -144,6 +161,10 @@ export const QWEN_ERRORS = Object.freeze({
   OUTPUT_FORMAT_MISMATCH: 'QWEN_OUTPUT_FORMAT_MISMATCH',
   OUTPUT_TOO_LARGE: 'QWEN_OUTPUT_TOO_LARGE',
   OUTPUT_IDENTITY_MISMATCH: 'QWEN_OUTPUT_IDENTITY_MISMATCH',
+  RESPONSE_IDENTITY_MISMATCH: 'QWEN_RESPONSE_IDENTITY_MISMATCH',
+  CANCEL_NOT_CONFIRMED: 'QWEN_CANCEL_NOT_CONFIRMED',
+  NETWORK_BLOCKED: 'QWEN_NETWORK_BLOCKED',
+  RESOURCE_CHANGED: 'QWEN_RESOURCE_CHANGED',
   WORKER_NOT_CONFIGURED: 'QWEN_WORKER_NOT_CONFIGURED',
   WORKER_UNAVAILABLE: 'QWEN_WORKER_UNAVAILABLE',
   TIMEOUT: 'QWEN_TIMEOUT',
@@ -218,12 +239,15 @@ export function qwenMetadataInventory() {
       localAvailabilityStatus: 'UNKNOWN',
     })),
     tokenizer: { ...QWEN_TOKENIZER },
+    loadingBoundary: { ...QWEN_LOADING_BOUNDARY, offlineEnvironment: [...QWEN_LOADING_BOUNDARY.offlineEnvironment] },
     dependencies: QWEN_DEPENDENCIES.map((item) => ({ ...item })),
     unknown: [
       'per-dependency licences are not stated by the upstream pyproject',
       'tokenizer version/identity is only known after a real load',
       'local installation and weight availability are not verified by this batch',
       'private reference material rights are not verified by this batch',
+      'the tokenizer/speech-tokenizer version is only known after a real load',
+      'the real sub-loader chain was read statically but not executed in this batch',
     ],
   }
 }

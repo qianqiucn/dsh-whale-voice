@@ -29,6 +29,29 @@ const VOICES = [
   { id: 'demo-voice-b', name: '示例音色 B', languages: ['zh-CN', 'en-US'] },
 ]
 const cancelled = new Set()
+let ghostPayload = null
+let lastSynth = null
+
+function modeVoices() {
+  if (mode === 'voice-language-conflict') {
+    return [
+      { id: 'demo-voice-a', name: '示例音色 A', languages: ['en-US'] },
+      { id: 'demo-voice-b', name: '示例音色 B', languages: ['zh-CN'] },
+    ]
+  }
+  return VOICES
+}
+
+function modeLanguages() {
+  return mode === 'voice-language-conflict' ? ['zh-CN'] : ['zh-CN', 'en-US']
+}
+
+function modeLimits() {
+  if (mode === 'tiny-limit') return { maxChars: 1, maxAudioSeconds: 20, timeoutMs: 120000 }
+  if (mode === 'tiny-audio') return { maxChars: 200, maxAudioSeconds: 1, timeoutMs: 120000 }
+  if (mode === 'tiny-timeout') return { maxChars: 200, maxAudioSeconds: 20, timeoutMs: 100 }
+  return { maxChars: 200, maxAudioSeconds: 20, timeoutMs: 120000 }
+}
 
 function readyPayload() {
   const base = {
@@ -40,9 +63,9 @@ function readyPayload() {
     model,
     modelSize: '1b7',
     instructSupported: true,
-    languages: ['zh-CN', 'en-US'],
-    voices: VOICES,
-    limits: { maxChars: 200, maxAudioSeconds: 20, timeoutMs: 120000 },
+    languages: modeLanguages(),
+    voices: modeVoices(),
+    limits: modeLimits(),
     loaded: false,
     state: 'ok',
   }
@@ -61,7 +84,7 @@ function syntheticBytes(message) {
   if (mode === 'bad-bytes') return { bytes: new Uint8Array(44), sampleRate: 24000, durationMs: 0 }
   if (mode === 'oversized') return { bytes: new Uint8Array(1_100_000), sampleRate: 24000, durationMs: 0 }
   const sampleRate = mode === 'bad-format' ? 16000 : 24000
-  const ms = Math.min(20000, 200 + String(message.text || '').length * 8)
+  const ms = mode === 'tiny-audio' ? 2000 : Math.min(20000, 200 + String(message.text || '').length * 8)
   const frameCount = Math.round((sampleRate * ms) / 1000)
   const produced = produceFixtureWav({ schemaVersion: 1, sampleRate, channels: 1, frameCount, pattern: 'EDGE_SEQUENCE' })
   if (!produced || produced.ok !== true) return null
@@ -127,13 +150,75 @@ function synthesize(id, payload) {
     respond(id, { state: 'cancelled', requestId: payload.requestId, model, backend, voiceId: payload.voiceId || null })
     return
   }
+  if (mode === 'ghost-error' || mode === 'ghost-result') {
+    ghostPayload = payload
+    lastSynth = { id, payload }
+    return
+  }
+  if (mode === 'late-progress-then-cancel') {
+    lastSynth = { id, payload }
+    return
+  }
+  if (mode === 'wrong-then-correct') {
+    const builtWrong = syntheticBytes(payload)
+    setTimeout(() => respond(id, {
+      state: 'ok',
+      mime: 'audio/wav',
+      sampleRate: builtWrong.sampleRate,
+      channels: 1,
+      durationMs: builtWrong.durationMs,
+      bytesBase64: Buffer.from(builtWrong.bytes).toString('base64'),
+      requestId: 'different-request',
+      model,
+      backend,
+      voiceId: payload.voiceId || null,
+    }), 50)
+    setTimeout(() => respond(id, {
+      state: 'ok',
+      mime: 'audio/wav',
+      sampleRate: builtWrong.sampleRate,
+      channels: 1,
+      durationMs: builtWrong.durationMs,
+      bytesBase64: Buffer.from(builtWrong.bytes).toString('base64'),
+      requestId: payload.requestId,
+      model,
+      backend,
+      voiceId: payload.voiceId || null,
+    }), 250)
+    return
+  }
+  if (mode === 'unknown-terminal') {
+    setTimeout(() => respond(id, {
+      state: 'unknown',
+      requestId: payload.requestId,
+      model,
+      backend,
+      voiceId: payload.voiceId || null,
+    }), 100)
+    return
+  }
   const built = syntheticBytes(payload)
   if (!built) {
     fail(id, 'QWEN_OUTPUT_INVALID', 'fixture could not produce bytes')
     return
   }
+  if (mode === 'wrong-identity') {
+    setTimeout(() => respond(id, {
+      state: 'ok',
+      mime: 'audio/wav',
+      sampleRate: built.sampleRate,
+      channels: 1,
+      durationMs: built.durationMs,
+      bytesBase64: Buffer.from(built.bytes).toString('base64'),
+      requestId: 'different-request',
+      model,
+      backend,
+      voiceId: payload.voiceId || null,
+    }), 100)
+    return
+  }
   const answer = () => {
-    if (cancelled.has(payload.requestId) && mode !== 'late' && mode !== 'cancel-ack') return
+    if (cancelled.has(payload.requestId) && !['late', 'cancel-ack', 'cancel-reject', 'cancel-reject-claimed', 'progress-ack', 'wrong-ack-id', 'cancel-ignore'].includes(mode)) return
     respond(id, {
       state: 'ok',
       mime: 'audio/wav',
@@ -145,7 +230,7 @@ function synthesize(id, payload) {
     })
     if (mode === 'garbage') process.stdout.write('this is not json\n')
   }
-  if (mode === 'late' || mode === 'cancel-ack') setTimeout(answer, delayMs)
+  if (['late', 'cancel-ack', 'cancel-reject', 'cancel-reject-claimed', 'progress-ack', 'wrong-ack-id', 'cancel-ignore', 'tiny-timeout'].includes(mode)) setTimeout(answer, delayMs)
   else answer()
 }
 
@@ -186,11 +271,9 @@ function handle(line) {
       model,
       backend,
       models: mode === 'empty-models' ? [] : [model],
-      voices: mode === 'no-voices' ? [] : VOICES,
-      languages: mode === 'empty-languages' ? [] : ['zh-CN', 'en-US'],
-      limits: mode === 'no-limits'
-        ? undefined
-        : { maxChars: mode === 'tiny-limit' ? 1 : 200, maxAudioSeconds: 20, timeoutMs: 120000 },
+      voices: mode === 'no-voices' ? [] : modeVoices(),
+      languages: mode === 'empty-languages' ? [] : modeLanguages(),
+      limits: mode === 'no-limits' ? undefined : modeLimits(),
     })
     return
   }
@@ -200,7 +283,53 @@ function handle(line) {
   }
   if (type === 'cancel') {
     cancelled.add(payload.requestId)
+    if (mode === 'cancel-ignore') return
+    if (mode === 'cancel-reject') {
+      fail(id, 'QWEN_PROVIDER_NOT_READY', 'fixture cancel rejected')
+      return
+    }
+    if (mode === 'cancel-reject-claimed') {
+      send({
+        v: 1,
+        id,
+        type: 'error',
+        payload: { code: 'QWEN_PROVIDER_NOT_READY', message: 'fixture cancel rejected with a claimed request id', requestId: payload.requestId },
+      })
+      return
+    }
+    if (mode === 'progress-ack') {
+      send({ v: 1, id, type: 'event', payload: { requestId: payload.requestId, state: 'progress' } })
+      return
+    }
+    if (mode === 'wrong-ack-id') {
+      send({ v: 1, id, type: 'event', payload: { requestId: 'other-request', state: 'cancelled' } })
+      return
+    }
     send({ v: 1, id, type: 'event', payload: { requestId: payload.requestId, state: 'cancelled' } })
+    if (mode === 'late-progress-then-cancel' && lastSynth) {
+      setTimeout(() => {
+        send({ v: 1, id: lastSynth.id, type: 'event', payload: { requestId: lastSynth.payload.requestId, state: 'progress' } })
+        respond(lastSynth.id, {
+          state: 'cancelled',
+          requestId: lastSynth.payload.requestId,
+          model,
+          backend,
+          voiceId: lastSynth.payload.voiceId || null,
+        })
+      }, 40)
+    }
+    if (mode === 'ghost-error' && ghostPayload) {
+      setTimeout(() => fail('ghost-999', 'QWEN_UNKNOWN_RESULT', 'ghost error from a never-issued message id'), 40)
+    }
+    if (mode === 'ghost-result' && ghostPayload) {
+      setTimeout(() => respond('ghost-999', {
+        state: 'unknown',
+        requestId: ghostPayload.requestId,
+        model,
+        backend,
+        voiceId: ghostPayload.voiceId || null,
+      }), 40)
+    }
     return
   }
   if (type === 'shutdown') {
