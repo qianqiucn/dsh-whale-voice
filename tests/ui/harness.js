@@ -405,6 +405,8 @@
     let throwRecover = false
     let nullPrepare = false
     let unknownExecute = false
+    let unknownApply = false
+    let appliedApply = false
     const adapter = {
       calls,
       getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
@@ -423,6 +425,8 @@
       throwNextRecover() { throwRecover = true },
       nullNextPrepare() { nullPrepare = true },
       unknownNextExecute() { unknownExecute = true },
+      unknownNextApply() { unknownApply = true },
+      appliedNextApply() { appliedApply = true },
       bumpRevision() { revision += 1 },
       setContext(patch) { Object.assign(context, patch || {}); window.dispatchEvent(new Event('plan09-context-changed')) },
       async prepareChange(draft) {
@@ -456,6 +460,8 @@
       async apply(transactionId, options = {}) {
         record('apply')
         if (throwApply) { throwApply = false; throw new Error('fixture apply failure') }
+        if (unknownApply) { unknownApply = false; return { ok: true, transactionId, state: 'UNKNOWN', applyState: 'UNKNOWN', activeRevision: null, activeConfirmed: false } }
+        if (appliedApply) { appliedApply = false; return { ok: true, transactionId, state: 'APPLIED', applyState: 'APPLIED', activeRevision: 'opaque-applied', activeConfirmed: true } }
         if (real) return real.apply(transactionId, options)
         const tx = transactions.get(transactionId)
         if (!tx) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }

@@ -160,6 +160,25 @@ export function plan09DependencySummary(groups) {
   }
 }
 
+/** Workspace/profile/manifest/capability identity shared by dependency evidence and transactions. */
+export function plan09IdentityScope(context) {
+  const state = context || {}
+  return [state.workspace, state.profile, state.manifestRevision, state.capabilityRevision].join('|')
+}
+
+/**
+ * Evidence scope for one dependency row. Dependencies the catalog marks `shared` belong to the host
+ * identity itself (the same Core/TTS/delivery components serve every feature and mode), so switching
+ * page or engine reuses them instead of splitting one component into separate evidence. Feature/model
+ * dependencies stay scoped by mode and engine.
+ */
+export function plan09DependencyScope(context, mode, engine, key) {
+  const identity = plan09IdentityScope(context)
+  const item = PLAN09_DEPENDENCY_CATALOG[key]
+  if (item && item.shared === true) return identity + '|shared'
+  return identity + '|' + (mode || '') + '|' + (engine || '')
+}
+
 export function plan09DefaultVoiceDraft() {
   return { engine: 'local', provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voiceProfile: 'demo-voice-a', language: 'zh-CN', emotion: 'neutral', speed: 1, volume: 60, text: '晚安，今天也辛苦啦。' }
 }
@@ -210,6 +229,16 @@ export function plan09SwitchMode(feature, mode, draft) {
 
 const PLAN09_VOICE_ENGINES = ['local', 'cloud', 'custom']
 const PLAN09_SINGING_ENGINES = ['rvc', 'svc', 'gateway']
+/**
+ * Catalog IDs are UX IDs; the Coordinator's existing `tts.provider` enum is
+ * `qwen-local | cloud | custom`. This is the explicit adapter between the two — it never adds a
+ * provider to the writer whitelist. An unmapped catalog ID stays draft-only.
+ */
+export const PLAN09_PROVIDER_PROTOCOL = Object.freeze({
+  'qwen-local': 'qwen-local',
+  'fixture-cloud': 'cloud',
+  'custom-local': 'custom',
+})
 const PLAN09_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'auto']
 const PLAN09_EMOTIONS = ['neutral', 'gentle', 'happy', 'shy', 'playful', 'sad']
 
@@ -271,6 +300,17 @@ export function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
       unsupported: ['唱歌草稿没有对应的 Coordinator 可写字段；本页只保存草稿，不写配置。'],
     }
   }
+  const protocolProvider = Object.prototype.hasOwnProperty.call(PLAN09_PROVIDER_PROTOCOL, draft.provider)
+    ? PLAN09_PROVIDER_PROTOCOL[draft.provider]
+    : null
+  if (!protocolProvider) {
+    return {
+      supported: false,
+      changes: null,
+      applied: [],
+      unsupported: ['当前服务方案没有可用的真实协议映射，只能浏览草稿；不会把未知值写进配置。'],
+    }
+  }
   const unsupported = []
   if (draft.language !== 'zh-CN') unsupported.push('语言')
   if (draft.emotion !== 'neutral') unsupported.push('情绪')
@@ -285,11 +325,12 @@ export function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
         senderService: {
           expectedRevision: senderRevision,
           set: {
-            tts: { provider: draft.provider, model: draft.model, voice: draft.voiceProfile },
+            tts: { provider: protocolProvider, model: draft.model, voice: draft.voiceProfile },
           },
         },
       },
     },
+    protocolProvider,
     applied: ['Provider', '模型', '音色'],
     unsupported,
   }
@@ -298,7 +339,7 @@ export function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
 /** Project a Coordinator result into the labels the UI may truthfully show. */
 export function plan09ProjectCoordinatorResult(result) {
   if (!result || typeof result !== 'object') return { phase: 'UNKNOWN', label: '结果未知 · 只读', tone: 'error', canApply: false, text: '未收到可信事务结果。' }
-  const state = result.state || (result.ok ? 'PREPARED' : 'FAILED')
+  const state = result.state || (result.ok ? 'PREPARED' : (result.transactionId ? 'UNKNOWN' : 'FAILED'))
   const map = {
     PREPARED: ['已准备计划', 'wait', false],
     SAVED: ['已保存 · 待生效', 'busy', true],
@@ -334,6 +375,257 @@ export function plan09ProjectCoordinatorResult(result) {
     errorCode: result.error && result.error.code ? result.error.code : null,
     text: `事务 ${state} · ${result.applyState || '未生效'}`,
   }
+}
+
+/**
+ * Transaction authority for the panel. One plain entry per workspace/profile/feature identity:
+ * the prepared snapshot, the operations already sent, the unresolved/unknown outcome and the
+ * determined terminal state live here instead of inside one component instance. Events are pure
+ * reducers so cross-page, late-response and lost-response behavior is testable without a browser.
+ */
+const PLAN09_TX_PREPARE_PHASES = ['DIRTY', 'CONFLICT', 'FAILED', 'APPLIED']
+
+export function plan09TransactionInitial() {
+  return {
+    phase: 'DIRTY',
+    busy: false,
+    inFlight: null,
+    plan: null,
+    result: null,
+    txId: null,
+    error: null,
+    planStale: false,
+    contextStale: false,
+    draftDirty: false,
+    outcomeUnknown: false,
+    frozenChanges: null,
+    frozenSerial: null,
+    contextSerial: null,
+    history: [],
+  }
+}
+
+function plan09TransactionStartNext(current, event) {
+  const at = event && typeof event.at === 'string' ? event.at : null
+  const history = current.txId || current.phase === 'APPLIED'
+    ? [{ phase: current.phase, txId: current.txId, error: current.error, at }, ...(current.history || [])].slice(0, 5)
+    : current.history || []
+  return { ...plan09TransactionInitial(), history, draftDirty: current.draftDirty === true }
+}
+
+function plan09TransactionFinish(current, result, fallbackState) {
+  const projection = plan09ProjectCoordinatorResult(result || { state: fallbackState || 'UNKNOWN' })
+  const txId = projection.transactionId || current.txId || null
+  return {
+    ...current,
+    busy: false,
+    inFlight: null,
+    phase: projection.phase,
+    plan: null,
+    result: result || null,
+    txId,
+    error: projection.errorCode,
+    planStale: false,
+    outcomeUnknown: projection.phase === 'UNKNOWN' && !txId,
+  }
+}
+
+export function plan09ReduceTransaction(entry, event = {}) {
+  const current = { ...plan09TransactionInitial(), ...(entry || {}) }
+  switch (event.type) {
+    case 'DRAFT_EDITED': {
+      if (current.busy) return { ...current, draftDirty: true }
+      if (current.phase === 'APPLIED') return plan09TransactionStartNext(current, event)
+      if (current.txId || current.outcomeUnknown || current.phase === 'UNKNOWN') return { ...current, draftDirty: true }
+      return {
+        ...current,
+        phase: 'DIRTY',
+        draftDirty: true,
+        error: null,
+        plan: null,
+        result: null,
+        planStale: false,
+        frozenChanges: null,
+        frozenSerial: null,
+        contextSerial: null,
+      }
+    }
+    case 'START_NEXT_CYCLE': {
+      if (current.busy) return current
+      if (!current.txId && current.phase !== 'APPLIED') return current
+      return plan09TransactionStartNext(current, event)
+    }
+    case 'PREPARE_START': {
+      if (current.busy) return current
+      return { ...current, busy: true, inFlight: 'prepare', error: null }
+    }
+    case 'PREPARE_DONE': {
+      const result = event.result || null
+      if (event.stale === true) {
+        return {
+          ...current,
+          busy: false,
+          inFlight: null,
+          phase: 'DIRTY',
+          plan: null,
+          result: null,
+          txId: null,
+          error: 'STALE_PREPARE',
+          draftDirty: true,
+          planStale: false,
+          frozenChanges: null,
+          frozenSerial: null,
+          contextSerial: null,
+        }
+      }
+      if (!result || result.ok !== true || !result.plan || typeof result.plan.planId !== 'string') {
+        return {
+          ...current,
+          busy: false,
+          inFlight: null,
+          phase: 'FAILED',
+          plan: null,
+          result: result || null,
+          txId: null,
+          error: result && result.error && result.error.code ? result.error.code : 'PREPARE_FAILED',
+          draftDirty: false,
+          planStale: false,
+          frozenChanges: null,
+          frozenSerial: null,
+          contextSerial: null,
+        }
+      }
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'PREPARED',
+        plan: result.plan,
+        result,
+        txId: null,
+        error: null,
+        draftDirty: false,
+        planStale: false,
+        contextStale: false,
+        frozenChanges: event.frozenChanges || null,
+        frozenSerial: typeof event.frozenSerial === 'string' ? event.frozenSerial : null,
+        contextSerial: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+      }
+    }
+    case 'PREPARE_LOST': {
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'FAILED',
+        plan: null,
+        result: null,
+        txId: null,
+        error: typeof event.error === 'string' ? event.error : 'PREPARE_REJECTED',
+        frozenChanges: null,
+        frozenSerial: null,
+        contextSerial: null,
+      }
+    }
+    case 'CONTEXT_CHANGED': {
+      const next = { ...current, contextStale: true }
+      if (current.plan && !current.busy) return { ...next, planStale: true, error: 'CONTEXT_CHANGED' }
+      return next
+    }
+    case 'PLAN_CONTENT_CHANGED':
+      return { ...current, planStale: true, error: 'PLAN_CONTENT_CHANGED' }
+    case 'AUTHORIZATION_CHANGED':
+      return { ...current, planStale: true, error: 'AUTHORIZATION_CHANGED' }
+    case 'EXECUTE_START': {
+      if (current.busy) return current
+      return { ...current, busy: true, inFlight: 'execute', error: null }
+    }
+    case 'EXECUTE_DONE':
+      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'EXECUTE_LOST': {
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'UNKNOWN',
+        plan: null,
+        result: null,
+        txId: null,
+        error: 'RESPONSE_LOST',
+        planStale: false,
+        outcomeUnknown: true,
+      }
+    }
+    case 'APPLY_START': {
+      if (current.busy) return current
+      return { ...current, busy: true, inFlight: 'apply', error: null }
+    }
+    case 'APPLY_DONE':
+      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'APPLY_LOST': {
+      return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'APPLY_REJECTED', plan: null }
+    }
+    case 'STATUS_START': {
+      if (current.busy) return current
+      return { ...current, busy: true, inFlight: 'status', error: null }
+    }
+    case 'STATUS_DONE':
+      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'STATUS_LOST': {
+      return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'STATUS_UNKNOWN', plan: null }
+    }
+    default:
+      return current
+  }
+}
+
+/** Buttons follow the shared authority, not a component-local busy flag. */
+export function plan09CanPrepare(entry) {
+  const current = entry || plan09TransactionInitial()
+  return !current.busy && !current.txId && current.outcomeUnknown !== true && PLAN09_TX_PREPARE_PHASES.includes(current.phase)
+}
+
+export function plan09CanConfirm(entry, { currentSerial = null, contextSerial = null } = {}) {
+  const current = entry || plan09TransactionInitial()
+  if (current.busy || !current.plan || current.phase !== 'PREPARED' || current.planStale) return false
+  if (typeof current.frozenSerial === 'string' && current.frozenSerial !== currentSerial) return false
+  if (typeof current.contextSerial === 'string' && current.contextSerial !== contextSerial) return false
+  return true
+}
+
+export function plan09CanApply(entry) {
+  const current = entry || plan09TransactionInitial()
+  return !current.busy && Boolean(current.txId) && ['SAVED', 'PENDING_APPLY'].includes(current.phase) && current.outcomeUnknown !== true
+}
+
+export function plan09CanReadStatus(entry) {
+  const current = entry || plan09TransactionInitial()
+  return !current.busy && Boolean(current.txId)
+}
+
+/** Display projection for the panel: never let `ok:true` override the transaction state. */
+export function plan09TransactionView(entry) {
+  const current = { ...plan09TransactionInitial(), ...(entry || {}) }
+  if (current.outcomeUnknown === true && !current.txId) {
+    return { phase: 'UNKNOWN', label: '结果未知 · 未收到响应', tone: 'error', text: '未收到保存响应：写入可能已经发生，不能当作失败，也不能自动重试。' }
+  }
+  if (current.result) {
+    const projection = plan09ProjectCoordinatorResult(current.result)
+    return { phase: projection.phase, label: projection.label, tone: projection.tone, text: projection.text }
+  }
+  const map = {
+    DIRTY: ['未保存草稿', 'wait'],
+    FAILED: ['失败', 'error'],
+    CONFLICT: ['冲突', 'error'],
+    PREPARED: ['已准备计划', 'wait'],
+    SAVED: ['已保存 · 待生效', 'busy'],
+    PENDING_APPLY: ['已保存 · 待生效', 'busy'],
+    APPLIED: ['已生效', 'online'],
+    PARTIALLY_APPLIED: ['部分生效 · 非 APPLIED', 'busy'],
+    UNKNOWN: ['结果未知 · 只读', 'error'],
+  }
+  const [label, tone] = map[current.phase] || ['未保存草稿', 'wait']
+  return { phase: current.phase, label, tone, text: '事务 ' + current.phase + ' · 尚未取得生效确认。' }
 }
 
 export function plan09InstallView(status) {

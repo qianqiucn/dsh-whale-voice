@@ -750,8 +750,10 @@ await check('plan09 adapter failures clear busy and keep transaction authority',
     await page.locator('[data-testid="plan09-prepare"]').click()
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
     await page.locator('[data-testid="plan09-confirm-save"]').click()
-    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED')
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
     assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '0')
+    assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /RESPONSE_LOST/)
+    await page.locator('[data-testid="plan09-tx-reset"]').click()
 
     await page.locator('[data-testid="plan09-prepare"]').click()
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
@@ -768,6 +770,105 @@ await check('plan09 adapter failures clear busy and keep transaction authority',
     await page.waitForTimeout(300)
     assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
     assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+  })
+})
+
+
+await check('plan09 keeps in-flight authority across pages', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-voice"]').selectOption('demo-voice-b')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextExecute())
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForTimeout(200)
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseExecute())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    assert.notEqual(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+  })
+})
+
+await check('plan09 honours a legitimate UNKNOWN without allowing apply', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-apply-check"]').isDisabled(), true)
+  })
+})
+
+await check('plan09 allows a new cycle after APPLIED', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.appliedNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'APPLIED')
+    await page.locator('[data-testid="plan09-tx-reset"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+  })
+})
+
+await check('plan09 does not carry a transaction into another profile', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'other-profile' }))
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'DIRTY')
+  })
+})
+
+await check('plan09 shares core evidence and clears preview on authorization revoke', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ cloudAuthorized: true }))
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+    await page.locator('[data-testid="plan09-preview"]').click()
+    await page.locator('[data-testid="plan09-preview-result"]').waitFor()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ cloudAuthorized: false }))
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-preview-result"]').count(), 0)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    assert.match(await page.locator('[data-testid="plan09-errors"]').innerText(), /尚未授权/)
   })
 })
 
@@ -863,6 +964,57 @@ await check('plan09 browser calls a real isolated Coordinator end to end', async
   } finally {
     await rm(sandbox.root, { recursive: true, force: true })
   }
+})
+
+async function checkRealProviderMode(mode, expectedProvider) {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', { document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' } })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: true, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      if (mode === 'existing') await page.locator('[data-testid="plan09-page-mode-existing"]').click()
+      else await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+      assert.equal(sender.document.tts.provider, expectedProvider)
+      assert.equal(sender.saveCount, 1)
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+}
+
+await check('plan09 real Coordinator accepts the cloud provider mapping', async () => {
+  await checkRealProviderMode('cloud', 'cloud')
+})
+
+await check('plan09 real Coordinator accepts the existing/custom provider mapping', async () => {
+  await checkRealProviderMode('existing', 'custom')
 })
 
 await check('no console errors or failed resources', async () => {
