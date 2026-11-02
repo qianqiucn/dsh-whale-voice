@@ -87,3 +87,12 @@
 - 准备阶段的上下文/授权变化会把计划标为 stale 并禁止确认；确认前再次校验草稿与授权。
 - 依赖检查在切模式、旧 scope 退出与组件卸载时统一取消；迟到结果不能复活已取消项。
 - Voice 切引擎会同步模式；Singing existing 保持 gateway；模式/引擎/Provider/音色/依赖按同一组合校验。
+
+## 9. 0114 复核补正
+
+- 事务权威升级为按 workspace/profile/feature/manifest 的共享 store：execute/apply 在途与结果跨页保留并通知当前页面；busy 为全局互斥，重复 apply 不再调用两次。
+- 准备快照绑定 draftSerial 与 contextSerial；返回页面后草稿/上下文不一致则旧计划不可确认；旧 profile 的事务不会复制到新 profile。
+- 响应通道丢失（未能确认是否写入）按 UNKNOWN 处理，保留计划与只读/重置入口，不自动重写；合法 `state:UNKNOWN`/`PARTIALLY_APPLIED` 不再按 `ok` 降级为 PENDING_APPLY；APPLIED 后可显式结束并开始下一份草稿。
+- 依赖按真实共享身份隔离：Core/Sender/WeChat 跨 feature/engine 复用；GPU/RVC/Gateway/分离等按 mode+engine 隔离。取消后向导展示订阅共享 store，不再停留在 checking。
+- 真实协议映射：UI Provider 目录 ID 映射到现有 `tts.provider` 枚举（qwen-local/cloud/custom），cloud/existing 已用真实隔离 Coordinator 验证保存；未扩 writer 白名单。
+- 授权/上下文变化同步清空旧预览；手动切 Singing Gateway/RVC 不会自动改旧音色，需按中文校验重新选择。

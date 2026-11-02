@@ -549,3 +549,5 @@ browser chain. UI 32/32; full suite 888/884 pass/4 platform skips. Still OFFLINE
 NOT_INTEGRATED.
 
 0113 review fixes: transaction authority for dispatched writes/UNKNOWN, exception/null busy handling, context-change plan blocking, scoped mode/unmount dependency cancellation, and mode/engine consistency. UI 38/38; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+0114 review fixes: cross-page transaction authority, response-loss/legitimate UNKNOWN handling, shared dependency identity and cancellation display, provider protocol mapping for cloud/existing, and authorization-driven preview invalidation. UI 45/45; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

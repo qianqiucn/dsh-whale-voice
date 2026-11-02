@@ -706,3 +706,7 @@ save chain; full suite 888/884 pass/4 platform skips; build 273,806 bytes.
 ### Plan 09 0113 review fixes
 
 Dispatched execute/apply and known transaction IDs survive draft edits and page switches; UNKNOWN remains read-only and recover keeps the ID. Adapter null/throw responses clear busy with authoritative phases; prepared plans are blocked when context/authorization changes. Dependency checks are cancelled when the mode/scope exits or the page unmounts, and voice engine changes sync the mode while singing existing keeps gateway. UI 38/38 includes lifecycle/exception tests plus the real isolated Coordinator chain; full suite 888/884 pass/4 platform skips; build 279,373 bytes.
+
+### Plan 09 0114 review fixes
+
+Transactions now live in a shared store keyed by workspace/profile/feature/manifest with cross-page in-flight authority, global busy mutex, draft/context-bound plans, legitimate UNKNOWN/PARTIALLY_APPLIED handling, response-loss UNKNOWN and an explicit reset after APPLIED. Dependencies use real shared identities (Core/Sender/WeChat) versus mode/engine-scoped models, with store-backed cancellation display. UI provider IDs map to the existing `tts.provider` enum and cloud/existing modes are verified through the real isolated Coordinator. Authorization/context changes clear previews. UI 45/45; full suite 888/884 pass/4 platform skips; build 290,994 bytes.

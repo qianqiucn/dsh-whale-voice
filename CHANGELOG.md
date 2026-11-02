@@ -23,8 +23,8 @@ not invent earlier releases or imply production maturity.
   removed; without an adapter the panel is read-only. 6 unit tests exercise the same adapter contract
   against the real Coordinator with Fake sources plus wizard/draft rules; the UI checks also drive a browser → exposeFunction → real isolated
   Coordinator chain (sender saved value and saveCount asserted), scoped dependency invalidation,
-  async adapter calls, mode/browse persistence, install/verify, negative drafts, UNKNOWN/late-execute authority, adapter exception lifecycle, context-change plan blocking and scoped mode-change cancellation. Full
-  suite 888/884 pass/4 platform skips; UI 38/38; client.js 279,373 bytes.
+  async adapter calls, mode/browse persistence, install/verify, negative drafts, UNKNOWN/late-execute authority, adapter exception lifecycle, context-change plan blocking and scoped mode-change cancellation, cross-page transaction authority, provider protocol mapping, shared-core evidence and authorization-driven preview invalidation. Full
+  suite 888/884 pass/4 platform skips; UI 45/45; client.js 290,994 bytes.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task
