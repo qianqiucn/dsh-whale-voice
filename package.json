@@ -18,6 +18,7 @@
     "client.css",
     "client.template.js",
     "pages.js",
+    "plan09.js",
     "setup.js",
     "core",
     "packages",
