@@ -1211,11 +1211,12 @@ function deriveCapabilityView(snapshot) {
 /* Whale Voice — Plan 09 dual-entry onboarding and offline config UX model.
  *
  * Pure, browser-safe helpers: feature catalog, per-feature/manifest wizard persistence, mode-based
- * dependency projections, draft validation/cleanup, and an explicitly isolated demo transaction
- * state machine. It never writes production configuration or credentials.
+ * dependency projections, draft validation/cleanup, and the mapping from drafts to the Coordinator
+ * change protocol. It never writes production configuration or credentials and contains no toy
+ * transaction engine: the UI must call an injected isolated adapter.
  */
 
-const PLAN09_MANIFEST_REVISION = 1
+const PLAN09_MANIFEST_REVISION = 2
 
 const PLAN09_FEATURES = Object.freeze([
   { id: 'voice-bubbles', label: '语音气泡', en: 'Voice Bubbles', icon: 'wave', hint: '把文字变成私聊语音气泡' },
@@ -1229,53 +1230,79 @@ const PLAN09_MODES = Object.freeze([
   { id: 'existing', label: '已有服务', desc: '复用本机已经安装并通过检查的服务。', gpu: false, cloud: false },
 ])
 
+const PLAN09_PROVIDERS = Object.freeze([
+  { id: 'qwen-local', label: '本机 Qwen 服务', kind: 'local', models: ['Qwen3-TTS-12Hz-1.7B-Base'], voices: ['demo-voice-a', 'demo-voice-b'] },
+  { id: 'fixture-cloud', label: '隔离云端 Fixture', kind: 'cloud', models: ['fixture-cloud-voice-v1'], voices: ['cloud-voice-a'] },
+  { id: 'custom-local', label: '自定义本机服务', kind: 'custom', models: ['custom-model'], voices: ['custom-voice-a'] },
+])
+
+const PLAN09_SINGING_VOICES = Object.freeze([
+  { id: 'fixture-rvc-female', label: 'RVC 示例女声（虚构）' },
+  { id: 'fixture-rvc-male', label: 'RVC 示例男声（虚构）' },
+  { id: 'fixture-gateway', label: '已有服务音色（Gateway）' },
+])
+
 const PLAN09_DEPENDENCY_CATALOG = Object.freeze({
-  core: { label: 'Whale Voice Core', desc: '配置、任务与状态的可信来源。', required: true, shared: true },
-  tts: { label: 'TTS Provider', desc: '把文字合成为音频；本地或已授权云端。', required: true, shared: true },
-  rvc: { label: 'RVC 翻唱模型', desc: '标准翻唱首发模型；需要单独下载与许可确认。', required: true },
-  separation: { label: '人声分离模型', desc: '唱歌时分离人声与伴奏。', required: true },
-  sender: { label: '微信语音发送器', desc: '仅投递时必需；本机音频执行模块。', required: false, delivery: true, shared: true },
-  wechat: { label: 'WeChatAgent 桥', desc: '仅投递到微信时必需；未接入时只能浏览与保存草稿。', required: false, delivery: true, shared: true },
-  gpu: { label: '可用 GPU / 显存', desc: '本机模式下的资源检查；未知不会被当作可用。', conditional: true },
-  network: { label: '云端网络与授权', desc: '云端模式必需的授权与连通性；真实调用始终禁用。', conditional: true },
-  storage: { label: '磁盘空间', desc: '模型与缓存空间；未知时显示未知而不是通过。', required: false },
+  core: { label: '鲸音 Core / 鲸递 Core', desc: '配置、任务与状态的可信来源；内部兼容 ID 保持 core。', required: true, shared: true, license: '随应用', size: '—' },
+  tts: { label: 'TTS Provider', desc: '把文字合成为音频；本地服务或已授权云端。', required: true, shared: true, license: '按 Provider', size: '按模型' },
+  cloud: { label: '云端授权与网络', desc: '需要明确授权、连通性与费用确认；真实调用始终禁用。', conditional: true, license: '用户授权', size: '按量计费' },
+  rvc: { label: 'RVC 翻唱模型（首发）', desc: '标准翻唱模型；需单独确认来源与许可，不承诺低资源。', required: true, license: '需确认', size: '未知' },
+  separation: { label: '人声分离模型', desc: '混合素材需要分离人声与伴奏；干净人声可跳过。', conditional: true, license: '需确认', size: '未知' },
+  gateway: { label: '已有服务 Gateway', desc: '复用已安装服务；能力与版本必须由检查确认。', conditional: true, license: '随服务', size: '—' },
+  sender: { label: '鲸递发送模块', desc: '仅投递时必需；Sender 是鲸递内部兼容执行模块，本计划不迁移。', delivery: true, shared: true, license: '随应用', size: '—' },
+  wechat: { label: 'WeChatAgent 桥', desc: '仅投递到微信时必需；未接入时只能浏览与保存草稿。', delivery: true, shared: true, license: '上游许可', size: '—' },
+  gpu: { label: '可用 GPU / 显存', desc: '本机模式下的资源检查；未知不会被当作可用。', conditional: true, license: '—', size: '按模型' },
+  storage: { label: '磁盘空间', desc: '模型与缓存空间；未知时显示未知而不是通过。', optional: true, license: '—', size: '未知' },
 })
 
 /** Stable storage key per workspace/profile, feature and manifest revision. */
 function plan09WizardKey({ workspace = 'demo-workspace', profile = 'demo-profile', feature, manifestRevision = PLAN09_MANIFEST_REVISION } = {}) {
-  return `wv.plan09.wizard.v1.${workspace}.${profile}.${feature}.${manifestRevision}`
+  return `wv.plan09.wizard.v2.${workspace}.${profile}.${feature}.${manifestRevision}`
 }
 
+const EMPTY_WIZARD = Object.freeze({
+  introAcknowledged: false,
+  selectedMode: null,
+  mode: null,
+  browseDismissedRevision: null,
+  capabilityRevisionSeen: null,
+  updatedAt: null,
+})
+
 function plan09ReadWizard(storage, key) {
-  const empty = { introAcknowledged: false, selectedMode: null, verifiedCapabilitiesRevision: null, updatedAt: null }
-  if (!storage || typeof storage.getItem !== 'function') return empty
+  if (!storage || typeof storage.getItem !== 'function') return { ...EMPTY_WIZARD }
   try {
     const raw = storage.getItem(key)
-    if (!raw) return empty
+    if (!raw) return { ...EMPTY_WIZARD }
     const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return empty
+    if (!parsed || typeof parsed !== 'object') return { ...EMPTY_WIZARD }
+    const mode = PLAN09_MODES.some((item) => item.id === parsed.selectedMode) ? parsed.selectedMode : null
     return {
       introAcknowledged: parsed.introAcknowledged === true,
-      selectedMode: PLAN09_MODES.some((mode) => mode.id === parsed.selectedMode) ? parsed.selectedMode : null,
-      verifiedCapabilitiesRevision: Number.isInteger(parsed.verifiedCapabilitiesRevision) ? parsed.verifiedCapabilitiesRevision : null,
+      selectedMode: mode,
+      mode,
+      browseDismissedRevision: Number.isInteger(parsed.browseDismissedRevision) ? parsed.browseDismissedRevision : null,
+      capabilityRevisionSeen: Number.isInteger(parsed.capabilityRevisionSeen) ? parsed.capabilityRevisionSeen : null,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
     }
   } catch {
-    return empty
+    return { ...EMPTY_WIZARD }
   }
 }
 
+/** `mode` and `selectedMode` are both accepted so callers cannot silently lose the choice. */
 function plan09WriteWizard(storage, key, patch = {}) {
   if (!storage || typeof storage.setItem !== 'function') return null
   const current = plan09ReadWizard(storage, key)
+  const requestedMode = patch.selectedMode === undefined ? patch.mode : patch.selectedMode
   const next = {
     introAcknowledged: patch.introAcknowledged === undefined ? current.introAcknowledged : patch.introAcknowledged === true,
-    selectedMode: patch.selectedMode === undefined ? current.selectedMode : (PLAN09_MODES.some((mode) => mode.id === patch.selectedMode) ? patch.selectedMode : null),
-    verifiedCapabilitiesRevision: patch.verifiedCapabilitiesRevision === undefined
-      ? current.verifiedCapabilitiesRevision
-      : (Number.isInteger(patch.verifiedCapabilitiesRevision) ? patch.verifiedCapabilitiesRevision : null),
+    selectedMode: requestedMode === undefined ? current.selectedMode : (PLAN09_MODES.some((item) => item.id === requestedMode) ? requestedMode : null),
+    browseDismissedRevision: patch.browseDismissedRevision === undefined ? current.browseDismissedRevision : (Number.isInteger(patch.browseDismissedRevision) ? patch.browseDismissedRevision : null),
+    capabilityRevisionSeen: patch.capabilityRevisionSeen === undefined ? current.capabilityRevisionSeen : (Number.isInteger(patch.capabilityRevisionSeen) ? patch.capabilityRevisionSeen : null),
     updatedAt: new Date().toISOString(),
   }
+  next.mode = next.selectedMode
   try {
     storage.setItem(key, JSON.stringify(next))
     return next
@@ -1285,37 +1312,50 @@ function plan09WriteWizard(storage, key, patch = {}) {
 }
 
 /**
- * Decide whether the target-feature wizard should open. The global SetupWizard keeps priority; an
- * acknowledgement only records that the intro was read, never READY or production permission.
+ * Global Setup keeps priority. Browse-only dismisses only the current manifest revision; an
+ * acknowledgement is "read", never READY. A changed capability revision reopens with a reminder.
  */
 function plan09DeriveWizardView({ stored, capabilityRevision = null, globalSetupOpen = false, force = false } = {}) {
-  const state = stored || { introAcknowledged: false, selectedMode: null, verifiedCapabilitiesRevision: null }
-  const changed = capabilityRevision !== null && state.verifiedCapabilitiesRevision !== null && state.verifiedCapabilitiesRevision !== capabilityRevision
+  const state = stored || EMPTY_WIZARD
+  const changed = capabilityRevision !== null && state.capabilityRevisionSeen !== null && state.capabilityRevisionSeen !== capabilityRevision
   if (globalSetupOpen) return { shouldOpen: false, deferred: true, changed, reason: 'GLOBAL_SETUP_FIRST' }
   if (force) return { shouldOpen: true, deferred: false, changed, reason: 'MANUAL_REOPEN' }
-  if (!state.introAcknowledged) return { shouldOpen: true, deferred: false, changed, reason: 'FIRST_VISIT' }
   if (changed) return { shouldOpen: true, deferred: false, changed, reason: 'CAPABILITY_CHANGED' }
+  if (!state.introAcknowledged) {
+    if (state.browseDismissedRevision === PLAN09_MANIFEST_REVISION) return { shouldOpen: false, deferred: false, changed, reason: 'BROWSED_THIS_REVISION' }
+    return { shouldOpen: true, deferred: false, changed, reason: 'FIRST_VISIT' }
+  }
   return { shouldOpen: false, deferred: false, changed: false, reason: 'ACKNOWLEDGED' }
 }
 
-/** Required / optional / delivery-only / conditional groups for one feature + mode. */
-function plan09DependencyGroups(feature, mode) {
+/**
+ * Minimal dependency projection. It follows the selected mode and source layout instead of forcing
+ * local models for cloud/existing modes. Delivery dependencies never block browsing or drafts.
+ */
+function plan09DependencyGroups(feature, mode, options = {}) {
+  const { sourceLayout = 'MIXED', deliveryRequested = false } = options
   const groups = { required: [], optional: [], deliveryOnly: [], conditional: [] }
   const add = (group, key) => {
     const item = PLAN09_DEPENDENCY_CATALOG[key]
-    if (item) groups[group].push({ key, ...item })
+    if (item && !groups[group].some((entry) => entry.key === key)) groups[group].push({ key, ...item })
   }
   add('required', 'core')
-  add('required', 'tts')
-  if (mode === 'local') add('conditional', 'gpu')
-  if (mode === 'cloud') add('conditional', 'network')
+  if (feature === 'voice-bubbles') add('required', 'tts')
   if (feature === 'singing') {
     add('required', 'rvc')
-    add('required', 'separation')
+    if (mode === 'cloud' || mode === 'existing') {
+      add('conditional', mode === 'cloud' ? 'cloud' : 'gateway')
+    } else if (sourceLayout === 'MIXED') {
+      add('required', 'separation')
+    }
   }
+  if (mode === 'local') add('conditional', 'gpu')
+  if (mode === 'cloud') add('conditional', 'cloud')
   add('optional', 'storage')
-  add('deliveryOnly', 'sender')
-  add('deliveryOnly', 'wechat')
+  if (deliveryRequested) {
+    add('deliveryOnly', 'sender')
+    add('deliveryOnly', 'wechat')
+  }
   return groups
 }
 
@@ -1330,33 +1370,27 @@ function plan09DependencySummary(groups) {
   }
 }
 
-const PLAN09_VOICE_ENGINES = ['local', 'cloud', 'custom']
-const PLAN09_SINGING_ENGINES = ['rvc', 'svc', 'gateway']
-const PLAN09_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'auto']
-const PLAN09_EMOTIONS = ['neutral', 'gentle', 'happy', 'shy', 'playful', 'sad']
-
 function plan09DefaultVoiceDraft() {
-  return { engine: 'local', provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voiceProfile: 'whale-v1', language: 'zh-CN', emotion: 'neutral', speed: 1, volume: 60, text: '晚安，今天也辛苦啦。' }
+  return { engine: 'local', provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voiceProfile: 'demo-voice-a', language: 'zh-CN', emotion: 'neutral', speed: 1, volume: 60, text: '晚安，今天也辛苦啦。' }
 }
 
 function plan09DefaultSingingDraft() {
-  return { engine: 'rvc', sourceAuthorized: false, voiceConsent: false, pitch: 0, vocalGainDb: 0, instrumentalGainDb: 0, separation: true, mixMode: 'WITH_INSTRUMENTAL', deliveryRequested: false, sourceRef: '', text: '一段虚构的试唱文本。' }
+  return { engine: 'rvc', provider: 'qwen-local', voiceProfile: 'fixture-rvc-female', sourceAuthorized: false, voiceConsent: false, pitch: 0, vocalGainDb: 0, instrumentalGainDb: 0, sourceLayout: 'MIXED', mixMode: 'WITH_INSTRUMENTAL', deliveryRequested: false, sourceRef: '', text: '一段虚构的试唱文本。' }
 }
 
-/** Switch engines and explicitly report which incompatible fields were cleared. */
+/** Switch engines/providers and report every incompatible field that was cleared. */
 function plan09SwitchEngine(feature, draft, engine) {
   const next = { ...draft, engine }
   const cleared = []
   if (feature === 'voice-bubbles') {
+    const provider = PLAN09_PROVIDERS.find((item) => item.kind === engine) || PLAN09_PROVIDERS[0]
+    if (next.provider !== provider.id) { next.provider = provider.id; cleared.push('provider') }
+    if (!provider.models.includes(next.model)) { next.model = provider.models[0]; cleared.push('model') }
+    if (!provider.voices.includes(next.voiceProfile)) { next.voiceProfile = provider.voices[0]; cleared.push('voiceProfile') }
     if (engine === 'cloud') {
-      if (next.provider !== 'fixture-cloud') { next.provider = 'fixture-cloud'; cleared.push('provider') }
-      if (next.model !== 'fixture-cloud-voice-v1') { next.model = 'fixture-cloud-voice-v1'; cleared.push('model') }
-    } else if (engine === 'local') {
-      if (next.provider !== 'qwen-local') { next.provider = 'qwen-local'; cleared.push('provider') }
-      if (next.model !== 'Qwen3-TTS-12Hz-1.7B-Base') { next.model = 'Qwen3-TTS-12Hz-1.7B-Base'; cleared.push('model') }
-    } else {
-      if (next.provider !== 'custom-local') { next.provider = 'custom-local'; cleared.push('provider') }
-      if (next.model !== 'custom-model') { next.model = 'custom-model'; cleared.push('model') }
+      next.language = 'zh-CN'
+      next.emotion = 'neutral'
+      cleared.push('language', 'emotion')
     }
   } else if (engine === 'svc') {
     next.deliveryRequested = false
@@ -1365,41 +1399,131 @@ function plan09SwitchEngine(feature, draft, engine) {
   return { draft: next, cleared }
 }
 
+function plan09SwitchMode(feature, mode, draft) {
+  const next = { ...draft }
+  const cleared = []
+  if (feature === 'singing') {
+    if (mode === 'cloud' && next.engine === 'rvc') { next.engine = 'gateway'; cleared.push('engine') }
+    if (mode === 'local' && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
+    if (mode === 'cloud' && next.voiceProfile !== 'fixture-gateway') { next.voiceProfile = 'fixture-gateway'; cleared.push('voiceProfile') }
+  }
+  return { draft: next, cleared }
+}
+
+const PLAN09_VOICE_ENGINES = ['local', 'cloud', 'custom']
+const PLAN09_SINGING_ENGINES = ['rvc', 'svc', 'gateway']
+const PLAN09_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'auto']
+const PLAN09_EMOTIONS = ['neutral', 'gentle', 'happy', 'shy', 'playful', 'sad']
+
 function plan09ValidateVoiceDraft(draft, { cloudAuthorized = false } = {}) {
   const errors = []
   if (!PLAN09_VOICE_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择本机、云端或自定义引擎。' })
-  if (!draft.provider) errors.push({ field: 'provider', message: '请选择 Provider。' })
-  if (!draft.model) errors.push({ field: 'model', message: '请选择模型。' })
-  if (!draft.voiceProfile) errors.push({ field: 'voiceProfile', message: '请选择音色。' })
+  const provider = PLAN09_PROVIDERS.find((item) => item.id === draft.provider)
+  if (!provider) errors.push({ field: 'provider', message: '请选择已支持的服务方案。' })
+  if (!provider || !provider.models.includes(draft.model)) errors.push({ field: 'model', message: '模型与所选服务不匹配。' })
+  if (!provider || !provider.voices.includes(draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '音色与所选服务不匹配，请重新选择。' })
   if (!PLAN09_LANGUAGES.includes(draft.language)) errors.push({ field: 'language', message: '语言不在支持范围。' })
   if (!PLAN09_EMOTIONS.includes(draft.emotion)) errors.push({ field: 'emotion', message: '情绪不在支持范围。' })
-  if (typeof draft.speed !== 'number' || draft.speed < 0.5 || draft.speed > 2) errors.push({ field: 'speed', message: '语速需在 0.5–2.0 之间。' })
-  if (typeof draft.volume !== 'number' || draft.volume < 0 || draft.volume > 100) errors.push({ field: 'volume', message: '音量需在 0–100 之间。' })
-  if (draft.engine === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能演示保存。' })
+  if (!Number.isFinite(draft.speed) || draft.speed < 0.5 || draft.speed > 2) errors.push({ field: 'speed', message: '语速需为 0.5–2.0 的数字。' })
+  if (!Number.isFinite(draft.volume) || draft.volume < 0 || draft.volume > 100) errors.push({ field: 'volume', message: '音量需为 0–100 的数字。' })
+  if (draft.engine === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能预览或保存。' })
   if (!draft.text || !draft.text.trim()) errors.push({ field: 'text', message: '请填写演示文本。' })
   return { ok: errors.length === 0, errors }
 }
 
-function plan09ValidateSingingDraft(draft, { gpuAvailable = null, deliveryAuthorized = false } = {}) {
+function plan09ValidateSingingDraft(draft, { gpuAvailable = null, deliveryAuthorized = false, mode = 'local' } = {}) {
   const errors = []
   if (!PLAN09_SINGING_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择 RVC、SVC 或 Gateway。' })
   if (draft.engine === 'svc') errors.push({ field: 'engine', message: 'SVC 仅为后续可选，当前不发包、不承诺可用。' })
+  if (mode === 'cloud' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '云端模式需要 Gateway/已有服务，不能使用本机 RVC。' })
+  if (!PLAN09_SINGING_VOICES.some((voice) => voice.id === draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '请选择音色方案。' })
   if (!draft.sourceAuthorized) errors.push({ field: 'sourceAuthorized', message: '必须确认演示素材已获授权。' })
   if (!draft.voiceConsent) errors.push({ field: 'voiceConsent', message: '必须确认音色使用已获同意。' })
+  if (!/^fixture:\/\/[a-z0-9-]+$/.test(draft.sourceRef || '')) errors.push({ field: 'sourceRef', message: '请使用虚构引用，例如 fixture://demo-song-01。' })
   if (!Number.isInteger(draft.pitch) || draft.pitch < -12 || draft.pitch > 12) errors.push({ field: 'pitch', message: '音高需为 −12..12 的整数。' })
   for (const key of ['vocalGainDb', 'instrumentalGainDb']) {
-    if (typeof draft[key] !== 'number' || draft[key] < -12 || draft[key] > 12) errors.push({ field: key, message: '增益需在 −12..12 dB。' })
+    if (!Number.isFinite(draft[key]) || draft[key] < -12 || draft[key] > 12) errors.push({ field: key, message: '增益需为 −12..12 dB 的数字。' })
   }
+  if (!['MIXED', 'CLEAN_VOCAL'].includes(draft.sourceLayout)) errors.push({ field: 'sourceLayout', message: '请选择素材类型。' })
+  if (!['WITH_INSTRUMENTAL', 'VOCAL_ONLY'].includes(draft.mixMode)) errors.push({ field: 'mixMode', message: '请选择混音方式。' })
   if (draft.deliveryRequested && !deliveryAuthorized) errors.push({ field: 'deliveryRequested', message: '未授权微信投递，只能保存草稿。' })
-  if (gpuAvailable === false && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '当前没有可用 GPU；请切换仅 CPU 或已有服务。' })
+  if (gpuAvailable === false && mode === 'local') errors.push({ field: 'mode', message: '当前没有可用 GPU；请切换仅 CPU、云端或已有服务。' })
   return { ok: errors.length === 0, errors }
+}
+
+/**
+ * Map an effective draft onto the Coordinator's existing writable fields. Unsupported fields stay
+ * local draft state and are reported as such; they must not be replaced with unrelated writes.
+ */
+function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
+  if (feature !== 'voice-bubbles') {
+    return {
+      supported: false,
+      changes: null,
+      applied: [],
+      unsupported: ['唱歌草稿没有对应的 Coordinator 可写字段；本页只保存草稿，不写配置。'],
+    }
+  }
+  const unsupported = []
+  if (draft.language !== 'zh-CN') unsupported.push('语言')
+  if (draft.emotion !== 'neutral') unsupported.push('情绪')
+  if (draft.speed !== 1) unsupported.push('语速')
+  if (draft.volume !== 60) unsupported.push('音量')
+  if (draft.engine === 'cloud') unsupported.push('云端真实调用（仅演示授权）')
+  return {
+    supported: true,
+    changes: {
+      schemaVersion: 1,
+      changes: {
+        senderService: {
+          expectedRevision: senderRevision,
+          set: {
+            tts: { provider: draft.provider, model: draft.model, voice: draft.voiceProfile },
+          },
+        },
+      },
+    },
+    applied: ['Provider', '模型', '音色'],
+    unsupported,
+  }
+}
+
+/** Project a Coordinator result into the labels the UI may truthfully show. */
+function plan09ProjectCoordinatorResult(result) {
+  if (!result || typeof result !== 'object') return { phase: 'UNKNOWN', label: '结果未知 · 只读', tone: 'error', canApply: false, text: '未收到可信事务结果。' }
+  const state = result.state || (result.ok ? 'PREPARED' : 'FAILED')
+  const map = {
+    PREPARED: ['已准备计划', 'wait', false],
+    SAVED: ['已保存 · 待生效', 'busy', true],
+    PENDING_APPLY: ['已保存 · 待生效', 'busy', true],
+    APPLIED: ['已生效', 'online', false],
+    PARTIALLY_APPLIED: ['部分生效 · 非 APPLIED', 'busy', false],
+    CONFLICT: ['冲突 / 已拒绝', 'error', false],
+    UNKNOWN: ['结果未知 · 只读', 'error', false],
+    FAILED: ['失败', 'error', false],
+  }
+  const [label, tone, canApply] = map[state] || ['未识别状态', 'wait', false]
+  return {
+    phase: state,
+    label,
+    tone,
+    canApply,
+    transactionId: result.transactionId || null,
+    planId: result.plan ? result.plan.planId : null,
+    expectedRevision: result.plan ? result.plan.expectedRevision : null,
+    activeRevision: Number.isInteger(result.activeRevision) ? result.activeRevision : null,
+    errorCode: result.error && result.error.code ? result.error.code : null,
+    text: `事务 ${state} · ${result.applyState || '未生效'}`,
+  }
 }
 
 function plan09InstallView(status) {
   const map = {
     idle: { label: '未检查', tone: 'wait', busy: false },
     checking: { label: '检查中', tone: 'wait', busy: true },
+    unavailable: { label: '不可用', tone: 'error', busy: false },
     installing: { label: '演示安装中', tone: 'busy', busy: true },
+    installed: { label: '已安装 · 待验证', tone: 'wait', busy: false },
     ready: { label: '演示就绪', tone: 'demo', busy: false },
     blocked: { label: '阻塞', tone: 'error', busy: false },
     cancelled: { label: '已取消', tone: 'wait', busy: false },
@@ -1414,72 +1538,11 @@ function plan09InstallFailureReason(code) {
     OFFLINE: '网络不可用；演示不会发起真实下载，请恢复网络后重新检查。',
     NO_SPACE: '磁盘空间不足；请清理空间或更换安装位置后重试。',
     LICENSE_MISSING: '模型许可未确认；请阅读来源与许可并取得授权。',
+    NO_ADAPTER: '未接入隔离适配器，不能执行依赖检查。',
     UNKNOWN: '状态未知；不会当作安装成功，请重新检查。',
   }
   return map[code] || map.UNKNOWN
 }
-
-/**
- * Isolation-only demo transaction. It mirrors the observable Coordinator states but writes nothing;
- * the UI must label it as a fake. Real transaction evidence comes from the Node Coordinator test.
- */
-function createPlan09DemoTransaction({ baseRevision = 4, planTtlMs = 60_000, now = () => Date.now() } = {}) {
-  let state = { phase: 'DIRTY', revision: baseRevision, planId: null, expiresAt: null, expectedRevision: null, savedRevision: null, appliedRevision: null, confirmed: false, consumed: false, lastError: null, pendingApply: false }
-  const view = () => ({ ...state })
-  return {
-    view,
-    prepare() {
-      const planId = `demo-plan-${Math.random().toString(36).slice(2, 10)}`
-      state = { ...state, phase: 'PREPARED', planId, expiresAt: now() + planTtlMs, expectedRevision: state.revision, confirmed: false, consumed: false, lastError: null }
-      return view()
-    },
-    validate({ confirmedPlanId } = {}) {
-      if (state.phase !== 'PREPARED') return { ok: false, view: view(), message: '当前没有待确认的计划。' }
-      if (now() > state.expiresAt) { state = { ...state, phase: 'CONFLICT', lastError: 'PLAN_EXPIRED' }; return { ok: false, view: view(), message: '计划已过期，请重新准备。' } }
-      if (confirmedPlanId !== state.planId) { state = { ...state, phase: 'CONFLICT', lastError: 'CONFIRM_MISMATCH' }; return { ok: false, view: view(), message: '确认 ID 不匹配，已拒绝。' } }
-      state = { ...state, phase: 'VALIDATED', confirmed: true }
-      return { ok: true, view: view(), message: '校验通过；仍需隔离保存。' }
-    },
-    save({ currentRevision } = {}) {
-      if (state.phase !== 'VALIDATED' || !state.confirmed) return { ok: false, view: view(), message: '计划未校验或未确认。' }
-      if (state.consumed) return { ok: false, view: view(), message: '计划已被消费。' }
-      if (currentRevision !== state.expectedRevision) {
-        state = { ...state, phase: 'CONFLICT', lastError: 'REVISION_CONFLICT' }
-        return { ok: false, view: view(), message: 'revision 冲突：请重新读取后再试。' }
-      }
-      state = { ...state, phase: 'SAVED', revision: state.revision + 1, savedRevision: state.revision + 1, consumed: true, confirmed: false, pendingApply: true }
-      return { ok: true, view: view(), message: '已保存到隔离演示存储；未写生产配置，也尚未生效。' }
-    },
-    apply({ runtimeRevision } = {}) {
-      if (!state.pendingApply || state.savedRevision === null) return { ok: false, view: view(), message: '没有待生效的保存。' }
-      if (runtimeRevision !== state.savedRevision) {
-        state = { ...state, phase: 'UNKNOWN', lastError: 'RUNTIME_REVISION_UNKNOWN' }
-        return { ok: false, view: view(), message: '运行组件未确认同一 revision；保持 UNKNOWN，不自动重试。' }
-      }
-      state = { ...state, phase: 'APPLIED', appliedRevision: runtimeRevision, pendingApply: false }
-      return { ok: true, view: view(), message: '运行组件确认已生效。' }
-    },
-    unknown() {
-      state = { ...state, phase: 'UNKNOWN', lastError: 'RESULT_UNKNOWN' }
-      return view()
-    },
-  }
-}
-
-function plan09TransactionView(tx) {
-  const map = {
-    DIRTY: { label: '未保存草稿', tone: 'wait', canSave: false },
-    PREPARED: { label: '已准备计划', tone: 'wait', canSave: false },
-    VALIDATED: { label: '已校验待确认', tone: 'busy', canSave: true },
-    SAVED: { label: '已保存 · 未生效', tone: 'busy', canSave: false },
-    APPLIED: { label: '已生效', tone: 'online', canSave: false },
-    CONFLICT: { label: '冲突 / 已拒绝', tone: 'error', canSave: false },
-    UNKNOWN: { label: '结果未知 · 只读', tone: 'error', canSave: false },
-  }
-  const item = map[tx.phase] || map.DIRTY
-  return { ...item, phase: tx.phase, revision: tx.revision, planId: tx.planId, expectedRevision: tx.expectedRevision, lastError: tx.lastError, pendingApply: tx.pendingApply, text: `演示事务 · ${item.label} · revision ${tx.revision}` }
-}
-
 function SettingRow({ title, desc, children, tip }) {
   return h('div', { className: 'wv-setting' },
     h('div', { className: 'wv-setting-copy' },
@@ -2315,58 +2378,127 @@ function AdvancedPage({ notify, setup, capability, onSetup, onComponents }) {
     ))
 }
 
-/* Plan 09 — two entry pages, first-use dependency wizard and isolated config drafts.
- * All state is fake/local; nothing here writes production configuration or credentials.
+/* Plan 09 — two entry pages, shared dependency wizard and Coordinator-backed config drafts.
+ * All state is fake/local; the UI only talks to an injected isolated adapter and never writes
+ * production configuration or credentials.
  */
 
-function Plan09Wizard({ open, feature, mode, setMode, stored, onClose, onAcknowledge }) {
+const PLAN09_DEP_STORE = { states: new Map(), timers: new Map(), generations: new Map(), failures: {} }
+
+function plan09Adapter() {
+  try {
+    const adapter = window.__WHALE_PLAN09_CONFIG__
+    return adapter && typeof adapter.prepareChange === 'function' ? adapter : null
+  } catch {
+    return null
+  }
+}
+
+function plan09Context(adapter) {
+  const fallback = {
+    workspace: 'demo-workspace', profile: 'demo-profile', manifestRevision: PLAN09_MANIFEST_REVISION,
+    capabilityRevision: null, gpuAvailable: null, cloudAuthorized: false, deliveryAuthorized: false, senderRevision: null,
+  }
+  if (!adapter || typeof adapter.getContext !== 'function') return fallback
+  try {
+    const context = adapter.getContext() || {}
+    return { ...fallback, ...context, manifestRevision: context.manifestRevision || PLAN09_MANIFEST_REVISION }
+  } catch {
+    return fallback
+  }
+}
+
+function plan09DepState(key) {
+  return PLAN09_DEP_STORE.states.get(key) || { status: 'idle' }
+}
+
+function plan09DepSet(key, value) {
+  PLAN09_DEP_STORE.states.set(key, value)
+}
+
+function plan09DepClearTimer(key) {
+  const timer = PLAN09_DEP_STORE.timers.get(key)
+  if (timer) clearTimeout(timer)
+  PLAN09_DEP_STORE.timers.delete(key)
+}
+
+function plan09DepRun(key, action, adapter, onUpdate) {
+  const generation = (PLAN09_DEP_STORE.generations.get(key) || 0) + 1
+  PLAN09_DEP_STORE.generations.set(key, generation)
+  plan09DepClearTimer(key)
+  const current = plan09DepState(key)
+  if (action === 'cancel') {
+    plan09DepSet(key, { ...current, status: 'cancelled', busy: false, reason: 'CANCELLED' })
+    onUpdate()
+    return
+  }
+  if (action === 'retry') {
+    plan09DepSet(key, { status: 'idle' })
+    onUpdate()
+    return
+  }
+  if (action === 'check' || action === 'verify') {
+    plan09DepSet(key, { ...current, status: 'checking', busy: true })
+    onUpdate()
+    const timer = setTimeout(() => {
+      if (PLAN09_DEP_STORE.generations.get(key) !== generation) return
+      let result = { ready: false, reason: 'NO_ADAPTER' }
+      try { result = adapter.checkDependency(key) || result } catch { result = { ready: false, reason: 'CHECK_FAILED' } }
+      plan09DepSet(key, result.ready
+        ? { status: 'ready', busy: false, demo: true, checkedAt: new Date().toISOString() }
+        : { status: 'unavailable', busy: false, reason: result.reason || 'UNKNOWN' })
+      onUpdate()
+    }, 180)
+    PLAN09_DEP_STORE.timers.set(key, timer)
+    return
+  }
+  if (action === 'install') {
+    plan09DepSet(key, { ...current, status: 'installing', busy: true, failure: PLAN09_DEP_STORE.failures.selected || 'NONE' })
+    onUpdate()
+    const timer = setTimeout(() => {
+      if (PLAN09_DEP_STORE.generations.get(key) !== generation) return
+      const failure = PLAN09_DEP_STORE.failures.selected || 'NONE'
+      if (failure !== 'NONE') plan09DepSet(key, { status: 'blocked', busy: false, reason: failure })
+      else plan09DepSet(key, { status: 'installed', busy: false, demo: true, checkedAt: null })
+      onUpdate()
+    }, 260)
+    PLAN09_DEP_STORE.timers.set(key, timer)
+  }
+}
+
+function Plan09Wizard({ open, feature, mode, setMode, context, onClose, onAcknowledge, onBrowse, notify }) {
   const [install, setInstall] = React.useState({})
   const [failure, setFailure] = React.useState('NONE')
   const [introChecked, setIntroChecked] = React.useState(false)
   if (!open) return null
   const featureId = feature && feature.id ? feature.id : feature
-  const groups = plan09DependencyGroups(featureId, mode)
-  const setOne = (key, value) => setInstall((current) => ({ ...current, [key]: value }))
-  const run = (key, action) => {
-    const current = install[key] || {}
-    if (action === 'cancel') {
-      setOne(key, { ...current, status: 'cancelled', busy: false })
-      return
-    }
-    if (action === 'retry') {
-      setOne(key, { ...current, status: 'idle', reason: null, busy: false })
-      return
-    }
-    if (action === 'check') {
-      setOne(key, { ...current, status: 'checking', busy: true })
-      setTimeout(() => setOne(key, { status: 'ready', busy: false, demo: true }), 220)
-      return
-    }
-    if (action === 'install') {
-      setOne(key, { ...current, status: 'installing', busy: true })
-      setTimeout(() => {
-        if (failure === 'NONE') setOne(key, { status: 'ready', busy: false, demo: true })
-        else setOne(key, { status: 'blocked', busy: false, reason: failure })
-      }, 320)
-    }
-  }
+  const adapter = plan09Adapter()
+  const groups = plan09DependencyGroups(featureId, mode, { sourceLayout: 'MIXED', deliveryRequested: false })
+  const refresh = () => setInstall(Object.fromEntries([...PLAN09_DEP_STORE.states.entries()]))
+  const run = (key, action) => plan09DepRun(key, action, adapter, refresh)
   const rowFor = (dep) => {
-    const state = install[dep.key] || { status: 'idle' }
+    const state = install[dep.key] || plan09DepState(dep.key)
     const view = plan09InstallView(state.status)
     const buttons = [
       h(Badge, { key: 'badge', tone: view.tone }, view.label),
       h(Button, { key: 'check', size: 'sm', variant: 'ghost', disabled: state.busy, onClick: () => run(dep.key, 'check'), 'data-testid': 'plan09-check-' + dep.key }, '演示检查'),
-      h(Button, { key: 'install', size: 'sm', disabled: state.busy, onClick: () => run(dep.key, 'install'), 'data-testid': 'plan09-install-' + dep.key }, '演示安装'),
     ]
+    if (state.status !== 'ready') {
+      buttons.push(h(Button, { key: 'install', size: 'sm', disabled: state.busy || !adapter, title: adapter ? '' : '未接入配置适配器', onClick: () => run(dep.key, 'install'), 'data-testid': 'plan09-install-' + dep.key }, '演示安装'))
+    }
+    if (state.status === 'installed') {
+      buttons.push(h(Button, { key: 'verify', size: 'sm', onClick: () => run(dep.key, 'verify'), 'data-testid': 'plan09-verify-' + dep.key }, '验证能力'))
+    }
     if (state.busy) buttons.push(h(Button, { key: 'cancel', size: 'sm', variant: 'ghost', onClick: () => run(dep.key, 'cancel'), 'data-testid': 'plan09-cancel-' + dep.key }, '取消'))
-    if (state.status === 'blocked' || state.status === 'failed') {
+    if (state.status === 'blocked' || state.status === 'failed' || state.status === 'unavailable') {
       buttons.push(h(Button, { key: 'retry', size: 'sm', variant: 'ghost', onClick: () => run(dep.key, 'retry'), 'data-testid': 'plan09-retry-' + dep.key }, '重试'))
     }
     return h('div', { key: dep.key, className: 'wv-plan09-dep', 'data-testid': 'plan09-dep-' + dep.key, 'data-state': state.status },
       h('div', null,
         h('strong', null, dep.label),
         h('p', null, dep.desc),
-        state.status === 'blocked' ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-dep-reason-' + dep.key }, plan09InstallFailureReason(state.reason)) : null),
+        h('p', { className: 'wv-muted' }, '来源/许可：' + (dep.license || '未知') + ' · 体积：' + (dep.size || '未知')),
+        state.status === 'blocked' || state.status === 'unavailable' ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-dep-reason-' + dep.key }, plan09InstallFailureReason(state.reason)) : null),
       h('div', { className: 'wv-row' }, buttons))
   }
   const groupSection = (key, title) => {
@@ -2378,7 +2510,7 @@ function Plan09Wizard({ open, feature, mode, setMode, stored, onClose, onAcknowl
   const footer = h(React.Fragment, null,
     h('span', { className: 'wv-setup-footnote' }, '演示向导 · 不下载、不安装、不写生产配置'),
     h('span', { className: 'wv-spacer' }),
-    h(Button, { variant: 'ghost', onClick: onClose, 'data-testid': 'plan09-wizard-browse' }, '仅浏览'),
+    h(Button, { variant: 'ghost', onClick: onBrowse, 'data-testid': 'plan09-wizard-browse' }, '仅浏览'),
     h(Button, {
       variant: 'primary', disabled: !introChecked, 'data-testid': 'plan09-wizard-acknowledge',
       onClick: () => onAcknowledge({ mode, introAcknowledged: true }),
@@ -2391,7 +2523,7 @@ function Plan09Wizard({ open, feature, mode, setMode, stored, onClose, onAcknowl
     h('div', { className: 'wv-plan09-intro', 'data-testid': 'plan09-wizard' },
       h('div', { className: 'wv-plan09-intro-icon' }, h(Icon, { name: feature.icon, size: 20 })),
       h('div', null,
-        h('strong', null, feature.id === 'singing' ? '唱歌需要独立的人声分离与翻唱模型' : '语音气泡需要 TTS 和微信投递组件'),
+        h('strong', null, featureId === 'singing' ? '唱歌需要 RVC 与必要的人声分离' : '语音气泡需要 TTS 和微信投递组件'),
         h('p', null, feature.hint + '。所有依赖检查、安装进度与失败恢复都是隔离演示，不会下载文件或启动真实服务。'),
         h('p', { className: 'wv-muted' }, '音色、Provider 与依赖共用同一份来源；这里不会创建第二套账号或凭据。'))),
     h('div', { className: 'wv-plan09-modes', role: 'group', 'aria-label': '运行模式' },
@@ -2411,95 +2543,147 @@ function Plan09Wizard({ open, feature, mode, setMode, stored, onClose, onAcknowl
       h('span', null, '演示失败原因：'),
       h('select', {
         className: 'wv-select', value: failure, 'data-testid': 'plan09-failure-select',
-        onChange: (event) => setFailure(event.target.value),
+        onChange: (event) => { setFailure(event.target.value); PLAN09_DEP_STORE.failures.selected = event.target.value },
       },
         [['NONE', '不注入失败'], ['NO_GPU', '没有 GPU'], ['OFFLINE', '断网'], ['NO_SPACE', '磁盘空间不足'], ['LICENSE_MISSING', '许可缺失'], ['UNKNOWN', '状态未知']].map(([value, label]) => h('option', { key: value, value }, label)))),
     h('label', { className: 'wv-plan09-check' },
       h('input', { type: 'checkbox', checked: introChecked, 'data-testid': 'plan09-intro-check', onChange: (event) => setIntroChecked(event.target.checked) }),
       h('span', null, '我已了解这是隔离演示；确认不会把组件标成真实安装成功，也不会提升生产权限。')),
-    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, '当前记录：' + (stored && stored.introAcknowledged ? '已确认过本版本说明' : '本版本尚未确认') + ' · manifest r' + PLAN09_MANIFEST_REVISION))
+    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, '当前记录：' + (context.introAcknowledged ? '已确认过本版本说明' : '本版本尚未确认') + ' · manifest r' + context.manifestRevision))
 }
 
 function Plan09DraftField({ label, children, hint }) {
   return h('div', { className: 'wv-field' }, h('label', null, label), children, hint ? h('small', { className: 'wv-muted' }, hint) : null)
 }
 
-function Plan09TransactionPanel({ feature, onNotify }) {
-  const txRef = React.useRef(null)
-  if (!txRef.current) txRef.current = createPlan09DemoTransaction()
-  const [view, setView] = React.useState(() => plan09TransactionView(txRef.current.view()))
-  const [revisionMismatch, setRevisionMismatch] = React.useState(false)
-  const [runtimeConfirmed, setRuntimeConfirmed] = React.useState(false)
-  const refresh = (next) => { setView(plan09TransactionView(next)); return next }
-  const prepare = () => { refresh(txRef.current.prepare()); onNotify('已准备演示变更计划；请核对后确认。', 'info') }
-  const confirm = () => {
-    const validated = txRef.current.validate({ confirmedPlanId: txRef.current.view().planId })
-    if (!validated.ok) { refresh(validated.view); onNotify(validated.message, 'error'); return }
-    const saved = txRef.current.save({ currentRevision: revisionMismatch ? txRef.current.view().expectedRevision + 1 : txRef.current.view().expectedRevision })
-    refresh(saved.view)
-    onNotify(saved.message, saved.ok ? 'success' : 'error')
+function Plan09TransactionPanel({ feature, draft, validate, context, onNotify }) {
+  const adapter = plan09Adapter()
+  const [state, setState] = React.useState({ phase: 'DIRTY', result: null, plan: null, busy: false, error: null })
+  const lastDraft = React.useRef(null)
+  React.useEffect(() => {
+    const serial = JSON.stringify(draft)
+    if (lastDraft.current !== null && lastDraft.current !== serial && state.phase !== 'UNKNOWN') {
+      setState({ phase: 'DIRTY', result: null, plan: null, busy: false, error: 'DRAFT_CHANGED' })
+    }
+    lastDraft.current = serial
+  }, [draft, state.phase])
+  const changes = plan09DraftToChanges(feature, draft, { senderRevision: context.senderRevision })
+  const unsupported = changes.unsupported || []
+  const disabled = !adapter || !changes.supported || state.busy
+  const prepare = () => {
+    if (!adapter) return onNotify('未接入配置适配器：只能查看草稿，不能保存。', 'error')
+    const valid = validate()
+    if (!valid.ok) return onNotify('草稿未通过校验，不能准备变更。', 'error')
+    const result = adapter.prepareChange(changes.changes)
+    if (!result || !result.ok) {
+      setState({ phase: 'FAILED', result, plan: null, busy: false, error: result && result.error ? result.error.code : 'PREPARE_FAILED' })
+      return onNotify('准备变更失败：' + (result && result.error ? result.error.code : '未知错误'), 'error')
+    }
+    setState({ phase: 'PREPARED', result, plan: result.plan, busy: false, error: null })
+    onNotify('已准备隔离变更计划；请核对字段与 revision 后确认。', 'info')
   }
-  const apply = () => {
-    const result = txRef.current.apply({ runtimeRevision: runtimeConfirmed ? txRef.current.view().savedRevision : null })
-    refresh(result.view)
-    onNotify(result.message, result.ok ? 'success' : 'error')
+  const confirmSave = () => {
+    if (!adapter || !state.plan) return
+    const result = adapter.execute(state.plan.planId, { userConfirmed: true, confirmedPlanId: state.plan.planId })
+    if (!result || !result.ok) {
+      const phase = result && result.state === 'CONFLICT' ? 'CONFLICT' : 'FAILED'
+      setState({ phase, result, plan: state.plan, busy: false, error: result && result.error ? result.error.code : 'SAVE_FAILED' })
+      return onNotify('保存未完成：' + (result && result.error ? result.error.code : '未知错误'), 'error')
+    }
+    setState({ phase: 'SAVED', result, plan: state.plan, busy: false, error: null })
+    onNotify(result.applyState === 'PENDING_APPLY' ? '已保存到隔离设施，等待运行组件确认；SAVED 不等于 APPLIED。' : '已保存到隔离设施。', 'success')
   }
-  return h('section', { className: 'wv-card pad', 'data-testid': 'plan09-tx-panel', 'data-phase': view.phase },
+  const applyCheck = () => {
+    if (!adapter || !state.result || !state.result.transactionId) return
+    const result = adapter.apply(state.result.transactionId, { userConfirmed: true })
+    const phase = result && result.ok ? (result.state === 'APPLIED' ? 'APPLIED' : 'PENDING_APPLY') : 'UNKNOWN'
+    setState({ phase, result, plan: state.plan, busy: false, error: result && result.error ? result.error.code : null })
+    onNotify(phase === 'APPLIED' ? '运行组件已确认同一 revision。' : '未取得可信运行确认，保持只读 UNKNOWN/待生效。', phase === 'APPLIED' ? 'success' : 'info')
+  }
+  const readStatus = () => {
+    if (!adapter || !state.result || !state.result.transactionId) return
+    const result = adapter.recover(state.result.transactionId)
+    const projection = plan09ProjectCoordinatorResult(result)
+    setState((current) => ({ ...current, phase: projection.phase, result, busy: false }))
+    onNotify('已只读查证事务状态；不会自动重试写入。', 'info')
+  }
+  const view = state.result ? plan09ProjectCoordinatorResult(state.result) : { phase: 'DIRTY', label: '未保存草稿', tone: 'wait', text: '尚未准备变更。' }
+  const phase = state.phase === 'PREPARED' ? 'PREPARED' : view.phase
+  return h('section', { className: 'wv-card pad', 'data-testid': 'plan09-tx-panel', 'data-phase': phase, 'data-tx': state.result && state.result.transactionId ? state.result.transactionId : '' },
     h('div', { className: 'wv-card-title' },
-      h('div', null, h('h2', null, '配置事务 · 隔离演示'), h('p', null, 'DIRTY → 预览计划 → 精确确认 → 隔离保存 → 待生效；未写生产配置。')),
+      h('div', null, h('h2', null, '配置事务 · 隔离 Adapter'), h('p', null, '有效草稿 → 不可变变更预览 → 精确确认 → 隔离保存 → 状态查证；未写生产配置。')),
       h(Badge, { tone: view.tone }, view.label)),
+    !adapter ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-no-adapter' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入配置适配器：本页只读草稿，不能准备或保存变更。')) : null,
+    !changes.supported ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-unsupported' }, h(Icon, { name: 'info', size: 14 }), h('span', null, unsupported.join(' '))) : null,
     h('div', { className: 'wv-plan09-txline' },
-      h('span', null, `revision ${view.revision}`),
-      view.planId ? h('span', { className: 'wv-mono' }, view.planId) : null,
-      view.lastError ? h('span', { className: 'wv-plan09-error', 'data-testid': 'plan09-tx-error' }, view.lastError) : null),
+      h('span', null, '可应用字段：' + (changes.applied.length ? changes.applied.join('、') : '无')),
+      unsupported.length ? h('span', { className: 'wv-muted' }, '草稿未应用：' + unsupported.join('、')) : null,
+      h('span', null, 'revision ' + (context.senderRevision === null ? '未知' : context.senderRevision))),
     h('div', { className: 'wv-row wv-wrap', style: { marginTop: 10 } },
-      h(Button, { onClick: prepare, 'data-testid': 'plan09-prepare' }, '预览变更'),
-      h(Button, { variant: 'primary', disabled: view.phase !== 'PREPARED', onClick: confirm, 'data-testid': 'plan09-confirm-save' }, '确认并隔离保存'),
-      h(Button, { variant: 'ghost', disabled: !view.pendingApply, onClick: apply, 'data-testid': 'plan09-apply-check' }, '检查是否生效'),
-      h(Button, { variant: 'ghost', onClick: () => { refresh(txRef.current.unknown()); onNotify('已模拟结果未知：只读查证，不自动重试写入。', 'error') }, 'data-testid': 'plan09-unknown' }, '模拟未知')),
-    h('div', { className: 'wv-plan09-toggles' },
-      h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: revisionMismatch, 'data-testid': 'plan09-revision-mismatch', onChange: (e) => setRevisionMismatch(e.target.checked) }), h('span', null, '模拟 revision 冲突')),
-      h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: runtimeConfirmed, 'data-testid': 'plan09-runtime-confirmed', onChange: (e) => setRuntimeConfirmed(e.target.checked) }), h('span', null, '运行组件已确认同一 revision'))),
-    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, view.text + ' · SAVED 不等于 APPLIED，更不等于 SENT。'))
+      h(Button, { onClick: prepare, disabled: disabled || phase === 'UNKNOWN', 'data-testid': 'plan09-prepare' }, '预览变更'),
+      h(Button, { variant: 'primary', disabled: disabled || phase !== 'PREPARED', onClick: confirmSave, 'data-testid': 'plan09-confirm-save' }, '确认并隔离保存'),
+      h(Button, { variant: 'ghost', disabled: !state.result || !state.result.transactionId || phase === 'APPLIED', onClick: applyCheck, 'data-testid': 'plan09-apply-check' }, '检查是否生效'),
+      h(Button, { variant: 'ghost', disabled: !state.result || !state.result.transactionId, onClick: readStatus, 'data-testid': 'plan09-read-status' }, '只读查证')),
+    state.error ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-tx-error' }, state.error) : null,
+    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, view.text + ' · SAVED 不等于 APPLIED，更不等于 SENT；编辑草稿会作废旧计划。'))
 }
 
 function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen = false, capabilityRevision = null }) {
-  const key = plan09WizardKey({ workspace: 'demo-workspace', profile: profileKey, feature: feature.id })
+  const adapter = plan09Adapter()
+  const context = plan09Context(adapter)
+  const key = plan09WizardKey({ workspace: context.workspace, profile: context.profile, feature: feature.id, manifestRevision: context.manifestRevision })
   const stored = plan09ReadWizard(window.localStorage, key)
   const [mode, setMode] = React.useState(stored.selectedMode || 'local')
   const [wizardOpen, setWizardOpen] = React.useState(false)
+  const [wizardContext, setWizardContext] = React.useState(stored)
   const [errors, setErrors] = React.useState([])
   const [preview, setPreview] = React.useState(null)
   const [voiceDraft, setVoiceDraft] = React.useState(plan09DefaultVoiceDraft)
   const [singingDraft, setSingingDraft] = React.useState(plan09DefaultSingingDraft)
   React.useEffect(() => {
-    const view = plan09DeriveWizardView({
-      stored: plan09ReadWizard(window.localStorage, key),
-      capabilityRevision,
-      globalSetupOpen,
-    })
-    if (view.shouldOpen) setWizardOpen(true)
-  }, [key, globalSetupOpen, capabilityRevision])
+    const view = plan09DeriveWizardView({ stored: plan09ReadWizard(window.localStorage, key), capabilityRevision: capabilityRevision === null ? context.capabilityRevision : capabilityRevision, globalSetupOpen })
+    if (view.shouldOpen) { setWizardContext(plan09ReadWizard(window.localStorage, key)); setWizardOpen(true) }
+  }, [key, globalSetupOpen, capabilityRevision, context.capabilityRevision])
   const draft = feature.id === 'singing' ? singingDraft : voiceDraft
   const setDraft = feature.id === 'singing' ? setSingingDraft : setVoiceDraft
   const patch = (part) => setDraft((current) => ({ ...current, ...part }))
   const saveWizard = (patchValue) => {
-    plan09WriteWizard(window.localStorage, key, { ...patchValue, verifiedCapabilitiesRevision: capabilityRevision })
+    const next = plan09WriteWizard(window.localStorage, key, {
+      mode: patchValue.mode,
+      introAcknowledged: true,
+      capabilityRevisionSeen: context.capabilityRevision,
+      browseDismissedRevision: null,
+    })
+    setWizardContext(next || stored)
     setWizardOpen(false)
     notify('已记录本功能的首次说明确认；这不是安装成功，也不代表能力 READY。', 'info')
   }
+  const browseWizard = () => {
+    const next = plan09WriteWizard(window.localStorage, key, { browseDismissedRevision: context.manifestRevision, mode })
+    setWizardContext(next || stored)
+    setWizardOpen(false)
+  }
+  const changeMode = (nextMode) => {
+    const switched = plan09SwitchMode(feature.id, nextMode, draft)
+    setDraft(switched.draft)
+    setMode(nextMode)
+    plan09WriteWizard(window.localStorage, key, { mode: nextMode })
+    setErrors([])
+    if (switched.cleared.length) notify('已切换模式并清理不兼容字段：' + switched.cleared.join('、'), 'info')
+  }
   const validate = () => {
     const result = feature.id === 'singing'
-      ? plan09ValidateSingingDraft(singingDraft, { gpuAvailable: null, deliveryAuthorized: false })
-      : plan09ValidateVoiceDraft(voiceDraft, { cloudAuthorized: false })
+      ? plan09ValidateSingingDraft(singingDraft, { gpuAvailable: context.gpuAvailable, deliveryAuthorized: context.deliveryAuthorized, mode })
+      : plan09ValidateVoiceDraft(voiceDraft, { cloudAuthorized: context.cloudAuthorized })
     setErrors(result.errors)
-    return result.ok
+    return result
   }
   const previewDraft = () => {
-    if (!validate()) { notify('草稿还有未完成项，请先处理红色提示。', 'error'); return }
+    const result = validate()
+    if (!result.ok) { setPreview(null); notify('草稿还有未完成项，请先处理红色提示。', 'error'); return }
     setPreview(feature.id === 'singing'
-      ? `唱歌 · ${singingDraft.engine.toUpperCase()} · 音高 ${singingDraft.pitch} · 人声 ${singingDraft.vocalGainDb} dB / 伴奏 ${singingDraft.instrumentalGainDb} dB`
-      : `语音气泡 · ${voiceDraft.engine} · ${voiceDraft.provider} / ${voiceDraft.model} · ${voiceDraft.voiceProfile} · ${voiceDraft.language} · ${voiceDraft.emotion}`)
+      ? `唱歌 · ${singingDraft.engine.toUpperCase()} · ${singingDraft.voiceProfile} · 音高 ${singingDraft.pitch} · ${singingDraft.sourceLayout}`
+      : `语音气泡 · ${voiceDraft.engine} · ${voiceDraft.provider} / ${voiceDraft.model} · ${voiceDraft.voiceProfile}`)
     notify('已生成演示预览；没有合成或播放真实音频。', 'info')
   }
   const switchEngine = (engine) => {
@@ -2508,38 +2692,47 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
     setErrors([])
     if (result.cleared.length) notify('已清理不兼容字段：' + result.cleared.join('、') + '。请重新确认参数。', 'info')
   }
+  const groups = plan09DependencyGroups(feature.id, mode, {
+    sourceLayout: feature.id === 'singing' ? singingDraft.sourceLayout : 'MIXED',
+    deliveryRequested: feature.id === 'singing' ? singingDraft.deliveryRequested : false,
+  })
   return h('div', { 'data-testid': `page-${feature.id}` },
     h(PageHead, {
       eyebrow: feature.en, title: feature.label, description: feature.hint + '。本轮仅提供离线 Fake 界面与草稿，真实引擎尚未接入。',
       actions: h(React.Fragment, null,
         h(Badge, { tone: 'demo' }, '演示 · 未接入'),
-        h(Button, { variant: 'ghost', onClick: () => setWizardOpen(true), 'data-testid': 'plan09-reopen' }, '依赖向导')),
+        h(Button, { variant: 'ghost', onClick: () => { setWizardContext(plan09ReadWizard(window.localStorage, key)); setWizardOpen(true) }, 'data-testid': 'plan09-reopen' }, '依赖向导')),
     }),
     h('div', { className: 'wv-notice', style: { marginBottom: 14 } },
       h(Icon, { name: 'info', size: 15 }),
       h('span', null, '当前入口是独立页面，但共享同一份音色、Provider、依赖与任务展示来源；不会创建第二套账号或凭据。')),
     h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan09-mode-summary' },
       h('div', { className: 'wv-card-title' },
-        h('div', null, h('h2', null, '运行模式与依赖'), h('p', null, '按模式显示必需、可选、仅投递与条件依赖；缺另一功能或微信依赖不阻断浏览与草稿。')),
+        h('div', null, h('h2', null, '运行模式与依赖'), h('p', null, '按模式与素材类型显示必需、可选、仅投递与条件依赖；缺投递依赖不阻断草稿。')),
         h(Badge, { tone: 'wait' }, PLAN09_MODES.find((m) => m.id === mode)?.label || '本机')),
       h('div', { className: 'wv-row wv-wrap' },
         PLAN09_MODES.map((item) => h(Button, {
-          key: item.id, size: 'sm', variant: mode === item.id ? 'primary' : 'ghost', 'data-testid': `plan09-page-mode-${item.id}`,
-          onClick: () => { setMode(item.id); plan09WriteWizard(window.localStorage, key, { selectedMode: item.id }) },
+          key: item.id, size: 'sm', variant: mode === item.id ? 'primary' : 'ghost', 'data-testid': 'plan09-page-mode-' + item.id,
+          onClick: () => changeMode(item.id),
         }, item.label))),
-      h('p', { className: 'wv-muted', style: { margin: '8px 0 0' } }, plan09DependencySummary(plan09DependencyGroups(feature.id, mode)).text + '。共享已验证项不会重复模拟安装。')),
+      h('p', { className: 'wv-muted', style: { margin: '8px 0 0' } }, plan09DependencySummary(groups).text + '。共享已验证项不会重复模拟安装。')),
     h('div', { className: 'wv-grid two', style: { marginBottom: 14 } },
       h('section', { className: 'wv-card pad' },
-        h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '配置草稿'), h('p', null, '切换引擎会清理不兼容参数；云端授权与投递权限照实显示。'))),
+        h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '配置草稿'), h('p', null, '新手用中文方案；高级自定义折叠。切换引擎/模式会清理不兼容字段。'))),
         h('div', { className: 'wv-plan09-form' },
-          h(Plan09DraftField, { label: '引擎 / 模式' },
+          h(Plan09DraftField, { label: '方案' },
             h('select', {
               className: 'wv-select', value: draft.engine, 'data-testid': 'plan09-draft-engine',
               onChange: (event) => switchEngine(event.target.value),
-            }, (feature.id === 'singing' ? [['rvc', 'RVC 标准翻唱（首发）'], ['gateway', '已有服务 Gateway'], ['svc', 'SVC（后续可选，不安装）']] : [['local', '本机 TTS'], ['cloud', '云端 Provider'], ['custom', '自定义本机服务']]).map(([value, label]) => h('option', { key: value, value }, label)))),
+            }, (feature.id === 'singing' ? [['rvc', 'RVC 标准翻唱（首发）'], ['gateway', '已有服务 Gateway'], ['svc', 'SVC（后续可选，不安装）']] : [['local', '本机 Qwen 服务'], ['cloud', '隔离云端 Fixture'], ['custom', '自定义本机服务']]).map(([value, label]) => h('option', { key: value, value }, label)))),
           feature.id === 'singing' ? h(React.Fragment, null,
-            h(Plan09DraftField, { label: '演示素材引用', hint: '只接受虚构引用；不会读取、上传或抓取真实素材。' },
+            h(Plan09DraftField, { label: '音色方案' },
+              h('select', { className: 'wv-select', value: singingDraft.voiceProfile, 'data-testid': 'plan09-singing-voice', onChange: (e) => patch({ voiceProfile: e.target.value }) }, PLAN09_SINGING_VOICES.map((voice) => h('option', { key: voice.id, value: voice.id }, voice.label)))),
+            h(Plan09DraftField, { label: '虚构素材引用', hint: '只接受 fixture:// 虚构引用；不会读取、上传或抓取真实素材。' },
               h('input', { className: 'wv-input', value: singingDraft.sourceRef, placeholder: 'fixture://demo-song-01', 'data-testid': 'plan09-draft-source', onChange: (e) => patch({ sourceRef: e.target.value }) })),
+            h('div', { className: 'wv-grid two' },
+              h(Plan09DraftField, { label: '素材类型' }, h('select', { className: 'wv-select', value: singingDraft.sourceLayout, 'data-testid': 'plan09-source-layout', onChange: (e) => patch({ sourceLayout: e.target.value }) }, h('option', { value: 'MIXED' }, '混合素材（需分离）'), h('option', { value: 'CLEAN_VOCAL' }, '干净人声（可跳过分离）'))),
+              h(Plan09DraftField, { label: '混音方式' }, h('select', { className: 'wv-select', value: singingDraft.mixMode, 'data-testid': 'plan09-mix-mode', onChange: (e) => patch({ mixMode: e.target.value }) }, h('option', { value: 'WITH_INSTRUMENTAL' }, '人声 + 伴奏'), h('option', { value: 'VOCAL_ONLY' }, '仅人声')))),
             h('div', { className: 'wv-plan09-checks' },
               h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.sourceAuthorized, 'data-testid': 'plan09-source-authorized', onChange: (e) => patch({ sourceAuthorized: e.target.checked }) }), h('span', null, '我确认演示素材已获授权')),
               h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.voiceConsent, 'data-testid': 'plan09-voice-consent', onChange: (e) => patch({ voiceConsent: e.target.checked }) }), h('span', null, '我确认音色使用已获同意'))),
@@ -2551,19 +2744,21 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
               h('input', { className: 'wv-input', type: 'number', min: -12, max: 12, value: singingDraft.instrumentalGainDb, 'data-testid': 'plan09-instrumental-gain', onChange: (e) => patch({ instrumentalGainDb: Number(e.target.value) }) })),
             h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.deliveryRequested, 'data-testid': 'plan09-delivery', onChange: (e) => patch({ deliveryRequested: e.target.checked }) }), h('span', null, '保存后申请投递到微信（未授权时仅保存草稿）')))
           : h(React.Fragment, null,
-            h(Plan09DraftField, { label: 'Provider' },
-              h('input', { className: 'wv-input', value: voiceDraft.provider, 'data-testid': 'plan09-draft-provider', onChange: (e) => patch({ provider: e.target.value }) })),
-            h(Plan09DraftField, { label: '模型' },
-              h('input', { className: 'wv-input', value: voiceDraft.model, 'data-testid': 'plan09-draft-model', onChange: (e) => patch({ model: e.target.value }) })),
-            h(Plan09DraftField, { label: '音色 Profile' },
-              h('input', { className: 'wv-input', value: voiceDraft.voiceProfile, 'data-testid': 'plan09-draft-voice', onChange: (e) => patch({ voiceProfile: e.target.value }) })),
+            h(Plan09DraftField, { label: '音色' },
+              h('select', { className: 'wv-select', value: voiceDraft.voiceProfile, 'data-testid': 'plan09-draft-voice', onChange: (e) => patch({ voiceProfile: e.target.value }) }, (PLAN09_PROVIDERS.find((p) => p.id === voiceDraft.provider)?.voices || []).map((voice) => h('option', { key: voice, value: voice }, voice)))),
             h('div', { className: 'wv-grid two' },
               h(Plan09DraftField, { label: '语言' }, h('select', { className: 'wv-select', value: voiceDraft.language, 'data-testid': 'plan09-draft-language', onChange: (e) => patch({ language: e.target.value }) }, PLAN09_LANGUAGES.map((v) => h('option', { key: v, value: v }, v)))),
               h(Plan09DraftField, { label: '情绪' }, h('select', { className: 'wv-select', value: voiceDraft.emotion, 'data-testid': 'plan09-draft-emotion', onChange: (e) => patch({ emotion: e.target.value }) }, PLAN09_EMOTIONS.map((v) => h('option', { key: v, value: v }, v))))),
             h(Plan09DraftField, { label: `语速 ${Number(voiceDraft.speed).toFixed(1)}×` },
               h('input', { className: 'wv-input', type: 'range', min: 0.5, max: 2, step: 0.1, value: voiceDraft.speed, 'data-testid': 'plan09-draft-speed', onChange: (e) => patch({ speed: Number(e.target.value) }) })),
             h(Plan09DraftField, { label: `音量 ${voiceDraft.volume}%` },
-              h('input', { className: 'wv-input', type: 'range', min: 0, max: 100, step: 1, value: voiceDraft.volume, 'data-testid': 'plan09-draft-volume', onChange: (e) => patch({ volume: Number(e.target.value) }) }))),
+              h('input', { className: 'wv-input', type: 'range', min: 0, max: 100, step: 1, value: voiceDraft.volume, 'data-testid': 'plan09-draft-volume', onChange: (e) => patch({ volume: Number(e.target.value) }) })),
+            h('details', { className: 'wv-plan09-advanced' },
+              h('summary', null, '高级自定义（默认折叠）'),
+              h(Plan09DraftField, { label: 'Provider' },
+                h('input', { className: 'wv-input', value: voiceDraft.provider, 'data-testid': 'plan09-draft-provider', onChange: (e) => patch({ provider: e.target.value }) })),
+              h(Plan09DraftField, { label: '模型' },
+                h('input', { className: 'wv-input', value: voiceDraft.model, 'data-testid': 'plan09-draft-model', onChange: (e) => patch({ model: e.target.value }) }))))),
           h(Plan09DraftField, { label: '演示文本 / 试唱文本' },
             h('textarea', { className: 'wv-textarea', rows: 3, value: draft.text, 'data-testid': 'plan09-draft-text', onChange: (e) => patch({ text: e.target.value }) })),
           errors.length ? h('div', { className: 'wv-plan09-errors', 'data-testid': 'plan09-errors' }, errors.map((error) => h('p', { key: error.field + error.message }, '· ' + error.message))) : null,
@@ -2574,17 +2769,18 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
       h('section', { className: 'wv-card pad' },
         h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '投递权限与能力边界'), h('p', null, 'SAVED ≠ APPLIED ≠ SENT；未授权时只能保存草稿。'))),
         h('div', { className: 'wv-settings-group' },
-          h(SettingRow, { title: '微信投递', desc: '需要 WeChatAgent 与发送器；未授权时禁用演示发送。' }, h(Badge, { tone: 'wait' }, '未授权')),
+          h(SettingRow, { title: '微信投递', desc: '需要 WeChatAgent 与鲸递发送模块；未授权时禁用演示发送。' }, h(Badge, { tone: 'wait' }, '未授权')),
           h(SettingRow, { title: '云端费用与文本', desc: '云端模式会把文本发送到 Provider；真实调用始终禁用。' }, h(Badge, { tone: 'demo' }, '仅说明')),
           h(SettingRow, { title: '真实音频', desc: '不接收、不存储、不输出真实音频或密钥。' }, h(Badge, { tone: 'demo' }, 'Fake')),
           h(SettingRow, { title: '首次说明', desc: '确认只记录读过说明，不等于 READY。' }, h('span', { className: 'wv-muted', 'data-testid': 'plan09-ack-state' }, stored.introAcknowledged ? '本版本已确认' : '未确认')))),
-    h(Plan09TransactionPanel, { feature: feature.id, onNotify: notify }),
+    h(Plan09TransactionPanel, { feature: feature.id, draft, validate, context, onNotify: notify }),
     wizardOpen ? h(Plan09Wizard, {
-      open: true, feature, mode, setMode, stored,
-      onClose: () => setWizardOpen(false),
+      open: true, feature, mode, setMode: changeMode, context: wizardContext,
+      onClose: browseWizard,
       onAcknowledge: (value) => saveWizard(value),
+      onBrowse: browseWizard,
       notify,
-    }) : null))
+    }) : null)
 }
 
 /* Whale Voice first-run setup UI and component manager.

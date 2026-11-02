@@ -381,6 +381,62 @@
   const fakeBridge = bridge(bridgeMode)
   if (fakeBridge) window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
 
+  // Plan 09 test-only adapter. It never touches production config; it records the calls the UI makes
+  // and enforces the same confirmation/expiry/consumed/revision semantics as the real Coordinator.
+  function createPlan09Adapter() {
+    let revision = 4
+    let sequence = 0
+    const plans = new Map()
+    const transactions = new Map()
+    const calls = []
+    const context = {
+      workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1,
+      senderRevision: 4, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false,
+    }
+    const adapter = {
+      calls,
+      getContext() { calls.push('getContext'); return { ...context } },
+      checkDependency(key) { calls.push('check:' + key); return { ready: key !== 'gpu' || context.gpuAvailable !== false } },
+      bumpRevision() { revision += 1 },
+      prepareChange(draft) {
+        calls.push('prepareChange')
+        if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
+        const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false }
+        plans.set(plan.planId, plan)
+        return { ok: true, plan }
+      },
+      execute(planId, options = {}) {
+        calls.push('execute')
+        const plan = plans.get(planId)
+        if (!plan) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
+        if (options.userConfirmed !== true || options.confirmedPlanId !== planId) return { ok: false, error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }
+        if (plan.consumed) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_CONSUMED' } }
+        if (Date.now() > plan.expiresAt) return { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_PLAN_EXPIRED' } }
+        if (plan.expectedRevision !== revision) return { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_CONFLICT' } }
+        plan.consumed = true
+        revision += 1
+        const transactionId = 'fixture-tx-' + sequence
+        const record = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
+        transactions.set(transactionId, record)
+        return record
+      },
+      apply(transactionId) {
+        calls.push('apply')
+        const record = transactions.get(transactionId)
+        if (!record) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+        return { ...record, state: 'PENDING_APPLY', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
+      },
+      recover(transactionId) {
+        calls.push('recover')
+        const record = transactions.get(transactionId)
+        return record ? { ...record, replayed: false } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+      },
+    }
+    window.__WHALE_PLAN09_ADAPTER_CALLS__ = calls
+    return adapter
+  }
+  window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
+
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {
     document.getElementById('wv-harness-root').textContent = 'harness module missing'
