@@ -414,6 +414,7 @@
     let loseExecuteResponse = false
     let emptyExecuteResponse = null
     let failNoWriteExecute = false
+    let unknownRecover = false
     const failedTransactions = new Map()
     const adapter = {
       calls,
@@ -427,7 +428,7 @@
       deferNextCheck() { deferCheck = true },
       releaseCheck(value) { if (checkResolver) { const resolve = checkResolver; checkResolver = null; resolve(value || { ready: true }) } },
       deferNextPrepare() { deferPrepare = true },
-      releasePrepare() { if (prepareResolver) { const resolve = prepareResolver; prepareResolver = null; resolve() } },
+      releasePrepare(kind) { if (prepareResolver) { const resolve = prepareResolver; prepareResolver = null; resolve(kind || 'ok') } },
       deferNextExecute() { deferExecute = true },
       releaseExecute() { if (executeResolver) { const resolve = executeResolver; executeResolver = null; resolve() } },
       deferNextApply() { deferApply = true },
@@ -439,6 +440,7 @@
       unknownNextExecute() { unknownExecute = true },
       unknownNextApply() { unknownApply = true },
       appliedNextApply() { appliedApply = true },
+      unknownNextRecover() { unknownRecover = true },
       loseNextExecuteResponse() { loseExecuteResponse = true },
       emptyNextExecuteResponse(kind) { emptyExecuteResponse = kind || 'object' },
       failNextExecuteWithoutWrite() { failNoWriteExecute = true },
@@ -447,7 +449,13 @@
       async prepareChange(draft) {
         record('prepareChange')
         if (nullPrepare) { nullPrepare = false; return null }
-        if (deferPrepare) { deferPrepare = false; await new Promise((resolve) => { prepareResolver = resolve }) }
+        if (deferPrepare) {
+          deferPrepare = false
+          const outcome = await new Promise((resolve) => { prepareResolver = resolve })
+          if (outcome === 'throw') throw new Error('fixture prepare failure after deferral')
+          if (outcome === 'null') return null
+          if (outcome === 'object') return {}
+        }
         if (real) return real.prepare(draft)
         if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
         const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false, changes: draft }
@@ -509,6 +517,7 @@
       async recover(transactionId, options = {}) {
         record('recover')
         if (throwRecover) { throwRecover = false; throw new Error('fixture recover failure') }
+        if (unknownRecover) { unknownRecover = false; return { ok: false, state: 'UNKNOWN', transactionId, error: { code: 'CONFIG_COORDINATION_STATUS_UNKNOWN' } } }
         const failed = failedTransactions.get(transactionId)
         if (failed) return { ok: true, state: 'FAILED', phase: 'FAILED', committed: false, recoveryRequired: false, transactionId, version: 1, steps: [], replayed: false }
         if (real) return real.recover(transactionId, options)

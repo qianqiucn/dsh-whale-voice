@@ -114,3 +114,11 @@
 - 准备期间发生上下文/授权变化时，迟到返回的旧计划直接标为 stale（`CONTEXT_CHANGED`），确认按当前权限重新校验，同时允许直接重新准备当前草稿；不再出现“显示 PREPARED 但 prepare/confirm/reset 全部禁用且无提示”的死角。
 - 依赖身份（workspace/profile/manifest/capability）变化时，除了卸载清理，还会用旧身份快照取消本页启动的未完成检查；切 profile/revision 后旧响应不会变成 ready，返回原身份看到的是 cancelled 而不是 ready。
 - 已完成共享证据的跨页复用、按 owner 取消、identity 广播与 reducer/序号门禁保持不变。
+
+## 12. 0117 复核补正
+
+- 跨页卸载后的迟到 prepare 结果不再依赖已卸载组件保存的旧上下文：面板把每个事务键**当前渲染**的上下文串记录在模块级映射中；prepare 完成时用该实时值与发起时的 `inFlightContext` 比较，不一致即标记 `CONTEXT_CHANGED` / stale。
+- 增加“计划出现即复核”的 effect：共享条目一出现 plan，就用当前上下文串与 plan 的 `contextSerial` 比对，覆盖“旧组件在别的页面完成、返回后才看到计划”的时序。
+- 结果：跨页迟到的成功计划显示中文过期提示，确认继续被当前授权拦住，但可直接重新准备；若在计划完成前已回到原上下文（或改回原上下文）仍可合法确认。
+- 非阻断校正：`noWriteConfirmed` 提示只在 `FAILED` 阶段显示；随后若查证丢响应转 UNKNOWN，旧“未写入/可结束关联”提示不再出现，UNKNOWN 继续锁存。
+- `FAILED` 语义按 Coordinator 契约区分：execute 的确定未写入/已回滚（`NOT_WRITTEN` + rolledBack）与服务已保存后 apply 被拒（`committed=true`）都属于确定失败、可结束关联，但只有前者会被标注“未写入”。

@@ -3058,6 +3058,9 @@ function Plan09DraftField({ label, children, hint }) {
 
 const PLAN09_TX_STORE = new Map()
 const PLAN09_TX_LISTENERS = new Map()
+/* Latest context serial rendered for each transaction key. A prepare completed by an unmounted
+ * component must compare against this live value, not the closure captured at its own last render. */
+const PLAN09_TX_CONTEXT = new Map()
 
 function plan09TxRead(key) {
   return PLAN09_TX_STORE.get(key) || plan09TransactionInitial()
@@ -3085,6 +3088,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
   draftRef.current = draft
   const contextRef = React.useRef(contextSerial)
   contextRef.current = contextSerial
+  PLAN09_TX_CONTEXT.set(txKey, contextSerial)
   const lastDraft = React.useRef(JSON.stringify(draft))
   const changes = plan09DraftToChanges(feature, draft, { senderRevision: context.senderRevision })
   const unsupported = changes.unsupported || []
@@ -3116,6 +3120,13 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     dispatch({ type: 'CONTEXT_CHANGED' })
   }, [contextSerial, txKey])
 
+  const planContextSerial = entry.plan && typeof entry.contextSerial === 'string' ? entry.contextSerial : null
+  React.useEffect(() => {
+    if (planContextSerial === null) return
+    if (planContextSerial === contextSerial) return
+    dispatch({ type: 'CONTEXT_CHANGED' })
+  }, [planContextSerial, contextSerial, txKey])
+
   const prepare = async () => {
     const current = plan09TxRead(txKey)
     if (!adapter) return onNotify('未接入配置适配器：只能查看草稿，不能保存。', 'error')
@@ -3141,7 +3152,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     }
     const latest = plan09TxRead(txKey)
     const stale = latest.draftVersion !== versionAtStart
-    const next = dispatch({ type: 'PREPARE_DONE', seq, result, stale, frozenChanges, frozenSerial, contextSerial: contextRef.current })
+    const next = dispatch({ type: 'PREPARE_DONE', seq, result, stale, frozenChanges, frozenSerial, contextSerial: PLAN09_TX_CONTEXT.get(txKey) || contextRef.current })
     if (next.phase === 'PREPARED') onNotify('已准备隔离变更计划；请核对字段与 revision 后确认。', 'info')
     else if (next.error === 'STALE_PREPARE') onNotify('草稿在准备期间已变化，迟到的计划已丢弃；请重新准备。', 'info')
   }
@@ -3244,7 +3255,7 @@ function Plan09TransactionPanel({ feature, draft, validate, context, txKey, cont
     !changes.supported ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-unsupported' }, h(Icon, { name: 'info', size: 14 }), h('span', null, unsupported.join(' '))) : null,
     entry.txId ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-tx-authority' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '已发出的隔离事务仍保留：草稿编辑/切页不会丢弃 transactionId；只能只读查证或完成生效检查。')) : null,
     entry.outcomeUnknown && !entry.txId ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-outcome-unknown' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '保存响应不完整或未返回：写入可能已经发生，但没有可查证的 transactionId。不能当作失败，不能结束该事务，也不会自动重试。')) : null,
-    entry.noWriteConfirmed ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-no-write' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已取得可信“未写入/已回滚”结论（源未改变）；可结束关联后准备下一份草稿，旧计划不会重放。')) : null,
+    entry.noWriteConfirmed && phase === 'FAILED' ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-no-write' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已取得可信“未写入/已回滚”结论（源未改变）；可结束关联后准备下一份草稿，旧计划不会重放。')) : null,
     entry.planStale ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-stale' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '计划对应的草稿/上下文已变化，旧计划不可确认；可重新准备当前草稿。')) : null,
     contentMismatch ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-content-mismatch' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已准备的内容与当前草稿不一致（例如换页后回到默认值）；旧计划不可确认，请重新准备。')) : null,
     h('div', { className: 'wv-plan09-txline' },
