@@ -2,7 +2,9 @@
  *
  * Speaks the narrow NDJSON protocol over stdio. It never loads a model, never touches the network or
  * the filesystem, and produces deterministic synthetic WAV bytes. Fault modes are selected from argv
- * so the supervisor exercises the same process path for success and failure.
+ * so the supervisor exercises the same process path for success and failure. Identity fields echo the
+ * in-flight request by default; `--corrupt=requestId,model,...` deliberately breaks them so tests can
+ * prove the adapter no longer relabels someone else's audio.
  */
 
 import { produceFixtureWav } from '../core/audio/fixture-wav-producer.mjs'
@@ -13,29 +15,45 @@ const argv = new Map(process.argv.slice(2).map((item) => {
 }))
 const mode = argv.get('mode') || 'ok'
 const backend = argv.get('backend') || 'custom-voice'
-const delayMs = Number(argv.get('delay') || 800)
-const MODEL = 'Qwen3-TTS-12Hz-1.7B-Base'
+const model = argv.get('model') || (backend === 'base-clone'
+  ? 'Qwen3-TTS-12Hz-1.7B-Base'
+  : backend === 'voice-design'
+    ? 'Qwen3-TTS-12Hz-1.7B-VoiceDesign'
+    : 'Qwen3-TTS-12Hz-1.7B-CustomVoice')
+const provider = argv.get('provider') || 'qwen-tts'
+const workerProtocol = Number(argv.get('protocol') || 1)
+const corrupt = new Set(String(argv.get('corrupt') || '').split(',').filter(Boolean))
+const delayMs = Number(argv.get('delay') || (mode === 'late' ? 450 : mode === 'cancel-ack' ? 800 : 800))
 const VOICES = [
   { id: 'demo-voice-a', name: '示例音色 A', languages: ['zh-CN'] },
   { id: 'demo-voice-b', name: '示例音色 B', languages: ['zh-CN', 'en-US'] },
 ]
-let cancelled = new Set()
+const cancelled = new Set()
 
 function readyPayload() {
   const base = {
     workerVersion: '0.1.0-fake',
-    workerProtocol: 1,
+    workerProtocol,
     qwenTtsVersion: '0.1.1',
-    provider: 'qwen-tts',
+    provider,
     backend,
-    model: MODEL,
+    model,
+    modelSize: '1b7',
+    instructSupported: true,
     languages: ['zh-CN', 'en-US'],
     voices: VOICES,
+    limits: { maxChars: 200, maxAudioSeconds: 20, timeoutMs: 120000 },
+    loaded: false,
+    state: 'ok',
   }
   if (mode === 'unrelated') return { ...base, provider: 'other-service', model: 'OtherTTS-1' }
   if (mode === 'version-mismatch') return { ...base, qwenTtsVersion: '9.9.9' }
   if (mode === 'no-voices') return { ...base, voices: [] }
-  if (mode === 'voice-design') return { ...base, backend: 'voice-design' }
+  if (mode === 'voice-design') return { ...base, backend: 'voice-design', model: 'Qwen3-TTS-12Hz-1.7B-VoiceDesign' }
+  if (mode === 'invented-model') return { ...base, model: 'Qwen3-TTS-NotAudited' }
+  if (mode === 'wrong-provider') return { ...base, provider: 'unrelated-service' }
+  if (mode === 'wrong-protocol') return { ...base, workerProtocol: 99 }
+  if (mode === 'base-model-custom-backend') return { ...base, model: 'Qwen3-TTS-12Hz-1.7B-Base', backend: 'custom-voice' }
   return base
 }
 
@@ -62,14 +80,51 @@ function fail(id, code, message) {
   send({ v: 1, id, type: 'error', payload: { code, message } })
 }
 
+function outputIdentity(payload) {
+  return {
+    requestId: corrupt.has('requestId') ? 'other-request' : payload.requestId,
+    model: corrupt.has('model') ? 'Qwen3-TTS-12Hz-0.6B-Base' : model,
+    backend: corrupt.has('backend') ? 'base-clone' : backend,
+    voiceId: corrupt.has('voiceId') ? 'other-voice' : (payload.voiceId || null),
+  }
+}
+
 function synthesize(id, payload) {
-  if (mode === 'error' || mode === 'hang') {
-    if (mode === 'hang') return
+  if (mode === 'hang') return
+  if (mode === 'error') {
     fail(id, 'QWEN_PROVIDER_NOT_READY', 'fixture failure')
+    return
+  }
+  if (mode === 'unknown-error') {
+    fail(id, 'QWEN_UNKNOWN_RESULT', 'fixture unknown result')
     return
   }
   if (mode === 'crash') {
     process.exit(7)
+    return
+  }
+  if (mode === 'deep') {
+    const nested = '['.repeat(20000) + '0' + ']'.repeat(20000)
+    process.stdout.write('{"v":1,"id":"' + id + '","type":"result","payload":{"state":"ok","requestId":"' +
+      String(payload.requestId || '') + '","model":"' + model + '","backend":"' + backend +
+      '","voiceId":"' + String(payload.voiceId || '') + '","warnings":' + nested + '}}\n')
+    return
+  }
+  if (mode === 'event-result') {
+    send({
+      v: 1,
+      id,
+      type: 'event',
+      payload: { requestId: payload.requestId, state: 'progress', message: 'not a synthesis result' },
+    })
+    return
+  }
+  if (mode === 'unknown-state') {
+    respond(id, { state: 'unknown', requestId: payload.requestId, model, backend, voiceId: payload.voiceId || null })
+    return
+  }
+  if (mode === 'cancelled') {
+    respond(id, { state: 'cancelled', requestId: payload.requestId, model, backend, voiceId: payload.voiceId || null })
     return
   }
   const built = syntheticBytes(payload)
@@ -78,7 +133,7 @@ function synthesize(id, payload) {
     return
   }
   const answer = () => {
-    if (cancelled.has(payload.requestId) && mode !== 'late') return
+    if (cancelled.has(payload.requestId) && mode !== 'late' && mode !== 'cancel-ack') return
     respond(id, {
       state: 'ok',
       mime: 'audio/wav',
@@ -86,13 +141,11 @@ function synthesize(id, payload) {
       channels: 1,
       durationMs: built.durationMs,
       bytesBase64: Buffer.from(built.bytes).toString('base64'),
-      model: MODEL,
-      backend,
-      voiceId: payload.voiceId || null,
+      ...outputIdentity(payload),
     })
     if (mode === 'garbage') process.stdout.write('this is not json\n')
   }
-  if (mode === 'late') setTimeout(answer, delayMs)
+  if (mode === 'late' || mode === 'cancel-ack') setTimeout(answer, delayMs)
   else answer()
 }
 
@@ -124,16 +177,20 @@ function handle(line) {
     return
   }
   if (type === 'health') {
-    if (mode === 'health-degraded') respond(id, { state: 'degraded', model: 'Qwen3-TTS-12Hz-1.7B-Base', loaded: false })
-    else respond(id, { state: 'ok', model: MODEL, loaded: false })
+    if (mode === 'health-degraded') respond(id, { state: 'degraded', model, backend, loaded: false })
+    else respond(id, { state: 'ok', model, backend, loaded: false })
     return
   }
   if (type === 'discover') {
     respond(id, {
-      models: [MODEL],
+      model,
+      backend,
+      models: mode === 'empty-models' ? [] : [model],
       voices: mode === 'no-voices' ? [] : VOICES,
-      languages: ['zh-CN', 'en-US'],
-      limits: { maxChars: 200, maxAudioSeconds: 20, timeoutMs: 120000 },
+      languages: mode === 'empty-languages' ? [] : ['zh-CN', 'en-US'],
+      limits: mode === 'no-limits'
+        ? undefined
+        : { maxChars: mode === 'tiny-limit' ? 1 : 200, maxAudioSeconds: 20, timeoutMs: 120000 },
     })
     return
   }
@@ -147,7 +204,7 @@ function handle(line) {
     return
   }
   if (type === 'shutdown') {
-    send({ v: 1, id, type: 'event', payload: { state: 'closing' } })
+    send({ v: 1, id, type: 'event', payload: { state: 'closing', closing: true } })
     setTimeout(() => process.exit(0), 10)
   }
 }

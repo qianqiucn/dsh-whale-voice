@@ -171,6 +171,16 @@ provider contract, registry, v2 config proposal and migration tests are in TTS-A
 listed; none is implemented or selectable. There is no silent fallback, no credential leakage and no
 committed API key. Qwen3-TTS is the current reference implementation, not a global default.
 
+**Qwen local worker (10-A candidate, OFFLINE):** the Qwen3-TTS provider is a separate explicitly
+configured child process (`workers/qwen3_tts_worker.py`) behind a narrow versioned NDJSON protocol and
+`core/tts/qwen-supervisor.mjs`. Core never imports `qwen_tts`/torch itself. The worker loads the
+audited package and local model only on a real synthesis, with `local_files_only=True` and references
+restricted to a trusted local index inside an explicit allowed root. Each supervisor start owns one
+process generation; an `error` event is not an exit, an unconfirmed exit is a failure, and failed
+temp cleanup stays owned/retryable. The provider result is non-persisted (`PENDING_ROUTER`) and the
+provider never creates a Task or sends WeChat. Real model/Host/Artifact integration remains OPEN; see
+[TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).
+
 **SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
 speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but
 is not in the TTS Provider Registry and is not implemented. See `core/svc/`.
