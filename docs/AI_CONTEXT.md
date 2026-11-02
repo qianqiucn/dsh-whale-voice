@@ -662,3 +662,16 @@ while keeping a STORED MASTER. A failed owner/Artifact post-FINAL JOINT confirma
 domains, so status/retry/resume stay UNKNOWN and the lease is retained. Cancellation-observation
 read errors are mapped through `stopIfCancelled` and a top-level error boundary to the fixed envelope
 instead of rejecting. 6 lifecycle tests; full suite 882/878 pass/4 platform skips.
+
+### Plan 09 offline onboarding UX (branch feature/plan09-config-ux)
+
+Plan 08 is offline-closed and PR #43 was merged as `a9d3ce9` (tree `6a4cf00f`); this work starts from
+that main. Two independent entries (`voice-bubbles`, `singing`) share the existing sources. A
+first-use wizard persists per workspace/profile/feature/manifest revision, defers to global Setup,
+never stacks, supports browse-only demo and capability-change reminders, and treats acknowledgement
+as "read", never READY. Dependencies are grouped by mode (local/CPU/cloud/existing) with a labelled
+fake installer (check/install/cancel/failure/retry; no downloads). Multi-engine drafts cover voice
+and singing (rights/consent, pitch −12..12, gains, delivery) with engine cleanup, preview and an
+isolated DIRTY→PREPARED→VALIDATED→SAVED/PENDING_APPLY/UNKNOWN/CONFLICT panel. Real Coordinator
+semantics are verified with Fake sources in `test/plan09-ux.test.mjs`. Full suite 888/884 pass/4
+platform skips; UI 30/30; still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

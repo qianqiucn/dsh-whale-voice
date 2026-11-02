@@ -6,6 +6,19 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: Plan 09 offline onboarding UX. Adds two independent entries (`语音气泡`/`voice-bubbles` and
+  `唱歌`/`singing`) that share the existing voice, Provider, dependency and task sources. Each feature
+  has a first-use dependency wizard with per workspace/profile/feature/manifest persistence, global
+  SetupWizard priority, no stacking, explicit "仅浏览" demo entry and capability-change reminder; the
+  acknowledgement is never treated as READY. Mode-based dependency groups (local/CPU/cloud/existing)
+  separate required, optional, delivery-only and conditional items, with a clearly labelled fake
+  installer simulation (check/install/cancel/failure/retry and Chinese failure reasons; no downloads
+  or real install). Adds multi-engine drafts for voice bubbles (provider/model/voice/language/emotion/
+  speed/volume) and singing (RVC/Gateway, SVC only as a later unavailable option, rights/consent,
+  pitch −12..12, vocal/instrumental gain, delivery), incompatible-field cleanup, preview, and an
+  isolated DIRTY→PREPARED→VALIDATED→SAVED/PENDING_APPLY/UNKNOWN/CONFLICT demo transaction panel.
+  Real Coordinator semantics are exercised with Fake sources in `test/plan09-ux.test.mjs`. 6 new unit
+  tests and 6 new UI checks; full suite 888/884 pass/4 platform skips; UI 30/30.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task
