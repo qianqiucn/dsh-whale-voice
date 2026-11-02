@@ -702,3 +702,7 @@ RVC/separation, and 鲸音 Core is separate from the 鲸递 delivery module. Voi
 engine/provider, cloud authorization and provider-kind/voice bindings are validated, and any draft
 change invalidates preview/plan. UI 32/32 includes a browser→exposeFunction→real isolated Coordinator
 save chain; full suite 888/884 pass/4 platform skips; build 273,806 bytes.
+
+### Plan 09 0113 review fixes
+
+Dispatched execute/apply and known transaction IDs survive draft edits and page switches; UNKNOWN remains read-only and recover keeps the ID. Adapter null/throw responses clear busy with authoritative phases; prepared plans are blocked when context/authorization changes. Dependency checks are cancelled when the mode/scope exits or the page unmounts, and voice engine changes sync the mode while singing existing keeps gateway. UI 38/38 includes lifecycle/exception tests plus the real isolated Coordinator chain; full suite 888/884 pass/4 platform skips; build 279,373 bytes.

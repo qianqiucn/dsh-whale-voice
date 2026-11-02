@@ -79,3 +79,11 @@
 - 向导和页面使用同一份实际 `sourceLayout`/投递选择；唱歌 cloud/existing 不再要求本地 RVC/分离，改用 cloud/gateway；鲸音 Core 与鲸递发送模块分离，投递能力不作为生成前置。
 - Voice 切换模式会同步 engine/provider（cloud→cloud、existing→custom、local/cpu→local）；云端授权、Provider kind、唱歌音色与 engine 绑定统一校验；任何草稿变化使旧预览/旧计划失效。
 - UI 证据新增：harness 隔离适配器为异步；另有一条 Playwright 浏览器 → `exposeFunction` → 真实 `createConfigCoordinator` + Fake Source + 临时 sandbox 的端到端保存链（断言 sender 保存值、saveCount、prepare/execute/apply 调用）。
+
+## 8. 0113 复核补正
+
+- 已发出的 execute/apply 与已知 transactionId 独立于草稿：编辑仍保留事务与只读查证入口；UNKNOWN 不因编辑/切页丢失 ID。
+- prepare 的 null/异常、execute/apply/recover 异常、重复点击均有 busy 收束和明确 FAILED/UNKNOWN；phase 以权威 state 为准，不再被旧 result 投影覆盖。
+- 准备阶段的上下文/授权变化会把计划标为 stale 并禁止确认；确认前再次校验草稿与授权。
+- 依赖检查在切模式、旧 scope 退出与组件卸载时统一取消；迟到结果不能复活已取消项。
+- Voice 切引擎会同步模式；Singing existing 保持 gateway；模式/引擎/Provider/音色/依赖按同一组合校验。

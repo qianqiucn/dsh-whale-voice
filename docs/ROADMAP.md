@@ -547,3 +547,5 @@ OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 remains unmerged.
 evidence with invalidation, mode-aware draft/authorization consistency, and a real isolated Coordinator
 browser chain. UI 32/32; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY /
 NOT_INTEGRATED.
+
+0113 review fixes: transaction authority for dispatched writes/UNKNOWN, exception/null busy handling, context-change plan blocking, scoped mode/unmount dependency cancellation, and mode/engine consistency. UI 38/38; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.

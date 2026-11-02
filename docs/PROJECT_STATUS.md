@@ -535,3 +535,5 @@ scoped dependency evidence with invalidation and manifest/capability-aware persi
 draft/authorization consistency; singing cloud/existing no longer requires local RVC/separation.
 UI 32/32 includes a real isolated Coordinator browser chain; full suite 888/884 pass/4 platform skips;
 build 273,806 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0113 review fixes: transaction authority survives draft edits/page switches for dispatched execute/apply and known transactionId; UNKNOWN stays read-only with recover; adapter exceptions/null responses clear busy with authoritative phases; prepared plans are blocked when context/authorization changes; dependency checks are cancelled on mode change/unmount; voice engine changes sync mode and singing existing keeps gateway. UI 38/38; full suite 888/884 pass/4 platform skips; build 279,373 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
