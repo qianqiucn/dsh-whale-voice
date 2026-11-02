@@ -534,3 +534,11 @@ workspace/profile/feature/manifest persistence and global Setup priority, mode-b
 with a labelled fake installer, multi-engine voice/singing drafts, and an isolated demo transaction
 panel. Full suite 888/884 pass/4 platform skips; UI 30/30. Still OFFLINE / FIXTURE_ONLY /
 NOT_INTEGRATED; real install/Provider/GPU/media/WeChat/send are later stages.
+
+### Plan 09 0111 review fixes
+
+Plan 09 now uses a real adapter contract and maps only supported voice fields to the existing
+Coordinator, reporting other fields as draft-only; singing is read-only. Dependencies are mode/source
+aware, the fake installer is shared/cancellable with install and verification separated, and wizard
+persistence is context/revision aware. Full suite 888/884 pass/4 platform skips; UI 30/30. Still
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 remains unmerged.

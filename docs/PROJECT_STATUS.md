@@ -518,12 +518,14 @@ OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
 
 Status correction: PR #43 was merged into main as `a9d3ce9` (merge commit; first parent `2c0cb94`,
 second parent `9d8eaf8`, tree `6a4cf00f`), and the parent Plan 08 offline/Fake scope is DONE
-(NOT_INTEGRATED). The 091 report is `E:\DSH\report\0110_...`.
+(NOT_INTEGRATED). The 091 merge evidence is recorded in PR #43 and the 0110 report outside the repo.
 
 Plan 09 is implemented on `feature/plan09-config-ux` from `a9d3ce9`: two independent entries
 (`voice-bubbles`, `singing`), per-workspace/profile/feature/manifest first-use wizard with global
-Setup priority/no stacking/browse-only demo/capability reminder, mode-based dependency groups and a
-labelled fake installer, multi-engine voice/singing drafts with rights/consent/pitch/gain/delivery,
-and an isolated demo transaction panel (real Coordinator semantics covered with Fake sources).
-Full suite 888/884 pass/4 platform skips; UI 30/30; build 256,620 bytes with no diff after rebuild.
+Setup priority/no stacking/browse-only demo/capability reminder, mode/source-aware dependency groups,
+a shared fake dependency store with install/verify separation and late-callback cancellation, and
+multi-engine voice/singing drafts. The config panel now calls an injected isolated adapter and maps
+its effective draft onto the existing Coordinator writable fields; unsupported fields are shown as
+draft-only, and no adapter means read-only. Full suite 888/884 pass/4 platform skips; UI 30/30;
+build 266,702 bytes with no diff after rebuild.
 Status: OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; no real install/download/Provider/GPU/WeChat/send.

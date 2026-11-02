@@ -675,3 +675,17 @@ and singing (rights/consent, pitch −12..12, gains, delivery) with engine clean
 isolated DIRTY→PREPARED→VALIDATED→SAVED/PENDING_APPLY/UNKNOWN/CONFLICT panel. Real Coordinator
 semantics are verified with Fake sources in `test/plan09-ux.test.mjs`. Full suite 888/884 pass/4
 platform skips; UI 30/30; still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+### Plan 09 0111 review fixes (R01–R06)
+
+The config panel now calls an injected isolated adapter (`getContext/checkDependency/prepareChange/
+execute/apply/recover`) instead of a local toy state machine; effective voice drafts map only to the
+existing `senderService.tts.provider/model/voice` fields, unsupported fields are shown as draft-only,
+and singing stays read-only. No adapter means read-only. Wizard mode is persisted correctly, browse
+dismissal is per revision, and workspace/profile/feature/manifest plus capability revision are
+context-driven. Dependencies follow mode and source layout; install and capability verification are
+separate, cancellation invalidates late callbacks, and ready items are shared across pages. Drafts
+use the shared provider/voice catalog, Chinese novice options, `fixture://` source validation, finite
+numeric checks and mode/engine consistency. 6 unit tests drive the real Coordinator through the same
+adapter contract; 6 UI checks cover the adapter calls and negative flows. Full suite 888/884 pass/4
+platform skips; UI 30/30; build 266,702 bytes.

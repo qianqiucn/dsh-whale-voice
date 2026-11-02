@@ -30,30 +30,38 @@
 |---|---|---|
 | 本机 GPU | `gpu` | 未知/无 GPU 显示未知或阻塞，不冒充可用 |
 | 仅 CPU | 无 GPU | 速度与唱歌质量未验证 |
-| 云端 | `network` | 需要授权与连通性；费用与文本传输单独确认 |
-| 已有服务 | 无 | 复用已安装服务；仍需真实探测才可标为已知 |
+| 云端 | `cloud` | 需要授权与连通性；费用与文本传输单独确认；本地 RVC/分离不再强制 |
+| 已有服务 | `gateway` | 复用已安装服务；仍需真实探测才可标为已知 |
 
-依赖分为必需、可选、仅投递（Sender/WeChatAgent）与条件组；缺另一功能或微信依赖不阻断浏览和草稿保存。
-共享已验证项不重复模拟安装。
+依赖分为必需、可选、仅投递（鲸递发送模块/WeChatAgent 桥）与条件组；唱歌按 `MIXED`/`CLEAN_VOCAL`
+决定是否需要分离，缺投递依赖不阻断浏览和草稿保存。共享已验证项不重复模拟安装；内部 `core` 兼容 ID
+保留，对外称鲸音 Core / 鲸递 Core。
 
 ## 4. Fake 安装与失败恢复
 
-只有明确点击“演示安装”才驱动 UI 内的 Fake 检查/进度/取消/失败/重试；安装与加载/验证分开。
-失败原因包括无 GPU、断网、空间不足、许可缺失与未知，均有中文原因和重新检查/切换动作。
-**不会下载文件、执行脚本或调用真实安装器。**
+只有明确点击“演示安装”才驱动 Fake 检查/进度/取消/失败/重试；安装成功后必须再点“验证能力”，
+检查通过才显示演示就绪。安装/验证状态放在跨页面共享的 store 中，取消会使迟到回调失效，切页/重开
+不会把已就绪项重置为未检查，也不会重复安装。失败原因包括无 GPU、断网、空间不足、许可缺失与未知，
+均有中文原因和重新检查/切换动作。**不会下载文件、执行脚本或调用真实安装器。**
 
 ## 5. 配置草稿与事务交互
 
-- 语音气泡：引擎（本机/云端/自定义）、Provider、模型、音色 Profile、语言、情绪、语速 0.5–2.0、
-  音量 0–100、演示文本。切换引擎会清理不兼容字段并提示。
-- 唱歌：RVC/SVC/Gateway、授权素材、音色同意、音高 −12..12、人声/伴奏增益 −12..12、
-  分离与混音、投递申请。SVC 明确标记为后续可选且不安装；来源/权限不足禁用相关演示。
-- 事务面板复用 Coordinator 的可观察状态语义：DIRTY → PREPARED → 精确确认 → VALIDATED → SAVED →
-  PENDING_APPLY / APPLIED；同时展示 CONFLICT（计划过期、确认 ID 不匹配、revision 冲突）与 UNKNOWN。
-  planId、TTL、一次消费与 expectedRevision 均在隔离演示事务中体现。
-- UI 面板是**前端隔离演示事务**，写入 localStorage/内存，不写生产配置；真实 Coordinator 行为由
-  `test/plan09-ux.test.mjs` 使用 Fake Source/Runtime 和临时 sandbox 调用
-  `prepareChange/execute/apply` 验证。SAVED ≠ APPLIED ≠ SENT。
+- 语音气泡：中文 Provider/音色方案（本机 Qwen、隔离云端 Fixture、自定义本机服务）、语言、情绪、
+  语速 0.5–2.0、音量 0–100、演示文本；Provider/模型/Profile 的高级自定义默认折叠。切换引擎会清理
+  不兼容字段（含音色），云端未授权时禁止预览/保存。
+- 唱歌：RVC/Gateway、音色方案、`fixture://` 虚构素材引用、授权/同意、素材类型与混音、音高 −12..12、
+  人声/伴奏增益、投递申请。SVC 明确标记为后续可选且不安装；云端模式自动切到 Gateway；来源/权限/
+  数值不合法均阻断预览与保存。
+- 事务面板不再使用前端玩具状态机：它只调用注入的 `window.__WHALE_PLAN09_CONFIG__` 隔离适配器
+  （`getContext/prepareChange/execute/apply/recover/checkDependency`），显示真实 Coordinator 结果投影：
+  PREPARED → 精确确认 → SAVED → PENDING_APPLY/APPLIED，以及 CONFLICT/UNKNOWN/FAILED。
+  编辑草稿会作废旧计划；UNKNOWN 只能“只读查证”，不重新 prepare 掩盖未知；没有适配器时按钮禁用并
+  显示“未接入配置适配器”。
+- 语音草稿仅映射到既有 Coordinator 可写字段 `senderService.tts.provider/model/voice`；语言/情绪/
+  语速/音量/云端真实调用显示为“草稿未应用”，不会另存无关 Bridge 变更。唱歌草稿没有对应可写字段，
+  面板明确只读，不写配置。SAVED ≠ APPLIED ≠ SENT。
+- Node 测试以同一适配器契约调用真实 `ConfigCoordinator`（Fake Source/Runtime + 临时 sandbox），
+  覆盖确认 ID、TTL、一次消费、revision 冲突与待生效；UI 测试用 harness 隔离适配器记录调用。
 
 ## 6. 边界
 
