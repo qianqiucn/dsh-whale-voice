@@ -17,8 +17,10 @@ export const QWEN_PROTOCOL_MAX_ARRAY = 256
 export const QWEN_REQUEST_TYPES = Object.freeze(['hello', 'health', 'discover', 'synthesize', 'cancel', 'shutdown'])
 export const QWEN_RESPONSE_TYPES = Object.freeze(['ready', 'result', 'error', 'event'])
 
-/** Terminal states a worker may report inside a `result` payload. */
+/** Terminal states a worker may report inside a synthesis `result` payload. */
 export const QWEN_RESULT_STATES = Object.freeze(['ok', 'cancelled', 'unknown'])
+/** Health answers may also be degraded/offline; they are never accepted as synthesis terminals. */
+export const QWEN_HEALTH_STATES = Object.freeze(['ok', 'degraded', 'offline', 'unknown'])
 export const QWEN_EVENT_STATES = Object.freeze(['started', 'progress', 'cancelled', 'closing', 'stopped', 'UNKNOWN'])
 
 export const QWEN_PROTOCOL_ERRORS = Object.freeze({
@@ -215,7 +217,10 @@ function validateResultPayload(payload) {
   if (keys) return keys
   const stateless = payload.state === undefined
   if (!stateless) {
-    if (!QWEN_RESULT_STATES.includes(payload.state)) return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'state')
+    const allowedStates = payload.state === 'degraded' || payload.state === 'offline'
+      ? QWEN_HEALTH_STATES
+      : QWEN_RESULT_STATES
+    if (!allowedStates.includes(payload.state)) return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'state')
     if (payload.state === 'ok') {
       if (payload.bytesBase64 !== undefined) {
         if (!isBoundedString(payload.bytesBase64, QWEN_PROTOCOL_MAX_BYTES)) return requestError(QWEN_PROTOCOL_ERRORS.INVALID_PAYLOAD, 'bytesBase64')

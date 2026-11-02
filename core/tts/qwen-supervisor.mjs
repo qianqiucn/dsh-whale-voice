@@ -129,6 +129,33 @@ export function createQwenSupervisor(options = {}) {
     operation.updatedAt = now()
   }
 
+  /**
+   * A synthesis may only be released by a complete terminal answer: terminal state plus the exact
+   * request id, model, backend and voice id captured when the request was sent. A generic result
+   * (for example `loaded:true`), a missing/null request id, a wrong identity or a health-shaped
+   * answer proves nothing about the execution and must keep the operation occupied.
+   */
+  function isCompleteSynthTerminal(operation, payload) {
+    if (!operation || !payload || typeof payload !== 'object') return false
+    if (!['ok', 'cancelled', 'unknown'].includes(payload.state)) return false
+    if (payload.requestId !== operation.requestId) return false
+    if (payload.model !== operation.identity.model) return false
+    if (payload.backend !== operation.identity.backend) return false
+    if (payload.voiceId !== operation.identity.voiceId) return false
+    return true
+  }
+
+  async function failStart(gen, failure) {
+    if (gen && gen === generation && !gen.finalized) {
+      await stop()
+    } else if (gen) {
+      const dirs = [...gen.tempDirs]
+      gen.tempDirs.clear()
+      retainedTempDirs.push(...cleanupDirs(dirs))
+    }
+    return failure
+  }
+
   function releaseOperation(gen, requestId) {
     if (!gen) return
     gen.operations.delete(requestId)
@@ -182,23 +209,24 @@ export function createQwenSupervisor(options = {}) {
     }
     const owner = gen.messageOwners.get(message.id)
     if (!owner) return
-    const operation = gen.operations.get(owner)
-    if (!operation) {
+    const manager = gen.operations.get(owner)
+    if (!manager) {
       gen.messageOwners.delete(message.id)
       return
     }
-    const claimed = message.payload && message.payload.requestId
-    if (claimed !== undefined && claimed !== null && claimed !== operation.requestId) {
-      /* Wrong claimed identity: keep the issued message id so a later real terminal can still be
-       * correlated. This message alone must not clear anything. */
-      return
-    }
-    gen.messageOwners.delete(message.id)
     if (message.type === 'result') {
-      const state = message.payload && message.payload.state
-      if (state === 'ok' || state === 'cancelled' || state === 'unknown') releaseOperation(gen, owner)
+      if (!isCompleteSynthTerminal(manager, message.payload)) {
+        /* Invalid late message: do not release the operation and keep the issued message id so a
+         * later fully correlated terminal can still recover it. */
+        return
+      }
+      gen.messageOwners.delete(message.id)
+      releaseOperation(gen, owner)
       return
     }
+    const claimed = message.payload && message.payload.requestId
+    if (claimed !== undefined && claimed !== null && claimed !== manager.requestId) return
+    gen.messageOwners.delete(message.id)
     releaseOperation(gen, owner)
   }
 
@@ -271,21 +299,20 @@ export function createQwenSupervisor(options = {}) {
       return
     }
     if (entry.kind === 'synthesize') {
-      const claimed = message.payload && message.payload.requestId
-      if (claimed !== undefined && claimed !== null && claimed !== entry.requestId) {
+      const operation = gen.operations.get(entry.requestId)
+      if (!isCompleteSynthTerminal(operation, message.payload)) {
         gen.pending.delete(message.id)
         recordProtocolViolation(gen, QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH)
-        markUnresolved(gen, entry.requestId, 'identity-mismatch')
+        markUnresolved(gen, entry.requestId, 'incomplete-terminal')
         settle(entry, 'reject', {
           ok: false,
           code: QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH,
           unknown: true,
-          detail: 'worker result claimed a different request id',
+          detail: 'synthesis result is not a complete correlated terminal',
         })
         return
       }
-      const operation = gen.operations.get(entry.requestId)
-      if (operation && operation.cancelRequested && message.payload && message.payload.state === 'cancelled') {
+      if (operation.cancelRequested && message.payload && message.payload.state === 'cancelled') {
         /* A cancellation terminal can race the acknowledgement. It proves the operation ended, so
          * occupancy is released, but it is reported as a cancellation rather than a success. A
          * successful completion that races an unconfirmed cancel is still a real completion and is
@@ -492,16 +519,14 @@ export function createQwenSupervisor(options = {}) {
       .catch((error) => ({ ok: false, code: (error && error.code) || QWEN_ERRORS.WORKER_UNAVAILABLE, detail: (error && error.detail) || '' }))
     if (!ready.ok) {
       const failure = { ok: false, code: ready.code, detail: ready.detail || '' }
-      await stop()
-      return failure
+      return failStart(gen, failure)
     }
     if (gen.stopRequested || gen !== generation || stopping) {
       /* A stop raced the handshake: never re-open admission for this generation. */
       return { ok: false, code: QWEN_ERRORS.STOPPING, detail: 'stop requested during the handshake', generation: gen.id }
     }
     if (ready.type !== 'ready') {
-      await stop()
-      return stateError(QWEN_ERRORS.PROTOCOL_INVALID, 'first worker answer was not ready')
+      return failStart(gen, stateError(QWEN_ERRORS.PROTOCOL_INVALID, 'first worker answer was not ready'))
     }
     gen.readyInfo = { ...ready.payload }
     accepting = true
@@ -553,7 +578,18 @@ export function createQwenSupervisor(options = {}) {
       return stateError(QWEN_ERRORS.UNRESOLVED_ACTIVITY, 'the worker still owns an operation without a trusted terminal answer')
     }
     const messageId = nextId('syn')
-    const operation = { requestId, messageId, state: 'ACTIVE', reason: null, startedAt: now() }
+    const operation = {
+      requestId,
+      messageId,
+      state: 'ACTIVE',
+      reason: null,
+      startedAt: now(),
+      identity: {
+        model: payload.model,
+        backend: payload.backend,
+        voiceId: payload.voiceId,
+      },
+    }
     gen.operations.set(requestId, operation)
     gen.messageOwners.set(messageId, requestId)
     try {

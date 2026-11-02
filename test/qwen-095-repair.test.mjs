@@ -365,3 +365,114 @@ test('121-R05 a stop intent racing the handshake keeps admission closed', { skip
     await supervisor.stop()
   }
 })
+
+test('121-R04 a generic or incomplete synthesis result cannot release the operation', { skip: spawnSkip }, async () => {
+  for (const [mode, args] of [
+    ['generic-result', []],
+    ['missing-request-id', []],
+    ['null-request-id', []],
+    ['ok', ['--corrupt=model']],
+    ['ok', ['--corrupt=backend']],
+    ['ok', ['--corrupt=voiceId']],
+  ]) {
+    await withProvider(mode, { requestTimeoutMs: 5000, args }, async ({ provider, supervisor }) => {
+      await provider.start()
+      const synthesized = await provider.synthesize(
+        { text: '不完整终态', voiceId: 'demo-voice-a', language: 'zh-CN' },
+        { taskId: 'task-incomplete-terminal' },
+      )
+      assert.equal(synthesized.ok, false, mode + ':' + args.join(','))
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH, mode + ':' + args.join(','))
+      assert.equal(synthesized.unknown, true, mode + ':' + args.join(','))
+      assert.equal(supervisor.state().unresolvedOperations, 1, mode + ':' + args.join(','))
+      const blocked = await provider.synthesize(
+        { text: '不应派发', voiceId: 'demo-voice-a', language: 'zh-CN' },
+        { taskId: 'task-incomplete-terminal' },
+      )
+      assert.equal(blocked.blockedByUnresolved, true, mode + ':' + args.join(','))
+    })
+  }
+})
+
+test('121-R04 a non-terminal late result does not destroy the recovery correlation', { skip: spawnSkip }, async () => {
+  await withProvider('late-nonterminal-then-cancel', { requestTimeoutMs: 5000 }, async ({ provider, supervisor }) => {
+    await provider.start()
+    const begun = await provider.beginSynthesis(
+      { text: '迟到非终态', voiceId: 'demo-voice-a', language: 'zh-CN' },
+      { taskId: 'task-late-nonterminal' },
+    )
+    assert.equal(begun.ok, true)
+    await waitFor(() => supervisor.state().activeOperations === 1)
+    const ack = await begun.cancel()
+    assert.equal(ack.ok, true)
+    assert.equal(ack.confirmed, true)
+    assert.equal(supervisor.state().unresolvedOperations, 1)
+    await waitFor(() => supervisor.state().lateResponses >= 2, 3000)
+    assert.equal(supervisor.state().unresolvedOperations, 0)
+  })
+})
+
+test('121-R05 an old-generation start failure cannot stop a newly started generation', { skip: spawnSkip }, async () => {
+  const children = []
+  let spawns = 0
+  const spawnProcess = (command, args, options) => {
+    spawns += 1
+    const child = spawns === 1
+      ? nodeSpawn(process.execPath, [stubbornWorker, '--hello-delay=10000'], options)
+      : nodeSpawn(process.execPath, [stubbornWorker], options)
+    children.push(child)
+    return child
+  }
+  const supervisor = createQwenSupervisor({
+    allowedRoot: fakeRoot,
+    worker: { command: stubbornWorker, runtime: process.execPath, args: [] },
+    handshakeTimeoutMs: 4000,
+    shutdownGraceMs: 100,
+    killWaitMs: 200,
+    spawnProcess,
+  })
+  try {
+    const firstStart = supervisor.start()
+    await waitFor(() => supervisor.state().alive === true, 3000)
+    const firstChild = children[0]
+    const secondStart = new Promise((resolve) => {
+      firstChild.once('exit', () => resolve(supervisor.start()))
+    })
+    process.kill(firstChild.pid, 'SIGKILL')
+    const [firstResult, secondResult] = await Promise.all([firstStart, secondStart])
+    assert.equal(firstResult.ok, false)
+    assert.equal(secondResult.ok, true, JSON.stringify(secondResult))
+    assert.equal(supervisor.state().alive, true)
+    assert.equal(supervisor.state().accepting, true)
+    assert.equal(spawns, 2)
+  } finally {
+    const pid = supervisor.state().pid
+    if (pid) {
+      try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+      await waitFor(() => supervisor.state().alive === false, 5000)
+    }
+    await supervisor.stop()
+  }
+})
+
+test('121-R04 a cancellation terminal with the wrong model identity cannot release the operation', { skip: spawnSkip }, async () => {
+  await withProvider('cancel-wrong-model', { requestTimeoutMs: 5000 }, async ({ provider, supervisor }) => {
+    await provider.start()
+    const begun = await provider.beginSynthesis(
+      { text: '取消错模型', voiceId: 'demo-voice-a', language: 'zh-CN' },
+      { taskId: 'task-cancel-wrong-model' },
+    )
+    assert.equal(begun.ok, true)
+    await waitFor(() => supervisor.state().activeOperations === 1)
+    const ack = await begun.cancel()
+    assert.equal(ack.ok, true)
+    assert.equal(ack.confirmed, true)
+    await waitFor(() => supervisor.state().lateResponses >= 1, 3000)
+    assert.equal(supervisor.state().unresolvedOperations, 1)
+    const blocked = await provider.synthesize(
+      { text: '不应派发', voiceId: 'demo-voice-a', language: 'zh-CN' },
+      { taskId: 'task-cancel-wrong-model' },
+    )
+    assert.equal(blocked.blockedByUnresolved, true)
+  })
+})

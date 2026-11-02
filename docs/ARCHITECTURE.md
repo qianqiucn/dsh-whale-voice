@@ -178,13 +178,17 @@ audited package and local model only on a real synthesis, with `local_files_only
 offline environment variables and installs an in-process network guard before the import so the
 nested loader chain cannot download, and it re-audits the model directory, configuration digest and
 trusted clone reference immediately before each SDK call (realpath inside the allowed root,
-existence, size, dev/ino, held fd) instead of trusting a startup snapshot. Each supervisor start owns
-one process generation with an operation table; an `error` event is not an exit, an unconfirmed exit
-is a failure, failed temp cleanup stays owned/retryable, and occupancy is released only by a terminal
-message correlated through its issued message id, request id and generation. The provider result is
-non-persisted (`PENDING_ROUTER`) and the provider never creates a Task or sends WeChat. Real
-model/Host/Artifact integration remains OPEN; see [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and
-[ADR-018](DECISIONS.md).
+existence, size, dev/ino, held fd) instead of trusting a startup snapshot. Clone reference bytes are
+read through the audited fd, checked against a SHA256 baseline and handed to the SDK as a
+`data:audio` value; the model sub-resource tree is walked for junction/symlink escapes and config/tree
+are re-audited after loading before generation. Each supervisor start owns one process generation
+with an operation table; an `error` event is not an exit, an unconfirmed exit is a failure, failed
+temp cleanup stays owned/retryable, and occupancy is released only by a complete terminal message
+correlated through its issued message id, request id and exact model/backend/voice identity; invalid
+late messages keep the recovery correlation, and a start failure is scoped to its own generation.
+The provider result is non-persisted (`PENDING_ROUTER`) and the provider never creates a Task or sends
+WeChat. Real model/Host/Artifact integration remains OPEN; see
+[TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).
 
 **SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
 speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but

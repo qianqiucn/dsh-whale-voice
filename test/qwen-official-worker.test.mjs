@@ -10,6 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -268,7 +269,9 @@ test('official worker maps Base clone with the trusted local reference and no UR
       assert.equal(calls.filter((call) => call.event === 'generate_custom_voice').length, 0)
       const cloned = calls.filter((call) => call.event === 'generate_voice_clone')
       assert.equal(cloned.length, 1)
-      assert.equal(cloned[0].ref_audio, fs.realpathSync(path.join(workspace.refs, 'ref.wav')))
+      assert.equal(cloned[0].ref_audio_kind, 'data-uri')
+      assert.equal(cloned[0].ref_audio_bytes, fs.statSync(path.join(workspace.refs, 'ref.wav')).size)
+      assert.equal(cloned[0].ref_audio_sha256, crypto.createHash('sha256').update(fs.readFileSync(path.join(workspace.refs, 'ref.wav'))).digest('hex'))
       assert.equal(cloned[0].ref_text, null)
       assert.equal(cloned[0].x_vector_only_mode, true)
       assert.equal(cloned[0].language, 'Chinese')
@@ -613,6 +616,152 @@ test('121-R01 a disappeared clone reference is refused before any SDK call', { s
       assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
       assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone').length, 0)
       assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+function sha256File(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+}
+
+function flipLastByte(file) {
+  const original = fs.readFileSync(file)
+  const changed = Buffer.from(original)
+  changed[changed.length - 1] = changed[changed.length - 1] ^ 0xff
+  fs.writeFileSync(file, changed)
+  return { original, changed }
+}
+
+test('121-R01 a same-size in-place reference rewrite after hello is refused before loading', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      flipLastByte(path.join(workspace.refs, 'ref.wav'))
+      const { request, context } = cloneRequest()
+      const synthesized = await provider.synthesize(request, { taskId: 'task-ref-rewrite', ...context })
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 the SDK consumes the audited reference bytes when the file changes during loading', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, cloneOptions(workspace), async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const refPath = path.join(workspace.refs, 'ref.wav')
+      const originalHash = sha256File(refPath)
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const { request, context } = cloneRequest()
+      const begun = await provider.beginSynthesis(request, { taskId: 'task-ref-stable', ...context })
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      flipLastByte(refPath)
+      const result = await begun.result
+      assert.equal(result.ok, true, JSON.stringify(result.code || result.qwenCode))
+      const cloned = sdkCalls(workspace).filter((call) => call.event === 'generate_voice_clone')
+      assert.equal(cloned.length, 1)
+      assert.equal(cloned[0].ref_audio_kind, 'data-uri')
+      assert.equal(cloned[0].ref_audio_sha256, originalHash)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a configuration change during loading is refused before generation', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中改配置', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-config-during-load' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const configPath = path.join(workspace.customModel, 'config.json')
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      config.tts_model_size = '0b6'
+      fs.writeFileSync(configPath, JSON.stringify(config))
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_custom_voice').length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a speech-tokenizer sub-resource escaping the root is refused', { skip: pythonSkip, timeout: 120000 }, async (t) => {
+  const workspace = makeWorkspace()
+  const outside = makeOutsideRefs()
+  const subPath = path.join(workspace.customModel, 'speech_tokenizer')
+  let linked = false
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      try {
+        createDirLink(subPath, outside.dir)
+        linked = true
+      } catch {
+        t.skip('directory links are not permitted on this platform')
+        return
+      }
+      const synthesized = await provider.synthesize(
+        { text: '子资源越界', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-subresource-escape' },
+      )
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+    })
+  } finally {
+    if (linked) removeDirLink(subPath)
+    outside.dispose()
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a runtime dependency that disappears after hello is reported by health and recovers', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const soundfileDir = path.join(workspace.runtime, 'soundfile')
+      const movedDir = path.join(workspace.runtime, 'soundfile-away')
+      fs.renameSync(soundfileDir, movedDir)
+      const synthesized = await provider.synthesize(
+        { text: '依赖失效', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-runtime-dependency' },
+      )
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.DEPENDENCY_MISSING)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+      const degraded = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(degraded.ok, true)
+      assert.equal(degraded.payload.state, 'degraded')
+      assert.equal(degraded.payload.dependencies.soundfile, false)
+      fs.renameSync(movedDir, soundfileDir)
+      const recovered = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(recovered.ok, true)
+      assert.equal(recovered.payload.state, 'ok')
+      assert.equal(recovered.payload.dependencies.soundfile, true)
     })
   } finally {
     workspace.dispose()

@@ -35,6 +35,8 @@ MAX_LINE_BYTES = 2 * 1024 * 1024
 MAX_CONFIG_BYTES = 1024 * 1024
 MAX_INDEX_BYTES = 256 * 1024
 MAX_REFERENCE_BYTES = 20 * 1024 * 1024
+MAX_BINDING_TOTAL_BYTES = 32 * 1024 * 1024
+MAX_TREE_ENTRIES = 10000
 MAX_TEXT_CHARS = 200
 MAX_AUDIO_SECONDS = 20
 MAX_OUTPUT_BYTES = 1024 * 1024
@@ -106,6 +108,7 @@ CANCEL_LOCK = threading.Lock()
 MODEL_AUDIT = None
 NETWORK_GUARDED = False
 DIRECT_DEPENDENCIES = {"qwenTts": False, "soundfile": False}
+DEPENDENCY_FAILURES = {}
 
 
 class DependencyMissing(Exception):
@@ -150,9 +153,65 @@ def install_network_guard():
 
 def module_available(name):
     try:
-        return importlib.util.find_spec(name) is not None
+        spec = importlib.util.find_spec(name)
     except (ImportError, ValueError, AttributeError):
         return False
+    if spec is None:
+        return False
+    runtime_dir = ARGS.get("runtime-dir")
+    if runtime_dir:
+        # A configured local runtime must be the source; a system package must not mask a missing
+        # local dependency.
+        origin = spec.origin
+        if not isinstance(origin, str):
+            return False
+        return inside(runtime_dir, origin) is not None
+    return True
+
+
+def refresh_dependency_state():
+    DIRECT_DEPENDENCIES["qwenTts"] = module_available("qwen_tts")
+    DIRECT_DEPENDENCIES["soundfile"] = module_available("soundfile")
+    for key, available in DIRECT_DEPENDENCIES.items():
+        if available:
+            DEPENDENCY_FAILURES.pop(key, None)
+    return all(DIRECT_DEPENDENCIES.values())
+
+
+def audit_model_tree():
+    """Reject any actual sub-resource path that resolves outside the allowed root.
+
+    The fixed upstream loader reads files below the model directory (config, processor/tokenizer
+    assets, speech tokenizer). A junction/symlink below the model root must not silently redirect any
+    of those reads outside the audited root.
+    """
+    if MODEL_AUDIT is None:
+        raise ResourceChanged("the model directory was not audited")
+    allowed_root = ARGS.get("allowed-root")
+    stack = [MODEL_AUDIT["real"]]
+    visited = set()
+    entries = 0
+    while stack:
+        current = stack.pop()
+        real_current = os.path.realpath(current)
+        if real_current in visited:
+            continue
+        visited.add(real_current)
+        if inside(allowed_root, real_current) is None:
+            raise ResourceChanged("a model sub-resource resolved outside the allowed root")
+        try:
+            with os.scandir(real_current) as iterator:
+                for entry in iterator:
+                    entries += 1
+                    if entries > MAX_TREE_ENTRIES:
+                        raise ResourceChanged("the model tree exceeds its entry budget")
+                    real = os.path.realpath(entry.path)
+                    if inside(allowed_root, real) is None:
+                        raise ResourceChanged("a model sub-resource resolved outside the allowed root")
+                    if os.path.isdir(real):
+                        stack.append(real)
+        except OSError as error:
+            raise ResourceChanged("the model tree is unreadable") from error
 
 
 def audit_model():
@@ -178,6 +237,7 @@ def audit_model():
         raise ResourceChanged("the model configuration is unreadable") from error
     if len(payload) > MAX_CONFIG_BYTES or hashlib.sha256(payload).hexdigest() != MODEL_AUDIT["configDigest"]:
         raise ResourceChanged("the model configuration changed after it was audited")
+    audit_model_tree()
 
 
 def open_reference(token):
@@ -208,10 +268,23 @@ def open_reference(token):
         held = os.fstat(fd)
         if (held.st_dev, held.st_ino, held.st_size) != (stored["dev"], stored["ino"], stored["size"]):
             raise ResourceChanged("the clone reference changed while it was held")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(fd, 1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_REFERENCE_BYTES:
+                raise ResourceChanged("the clone reference exceeds its size budget")
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        if len(data) != stored["size"] or hashlib.sha256(data).hexdigest() != stored["sha256"]:
+            raise ResourceChanged("the clone reference content changed after it was audited")
+        return fd, real, data
     except Exception:
         os.close(fd)
         raise
-    return fd, real
 
 
 def emit(message):
@@ -282,6 +355,7 @@ def load_binding_index(index_path, allowed_root):
         start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding index is not a bounded object")
         return {}
     result = {}
+    total_bytes = 0
     for token, entry in data.items():
         if not isinstance(token, str) or not re.match(r"^[A-Za-z0-9][A-Za-z0-9:_.@-]{1,127}$", token):
             start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding token is invalid")
@@ -316,6 +390,19 @@ def load_binding_index(index_path, allowed_root):
         if not stat.S_ISREG(st.st_mode):
             start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding file is not a regular file")
             return {}
+        try:
+            with open(resolved, "rb") as handle:
+                reference_bytes = handle.read(MAX_REFERENCE_BYTES + 1)
+        except OSError:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding file is unreadable")
+            return {}
+        if len(reference_bytes) > MAX_REFERENCE_BYTES or len(reference_bytes) != st.st_size:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding file exceeds its size budget")
+            return {}
+        total_bytes += len(reference_bytes)
+        if total_bytes > MAX_BINDING_TOTAL_BYTES:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "binding references exceed the total budget")
+            return {}
         result[token] = {
             "file": resolved,
             "real": resolved,
@@ -324,6 +411,7 @@ def load_binding_index(index_path, allowed_root):
             "ino": st.st_ino,
             "size": st.st_size,
             "mtimeNs": st.st_mtime_ns,
+            "sha256": hashlib.sha256(reference_bytes).hexdigest(),
         }
     return result
 
@@ -445,20 +533,29 @@ def load_configuration():
     if backend == "voice-design":
         start_error(ERRORS["VOICE_DESIGN_NOT_EXPOSED"], "VoiceDesign is declared but not exposed in 10-A")
         return
+    try:
+        audit_model_tree()
+    except ResourceChanged as error:
+        start_error(ERRORS["RESOURCE_UNVERIFIED"], str(error))
+        return
     VOICES = discover_voices(config, backend)
     BINDING_INDEX = load_binding_index(ARGS.get("binding-index"), allowed_root)
     if START_ERROR:
         return
     install_network_guard()
     PACKAGE_VERSION_DETECTED = detect_package_version(ARGS.get("runtime-dir"))
-    DIRECT_DEPENDENCIES["qwenTts"] = module_available("qwen_tts")
-    DIRECT_DEPENDENCIES["soundfile"] = module_available("soundfile")
+    refresh_dependency_state()
     if PACKAGE_VERSION_DETECTED != PACKAGE_VERSION:
         start_error(ERRORS["DEPENDENCY_MISSING"], "the audited qwen-tts package version was not found locally")
         return
-    if not DIRECT_DEPENDENCIES["qwenTts"] or not DIRECT_DEPENDENCIES["soundfile"]:
+    if not all(DIRECT_DEPENDENCIES.values()):
         start_error(ERRORS["DEPENDENCY_MISSING"], "a directly imported runtime dependency is missing")
         return
+
+
+def health_state():
+    refresh_dependency_state()
+    return "ok" if all(DIRECT_DEPENDENCIES.values()) else "degraded"
 
 
 def ready_payload():
@@ -499,7 +596,14 @@ def ensure_runtime():
         import qwen_tts  # noqa: F401  (lazy: only a real synthesis imports the heavy package)
         import soundfile  # noqa: F401
     except ImportError as error:
+        for name, key in (("qwen_tts", "qwenTts"), ("soundfile", "soundfile")):
+            if not module_available(name):
+                DIRECT_DEPENDENCIES[key] = False
+                DEPENDENCY_FAILURES[key] = type(error).__name__
         raise DependencyMissing("qwen-tts dependency is not importable") from error
+    DIRECT_DEPENDENCIES["qwenTts"] = True
+    DIRECT_DEPENDENCIES["soundfile"] = True
+    DEPENDENCY_FAILURES.clear()
     QWEN_TTS = qwen_tts
     SOUNDFILE = soundfile
     return QWEN_TTS, SOUNDFILE
@@ -610,7 +714,7 @@ def run_synthesis(message, payload):
     request_id = payload["requestId"]
     event = CANCEL_EVENTS.get(request_id)
     ref_fd = None
-    ref_path = None
+    ref_audio_value = None
     try:
         # A short pre-flight window lets a cancellation that arrives together with the request stop
         # an operation that has not started loading yet. It does not claim to interrupt a real
@@ -621,7 +725,10 @@ def run_synthesis(message, payload):
         try:
             audit_model()
             if payload["modality"] == "clone":
-                ref_fd, ref_path = open_reference(payload["bindingRef"])
+                ref_fd, _ref_real, ref_bytes = open_reference(payload["bindingRef"])
+                # The SDK receives the exact audited bytes, not a path that can change after the
+                # audit. The fixed upstream helper accepts a data:audio base64 value.
+                ref_audio_value = "data:audio/wav;base64," + base64.b64encode(ref_bytes).decode("ascii")
         except ResourceChanged as error:
             fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
             return
@@ -646,6 +753,13 @@ def run_synthesis(message, payload):
             emit_cancelled(message, payload, request_id)
             return
         try:
+            # The configuration and sub-resource tree are re-audited after the loader has actually
+            # read them; a change during loading is refused before generation.
+            audit_model()
+        except ResourceChanged as error:
+            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+            return
+        try:
             if payload["modality"] == "preset":
                 wavs, samplerate = model.generate_custom_voice(
                     text=payload["text"],
@@ -658,7 +772,7 @@ def run_synthesis(message, payload):
                 wavs, samplerate = model.generate_voice_clone(
                     text=payload["text"],
                     language=LANGUAGE_OUT[payload["language"]],
-                    ref_audio=ref_path,
+                    ref_audio=ref_audio_value,
                     ref_text=binding.get("text"),
                     x_vector_only_mode=binding.get("text") is None,
                 )
@@ -735,7 +849,7 @@ def handle_message(message):
             "id": message_id,
             "type": "result",
             "payload": {
-                "state": "ok",
+                "state": health_state(),
                 "model": MODEL_ID,
                 "backend": BACKEND,
                 "loaded": LOADED,

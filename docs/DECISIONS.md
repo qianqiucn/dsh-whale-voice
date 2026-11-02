@@ -414,6 +414,14 @@ actual stop and final result, and an operation is released only by a terminal me
 through its issued message id, claimed request id and generation. A start/stop race keeps admission
 closed instead of re-opening it after the handshake.
 
+The 0122 residual repair makes the SDK consume the verified content instead of a re-openable path:
+the reference bytes are read through the audited fd, checked against a startup SHA256 and passed as a
+`data:audio` value. The model sub-resource tree is walked for junction/symlink escapes, configuration
+and tree are re-audited after loading before generation, runtime dependency loss is reflected by
+health until recovery, only a complete terminal (state plus exact request/model/backend/voice
+identity) releases an operation, invalid late messages keep the recovery correlation, and a start
+failure is scoped to its own generation.
+
 **Rejected alternatives:** Importing `qwen_tts`/torch inside Core; trusting a worker-declared model
 name without an audited model identity and a matching local `config.json`; passing reference audio
 paths, URLs or base64 through the protocol; accepting `ok` from any response type; treating a kill

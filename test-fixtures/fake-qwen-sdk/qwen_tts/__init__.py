@@ -11,6 +11,8 @@ in-process network guard before importing this package, so the attempt must be r
 exception proves the guard covers nested loaders instead of only the top-level call.
 """
 
+import base64
+import hashlib
 import json
 import os
 import time
@@ -99,6 +101,25 @@ class Qwen3TTSModel:
         delay = _mode().get("loadDelayMs")
         if isinstance(delay, (int, float)) and delay > 0:
             time.sleep(min(float(delay) / 1000.0, 10.0))
+        # Simulate the real loader reading config and a speech-tokenizer sub-resource after the
+        # delay, so tests can prove a change during loading is noticed by the worker's post-load
+        # audit.
+        config_path = os.path.join(str(path), "config.json")
+        try:
+            with open(config_path, "rb") as handle:
+                config_bytes = handle.read()
+            _record("model_config_read", path=config_path, bytes=len(config_bytes),
+                    sha256=hashlib.sha256(config_bytes).hexdigest())
+        except OSError:
+            _record("model_config_read", path=config_path, error="missing")
+        marker_path = os.path.join(str(path), "speech_tokenizer", "marker")
+        try:
+            with open(marker_path, "rb") as handle:
+                marker_bytes = handle.read()
+            _record("model_subresource_read", path=marker_path, bytes=len(marker_bytes),
+                    sha256=hashlib.sha256(marker_bytes).hexdigest())
+        except OSError:
+            _record("model_subresource_read", path=marker_path, error="missing")
         return cls(path)
 
     def _maybe_delay(self):
@@ -113,9 +134,26 @@ class Qwen3TTSModel:
         return ([[0.0] * _FRAMES], 24000)
 
     def generate_voice_clone(self, **kwargs):
-        _record("generate_voice_clone", text=kwargs.get("text"), language=kwargs.get("language"),
-                ref_audio=kwargs.get("ref_audio"), ref_text=kwargs.get("ref_text"),
-                x_vector_only_mode=kwargs.get("x_vector_only_mode"))
+        raw = kwargs.get("ref_audio")
+        fields = {
+            "text": kwargs.get("text"),
+            "language": kwargs.get("language"),
+            "ref_text": kwargs.get("ref_text"),
+            "x_vector_only_mode": kwargs.get("x_vector_only_mode"),
+        }
+        if isinstance(raw, str) and raw.startswith("data:audio"):
+            try:
+                payload = raw.split(",", 1)[1]
+                data = base64.b64decode(payload)
+                fields.update(ref_audio_kind="data-uri", ref_audio_bytes=len(data),
+                              ref_audio_sha256=hashlib.sha256(data).hexdigest())
+            except (IndexError, ValueError):
+                fields.update(ref_audio_kind="data-uri-invalid")
+        elif isinstance(raw, str):
+            fields.update(ref_audio_kind="path", ref_audio_path=raw)
+        else:
+            fields.update(ref_audio_kind=type(raw).__name__)
+        _record("generate_voice_clone", **fields)
         self._maybe_delay()
         return ([[0.0] * _FRAMES], 24000)
 

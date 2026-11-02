@@ -159,6 +159,34 @@ function synthesize(id, payload) {
     lastSynth = { id, payload }
     return
   }
+  if (mode === 'late-nonterminal-then-cancel') {
+    lastSynth = { id, payload }
+    return
+  }
+  if (mode === 'cancel-wrong-model') {
+    lastSynth = { id, payload }
+    return
+  }
+  if (mode === 'generic-result') {
+    setTimeout(() => respond(id, { loaded: true }), 50)
+    return
+  }
+  if (mode === 'missing-request-id' || mode === 'null-request-id') {
+    const builtNoId = syntheticBytes(payload)
+    setTimeout(() => respond(id, {
+      state: 'ok',
+      mime: 'audio/wav',
+      sampleRate: builtNoId.sampleRate,
+      channels: 1,
+      durationMs: builtNoId.durationMs,
+      bytesBase64: Buffer.from(builtNoId.bytes).toString('base64'),
+      model,
+      backend,
+      voiceId: payload.voiceId || null,
+      ...(mode === 'null-request-id' ? { requestId: null } : {}),
+    }), 50)
+    return
+  }
   if (mode === 'wrong-then-correct') {
     const builtWrong = syntheticBytes(payload)
     setTimeout(() => respond(id, {
@@ -317,6 +345,27 @@ function handle(line) {
           voiceId: lastSynth.payload.voiceId || null,
         })
       }, 40)
+    }
+    if (mode === 'late-nonterminal-then-cancel' && lastSynth) {
+      setTimeout(() => {
+        respond(lastSynth.id, { loaded: true })
+        setTimeout(() => respond(lastSynth.id, {
+          state: 'cancelled',
+          requestId: lastSynth.payload.requestId,
+          model,
+          backend,
+          voiceId: lastSynth.payload.voiceId || null,
+        }), 80)
+      }, 40)
+    }
+    if (mode === 'cancel-wrong-model' && lastSynth) {
+      setTimeout(() => respond(lastSynth.id, {
+        state: 'cancelled',
+        requestId: lastSynth.payload.requestId,
+        model: 'Qwen3-TTS-12Hz-0.6B-Base',
+        backend,
+        voiceId: lastSynth.payload.voiceId || null,
+      }), 40)
     }
     if (mode === 'ghost-error' && ghostPayload) {
       setTimeout(() => fail('ghost-999', 'QWEN_UNKNOWN_RESULT', 'ghost error from a never-issued message id'), 40)

@@ -568,10 +568,7 @@ test('output identity is checked before handoff, not relabelled with the current
       )
       assert.equal(synthesized.ok, false, corrupt)
       assert.equal(synthesized.code, PROVIDER_ERRORS.INVALID_RESPONSE, corrupt)
-      const expectedQwenCode = corrupt.includes('requestId')
-        ? QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH
-        : QWEN_ERRORS.OUTPUT_IDENTITY_MISMATCH
-      assert.equal(synthesized.qwenCode, expectedQwenCode, corrupt)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESPONSE_IDENTITY_MISMATCH, corrupt)
     })
   }
   await withProvider('ok', {}, async ({ provider }) => {
