@@ -5,7 +5,7 @@
  * so the supervisor exercises the same process path for success and failure.
  */
 
-import { produceFixtureWav } from '../../core/audio/fixture-wav-producer.mjs'
+import { produceFixtureWav } from '../core/audio/fixture-wav-producer.mjs'
 
 const argv = new Map(process.argv.slice(2).map((item) => {
   const [key, ...rest] = item.split('=')

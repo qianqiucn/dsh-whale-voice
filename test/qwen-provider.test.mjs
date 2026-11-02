@@ -21,7 +21,7 @@ import { createQwenSupervisor } from '../core/tts/qwen-supervisor.mjs'
 import { classifyQwenHealth, createQwenProvider, normalizeQwenDiscovery } from '../core/tts/qwen-adapter.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const fakeWorker = path.join(here, 'helpers', 'fake-qwen-worker.mjs')
+const fakeWorker = path.join(here, '..', 'test-fixtures', 'fake-qwen-worker.mjs')
 const fakeRoot = path.dirname(fakeWorker)
 
 const SPAWN_OK = (() => {

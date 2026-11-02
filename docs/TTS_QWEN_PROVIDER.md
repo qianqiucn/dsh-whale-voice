@@ -86,7 +86,7 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
 
 ## 8. Fake 与测试
 
-- `test/helpers/fake-qwen-worker.mjs` 是自有的 Fake 子进程，走**同一条** supervisor/协议路径；
+- `test-fixtures/fake-qwen-worker.mjs` 是自有的 Fake 子进程，走**同一条** supervisor/协议路径；
   不加载模型、不联网、不写文件，按 argv 选择成功/错误/超时/崩溃/迟到/坏字节/坏格式/超大/无音色/
   版本不符/无关服务等故障。
 - `test/qwen-provider.test.mjs` 覆盖：能力矩阵与许可、模态互斥、协议拒绝路径/密钥/未知字段、
