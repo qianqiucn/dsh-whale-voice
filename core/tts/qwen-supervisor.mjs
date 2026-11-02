@@ -284,6 +284,25 @@ export function createQwenSupervisor(options = {}) {
         })
         return
       }
+      const operation = gen.operations.get(entry.requestId)
+      if (operation && operation.cancelRequested && message.payload && message.payload.state === 'cancelled') {
+        /* A cancellation terminal can race the acknowledgement. It proves the operation ended, so
+         * occupancy is released, but it is reported as a cancellation rather than a success. A
+         * successful completion that races an unconfirmed cancel is still a real completion and is
+         * handled by the normal terminal path; only a success after a *confirmed* cancel is late. */
+        gen.pending.delete(message.id)
+        gen.messageOwners.delete(message.id)
+        releaseOperation(gen, entry.requestId)
+        settle(entry, 'reject', {
+          ok: false,
+          code: QWEN_ERRORS.CANCELLED,
+          cancelled: true,
+          cancelConfirmed: false,
+          stopped: false,
+          requestId: entry.requestId,
+        })
+        return
+      }
       gen.pending.delete(message.id)
       gen.messageOwners.delete(message.id)
       releaseOperation(gen, entry.requestId)
@@ -558,6 +577,8 @@ export function createQwenSupervisor(options = {}) {
     if (typeof requestId !== 'string' || !requestId) return { ok: false, code: QWEN_ERRORS.INVALID_INPUT }
     const operation = gen.operations.get(requestId)
     if (!operation) return { ok: false, code: QWEN_ERRORS.UNKNOWN_REQUEST }
+    operation.cancelRequested = true
+    operation.cancelRequestedAt = now()
     const messageId = nextId('cnl')
     gen.cancelMessages.set(messageId, requestId)
     const result = await send(

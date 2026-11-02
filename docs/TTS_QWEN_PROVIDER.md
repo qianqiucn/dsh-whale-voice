@@ -168,6 +168,8 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
   ack 不等于实际停止，操作保持 `UNRESOLVED` 直到收到正确关联的终止结果或确认退出。迟到 success
   只计 `lateResponses`，不晋升成功；正确关联的 UNKNOWN 终止可释放占用，但“结果未知”与“执行已
   结束”仍是两个判断。从未签发的 messageId、cancel messageId 或无关 claimed id 不能清除占用。
+  若 worker 的 `cancelled` 终止结果先于 ack 到达，仍按 CANCELLED 结算并释放占用；只有 ack 确认
+  之后到达的成功才被视为迟到并丢弃。
 - Task 关联：`provider.synthesize(request, { taskId })` 要求调用方传入既有权威签发的 `taskId`，
   只把它回显在结果里；可选择传入 `taskAuthority(taskId)` 复核既有权威状态（CREATED/PROCESSING），
   未确认则拒绝。Provider 不创建/分配 Task，不写目录，不触碰 owner/catalog。Fake 证据使用

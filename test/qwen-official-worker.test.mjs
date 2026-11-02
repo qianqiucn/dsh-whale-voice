@@ -382,8 +382,7 @@ test('official worker cancellation keeps the ack and does not promote a later co
       assert.equal(result.ok, false)
       assert.equal(result.cancelled, true)
       assert.equal(result.code, PROVIDER_ERRORS.CANCELLED)
-      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
-      assert.equal(supervisor.state().unresolvedOperations, 0)
+      await waitFor(() => supervisor.state().unresolvedOperations === 0, 5000)
     })
   } finally {
     workspace.dispose()
