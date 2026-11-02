@@ -16,13 +16,15 @@ not invent earlier releases or imply production maturity.
   or real install). Adds multi-engine drafts for voice bubbles (provider/model/voice/language/emotion/
   speed/volume) and singing (RVC/Gateway, SVC only as a later unavailable option, rights/consent,
   pitch −12..12, vocal/instrumental gain, delivery), incompatible-field cleanup, preview. The config
-  panel now talks only to an injected isolated adapter and maps the effective voice draft to the
+  panel now awaits an injected isolated adapter (busy/error/late-result handling), freezes the
+  preview at prepare time, keeps UNKNOWN read-only, and talks only to that adapter and maps the effective voice draft to the
   existing Coordinator writable fields; language/emotion/speed/volume are reported as draft-only, and
   singing has no writable mapping and stays read-only. The old front-end demo transaction engine was
   removed; without an adapter the panel is read-only. 6 unit tests exercise the same adapter contract
-  against the real Coordinator with Fake sources plus wizard/draft rules; 6 UI checks cover the
-  adapter calls, mode/browse persistence, shared dependency install/verify and negative drafts. Full
-  suite 888/884 pass/4 platform skips; UI 30/30; client.js 266,702 bytes.
+  against the real Coordinator with Fake sources plus wizard/draft rules; the UI checks also drive a browser → exposeFunction → real isolated
+  Coordinator chain (sender saved value and saveCount asserted), scoped dependency invalidation,
+  async adapter calls, mode/browse persistence, install/verify and negative drafts. Full
+  suite 888/884 pass/4 platform skips; UI 32/32; client.js 273,806 bytes.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task

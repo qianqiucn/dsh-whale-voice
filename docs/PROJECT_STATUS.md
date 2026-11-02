@@ -529,3 +529,9 @@ its effective draft onto the existing Coordinator writable fields; unsupported f
 draft-only, and no adapter means read-only. Full suite 888/884 pass/4 platform skips; UI 30/30;
 build 266,702 bytes with no diff after rebuild.
 Status: OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; no real install/download/Provider/GPU/WeChat/send.
+
+0112 review (A/B/C) is addressed: async adapter transaction with frozen preview and UNKNOWN read-only;
+scoped dependency evidence with invalidation and manifest/capability-aware persistence; mode-aware
+draft/authorization consistency; singing cloud/existing no longer requires local RVC/separation.
+UI 32/32 includes a real isolated Coordinator browser chain; full suite 888/884 pass/4 platform skips;
+build 273,806 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.

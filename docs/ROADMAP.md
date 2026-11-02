@@ -542,3 +542,8 @@ Coordinator, reporting other fields as draft-only; singing is read-only. Depende
 aware, the fake installer is shared/cancellable with install and verification separated, and wizard
 persistence is context/revision aware. Full suite 888/884 pass/4 platform skips; UI 30/30. Still
 OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 remains unmerged.
+
+0112 review (A/B/C): async adapter transaction with frozen preview/UNKNOWN read-only, scoped dependency
+evidence with invalidation, mode-aware draft/authorization consistency, and a real isolated Coordinator
+browser chain. UI 32/32; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED.

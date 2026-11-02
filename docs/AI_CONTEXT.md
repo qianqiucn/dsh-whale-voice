@@ -689,3 +689,16 @@ use the shared provider/voice catalog, Chinese novice options, `fixture://` sour
 numeric checks and mode/engine consistency. 6 unit tests drive the real Coordinator through the same
 adapter contract; 6 UI checks cover the adapter calls and negative flows. Full suite 888/884 pass/4
 platform skips; UI 30/30; build 266,702 bytes.
+
+### Plan 09 0112 review fixes (A/B/C)
+
+The config panel now awaits every adapter call with busy/error/late-token handling, freezes the
+preview at prepare time and keeps UNKNOWN read-only (recover/getStatus only; no apply). Projection
+preserves opaque revisions and per-source/partial states. Dependency evidence is scoped by
+workspace/profile/manifest/capability/mode, cancel/close invalidates that scope, and browse dismissal
+uses the current manifest; a capability change shows a reminder instead of auto-opening. Wizard and
+page share the actual source layout/delivery choice; singing cloud/existing no longer requires local
+RVC/separation, and 鲸音 Core is separate from the 鲸递 delivery module. Voice mode changes sync
+engine/provider, cloud authorization and provider-kind/voice bindings are validated, and any draft
+change invalidates preview/plan. UI 32/32 includes a browser→exposeFunction→real isolated Coordinator
+save chain; full suite 888/884 pass/4 platform skips; build 273,806 bytes.

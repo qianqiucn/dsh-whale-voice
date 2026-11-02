@@ -69,3 +69,13 @@
 - 无真实素材抓取/上传、无真实播放/合成、无真实微信发送/安装/下载。
 - Worker NEVER_WRITE、Bridge/Worker 双门、WeChatAgent 身份权限独立继续保留。
 - 真实 Provider/GPU/媒体/设备/微信/安装为后续阶段；本 UI 不改变其授权状态。
+
+## 7. 0112 复核补正
+
+- 事务面板的 prepare/execute/apply/recover 全部 `await` 适配器，带 busy、异常映射和请求 token；编辑草稿/切换上下文后的迟到结果被丢弃。
+- 预览在 prepare 时冻结为具体字段/值（`data-testid=plan09-frozen-preview`）；确认使用冻结后的 planId，UNKNOWN 后禁止 prepare 与 apply，只允许 `recover/getStatus` 只读查证；投影保留 opaque revision、每源步骤与 PARTIALLY_APPLIED。
+- 依赖证据按 workspace/profile/manifest/capability/mode 作用域共享；关闭/取消/切模式会失效当前作用域定时器；失败原因随本次操作传入，不再用全局状态。
+- 仅浏览按当前 `manifestRevision` 记忆；能力 revision 变化不再自动弹窗，而是页面提醒并可手动重开。
+- 向导和页面使用同一份实际 `sourceLayout`/投递选择；唱歌 cloud/existing 不再要求本地 RVC/分离，改用 cloud/gateway；鲸音 Core 与鲸递发送模块分离，投递能力不作为生成前置。
+- Voice 切换模式会同步 engine/provider（cloud→cloud、existing→custom、local/cpu→local）；云端授权、Provider kind、唱歌音色与 engine 绑定统一校验；任何草稿变化使旧预览/旧计划失效。
+- UI 证据新增：harness 隔离适配器为异步；另有一条 Playwright 浏览器 → `exposeFunction` → 真实 `createConfigCoordinator` + Fake Source + 临时 sandbox 的端到端保存链（断言 sender 保存值、saveCount、prepare/execute/apply 调用）。
