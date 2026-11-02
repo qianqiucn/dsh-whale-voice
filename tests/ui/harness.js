@@ -398,8 +398,12 @@
     const record = (name) => calls.push(name)
     let deferCheck = false
     let checkResolver = null
+    let deferPrepare = false
+    let prepareResolver = null
     let deferExecute = false
     let executeResolver = null
+    let deferApply = false
+    let applyResolver = null
     let throwExecute = false
     let throwApply = false
     let throwRecover = false
@@ -407,6 +411,8 @@
     let unknownExecute = false
     let unknownApply = false
     let appliedApply = false
+    let loseExecuteResponse = false
+    let emptyExecuteResponse = null
     const adapter = {
       calls,
       getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
@@ -418,8 +424,12 @@
       },
       deferNextCheck() { deferCheck = true },
       releaseCheck(value) { if (checkResolver) { const resolve = checkResolver; checkResolver = null; resolve(value || { ready: true }) } },
+      deferNextPrepare() { deferPrepare = true },
+      releasePrepare() { if (prepareResolver) { const resolve = prepareResolver; prepareResolver = null; resolve() } },
       deferNextExecute() { deferExecute = true },
       releaseExecute() { if (executeResolver) { const resolve = executeResolver; executeResolver = null; resolve() } },
+      deferNextApply() { deferApply = true },
+      releaseApply() { if (applyResolver) { const resolve = applyResolver; applyResolver = null; resolve() } },
       throwNextExecute() { throwExecute = true },
       throwNextApply() { throwApply = true },
       throwNextRecover() { throwRecover = true },
@@ -427,11 +437,14 @@
       unknownNextExecute() { unknownExecute = true },
       unknownNextApply() { unknownApply = true },
       appliedNextApply() { appliedApply = true },
+      loseNextExecuteResponse() { loseExecuteResponse = true },
+      emptyNextExecuteResponse(kind) { emptyExecuteResponse = kind || 'object' },
       bumpRevision() { revision += 1 },
       setContext(patch) { Object.assign(context, patch || {}); window.dispatchEvent(new Event('plan09-context-changed')) },
       async prepareChange(draft) {
         record('prepareChange')
         if (nullPrepare) { nullPrepare = false; return null }
+        if (deferPrepare) { deferPrepare = false; await new Promise((resolve) => { prepareResolver = resolve }) }
         if (real) return real.prepare(draft)
         if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
         const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false, changes: draft }
@@ -443,23 +456,39 @@
         if (throwExecute) { throwExecute = false; throw new Error('fixture execute failure') }
         if (deferExecute) { deferExecute = false; await new Promise((resolve) => { executeResolver = resolve }) }
         if (unknownExecute) { unknownExecute = false; return { ok: false, state: 'UNKNOWN', transactionId: 'fixture-tx-unknown', error: { code: 'CONFIG_COORDINATION_WRITE_UNKNOWN' } } }
-        if (real) return real.execute(planId, options)
-        const plan = plans.get(planId)
-        if (!plan) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
-        if (options.userConfirmed !== true || options.confirmedPlanId !== planId) return { ok: false, error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }
-        if (plan.consumed) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_CONSUMED' } }
-        if (Date.now() > plan.expiresAt) return { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_PLAN_EXPIRED' } }
-        if (plan.expectedRevision !== revision) return { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_CONFLICT' } }
-        plan.consumed = true
-        revision += 1
-        const transactionId = 'fixture-tx-' + sequence
-        const tx = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: 'fixture-rev-' + sequence, activeConfirmed: false, steps: [{ source: 'senderService', status: 'SAVED', savedRevision: 'fixture-rev-' + sequence }] }
-        transactions.set(transactionId, tx)
-        return tx
+        let result
+        if (real) {
+          result = await real.execute(planId, options)
+        } else {
+          const plan = plans.get(planId)
+          if (!plan) result = { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
+          else if (options.userConfirmed !== true || options.confirmedPlanId !== planId) result = { ok: false, error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }
+          else if (plan.consumed) result = { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_CONSUMED' } }
+          else if (Date.now() > plan.expiresAt) result = { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_PLAN_EXPIRED' } }
+          else if (plan.expectedRevision !== revision) result = { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_CONFLICT' } }
+          else {
+            plan.consumed = true
+            revision += 1
+            const transactionId = 'fixture-tx-' + sequence
+            result = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: 'fixture-rev-' + sequence, activeConfirmed: false, steps: [{ source: 'senderService', status: 'SAVED', savedRevision: 'fixture-rev-' + sequence }] }
+            transactions.set(transactionId, result)
+          }
+        }
+        if (loseExecuteResponse) { loseExecuteResponse = false; throw new Error('response channel lost after the save was attempted') }
+        if (emptyExecuteResponse) {
+          const kind = emptyExecuteResponse
+          emptyExecuteResponse = null
+          if (kind === 'null') return null
+          if (kind === 'undefined') return undefined
+          if (kind === 'okonly') return { ok: true }
+          return {}
+        }
+        return result
       },
       async apply(transactionId, options = {}) {
         record('apply')
         if (throwApply) { throwApply = false; throw new Error('fixture apply failure') }
+        if (deferApply) { deferApply = false; await new Promise((resolve) => { applyResolver = resolve }) }
         if (unknownApply) { unknownApply = false; return { ok: true, transactionId, state: 'UNKNOWN', applyState: 'UNKNOWN', activeRevision: null, activeConfirmed: false } }
         if (appliedApply) { appliedApply = false; return { ok: true, transactionId, state: 'APPLIED', applyState: 'APPLIED', activeRevision: 'opaque-applied', activeConfirmed: true } }
         if (real) return real.apply(transactionId, options)

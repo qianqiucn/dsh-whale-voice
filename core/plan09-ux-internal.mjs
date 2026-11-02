@@ -166,6 +166,11 @@ export function plan09IdentityScope(context) {
   return [state.workspace, state.profile, state.manifestRevision, state.capabilityRevision].join('|')
 }
 
+/** Mode/engine scope for model- and hardware-specific dependency evidence. */
+export function plan09EngineScope(context, mode, engine) {
+  return plan09IdentityScope(context) + '|' + (mode || '') + '|' + (engine || '')
+}
+
 /**
  * Evidence scope for one dependency row. Dependencies the catalog marks `shared` belong to the host
  * identity itself (the same Core/TTS/delivery components serve every feature and mode), so switching
@@ -173,10 +178,19 @@ export function plan09IdentityScope(context) {
  * dependencies stay scoped by mode and engine.
  */
 export function plan09DependencyScope(context, mode, engine, key) {
-  const identity = plan09IdentityScope(context)
   const item = PLAN09_DEPENDENCY_CATALOG[key]
-  if (item && item.shared === true) return identity + '|shared'
-  return identity + '|' + (mode || '') + '|' + (engine || '')
+  if (item && item.shared === true) return plan09IdentityScope(context) + '|shared'
+  return plan09EngineScope(context, mode, engine)
+}
+
+/**
+ * Transaction authority key. One undecided write belongs to one configuration source
+ * (workspace/profile/feature), so switching only the manifest/wizard revision must not produce a
+ * fresh apparently-clean transaction while the old one is still unresolved.
+ */
+export function plan09TransactionKey(context, feature) {
+  const state = context || {}
+  return `wv.plan09.tx.v2.${state.workspace}.${state.profile}.${feature}`
 }
 
 export function plan09DefaultVoiceDraft() {
@@ -336,10 +350,31 @@ export function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
   }
 }
 
+const PLAN09_RESULT_STATES = ['PREPARED', 'SAVED', 'PENDING_APPLY', 'APPLIED', 'PARTIALLY_APPLIED', 'CONFLICT', 'UNKNOWN', 'FAILED']
+
+/**
+ * Classify an operation result by the Coordinator's own `state`. `ok` alone is not a transaction
+ * state: an empty/null response, `{ok:true}` without a state, or any unrecognised shape means the
+ * outcome of an already-sent operation is unknown — never saved and never "failed with no write".
+ * A `PREPARED` answer to an execute/apply call means the operation was refused before writing.
+ */
+export function plan09ClassifyCoordinatorResult(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return { recognized: false, phase: 'UNKNOWN', transactionId: null, errorCode: 'EMPTY_RESPONSE', result: null }
+  }
+  const transactionId = typeof result.transactionId === 'string' && result.transactionId ? result.transactionId : null
+  const errorCode = result.error && typeof result.error.code === 'string' ? result.error.code : null
+  const state = typeof result.state === 'string' && PLAN09_RESULT_STATES.includes(result.state) ? result.state : null
+  if (!state) return { recognized: false, phase: 'UNKNOWN', transactionId, errorCode: errorCode || 'NO_TRUSTED_STATE', result }
+  if (state === 'PREPARED') return { recognized: true, phase: 'FAILED', transactionId, errorCode: errorCode || 'NOT_EXECUTED', result }
+  return { recognized: true, phase: state, transactionId, errorCode, result }
+}
+
 /** Project a Coordinator result into the labels the UI may truthfully show. */
 export function plan09ProjectCoordinatorResult(result) {
   if (!result || typeof result !== 'object') return { phase: 'UNKNOWN', label: '结果未知 · 只读', tone: 'error', canApply: false, text: '未收到可信事务结果。' }
-  const state = result.state || (result.ok ? 'PREPARED' : (result.transactionId ? 'UNKNOWN' : 'FAILED'))
+  const classified = plan09ClassifyCoordinatorResult(result)
+  const state = classified.phase
   const map = {
     PREPARED: ['已准备计划', 'wait', false],
     SAVED: ['已保存 · 待生效', 'busy', true],
@@ -350,7 +385,7 @@ export function plan09ProjectCoordinatorResult(result) {
     UNKNOWN: ['结果未知 · 只读', 'error', false],
     FAILED: ['失败', 'error', false],
   }
-  const [label, tone, canApply] = map[state] || ['未识别状态', 'wait', false]
+  const [label, tone, canApply] = map[state] || ['结果未知 · 只读', 'error', false]
   const steps = Array.isArray(result.steps) ? result.steps.map((step) => ({
     source: step.source || null,
     status: step.status || null,
@@ -363,7 +398,7 @@ export function plan09ProjectCoordinatorResult(result) {
     label,
     tone,
     canApply,
-    transactionId: result.transactionId || null,
+    transactionId: classified.transactionId,
     planId: result.plan ? result.plan.planId : null,
     expectedRevision: result.plan ? result.plan.expectedRevision : null,
     activeRevision: result.activeRevision === undefined ? null : result.activeRevision,
@@ -372,7 +407,7 @@ export function plan09ProjectCoordinatorResult(result) {
     confirmed: Array.isArray(result.confirmed) ? result.confirmed : [],
     mismatch: Array.isArray(result.mismatch) ? result.mismatch : [],
     rejected: Array.isArray(result.rejected) ? result.rejected : [],
-    errorCode: result.error && result.error.code ? result.error.code : null,
+    errorCode: classified.errorCode,
     text: `事务 ${state} · ${result.applyState || '未生效'}`,
   }
 }
@@ -384,6 +419,7 @@ export function plan09ProjectCoordinatorResult(result) {
  * reducers so cross-page, late-response and lost-response behavior is testable without a browser.
  */
 const PLAN09_TX_PREPARE_PHASES = ['DIRTY', 'CONFLICT', 'FAILED', 'APPLIED']
+const PLAN09_TX_RESETTABLE_PHASES = ['SAVED', 'PENDING_APPLY', 'APPLIED', 'PARTIALLY_APPLIED']
 
 export function plan09TransactionInitial() {
   return {
@@ -402,6 +438,9 @@ export function plan09TransactionInitial() {
     frozenSerial: null,
     contextSerial: null,
     history: [],
+    opSeq: 0,
+    inFlightSeq: 0,
+    draftVersion: 0,
   }
 }
 
@@ -410,23 +449,35 @@ function plan09TransactionStartNext(current, event) {
   const history = current.txId || current.phase === 'APPLIED'
     ? [{ phase: current.phase, txId: current.txId, error: current.error, at }, ...(current.history || [])].slice(0, 5)
     : current.history || []
-  return { ...plan09TransactionInitial(), history, draftDirty: current.draftDirty === true }
+  const seq = (current.opSeq || 0) + 1
+  return {
+    ...plan09TransactionInitial(),
+    history,
+    draftVersion: current.draftVersion || 0,
+    opSeq: seq,
+    inFlightSeq: seq,
+  }
 }
 
-function plan09TransactionFinish(current, result, fallbackState) {
-  const projection = plan09ProjectCoordinatorResult(result || { state: fallbackState || 'UNKNOWN' })
-  const txId = projection.transactionId || current.txId || null
+/**
+ * Finish an already-sent operation. The Coordinator's own `state` is authoritative; an empty or
+ * incomplete answer is an unknown outcome (no invented success, no invented pre-write failure).
+ */
+function plan09TransactionFinish(current, result) {
+  const classified = plan09ClassifyCoordinatorResult(result)
+  const txId = classified.transactionId || current.txId || null
   return {
     ...current,
     busy: false,
     inFlight: null,
-    phase: projection.phase,
+    phase: classified.phase,
     plan: null,
-    result: result || null,
+    result: classified.result,
     txId,
-    error: projection.errorCode,
+    error: classified.errorCode,
     planStale: false,
-    outcomeUnknown: projection.phase === 'UNKNOWN' && !txId,
+    contextStale: false,
+    outcomeUnknown: classified.phase === 'UNKNOWN' && !txId,
   }
 }
 
@@ -434,13 +485,14 @@ export function plan09ReduceTransaction(entry, event = {}) {
   const current = { ...plan09TransactionInitial(), ...(entry || {}) }
   switch (event.type) {
     case 'DRAFT_EDITED': {
-      if (current.busy) return { ...current, draftDirty: true }
-      if (current.phase === 'APPLIED') return plan09TransactionStartNext(current, event)
-      if (current.txId || current.outcomeUnknown || current.phase === 'UNKNOWN') return { ...current, draftDirty: true }
+      const draftVersion = (current.draftVersion || 0) + 1
+      const next = { ...current, draftDirty: true, draftVersion }
+      if (current.busy) return next
+      if (current.phase === 'APPLIED') return { ...plan09TransactionStartNext(current, event), draftDirty: true, draftVersion }
+      if (current.txId || current.outcomeUnknown || current.phase === 'UNKNOWN') return next
       return {
-        ...current,
+        ...next,
         phase: 'DIRTY',
-        draftDirty: true,
         error: null,
         plan: null,
         result: null,
@@ -450,16 +502,19 @@ export function plan09ReduceTransaction(entry, event = {}) {
         contextSerial: null,
       }
     }
-    case 'START_NEXT_CYCLE': {
+    case 'START_NEXT_CYCLE':
+    case 'RESET': {
       if (current.busy) return current
-      if (!current.txId && current.phase !== 'APPLIED') return current
+      if (!plan09CanReset(current)) return current
       return plan09TransactionStartNext(current, event)
     }
     case 'PREPARE_START': {
       if (current.busy) return current
-      return { ...current, busy: true, inFlight: 'prepare', error: null }
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'prepare', opSeq: seq, inFlightSeq: seq, error: null }
     }
     case 'PREPARE_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
       const result = event.result || null
       if (event.stale === true) {
         return {
@@ -513,6 +568,7 @@ export function plan09ReduceTransaction(entry, event = {}) {
       }
     }
     case 'PREPARE_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
       return {
         ...current,
         busy: false,
@@ -538,11 +594,15 @@ export function plan09ReduceTransaction(entry, event = {}) {
       return { ...current, planStale: true, error: 'AUTHORIZATION_CHANGED' }
     case 'EXECUTE_START': {
       if (current.busy) return current
-      return { ...current, busy: true, inFlight: 'execute', error: null }
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'execute', opSeq: seq, inFlightSeq: seq, error: null }
     }
-    case 'EXECUTE_DONE':
-      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'EXECUTE_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
     case 'EXECUTE_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
       return {
         ...current,
         busy: false,
@@ -558,20 +618,28 @@ export function plan09ReduceTransaction(entry, event = {}) {
     }
     case 'APPLY_START': {
       if (current.busy) return current
-      return { ...current, busy: true, inFlight: 'apply', error: null }
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'apply', opSeq: seq, inFlightSeq: seq, error: null }
     }
-    case 'APPLY_DONE':
-      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'APPLY_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
     case 'APPLY_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
       return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'APPLY_REJECTED', plan: null }
     }
     case 'STATUS_START': {
       if (current.busy) return current
-      return { ...current, busy: true, inFlight: 'status', error: null }
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'status', opSeq: seq, inFlightSeq: seq, error: null }
     }
-    case 'STATUS_DONE':
-      return plan09TransactionFinish(current, event.result, 'UNKNOWN')
+    case 'STATUS_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
     case 'STATUS_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
       return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'STATUS_UNKNOWN', plan: null }
     }
     default:
@@ -580,9 +648,15 @@ export function plan09ReduceTransaction(entry, event = {}) {
 }
 
 /** Buttons follow the shared authority, not a component-local busy flag. */
-export function plan09CanPrepare(entry) {
+export function plan09CanPrepare(entry, { currentSerial = null } = {}) {
   const current = entry || plan09TransactionInitial()
-  return !current.busy && !current.txId && current.outcomeUnknown !== true && PLAN09_TX_PREPARE_PHASES.includes(current.phase)
+  if (current.busy || current.txId || current.outcomeUnknown === true) return false
+  if (PLAN09_TX_PREPARE_PHASES.includes(current.phase)) return true
+  if (current.phase === 'PREPARED') {
+    if (current.planStale === true) return true
+    return typeof current.frozenSerial === 'string' && current.frozenSerial !== currentSerial
+  }
+  return false
 }
 
 export function plan09CanConfirm(entry, { currentSerial = null, contextSerial = null } = {}) {
@@ -603,15 +677,21 @@ export function plan09CanReadStatus(entry) {
   return !current.busy && Boolean(current.txId)
 }
 
-/** Display projection for the panel: never let `ok:true` override the transaction state. */
+/**
+ * Only a determined outcome may end a transaction and start a new draft. UNKNOWN (with or without a
+ * transaction ID) is unresolved: it stays latched until a trusted status check decides it.
+ */
+export function plan09CanReset(entry) {
+  const current = entry || plan09TransactionInitial()
+  if (current.busy || current.outcomeUnknown === true) return false
+  return PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)
+}
+
+/** Display projection for the panel: the entry phase decides, never `ok` or a stale result. */
 export function plan09TransactionView(entry) {
   const current = { ...plan09TransactionInitial(), ...(entry || {}) }
   if (current.outcomeUnknown === true && !current.txId) {
-    return { phase: 'UNKNOWN', label: '结果未知 · 未收到响应', tone: 'error', text: '未收到保存响应：写入可能已经发生，不能当作失败，也不能自动重试。' }
-  }
-  if (current.result) {
-    const projection = plan09ProjectCoordinatorResult(current.result)
-    return { phase: projection.phase, label: projection.label, tone: projection.tone, text: projection.text }
+    return { phase: 'UNKNOWN', label: '结果未知 · 未收到响应', tone: 'error', text: '未收到保存响应：写入可能已经发生；没有可信结果，不能当作失败，也不能重置或自动重试。' }
   }
   const map = {
     DIRTY: ['未保存草稿', 'wait'],
@@ -625,7 +705,10 @@ export function plan09TransactionView(entry) {
     UNKNOWN: ['结果未知 · 只读', 'error'],
   }
   const [label, tone] = map[current.phase] || ['未保存草稿', 'wait']
-  return { phase: current.phase, label, tone, text: '事务 ' + current.phase + ' · 尚未取得生效确认。' }
+  const text = current.phase === 'UNKNOWN'
+    ? '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
+    : '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  return { phase: current.phase, label, tone, text }
 }
 
 export function plan09InstallView(status) {

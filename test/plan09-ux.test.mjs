@@ -7,17 +7,29 @@ import { after } from 'node:test'
 
 import {
   PLAN09_MANIFEST_REVISION,
+  plan09CanApply,
+  plan09CanConfirm,
+  plan09CanPrepare,
+  plan09CanReadStatus,
+  plan09CanReset,
+  plan09ClassifyCoordinatorResult,
   plan09DefaultSingingDraft,
   plan09DefaultVoiceDraft,
   plan09DependencyGroups,
+  plan09DependencyScope,
   plan09DependencySummary,
   plan09DeriveWizardView,
   plan09DraftToChanges,
+  plan09EngineScope,
   plan09InstallFailureReason,
   plan09ProjectCoordinatorResult,
   plan09ReadWizard,
+  plan09ReduceTransaction,
   plan09SwitchEngine,
   plan09SwitchMode,
+  plan09TransactionInitial,
+  plan09TransactionKey,
+  plan09TransactionView,
   plan09ValidateSingingDraft,
   plan09ValidateVoiceDraft,
   plan09WizardKey,
@@ -239,4 +251,175 @@ test('the injected adapter contract drives the real Coordinator from a mapped dr
   assert.equal(consumed.ok, false)
   assert.equal(consumed.error.code, 'CONFIG_COORDINATION_PLAN_CONSUMED')
   assert.equal(sender.saveCount, 1)
+})
+
+function preparedEntry(overrides = {}) {
+  const started = plan09ReduceTransaction(plan09TransactionInitial(), { type: 'PREPARE_START' })
+  const prepared = plan09ReduceTransaction(started, {
+    type: 'PREPARE_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: true, plan: { planId: 'plan-a' } },
+    frozenChanges: { schemaVersion: 1 },
+    frozenSerial: 'serial-a',
+    contextSerial: 'ctx-a',
+  })
+  return { ...prepared, ...overrides }
+}
+
+test('operation results without a trusted state stay UNKNOWN and cannot be reset or re-prepared', () => {
+  const prepared = preparedEntry()
+  assert.equal(prepared.phase, 'PREPARED')
+  assert.equal(plan09CanConfirm(prepared, { currentSerial: 'serial-a', contextSerial: 'ctx-a' }), true)
+
+  const emptyResults = [null, undefined, {}, { ok: true }, { ok: false }, { ok: false, error: { code: 'FIXTURE_FAILURE' } }]
+  for (const result of emptyResults) {
+    const started = plan09ReduceTransaction(prepared, { type: 'EXECUTE_START' })
+    const done = plan09ReduceTransaction(started, { type: 'EXECUTE_DONE', seq: started.inFlightSeq, result })
+    assert.equal(done.phase, 'UNKNOWN', String(JSON.stringify(result)))
+    assert.equal(done.outcomeUnknown, true)
+    assert.equal(done.txId, null)
+    assert.equal(done.result, result === undefined ? null : result)
+    assert.equal(plan09CanPrepare(done), false)
+    assert.equal(plan09CanReset(done), false)
+    assert.equal(plan09CanReadStatus(done), false)
+    assert.equal(plan09CanApply(done), false)
+    assert.equal(plan09TransactionView(done).phase, 'UNKNOWN')
+  }
+})
+
+test('a trusted UNKNOWN keeps its transaction id, blocks reset and still allows a read-only check', () => {
+  const saved = { ...preparedEntry(), phase: 'SAVED', txId: 'tx-1', frozenChanges: null }
+  const started = plan09ReduceTransaction(saved, { type: 'APPLY_START' })
+  const unknown = plan09ReduceTransaction(started, {
+    type: 'APPLY_DONE',
+    seq: started.inFlightSeq,
+    result: { ok: true, state: 'UNKNOWN', transactionId: 'tx-1', error: { code: 'CONFIG_COORDINATION_REVISION_MISMATCH' } },
+  })
+  assert.equal(unknown.phase, 'UNKNOWN')
+  assert.equal(unknown.txId, 'tx-1')
+  assert.equal(unknown.outcomeUnknown, false)
+  assert.equal(plan09CanReset(unknown), false)
+  assert.equal(plan09CanApply(unknown), false)
+  assert.equal(plan09CanPrepare(unknown), false)
+  assert.equal(plan09CanReadStatus(unknown), true)
+
+  const checking = plan09ReduceTransaction(unknown, { type: 'STATUS_START' })
+  const applied = plan09ReduceTransaction(checking, {
+    type: 'STATUS_DONE',
+    seq: checking.inFlightSeq,
+    result: { ok: true, state: 'APPLIED', transactionId: 'tx-1' },
+  })
+  assert.equal(applied.phase, 'APPLIED')
+  assert.equal(plan09CanReset(applied), true)
+  assert.equal(plan09CanReadStatus(applied), true)
+})
+
+test('classification never infers a save from ok and treats PREPARED as a no-write rejection', () => {
+  assert.equal(plan09ClassifyCoordinatorResult({ ok: true }).phase, 'UNKNOWN')
+  assert.equal(plan09ClassifyCoordinatorResult({ ok: true }).recognized, false)
+  assert.equal(plan09ClassifyCoordinatorResult(null).phase, 'UNKNOWN')
+  assert.equal(plan09ClassifyCoordinatorResult({ ok: true, state: 'SAVED', transactionId: 't1' }).phase, 'SAVED')
+  assert.equal(plan09ClassifyCoordinatorResult({ ok: false, state: 'CONFLICT' }).phase, 'CONFLICT')
+  assert.equal(plan09ClassifyCoordinatorResult({ ok: false, state: 'PREPARED', error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }).phase, 'FAILED')
+  assert.equal(plan09ProjectCoordinatorResult({ ok: true }).phase, 'UNKNOWN')
+  assert.equal(plan09ProjectCoordinatorResult({ ok: true, state: 'PARTIALLY_APPLIED' }).phase, 'PARTIALLY_APPLIED')
+})
+
+test('late results only settle the operation they belong to', () => {
+  const started = plan09ReduceTransaction(plan09TransactionInitial(), { type: 'PREPARE_START' })
+  const seq = started.inFlightSeq
+  const edited = plan09ReduceTransaction(started, { type: 'DRAFT_EDITED' })
+  assert.equal(edited.busy, true, 'editing must not release the in-flight mutex')
+  assert.equal(edited.draftVersion, 1)
+
+  const foreign = plan09ReduceTransaction(edited, { type: 'PREPARE_DONE', seq: seq + 99, result: { ok: true, plan: { planId: 'late' } } })
+  assert.equal(foreign.busy, true)
+  assert.equal(foreign.plan, null)
+
+  const stale = plan09ReduceTransaction(edited, {
+    type: 'PREPARE_DONE',
+    seq,
+    stale: true,
+    result: { ok: true, plan: { planId: 'stale' } },
+    frozenSerial: 'serial-stale',
+    contextSerial: 'ctx-a',
+  })
+  assert.equal(stale.phase, 'DIRTY')
+  assert.equal(stale.error, 'STALE_PREPARE')
+  assert.equal(stale.busy, false)
+  assert.equal(stale.plan, null)
+  assert.equal(plan09CanPrepare(stale), true)
+})
+
+test('editing during an in-flight execute keeps the mutex and the transaction result', () => {
+  const started = plan09ReduceTransaction(preparedEntry(), { type: 'EXECUTE_START' })
+  const edited = plan09ReduceTransaction(started, { type: 'DRAFT_EDITED' })
+  assert.equal(edited.busy, true)
+  assert.equal(edited.inFlight, 'execute')
+  assert.equal(plan09CanPrepare(edited), false)
+  assert.equal(plan09CanConfirm(edited, { currentSerial: 'serial-a', contextSerial: 'ctx-a' }), false)
+
+  const saved = plan09ReduceTransaction(edited, {
+    type: 'EXECUTE_DONE',
+    seq: edited.inFlightSeq,
+    result: { ok: true, state: 'SAVED', transactionId: 'tx-2' },
+  })
+  assert.equal(saved.phase, 'SAVED')
+  assert.equal(saved.txId, 'tx-2')
+  assert.equal(saved.busy, false)
+  assert.equal(saved.draftDirty, true)
+  assert.equal(saved.outcomeUnknown, false)
+})
+
+test('a determined APPLIED can start one new cycle while an unresolved UNKNOWN cannot', () => {
+  const applied = { ...plan09TransactionInitial(), phase: 'APPLIED', txId: 'tx-9', result: { state: 'APPLIED', transactionId: 'tx-9' } }
+  assert.equal(plan09CanReset(applied), true)
+
+  const reset = plan09ReduceTransaction(applied, { type: 'RESET', at: '2026-11-02T18:00:00.000Z' })
+  assert.equal(reset.phase, 'DIRTY')
+  assert.equal(reset.txId, null)
+  assert.equal(reset.history.length, 1)
+  assert.equal(reset.history[0].txId, 'tx-9')
+  assert.equal(plan09CanPrepare(reset), true)
+
+  const edited = plan09ReduceTransaction(applied, { type: 'DRAFT_EDITED' })
+  assert.equal(edited.phase, 'DIRTY')
+  assert.equal(edited.history.length, 1)
+  assert.equal(edited.history[0].phase, 'APPLIED')
+
+  const unknown = { ...plan09TransactionInitial(), phase: 'UNKNOWN', txId: 'tx-10' }
+  assert.equal(plan09CanReset(unknown), false)
+  assert.equal(plan09ReduceTransaction(unknown, { type: 'RESET' }).txId, 'tx-10')
+  assert.equal(plan09CanPrepare(unknown), false)
+})
+
+test('transaction identity ignores the manifest revision and keeps a source-wide pending latch', () => {
+  const base = { workspace: 'ws', profile: 'p1', manifestRevision: 2, capabilityRevision: 3 }
+  assert.equal(plan09TransactionKey(base, 'voice-bubbles'), plan09TransactionKey({ ...base, manifestRevision: 9, capabilityRevision: 4 }, 'voice-bubbles'))
+  assert.notEqual(plan09TransactionKey(base, 'voice-bubbles'), plan09TransactionKey({ ...base, profile: 'p2' }, 'voice-bubbles'))
+  assert.notEqual(plan09TransactionKey(base, 'voice-bubbles'), plan09TransactionKey(base, 'singing'))
+  assert.equal(plan09DependencyScope(base, 'local', 'rvc', 'core'), plan09DependencyScope(base, 'cloud', 'gateway', 'core'))
+  assert.equal(plan09DependencyScope(base, 'local', 'rvc', 'sender'), plan09DependencyScope(base, 'cpu', 'gateway', 'sender'))
+  assert.equal(plan09DependencyScope(base, 'local', 'rvc', 'rvc'), plan09EngineScope(base, 'local', 'rvc'))
+  assert.notEqual(plan09DependencyScope(base, 'local', 'rvc', 'rvc'), plan09DependencyScope(base, 'local', 'svc', 'rvc'))
+})
+
+test('a stale prepared plan can be re-prepared instead of staying disabled', () => {
+  const prepared = preparedEntry({ frozenSerial: 'voice-b' })
+  assert.equal(plan09CanConfirm(prepared, { currentSerial: 'voice-a', contextSerial: 'ctx-a' }), false)
+  assert.equal(plan09CanPrepare(prepared, { currentSerial: 'voice-a' }), true)
+
+  const restarted = plan09ReduceTransaction(prepared, { type: 'PREPARE_START' })
+  assert.equal(restarted.busy, true)
+  const redone = plan09ReduceTransaction(restarted, {
+    type: 'PREPARE_DONE',
+    seq: restarted.inFlightSeq,
+    result: { ok: true, plan: { planId: 'plan-b' } },
+    frozenChanges: { schemaVersion: 1 },
+    frozenSerial: 'voice-a',
+    contextSerial: 'ctx-a',
+  })
+  assert.equal(redone.phase, 'PREPARED')
+  assert.equal(redone.plan.planId, 'plan-b')
+  assert.equal(plan09CanConfirm(redone, { currentSerial: 'voice-a', contextSerial: 'ctx-a' }), true)
 })

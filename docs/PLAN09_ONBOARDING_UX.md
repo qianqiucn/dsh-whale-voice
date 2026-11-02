@@ -92,7 +92,18 @@
 
 - 事务权威升级为按 workspace/profile/feature/manifest 的共享 store：execute/apply 在途与结果跨页保留并通知当前页面；busy 为全局互斥，重复 apply 不再调用两次。
 - 准备快照绑定 draftSerial 与 contextSerial；返回页面后草稿/上下文不一致则旧计划不可确认；旧 profile 的事务不会复制到新 profile。
-- 响应通道丢失（未能确认是否写入）按 UNKNOWN 处理，保留计划与只读/重置入口，不自动重写；合法 `state:UNKNOWN`/`PARTIALLY_APPLIED` 不再按 `ok` 降级为 PENDING_APPLY；APPLIED 后可显式结束并开始下一份草稿。
+- 响应通道丢失（未能确认是否写入）按 UNKNOWN 处理，不自动重写；“结束此事务”只在已确定结果时可用（见 §10），未决 UNKNOWN 不因缺少 transactionId、编辑草稿或点击重置而消失。
 - 依赖按真实共享身份隔离：Core/Sender/WeChat 跨 feature/engine 复用；GPU/RVC/Gateway/分离等按 mode+engine 隔离。取消后向导展示订阅共享 store，不再停留在 checking。
 - 真实协议映射：UI Provider 目录 ID 映射到现有 `tts.provider` 枚举（qwen-local/cloud/custom），cloud/existing 已用真实隔离 Coordinator 验证保存；未扩 writer 白名单。
 - 授权/上下文变化同步清空旧预览；手动切 Singing Gateway/RVC 不会自动改旧音色，需按中文校验重新选择。
+
+## 10. 0115 复核补正
+
+- 事务面板的实际运行逻辑改为调用共享 reducer（`plan09ReduceTransaction`）：准备快照、已发出操作、未决结果与确定终态都在同一身份条目里，编辑/切页/重进不再各自持有副本，也不再保留未接入的纯模块状态逻辑。
+- 事务身份按 `workspace/profile/feature`（`plan09TransactionKey`）而不是 manifest/向导版本：只切换 `manifestRevision` 不会生成一个看似干净的 DIRTY 事务，旧的 UNKNOWN 仍保留并可只读查证。
+- 操作结果只认 Coordinator 自己的 `state`：`null`、`undefined`、`{}`、仅 `{ok:true}` 或无法识别的结构一律为 UNKNOWN，禁止 prepare、apply 与“结束并开始下一份”；`state:PREPARED` 视为未执行的拒绝。SAVED/APPLIED/PARTIALLY_APPLIED/CONFLICT/FAILED 等明确 state 才按原义显示。
+- 未决 UNKNOWN（含无 transactionId 的响应丢失）不能通过重置清除；只有 SAVED/PENDING_APPLY/APPLIED/PARTIALLY_APPLIED 等已确定结果可显式结束，并将旧事务记入历史。
+- 每个操作带单调序号（`opSeq`/`inFlightSeq`）：迟到响应只结算它所属的操作；编辑草稿不会释放执行中的互斥；迟到的 prepare 成功或拒绝都不会覆盖当前计划。
+- 草稿内容与冻结计划不一致（例如换页回到默认值）时显示内容不一致提示，确认被拒绝，并允许直接重新准备当前草稿，不再需要额外编辑才能恢复。
+- 共享依赖的未完成操作按发起页面退出取消（关闭向导、切模式、卸载、切页），已完成的共享证据仍跨页复用；所有写入都会通知同一身份的当前观察者，不再只更新原组件。
+- 作用域 helper 统一由 `core/plan09-ux-internal.mjs` 提供（`plan09IdentityScope`、`plan09EngineScope`、`plan09DependencyScope`），浏览器运行逻辑不再重复定义同一事实。

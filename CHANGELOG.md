@@ -24,7 +24,7 @@ not invent earlier releases or imply production maturity.
   against the real Coordinator with Fake sources plus wizard/draft rules; the UI checks also drive a browser → exposeFunction → real isolated
   Coordinator chain (sender saved value and saveCount asserted), scoped dependency invalidation,
   async adapter calls, mode/browse persistence, install/verify, negative drafts, UNKNOWN/late-execute authority, adapter exception lifecycle, context-change plan blocking and scoped mode-change cancellation, cross-page transaction authority, provider protocol mapping, shared-core evidence and authorization-driven preview invalidation. Full
-  suite 888/884 pass/4 platform skips; UI 45/45; client.js 290,994 bytes.
+  suite 896/892 pass/4 platform skips; UI 53/53; client.js 296,236 bytes.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task
@@ -282,6 +282,10 @@ not invent earlier releases or imply production maturity.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
+
+### Fixed
+
+- Plan 09 transaction and shared-dependency authority after the 0115 review. The panel now runs the shared `plan09ReduceTransaction` entry (prepared snapshot, monotonic operation sequence, unresolved latch, determined terminal state) instead of component-local copies, and transactions are keyed by `workspace/profile/feature`, so switching only the manifest revision can no longer present a clean DIRTY transaction while the previous UNKNOWN is still unresolved. Operation results are classified by the Coordinator's own `state`: `null`/`undefined`/`{}`/`{ok:true}`-only responses are UNKNOWN (no prepare, apply, reset or re-prepare), `state:PREPARED` is a no-write rejection, and only SAVED/PENDING_APPLY/APPLIED/PARTIALLY_APPLIED results can be ended explicitly with history kept. Each operation carries a sequence so a late prepare/execute/apply/status answer only settles its own operation, editing a draft no longer releases the in-flight mutex, and a frozen plan whose draft changed across pages shows a content-mismatch notice and can be re-prepared directly. Shared dependency operations are cancelled by the page that started them on wizard exit, mode switch, unmount or page switch while completed shared evidence is still reused; every write notifies the current observer of the identity, and the browser code uses the single `core/plan09-ux-internal.mjs` scope helpers. 8 reducer/classification unit tests (14 in the Plan 09 file); full suite 896/892 pass/4 platform skips/0 fail; UI 53/53 including real isolated Coordinator loss/empty responses; build 296,236 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
 
 ## [0.1.0] — 2026-10-24
 
