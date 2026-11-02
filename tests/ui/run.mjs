@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
+import { createConfigSandbox } from '../../core/config-sandbox.mjs'
+import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -65,7 +69,7 @@ const results = []
 const consoleMessages = []
 const failedRequests = []
 
-async function withPage(query, fn) {
+async function withPage(query, fn, setupPage) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
@@ -80,6 +84,7 @@ async function withPage(query, fn) {
     failedRequests.push(item)
   })
   try {
+    if (setupPage) await setupPage(page)
     await page.goto(base + (query || ''), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
@@ -651,6 +656,77 @@ await check('plan09 global setup priority and narrow layout', async () => {
     assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, 'plan09 narrow overflow: ' + metrics.scrollWidth + ' > ' + metrics.clientWidth)
     await page.screenshot({ path: path.join(artifactDir, 'plan09-780.png') })
   })
+})
+
+await check('plan09 scoped dependency evidence resets on context change and uses actual source layout', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-gpu"]')?.getAttribute('data-state') === 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'second-profile', capabilityRevision: 9, gpuAvailable: false }))
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'ready')
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-gpu"]')?.getAttribute('data-state') === 'unavailable')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'hidden' })
+    await page.locator('[data-testid="plan09-source-layout"]').selectOption('CLEAN_VOCAL')
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-separation"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan09-dep-rvc"]').count(), 1)
+  })
+})
+
+await check('plan09 browser calls a real isolated Coordinator end to end', async () => {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', { document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' } })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.locator('[data-testid="plan09-preview"]').click()
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      const frozen = await page.locator('[data-testid="plan09-frozen-preview"]').innerText()
+      assert.match(frozen, /demo-voice-a/)
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+      assert.equal(sender.document.tts.voice, 'demo-voice-a')
+      assert.equal(sender.saveCount, 1)
+      await page.locator('[data-testid="plan09-apply-check"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PENDING_APPLY')
+      const calls = await page.evaluate(() => window.__WHALE_PLAN09_ADAPTER_CALLS__ || [])
+      assert.ok(calls.includes('prepareChange') && calls.includes('execute') && calls.includes('apply'))
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
 })
 
 await check('no console errors or failed resources', async () => {

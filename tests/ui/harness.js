@@ -384,29 +384,35 @@
   // Plan 09 test-only adapter. It never touches production config; it records the calls the UI makes
   // and enforces the same confirmation/expiry/consumed/revision semantics as the real Coordinator.
   function createPlan09Adapter() {
+    const query = new URLSearchParams(location.search)
     let revision = 4
     let sequence = 0
     const plans = new Map()
     const transactions = new Map()
     const calls = []
     const context = {
-      workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1,
-      senderRevision: 4, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false,
+      workspace: 'fixture-workspace', profile: query.get('profile') || 'fixture-profile', manifestRevision: 2, capabilityRevision: 1,
+      senderRevision: 4, gpuAvailable: query.get('gpu') !== 'off', cloudAuthorized: query.get('cloud') === 'on', deliveryAuthorized: false,
     }
+    const real = window.__PLAN09_REAL__ || null
+    const record = (name) => calls.push(name)
     const adapter = {
       calls,
-      getContext() { calls.push('getContext'); return { ...context } },
-      checkDependency(key) { calls.push('check:' + key); return { ready: key !== 'gpu' || context.gpuAvailable !== false } },
+      getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
+      async checkDependency(key) { record('check:' + key); if (real) return real.check(key); return { ready: key !== 'gpu' || context.gpuAvailable !== false } },
       bumpRevision() { revision += 1 },
-      prepareChange(draft) {
-        calls.push('prepareChange')
+      setContext(patch) { Object.assign(context, patch || {}) },
+      async prepareChange(draft) {
+        record('prepareChange')
+        if (real) return real.prepare(draft)
         if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
-        const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false }
+        const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false, changes: draft }
         plans.set(plan.planId, plan)
         return { ok: true, plan }
       },
-      execute(planId, options = {}) {
-        calls.push('execute')
+      async execute(planId, options = {}) {
+        record('execute')
+        if (real) return real.execute(planId, options)
         const plan = plans.get(planId)
         if (!plan) return { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
         if (options.userConfirmed !== true || options.confirmedPlanId !== planId) return { ok: false, error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }
@@ -416,20 +422,22 @@
         plan.consumed = true
         revision += 1
         const transactionId = 'fixture-tx-' + sequence
-        const record = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
-        transactions.set(transactionId, record)
-        return record
+        const tx = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: 'fixture-rev-' + sequence, activeConfirmed: false, steps: [{ source: 'senderService', status: 'SAVED', savedRevision: 'fixture-rev-' + sequence }] }
+        transactions.set(transactionId, tx)
+        return tx
       },
-      apply(transactionId) {
-        calls.push('apply')
-        const record = transactions.get(transactionId)
-        if (!record) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
-        return { ...record, state: 'PENDING_APPLY', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
+      async apply(transactionId) {
+        record('apply')
+        if (real) return real.apply(transactionId)
+        const tx = transactions.get(transactionId)
+        if (!tx) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+        return { ...tx, state: 'PENDING_APPLY', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
       },
-      recover(transactionId) {
-        calls.push('recover')
-        const record = transactions.get(transactionId)
-        return record ? { ...record, replayed: false } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+      async recover(transactionId) {
+        record('recover')
+        if (real) return real.recover(transactionId)
+        const tx = transactions.get(transactionId)
+        return tx ? { ...tx, replayed: false, state: 'PENDING_APPLY' } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
       },
     }
     window.__WHALE_PLAN09_ADAPTER_CALLS__ = calls

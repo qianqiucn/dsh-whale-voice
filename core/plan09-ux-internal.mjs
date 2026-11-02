@@ -33,7 +33,7 @@ export const PLAN09_SINGING_VOICES = Object.freeze([
 ])
 
 export const PLAN09_DEPENDENCY_CATALOG = Object.freeze({
-  core: { label: '鲸音 Core / 鲸递 Core', desc: '配置、任务与状态的可信来源；内部兼容 ID 保持 core。', required: true, shared: true, license: '随应用', size: '—' },
+  core: { label: '鲸音 Core', desc: '配置、任务与状态的可信来源；仅投递不改变它是宿主入口。', required: true, shared: true, license: '随应用', size: '—' },
   tts: { label: 'TTS Provider', desc: '把文字合成为音频；本地服务或已授权云端。', required: true, shared: true, license: '按 Provider', size: '按模型' },
   cloud: { label: '云端授权与网络', desc: '需要明确授权、连通性与费用确认；真实调用始终禁用。', conditional: true, license: '用户授权', size: '按量计费' },
   rvc: { label: 'RVC 翻唱模型（首发）', desc: '标准翻唱模型；需单独确认来源与许可，不承诺低资源。', required: true, license: '需确认', size: '未知' },
@@ -105,17 +105,17 @@ export function plan09WriteWizard(storage, key, patch = {}) {
  * Global Setup keeps priority. Browse-only dismisses only the current manifest revision; an
  * acknowledgement is "read", never READY. A changed capability revision reopens with a reminder.
  */
-export function plan09DeriveWizardView({ stored, capabilityRevision = null, globalSetupOpen = false, force = false } = {}) {
+export function plan09DeriveWizardView({ stored, capabilityRevision = null, manifestRevision = PLAN09_MANIFEST_REVISION, globalSetupOpen = false, force = false } = {}) {
   const state = stored || EMPTY_WIZARD
   const changed = capabilityRevision !== null && state.capabilityRevisionSeen !== null && state.capabilityRevisionSeen !== capabilityRevision
-  if (globalSetupOpen) return { shouldOpen: false, deferred: true, changed, reason: 'GLOBAL_SETUP_FIRST' }
-  if (force) return { shouldOpen: true, deferred: false, changed, reason: 'MANUAL_REOPEN' }
-  if (changed) return { shouldOpen: true, deferred: false, changed, reason: 'CAPABILITY_CHANGED' }
+  if (globalSetupOpen) return { shouldOpen: false, deferred: true, changed, reminder: false, reason: 'GLOBAL_SETUP_FIRST' }
+  if (force) return { shouldOpen: true, deferred: false, changed, reminder: false, reason: 'MANUAL_REOPEN' }
+  if (changed) return { shouldOpen: false, deferred: false, changed, reminder: true, reason: 'CAPABILITY_CHANGED' }
   if (!state.introAcknowledged) {
-    if (state.browseDismissedRevision === PLAN09_MANIFEST_REVISION) return { shouldOpen: false, deferred: false, changed, reason: 'BROWSED_THIS_REVISION' }
-    return { shouldOpen: true, deferred: false, changed, reason: 'FIRST_VISIT' }
+    if (state.browseDismissedRevision === manifestRevision) return { shouldOpen: false, deferred: false, changed, reminder: false, reason: 'BROWSED_THIS_REVISION' }
+    return { shouldOpen: true, deferred: false, changed, reminder: false, reason: 'FIRST_VISIT' }
   }
-  return { shouldOpen: false, deferred: false, changed: false, reason: 'ACKNOWLEDGED' }
+  return { shouldOpen: false, deferred: false, changed: false, reminder: false, reason: 'ACKNOWLEDGED' }
 }
 
 /**
@@ -132,11 +132,11 @@ export function plan09DependencyGroups(feature, mode, options = {}) {
   add('required', 'core')
   if (feature === 'voice-bubbles') add('required', 'tts')
   if (feature === 'singing') {
-    add('required', 'rvc')
     if (mode === 'cloud' || mode === 'existing') {
       add('conditional', mode === 'cloud' ? 'cloud' : 'gateway')
-    } else if (sourceLayout === 'MIXED') {
-      add('required', 'separation')
+    } else {
+      add('required', 'rvc')
+      if (sourceLayout === 'MIXED') add('required', 'separation')
     }
   }
   if (mode === 'local') add('conditional', 'gpu')
@@ -192,10 +192,18 @@ export function plan09SwitchEngine(feature, draft, engine) {
 export function plan09SwitchMode(feature, mode, draft) {
   const next = { ...draft }
   const cleared = []
-  if (feature === 'singing') {
-    if (mode === 'cloud' && next.engine === 'rvc') { next.engine = 'gateway'; cleared.push('engine') }
-    if (mode === 'local' && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
+  if (feature === 'voice-bubbles') {
+    const target = mode === 'cloud' ? 'cloud' : mode === 'existing' ? 'custom' : 'local'
+    if (next.engine !== target) {
+      const switched = plan09SwitchEngine(feature, next, target)
+      return switched
+    }
+    if (mode === 'cloud' && next.engine !== 'cloud') { next.engine = 'cloud'; cleared.push('engine') }
+  } else {
+    if (mode === 'cloud' && next.engine !== 'gateway') { next.engine = 'gateway'; cleared.push('engine') }
+    if (mode !== 'cloud' && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
     if (mode === 'cloud' && next.voiceProfile !== 'fixture-gateway') { next.voiceProfile = 'fixture-gateway'; cleared.push('voiceProfile') }
+    if (mode !== 'cloud' && next.voiceProfile === 'fixture-gateway') { next.voiceProfile = 'fixture-rvc-female'; cleared.push('voiceProfile') }
   }
   return { draft: next, cleared }
 }
@@ -205,28 +213,33 @@ const PLAN09_SINGING_ENGINES = ['rvc', 'svc', 'gateway']
 const PLAN09_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'auto']
 const PLAN09_EMOTIONS = ['neutral', 'gentle', 'happy', 'shy', 'playful', 'sad']
 
-export function plan09ValidateVoiceDraft(draft, { cloudAuthorized = false } = {}) {
+export function plan09ValidateVoiceDraft(draft, { cloudAuthorized = false, mode = null } = {}) {
   const errors = []
   if (!PLAN09_VOICE_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择本机、云端或自定义引擎。' })
   const provider = PLAN09_PROVIDERS.find((item) => item.id === draft.provider)
   if (!provider) errors.push({ field: 'provider', message: '请选择已支持的服务方案。' })
+  if (provider && provider.kind !== draft.engine) errors.push({ field: 'provider', message: '服务方案与引擎不一致，请重新选择。' })
   if (!provider || !provider.models.includes(draft.model)) errors.push({ field: 'model', message: '模型与所选服务不匹配。' })
   if (!provider || !provider.voices.includes(draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '音色与所选服务不匹配，请重新选择。' })
   if (!PLAN09_LANGUAGES.includes(draft.language)) errors.push({ field: 'language', message: '语言不在支持范围。' })
   if (!PLAN09_EMOTIONS.includes(draft.emotion)) errors.push({ field: 'emotion', message: '情绪不在支持范围。' })
   if (!Number.isFinite(draft.speed) || draft.speed < 0.5 || draft.speed > 2) errors.push({ field: 'speed', message: '语速需为 0.5–2.0 的数字。' })
   if (!Number.isFinite(draft.volume) || draft.volume < 0 || draft.volume > 100) errors.push({ field: 'volume', message: '音量需为 0–100 的数字。' })
-  if (draft.engine === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能预览或保存。' })
+  if ((draft.engine === 'cloud' || mode === 'cloud') && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能预览或保存。' })
   if (!draft.text || !draft.text.trim()) errors.push({ field: 'text', message: '请填写演示文本。' })
   return { ok: errors.length === 0, errors }
 }
 
-export function plan09ValidateSingingDraft(draft, { gpuAvailable = null, deliveryAuthorized = false, mode = 'local' } = {}) {
+const PLAN09_SINGING_VOICE_ENGINE = Object.freeze({ 'fixture-rvc-female': 'rvc', 'fixture-rvc-male': 'rvc', 'fixture-gateway': 'gateway' })
+
+export function plan09ValidateSingingDraft(draft, { gpuAvailable = null, cloudAuthorized = false, deliveryAuthorized = false, mode = 'local' } = {}) {
   const errors = []
   if (!PLAN09_SINGING_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择 RVC、SVC 或 Gateway。' })
   if (draft.engine === 'svc') errors.push({ field: 'engine', message: 'SVC 仅为后续可选，当前不发包、不承诺可用。' })
   if (mode === 'cloud' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '云端模式需要 Gateway/已有服务，不能使用本机 RVC。' })
+  if (mode === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端服务尚未授权，不能预览或保存。' })
   if (!PLAN09_SINGING_VOICES.some((voice) => voice.id === draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '请选择音色方案。' })
+  else if (PLAN09_SINGING_VOICE_ENGINE[draft.voiceProfile] !== draft.engine) errors.push({ field: 'voiceProfile', message: '音色与所选方案不匹配，请重新选择。' })
   if (!draft.sourceAuthorized) errors.push({ field: 'sourceAuthorized', message: '必须确认演示素材已获授权。' })
   if (!draft.voiceConsent) errors.push({ field: 'voiceConsent', message: '必须确认音色使用已获同意。' })
   if (!/^fixture:\/\/[a-z0-9-]+$/.test(draft.sourceRef || '')) errors.push({ field: 'sourceRef', message: '请使用虚构引用，例如 fixture://demo-song-01。' })
@@ -293,6 +306,13 @@ export function plan09ProjectCoordinatorResult(result) {
     FAILED: ['失败', 'error', false],
   }
   const [label, tone, canApply] = map[state] || ['未识别状态', 'wait', false]
+  const steps = Array.isArray(result.steps) ? result.steps.map((step) => ({
+    source: step.source || null,
+    status: step.status || null,
+    savedRevision: step.savedRevision || null,
+    applyStatus: step.applyStatus || null,
+    activeRevision: step.activeRevision === undefined ? null : step.activeRevision,
+  })) : []
   return {
     phase: state,
     label,
@@ -301,7 +321,12 @@ export function plan09ProjectCoordinatorResult(result) {
     transactionId: result.transactionId || null,
     planId: result.plan ? result.plan.planId : null,
     expectedRevision: result.plan ? result.plan.expectedRevision : null,
-    activeRevision: Number.isInteger(result.activeRevision) ? result.activeRevision : null,
+    activeRevision: result.activeRevision === undefined ? null : result.activeRevision,
+    activeConfirmed: result.activeConfirmed === true,
+    steps,
+    confirmed: Array.isArray(result.confirmed) ? result.confirmed : [],
+    mismatch: Array.isArray(result.mismatch) ? result.mismatch : [],
+    rejected: Array.isArray(result.rejected) ? result.rejected : [],
     errorCode: result.error && result.error.code ? result.error.code : null,
     text: `事务 ${state} · ${result.applyState || '未生效'}`,
   }
