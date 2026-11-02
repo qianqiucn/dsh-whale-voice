@@ -6,10 +6,12 @@ window.__ModuleLoader__.load({
     let stylesApi = null
     try { stylesApi = require('styles') } catch {}
 
-    const CSS = ".wv-root {\n  --wv-bg: var(--dsw-alias-bg-base);\n  --wv-base: #0e1624;\n  --wv-card-base: rgba(22, 31, 48, .78);\n  --wv-card-solid: #172133;\n  --wv-layer1: var(--dsw-alias-bg-layer-1);\n  --wv-layer2: var(--dsw-alias-bg-layer-2);\n  --wv-overlay: var(--dsw-alias-bg-overlay);\n  --wv-text: var(--dsw-alias-label-primary);\n  --wv-muted: color-mix(in srgb, var(--dsw-alias-label-secondary) 82%, var(--dsw-alias-label-primary));\n  --wv-muted-soft: color-mix(in srgb, var(--dsw-alias-label-secondary) 92%, var(--dsw-alias-label-primary));\n  --wv-border: var(--dsw-alias-border-l1);\n  --wv-border-strong: var(--dsw-alias-border-l2);\n  --wv-accent: var(--dsw-alias-brand-primary);\n  --wv-accent2: color-mix(in srgb, #a99bf5 58%, var(--dsw-alias-brand-primary));\n  --wv-success: var(--dsw-alias-state-success-primary);\n  --wv-warn: var(--dsw-alias-state-warn-primary);\n  --wv-error: var(--dsw-alias-state-error-primary);\n  --wv-idle: var(--dsw-alias-state-idle-primary);\n  --wv-glass: color-mix(in srgb, var(--wv-layer1) 58%, transparent);\n  --wv-card-fill: color-mix(in srgb, var(--wv-layer1) 64%, transparent);\n  --wv-card-fill-strong: color-mix(in srgb, var(--wv-layer1) 72%, transparent);\n  --wv-glass-strong: color-mix(in srgb, var(--wv-overlay) 88%, transparent);\n  --wv-soft: color-mix(in srgb, var(--wv-accent) 8%, transparent);\n  --wv-soft2: color-mix(in srgb, var(--wv-accent2) 8%, transparent);\n  --wv-hairline: color-mix(in srgb, var(--wv-border) 82%, transparent);\n  --wv-r-xs: 8px;\n  --wv-r-sm: 11px;\n  --wv-r-md: 14px;\n  --wv-r-lg: 16px;\n  --wv-r-xl: 22px;\n  --wv-frame-inset: 14px;\n  --wv-frame-radius: 16px;\n  --wv-frame-border: color-mix(in srgb, var(--wv-text) 11%, transparent);\n  --wv-frame-shadow: 0 10px 30px color-mix(in srgb, #000 16%, transparent);\n  --wv-shadow: 0 16px 44px color-mix(in srgb, var(--wv-text) 8%, transparent);\n  --wv-shadow-soft: 0 10px 28px color-mix(in srgb, var(--wv-text) 5%, transparent);\n  position: relative;\n  display: block;\n  width: calc(100% - var(--wv-frame-inset) * 2);\n  height: calc(100% - var(--wv-frame-inset) * 2);\n  margin: var(--wv-frame-inset);\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  border: 1px solid var(--wv-frame-border);\n  border-radius: var(--wv-frame-radius);\n  box-shadow: var(--wv-frame-shadow);\n  isolation: isolate;\n  color: var(--wv-text);\n  font-family: var(--dsw-font-family, \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif);\n  font-size: 13.5px;\n  line-height: 1.6;\n  -webkit-font-smoothing: antialiased;\n  background:\n    radial-gradient(900px 500px at -10% -14%, color-mix(in srgb, var(--wv-accent) 11%, transparent), transparent 64%),\n    radial-gradient(760px 460px at 108% -8%, color-mix(in srgb, var(--wv-accent2) 9%, transparent), transparent 66%),\n    linear-gradient(155deg, color-mix(in srgb, var(--wv-base) 89%, transparent), color-mix(in srgb, var(--wv-base) 96%, transparent));\n  -webkit-backdrop-filter: blur(30px) saturate(1.05);\n  backdrop-filter: blur(30px) saturate(1.05);\n  box-sizing: border-box;\n}\n.wv-root *, .wv-root *::before, .wv-root *::after { box-sizing: border-box; }\nbody[data-ds-dark-theme] .wv-root {\n  --wv-base: #0e1624;\n  --wv-card-base: rgba(22, 31, 48, .78);\n  --wv-card-solid: #172133;\n}\nbody:not([data-ds-dark-theme]) .wv-root {\n  --wv-base: #f3f5fb;\n  --wv-card-base: rgba(255, 255, 255, .82);\n  --wv-card-solid: #ffffff;\n}\n.wv-root button, .wv-root input, .wv-root select, .wv-root textarea { font: inherit; color: inherit; }\n.wv-root button { cursor: pointer; }\n.wv-root button:disabled { cursor: default; }\n.wv-root :focus-visible { outline: 2px solid color-mix(in srgb, var(--wv-accent) 75%, transparent); outline-offset: 2px; }\n.wv-root ::selection { background: color-mix(in srgb, var(--wv-accent) 26%, transparent); }\n\n.wv-aurora { position: absolute; inset: -20%; pointer-events: none; z-index: -1; opacity: .45; filter: blur(12px); }\n.wv-aurora::before, .wv-aurora::after { content: \"\"; position: absolute; border-radius: 50%; }\n.wv-aurora::before {\n  width: 46%; height: 46%; left: 16%; top: 8%;\n  background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent) 10%, transparent), transparent 68%);\n  animation: wv-drift 26s ease-in-out infinite alternate;\n}\n.wv-aurora::after {\n  width: 40%; height: 40%; right: 6%; bottom: 4%;\n  background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent2) 9%, transparent), transparent 68%);\n  animation: wv-drift 32s ease-in-out infinite alternate-reverse;\n}\n@keyframes wv-drift { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.06); } }\n\n.wv-shell { position: relative; z-index: 1; display: grid; grid-template-columns: 208px minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; }\n\n.wv-sidebar {\n  display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0;\n  padding: 18px 12px 14px;\n  border-right: 1px solid var(--wv-hairline);\n  background: linear-gradient(180deg, color-mix(in srgb, var(--wv-base) 88%, transparent), color-mix(in srgb, var(--wv-base) 96%, transparent));\n}\n.wv-brand { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 2px 8px 14px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 72%, transparent); }\n.wv-brandmark { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; color: var(--wv-accent); background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 18%, transparent), color-mix(in srgb, var(--wv-accent2) 14%, transparent)); border: 1px solid color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); box-shadow: 0 6px 18px color-mix(in srgb, var(--wv-accent) 12%, transparent); }\n.wv-brandtext { min-width: 0; }\n.wv-brandname { font-size: 14.5px; font-weight: 680; letter-spacing: .01em; white-space: nowrap; }\n.wv-brandsub { margin-top: 1px; font-size: 12px; color: var(--wv-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n\n.wv-nav { display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px; scrollbar-width: thin; }\n.wv-navitem {\n  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;\n  padding: 8px 10px; border: 1px solid transparent; border-radius: var(--wv-r-sm);\n  background: transparent; color: var(--wv-muted); text-align: left; text-decoration: none;\n  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease;\n}\n.wv-navitem:hover { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 44%, transparent); }\n.wv-navitem[aria-current=\"page\"] {\n  color: var(--wv-text);\n  background: linear-gradient(90deg, color-mix(in srgb, var(--wv-accent) 13%, transparent), color-mix(in srgb, var(--wv-accent2) 6%, transparent));\n  border-color: color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline));\n  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--wv-accent) 78%, transparent);\n}\n.wv-navicon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; opacity: .92; }\n.wv-navlabel { flex: 1; min-width: 0; font-size: 13px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-navbadge { flex: none; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 11px; text-align: center; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 70%, transparent); border: 1px solid var(--wv-hairline); }\n.wv-navitem[aria-current=\"page\"] .wv-navbadge { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 24%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n\n.wv-sidefoot { margin-top: auto; padding: 12px 8px 2px; border-top: 1px solid color-mix(in srgb, var(--wv-hairline) 72%, transparent); display: flex; flex-direction: column; gap: 7px; }\n.wv-sidefootrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--wv-muted); }\n.wv-sidefoot strong { font-weight: 600; color: color-mix(in srgb, var(--wv-text) 82%, var(--wv-muted)); }\n.wv-live { display: inline-flex; align-items: center; gap: 5px; }\n.wv-live::before { content: \"\"; width: 6px; height: 6px; border-radius: 50%; background: var(--wv-warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wv-warn) 12%, transparent); }\n\n.wv-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }\n.wv-topbar { position: relative; z-index: 3; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 52px; padding: 8px 24px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 68%, transparent); background: color-mix(in srgb, var(--wv-base) 78%, transparent); }\n.wv-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.wv-crumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--wv-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-crumb b { color: color-mix(in srgb, var(--wv-text) 88%, var(--wv-muted)); font-weight: 600; }\n.wv-topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }\n.wv-demo { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 22%, transparent); font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }\n.wv-demo::before { content: \"\"; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }\n.wv-topmeta { color: var(--wv-muted); font-size: 11.5px; white-space: nowrap; }\n\n.wv-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-width: thin; }\n.wv-scroll::-webkit-scrollbar, .wv-nav::-webkit-scrollbar { width: 8px; }\n.wv-scroll::-webkit-scrollbar-thumb, .wv-nav::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--wv-muted) 24%, transparent); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }\n.wv-scroll::-webkit-scrollbar-track { background: transparent; }\n.wv-content { width: 100%; max-width: none; margin: 0; padding: 22px 24px 96px; }\n.wv-page { animation: wv-pagein .18s ease both; }\n@keyframes wv-pagein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\n\n.wv-pagehead { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin: 0 0 18px; min-width: 0; }\n.wv-pagehead-main { min-width: 0; }\n.wv-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--wv-accent); font-size: 11px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }\n.wv-eyebrow::before { content: \"\"; width: 18px; height: 1px; background: currentColor; opacity: .55; }\n.wv-pagehead h1 { margin: 7px 0 0; font-size: clamp(22px, 2.1vw, 27px); line-height: 1.18; font-weight: 680; letter-spacing: -.02em; }\n.wv-pagehead p { margin: 6px 0 0; max-width: 760px; color: var(--wv-muted); font-size: 13px; line-height: 1.55; }\n.wv-pagehead-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: none; }\n\n.wv-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer2) 58%, transparent); color: var(--wv-text); font-size: 13px; font-weight: 560; white-space: nowrap; transition: background .15s ease, border-color .15s ease, transform .12s ease, opacity .15s ease; }\n.wv-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wv-accent) 45%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-layer2) 82%, transparent); }\n.wv-btn:active:not(:disabled) { transform: translateY(1px); }\n.wv-btn:disabled { opacity: .46; }\n.wv-btn.primary { color: var(--dsw-alias-label-primary-foreground, #fff); background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 92%, #fff 8%), color-mix(in srgb, var(--wv-accent2) 30%, var(--wv-accent))); border-color: color-mix(in srgb, var(--wv-accent) 70%, transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--wv-accent) 20%, transparent); }\n.wv-btn.primary:hover:not(:disabled) { background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 84%, #fff 16%), color-mix(in srgb, var(--wv-accent2) 38%, var(--wv-accent))); }\n.wv-btn.ghost { background: transparent; border-color: transparent; color: var(--wv-muted); }\n.wv-btn.ghost:hover:not(:disabled) { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 46%, transparent); border-color: transparent; }\n.wv-btn.danger { color: var(--wv-error); border-color: color-mix(in srgb, var(--wv-error) 25%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-error) 7%, transparent); }\n.wv-btn.sm { min-height: 27px; padding: 4px 9px; font-size: 12px; border-radius: 7px; }\n.wv-iconbtn { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--wv-muted); }\n.wv-iconbtn:hover { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 52%, transparent); border-color: var(--wv-hairline); }\n\n.wv-card { position: relative; border: 1px solid var(--wv-hairline); border-radius: var(--wv-r-lg); background: linear-gradient(180deg, var(--wv-card-base), color-mix(in srgb, var(--wv-card-base) 86%, var(--wv-base))); box-shadow: 0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset, var(--wv-shadow-soft); }\n.wv-card.pad { padding: 17px; }\n.wv-card.soft { background: color-mix(in srgb, var(--wv-card-base) 68%, transparent); box-shadow: none; }\n.wv-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 12px; }\n.wv-card-title h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }\n.wv-card-title p { margin: 3px 0 0; color: var(--wv-muted); font-size: 12.5px; line-height: 1.5; }\n.wv-card-title .wv-actions { display: flex; align-items: center; gap: 7px; flex: none; }\n\n.wv-hero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(220px, .7fr); gap: 18px; overflow: hidden; padding: 20px 22px; border-radius: var(--wv-r-xl); border: 1px solid color-mix(in srgb, var(--wv-accent) 13%, var(--wv-hairline)); background: linear-gradient(125deg, color-mix(in srgb, var(--wv-card-base) 94%, transparent), color-mix(in srgb, var(--wv-accent2) 5%, transparent) 58%, color-mix(in srgb, var(--wv-accent) 6%, transparent)); box-shadow: var(--wv-shadow); }\n.wv-hero-copy { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }\n.wv-hero .wv-eyebrow { color: color-mix(in srgb, var(--wv-accent) 84%, var(--wv-text)); }\n.wv-hero h1 { margin: 8px 0 0; font-size: clamp(25px, 2.7vw, 34px); line-height: 1.08; letter-spacing: -.032em; font-weight: 690; }\n.wv-hero h1 span { color: color-mix(in srgb, var(--wv-accent) 78%, var(--wv-text)); }\n.wv-hero p { margin: 9px 0 0; max-width: 600px; color: var(--wv-muted); font-size: 13.5px; line-height: 1.55; }\n.wv-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }\n.wv-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 58%, transparent); color: var(--wv-muted); font-size: 11.5px; white-space: nowrap; }\n.wv-chip strong { color: var(--wv-text); font-weight: 600; }\n.wv-chip.accent { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); }\n.wv-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }\n.wv-hero-art { position: relative; min-height: 168px; display: grid; place-items: center; }\n.wv-hero-art svg { width: min(100%, 280px); height: auto; overflow: visible; filter: drop-shadow(0 14px 26px color-mix(in srgb, var(--wv-accent) 13%, transparent)); }\n\n.wv-grid { display: grid; gap: 16px; min-width: 0; }\n.wv-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 0 0 10px; }\n.wv-section-kicker { display: block; color: var(--wv-accent); font-size: 10.5px; font-weight: 650; letter-spacing: .12em; }\n.wv-section-head h2 { display: flex; align-items: center; gap: 8px; margin: 3px 0 0; font-size: 17px; font-weight: 660; letter-spacing: -.02em; }\n.wv-section-note { color: var(--wv-muted); font-size: 11.5px; }\n.wv-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-grid.three { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }\n.wv-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }\n.wv-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }\n.wv-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.wv-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.wv-wrap { flex-wrap: wrap; }\n.wv-grow { flex: 1; min-width: 0; }\n.wv-muted { color: var(--wv-muted); }\n.wv-small { font-size: 12px; }\n.wv-mono { font-family: ui-monospace, \"Cascadia Code\", \"Consolas\", monospace; font-size: 11.5px; letter-spacing: -.01em; }\n.wv-divider { height: 1px; background: var(--wv-hairline); margin: 4px 0; }\n\n.wv-service { display: flex; flex-direction: column; gap: 12px; padding: 16px; min-width: 0; }\n.wv-service-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }\n.wv-service-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 17%, var(--wv-hairline)); }\n.wv-service:nth-child(2) .wv-service-icon { color: var(--wv-accent2); background: color-mix(in srgb, var(--wv-accent2) 9%, transparent); border-color: color-mix(in srgb, var(--wv-accent2) 17%, var(--wv-hairline)); }\n.wv-service:nth-child(3) .wv-service-icon { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); border-color: color-mix(in srgb, var(--wv-success) 17%, var(--wv-hairline)); }\n.wv-service-name { margin: 1px 0 0; font-size: 13.5px; font-weight: 650; }\n.wv-service-desc { margin: 0; color: var(--wv-muted); font-size: 12px; line-height: 1.45; min-height: 30px; }\n.wv-service-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--wv-hairline); }\n.wv-service-meta .wv-btn { padding-left: 0; padding-right: 0; min-height: 20px; }\n\n.wv-status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 600; white-space: nowrap; }\n.wv-status::before { content: \"\"; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }\n.wv-status.online, .wv-status.sent { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); border-color: color-mix(in srgb, var(--wv-success) 20%, transparent); }\n.wv-status.busy, .wv-status.recording, .wv-status.sending, .wv-status.queued { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border-color: color-mix(in srgb, var(--wv-accent) 20%, transparent); }\n.wv-status.warn, .wv-status.unknown, .wv-status.waiting, .wv-status.ready { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border-color: color-mix(in srgb, var(--wv-warn) 20%, transparent); }\n.wv-status.error, .wv-status.failed, .wv-status.rejected { color: var(--wv-error); background: color-mix(in srgb, var(--wv-error) 9%, transparent); border-color: color-mix(in srgb, var(--wv-error) 20%, transparent); }\n.wv-status.idle, .wv-status.offline, .wv-status.disconnected, .wv-status.starting { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 8%, transparent); border-color: color-mix(in srgb, var(--wv-muted) 16%, transparent); }\n.wv-status.starting { color: var(--wv-accent); }\n.wv-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }\n\n.wv-stat { display: flex; flex-direction: column; gap: 2px; padding: 13px 15px; }\n.wv-stat-label { color: var(--wv-muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }\n.wv-stat-value { font-size: 19px; font-weight: 680; letter-spacing: -.02em; }\n.wv-stat-sub { color: var(--wv-muted); font-size: 11.5px; }\n\n.wv-voicecard { display: flex; flex-direction: column; gap: 15px; padding: 19px; overflow: hidden; }\n.wv-voicecard::after { content: \"\"; position: absolute; width: 190px; height: 190px; right: -70px; top: -90px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent) 13%, transparent), transparent 65%); pointer-events: none; }\n.wv-voice-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; z-index: 1; }\n.wv-voicename { margin: 0; font-size: 20px; font-weight: 690; letter-spacing: -.02em; }\n.wv-voicesub { margin: 3px 0 0; color: var(--wv-muted); font-size: 12px; }\n.wv-voice-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 2px; }\n.wv-voicenote { margin: 0; padding: 9px 10px; border-left: 2px solid color-mix(in srgb, var(--wv-accent) 42%, transparent); border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--wv-accent) 5%, transparent); color: var(--wv-muted); font-size: 11.5px; line-height: 1.5; }\n.wv-metaitem { padding: 9px 10px; border-radius: 9px; background: color-mix(in srgb, var(--wv-layer1) 38%, transparent); border: 1px solid var(--wv-hairline); min-width: 0; }\n.wv-metaitem span { display: block; color: var(--wv-muted); font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; }\n.wv-metaitem strong { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-wave-mini { height: 38px; display: flex; align-items: center; gap: 2px; overflow: hidden; opacity: .8; }\n.wv-wave-mini i { display: block; width: 3px; border-radius: 99px; background: linear-gradient(180deg, var(--wv-accent), var(--wv-accent2)); opacity: .7; }\n\n.wv-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }\n.wv-quick-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 70%, transparent); }\n.wv-quick-row:nth-child(odd) { padding-right: 16px; }\n.wv-quick-row:nth-child(even) { padding-left: 16px; border-left: 1px solid color-mix(in srgb, var(--wv-hairline) 70%, transparent); }\n.wv-quick-row .wv-quicklabel { font-size: 12px; font-weight: 550; }\n.wv-quick-row .wv-quicksub { margin-top: 1px; color: var(--wv-muted); font-size: 11px; }\n.wv-quick-control { display: inline-flex; align-items: center; gap: 8px; flex: none; }\n.wv-switchstate { color: var(--wv-muted); font-size: 11px; white-space: nowrap; }\n\n.wv-switch { position: relative; flex: none; display: inline-flex; align-items: center; width: 36px; height: 20px; padding: 0; border: 1px solid var(--wv-hairline); border-radius: 999px; background: color-mix(in srgb, var(--wv-muted) 18%, transparent); transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }\n.wv-switch::after { content: \"\"; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px color-mix(in srgb, #000 24%, transparent); transition: transform .16s ease; }\n.wv-switch[aria-checked=\"true\"] { background: color-mix(in srgb, var(--wv-accent) 72%, transparent); border-color: color-mix(in srgb, var(--wv-accent) 60%, var(--wv-hairline)); }\n.wv-switch[aria-checked=\"true\"]::after { transform: translateX(16px); }\n.wv-switch:disabled { opacity: .42; }\n.wv-switch.saving { background: color-mix(in srgb, var(--wv-warn) 36%, transparent); }\n.wv-switch.saving::after { animation: wv-pulse 1s ease infinite; }\n@keyframes wv-pulse { 50% { opacity: .5; } }\n\n.wv-activity-list { display: flex; flex-direction: column; padding-right: 120px; }\n.wv-quick-foot { padding-right: 120px; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-list, .wv-root[data-layout=\"narrow\"] .wv-quick-foot { padding-right: 0; }\n@media (max-width: 1200px) {\n  .wv-service { padding-right: 110px; }\n}\n@media (max-width: 1550px) {\n  .wv-quick { grid-template-columns: 1fr; padding-right: 120px; }\n  .wv-quick-row:nth-child(odd) { padding-right: 0; }\n  .wv-quick-row:nth-child(even) { padding-left: 0; border-left: 0; }\n}\n.wv-activity-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 98px 84px 90px 20px; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); min-width: 0; }\n.wv-activity-row:last-child { border-bottom: 0; }\n.wv-activity-main { min-width: 0; }\n.wv-activity-target { font-size: 12px; font-weight: 580; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-activity-sub { margin-top: 1px; color: var(--wv-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-activity-time { color: var(--wv-muted); font-size: 11.5px; }\n.wv-activity-chev { color: var(--wv-muted); display: grid; place-items: center; }\n.wv-activity-row:hover .wv-activity-chev { color: var(--wv-accent); }\n\n.wv-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--wv-hairline); }\n.wv-search { position: relative; display: flex; align-items: center; min-width: 190px; flex: 1; max-width: 320px; }\n.wv-search svg { position: absolute; left: 9px; color: var(--wv-muted); pointer-events: none; }\n.wv-input, .wv-select, .wv-textarea { width: 100%; min-height: 30px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 50%, transparent); color: var(--wv-text); outline: none; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }\n.wv-input::placeholder, .wv-textarea::placeholder { color: color-mix(in srgb, var(--wv-muted) 76%, transparent); }\n.wv-input:focus, .wv-select:focus, .wv-textarea:focus { border-color: color-mix(in srgb, var(--wv-accent) 55%, var(--wv-hairline)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n.wv-input.withicon { padding-left: 29px; }\n.wv-textarea { resize: vertical; min-height: 76px; line-height: 1.55; }\n.wv-select { appearance: none; padding-right: 26px; background-image: linear-gradient(45deg, transparent 50%, var(--wv-muted) 50%), linear-gradient(135deg, var(--wv-muted) 50%, transparent 50%); background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }\n.wv-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }\n.wv-field > label, .wv-label { color: color-mix(in srgb, var(--wv-text) 78%, var(--wv-muted)); font-size: 12px; font-weight: 560; }\n.wv-hint { color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n.wv-error { color: var(--wv-error); font-size: 11px; }\n.wv-input.invalid, .wv-select.invalid, .wv-textarea.invalid { border-color: color-mix(in srgb, var(--wv-error) 55%, var(--wv-hairline)); }\n\n.wv-settings-group { display: flex; flex-direction: column; }\n.wv-setting { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 13px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 68%, transparent); min-width: 0; }\n.wv-setting:last-child { border-bottom: 0; }\n.wv-setting-copy { min-width: 0; }\n.wv-setting-copy strong { display: block; font-size: 13px; font-weight: 570; }\n.wv-setting-copy p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11.5px; line-height: 1.45; }\n.wv-setting-control { flex: none; display: flex; align-items: center; gap: 8px; }\n.wv-setting-control .wv-select { min-width: 150px; }\n.wv-setting-control .wv-input { width: 110px; text-align: right; }\n\n.wv-slider { --p: 50%; width: 170px; accent-color: var(--wv-accent); height: 18px; cursor: pointer; }\n.wv-slider:disabled { cursor: default; opacity: .45; }\n.wv-rangeval { min-width: 44px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--wv-muted); }\n\n.wv-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 620; letter-spacing: .02em; white-space: nowrap; }\n.wv-badge.demo { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 18%, transparent); }\n.wv-badge.backend { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-success) 18%, transparent); }\n.wv-badge.wait { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-muted) 14%, transparent); }\n.wv-badge.accent { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, transparent); }\n\n.wv-notice { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: var(--wv-r-sm); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer2) 34%, transparent); color: var(--wv-muted); font-size: 11.5px; line-height: 1.5; }\n.wv-notice svg { flex: none; margin-top: 1px; color: var(--wv-accent); }\n.wv-notice.warn { color: color-mix(in srgb, var(--wv-warn) 72%, var(--wv-text)); background: color-mix(in srgb, var(--wv-warn) 7%, transparent); border-color: color-mix(in srgb, var(--wv-warn) 16%, transparent); }\n.wv-notice.warn svg { color: var(--wv-warn); }\n.wv-notice.error { color: color-mix(in srgb, var(--wv-error) 72%, var(--wv-text)); background: color-mix(in srgb, var(--wv-error) 7%, transparent); border-color: color-mix(in srgb, var(--wv-error) 16%, transparent); }\n.wv-notice.error svg { color: var(--wv-error); }\n\n.wv-perm-row { display: grid; grid-template-columns: 34px minmax(0, 1.5fr) 110px minmax(110px, .9fr) 92px 32px; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); min-width: 0; }\n.wv-perm-row:last-child { border-bottom: 0; }\n.wv-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 16%, var(--wv-hairline)); font-size: 12px; font-weight: 650; }\n.wv-perm-name { font-size: 13px; font-weight: 580; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-perm-id { margin-top: 1px; color: var(--wv-muted); font-size: 10.5px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-perm-col { font-size: 11.5px; color: var(--wv-muted); min-width: 0; }\n.wv-perm-col strong { display: block; color: color-mix(in srgb, var(--wv-text) 78%, var(--wv-muted)); font-size: 11.5px; font-weight: 560; }\n.wv-more-wrap { position: relative; justify-self: end; }\n.wv-menu { position: absolute; z-index: 30; right: 0; top: calc(100% + 5px); min-width: 190px; padding: 5px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.1); backdrop-filter: blur(20px) saturate(1.1); box-shadow: var(--wv-shadow); }\n.wv-menu button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--wv-text); text-align: left; font-size: 12px; }\n.wv-menu button:hover { background: color-mix(in srgb, var(--wv-layer2) 60%, transparent); }\n.wv-menu .danger { color: var(--wv-error); }\n\n.wv-group-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 130px 90px 85px 32px; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); }\n.wv-group-row:last-child { border-bottom: 0; }\n.wv-group-name { font-size: 13px; font-weight: 580; }\n.wv-group-id { color: var(--wv-muted); font-size: 10.5px; font-family: ui-monospace, Consolas, monospace; }\n.wv-checkline { display: flex; align-items: center; gap: 6px; color: var(--wv-muted); font-size: 11px; }\n\n.wv-studio { display: grid; grid-template-columns: minmax(290px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }\n.wv-studio-profile { position: sticky; top: 0; overflow: hidden; }\n.wv-studio-hero { position: relative; padding: 22px 20px 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 12%, transparent), color-mix(in srgb, var(--wv-accent2) 8%, transparent) 55%, transparent); border-bottom: 1px solid var(--wv-hairline); overflow: hidden; }\n.wv-studio-hero::after { content: \"\"; position: absolute; width: 210px; height: 210px; right: -85px; top: -105px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, transparent); box-shadow: 0 0 0 24px color-mix(in srgb, var(--wv-accent) 3%, transparent), 0 0 0 48px color-mix(in srgb, var(--wv-accent) 2%, transparent); }\n.wv-studio-title { position: relative; z-index: 1; }\n.wv-studio-title h2 { margin: 0; font-size: 21px; font-weight: 690; letter-spacing: -.02em; }\n.wv-studio-title p { margin: 4px 0 0; color: var(--wv-muted); font-size: 12px; }\n.wv-studio-wave { position: relative; z-index: 1; height: 84px; margin: 18px 0 4px; display: flex; align-items: center; gap: 3px; }\n.wv-studio-wave i { flex: 1; min-width: 1px; border-radius: 99px; background: linear-gradient(180deg, color-mix(in srgb, var(--wv-accent) 88%, #fff 12%), color-mix(in srgb, var(--wv-accent2) 70%, transparent)); opacity: .72; }\n.wv-studio-meta { padding: 14px 20px 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }\n.wv-preview { display: flex; flex-direction: column; gap: 13px; }\n.wv-preview-text { min-height: 90px; }\n.wv-preview-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }\n.wv-player { display: flex; flex-direction: column; gap: 9px; padding: 12px; border-radius: var(--wv-r-sm); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 34%, transparent); }\n.wv-player-wave { height: 58px; display: flex; align-items: center; gap: 2px; overflow: hidden; position: relative; }\n.wv-player-wave i { flex: 1; min-width: 1px; border-radius: 99px; background: color-mix(in srgb, var(--wv-accent) 36%, transparent); }\n.wv-player-wave i.on { background: linear-gradient(180deg, var(--wv-accent), var(--wv-accent2)); }\n.wv-player-wave .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--wv-accent); left: 0; opacity: .6; }\n.wv-player-controls { display: flex; align-items: center; gap: 9px; }\n.wv-progress { flex: 1; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--wv-muted) 16%, transparent); overflow: hidden; }\n.wv-progress i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--wv-accent), var(--wv-accent2)); }\n.wv-time { color: var(--wv-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }\n.wv-volume { display: flex; align-items: center; gap: 7px; color: var(--wv-muted); }\n.wv-volume input { width: 90px; accent-color: var(--wv-accent); }\n\n.wv-versions { display: flex; flex-direction: column; gap: 7px; }\n.wv-version { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 30%, transparent); }\n.wv-version.on { border-color: color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-version strong { font-size: 12px; font-weight: 620; }\n.wv-version span { display: block; margin-top: 1px; color: var(--wv-muted); font-size: 10.5px; }\n\n.wv-emotions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }\n.wv-emotion { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-height: 120px; padding: 14px; border-radius: var(--wv-r-md); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 34%, transparent); text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }\n.wv-emotion:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--wv-accent) 28%, var(--wv-hairline)); }\n.wv-emotion[aria-pressed=\"true\"] { border-color: color-mix(in srgb, var(--wv-accent) 45%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n.wv-emotion-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 15%, var(--wv-hairline)); }\n.wv-emotion:nth-child(2) .wv-emotion-icon { color: #d18a9f; background: color-mix(in srgb, #d18a9f 10%, transparent); }\n.wv-emotion:nth-child(3) .wv-emotion-icon { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); }\n.wv-emotion:nth-child(4) .wv-emotion-icon { color: #c58bd8; background: color-mix(in srgb, #c58bd8 9%, transparent); }\n.wv-emotion:nth-child(5) .wv-emotion-icon { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); }\n.wv-emotion:nth-child(6) .wv-emotion-icon { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 9%, transparent); }\n.wv-emotion strong { font-size: 13px; font-weight: 620; }\n.wv-emotion span { color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n\n.wv-filters { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }\n.wv-table { width: 100%; border-collapse: collapse; font-size: 12px; }\n.wv-table th { padding: 8px 10px; text-align: left; color: var(--wv-muted); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; border-bottom: 1px solid var(--wv-hairline); white-space: nowrap; }\n.wv-table td { padding: 10px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); vertical-align: middle; }\n.wv-table tbody tr { cursor: pointer; }\n.wv-table tbody tr:hover { background: color-mix(in srgb, var(--wv-layer2) 30%, transparent); }\n.wv-table tbody tr:last-child td { border-bottom: 0; }\n.wv-table .id { color: var(--wv-muted); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }\n.wv-table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }\n\n.wv-adv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }\n.wv-kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 14px; align-items: center; }\n.wv-kv dt { color: var(--wv-muted); font-size: 11.5px; }\n.wv-kv dd { margin: 0; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }\n.wv-code { padding: 2px 6px; border-radius: 5px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 40%, transparent); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }\n.wv-diag { margin: 0; padding: 12px; max-height: 220px; overflow: auto; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 45%, transparent); color: var(--wv-muted); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; white-space: pre-wrap; }\n\n.wv-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 150px; padding: 24px; text-align: center; border: 1px dashed color-mix(in srgb, var(--wv-border-strong) 54%, transparent); border-radius: var(--wv-r-md); color: var(--wv-muted); }\n.wv-empty-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); }\n.wv-empty strong { color: color-mix(in srgb, var(--wv-text) 82%, var(--wv-muted)); font-size: 13px; }\n.wv-empty p { margin: 0; max-width: 380px; font-size: 11.5px; line-height: 1.5; }\n\n.wv-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 22px; background: color-mix(in srgb, var(--wv-bg) 42%, transparent); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); }\n.wv-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column; border-radius: var(--wv-r-xl); border: 1px solid color-mix(in srgb, var(--wv-border-strong) 72%, var(--wv-hairline)); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(26px) saturate(1.12); backdrop-filter: blur(26px) saturate(1.12); box-shadow: 0 28px 80px color-mix(in srgb, var(--wv-text) 22%, transparent); overflow: hidden; }\n.wv-dialog.lg { width: min(900px, calc(100vw - 32px)); max-height: min(90vh, 860px); }\n\n/* First-run setup wizard and component manager */\n.wv-setup-banner { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--wv-accent) 20%, var(--wv-hairline)); border-radius: var(--wv-r-md); background: linear-gradient(120deg, color-mix(in srgb, var(--wv-accent) 8%, var(--wv-card-base)), color-mix(in srgb, var(--wv-accent2) 5%, var(--wv-card-base))); }\n.wv-setup-banner-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline)); }\n.wv-setup-banner-copy strong { display: block; font-size: 12.5px; }\n.wv-setup-banner-copy p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n.wv-setup-banner-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }\n\n.wv-setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 4px; margin: -4px 0 16px; border: 1px solid var(--wv-hairline); border-radius: 10px; background: color-mix(in srgb, var(--wv-bg) 34%, transparent); }\n.wv-setup-step { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--wv-muted); text-align: left; cursor: pointer; }\n.wv-setup-step:hover:not(:disabled) { background: color-mix(in srgb, var(--wv-layer2) 35%, transparent); }\n.wv-setup-step.active { background: color-mix(in srgb, var(--wv-accent) 10%, transparent); color: var(--wv-text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wv-accent) 25%, transparent); }\n.wv-setup-step.done .wv-setup-step-num { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 12%, transparent); }\n.wv-setup-step:disabled { cursor: default; opacity: .55; }\n.wv-setup-step-num { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 64%, transparent); }\n.wv-setup-step.active .wv-setup-step-num { color: #fff; background: var(--wv-accent); }\n.wv-setup-step-copy { min-width: 0; }\n.wv-setup-step-copy strong { display: block; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-setup-step-copy small { display: block; margin-top: 1px; font-size: 9.5px; color: var(--wv-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n\n.wv-setup-lead { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 14px; }\n.wv-setup-lead-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline)); }\n.wv-setup-lead-icon.ok { color: var(--wv-online, #61d6a2); background: color-mix(in srgb, #61d6a2 10%, transparent); border-color: color-mix(in srgb, #61d6a2 24%, var(--wv-hairline)); }\n.wv-setup-lead h3 { margin: 1px 0 3px; font-size: 16px; font-weight: 650; }\n.wv-setup-lead p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11.5px; line-height: 1.55; }\n.wv-setup-lead .wv-badge { margin-top: 6px; }\n.wv-setup-statusline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }\n.wv-setup-statuslabel { font-size: 11px; font-weight: 650; color: var(--wv-text); }\n.wv-setup-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--wv-hairline); font-size: 9.5px; line-height: 1.5; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 35%, transparent); white-space: nowrap; }\n.wv-setup-pill.online { color: #65d6a5; border-color: color-mix(in srgb, #65d6a5 30%, var(--wv-hairline)); background: color-mix(in srgb, #65d6a5 8%, transparent); }\n.wv-setup-pill.starting { color: #e8c06b; border-color: color-mix(in srgb, #e8c06b 28%, var(--wv-hairline)); }\n.wv-setup-pill.error { color: #f19999; border-color: color-mix(in srgb, #f19999 28%, var(--wv-hairline)); }\n.wv-setup-pill.demo { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 25%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-setup-evidence { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: -4px 0 10px; color: var(--wv-muted); font-size: 9.5px; line-height: 1.45; }\n.wv-setup-evidence svg { flex: none; color: var(--wv-accent); opacity: .8; }\n.wv-setup-evidence-sep { opacity: .5; }\n\n.wv-setup-checks { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--wv-hairline); border-radius: 9px; overflow: hidden; background: color-mix(in srgb, var(--wv-bg) 26%, transparent); }\n.wv-setup-checks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-setup-check { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); font-size: 11px; }\n.wv-setup-check:last-child { border-bottom: 0; }\n.wv-setup-checks.two .wv-setup-check:nth-last-child(2) { border-bottom: 0; }\n.wv-setup-check-icon { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 48%, transparent); }\n.wv-setup-check-icon.ok, .wv-setup-check-icon.pass { color: #61d6a2; background: color-mix(in srgb, #61d6a2 10%, transparent); }\n.wv-setup-check-icon.wait, .wv-setup-check-icon.unknown { color: #e7bf69; background: color-mix(in srgb, #e7bf69 10%, transparent); }\n.wv-setup-check-icon.fail { color: #f19999; background: color-mix(in srgb, #f19999 10%, transparent); }\n.wv-setup-check-label { min-width: 0; color: var(--wv-text); }\n.wv-setup-check-value { color: var(--wv-muted); font-size: 10.5px; white-space: nowrap; }\n\n.wv-setup-callout { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; padding: 10px 11px; border: 1px solid var(--wv-hairline); border-radius: 9px; color: var(--wv-muted); font-size: 11px; line-height: 1.5; background: color-mix(in srgb, var(--wv-layer2) 26%, transparent); }\n.wv-setup-callout svg { flex: none; margin-top: 2px; }\n.wv-setup-callout strong { display: block; color: var(--wv-text); font-size: 11.5px; margin-bottom: 2px; }\n.wv-setup-callout p { margin: 2px 0 0; }\n.wv-setup-callout.warn { border-color: color-mix(in srgb, #e8c06b 22%, var(--wv-hairline)); background: color-mix(in srgb, #e8c06b 5%, transparent); }\n.wv-setup-callout.warn svg { color: #e8c06b; }\n.wv-setup-callout.ok { border-color: color-mix(in srgb, #61d6a2 22%, var(--wv-hairline)); background: color-mix(in srgb, #61d6a2 5%, transparent); }\n.wv-setup-callout.ok svg { color: #61d6a2; }\n.wv-setup-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }\n.wv-setup-blocked { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 32px 18px; text-align: center; border: 1px dashed var(--wv-border-strong); border-radius: 12px; background: color-mix(in srgb, var(--wv-bg) 28%, transparent); }\n.wv-setup-blocked-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); }\n.wv-setup-blocked h3 { margin: 3px 0 0; font-size: 14px; }\n.wv-setup-blocked p { max-width: 460px; margin: 0 0 5px; color: var(--wv-muted); font-size: 11.5px; line-height: 1.55; }\n.wv-setup-plan { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--wv-hairline); border-radius: 9px; background: color-mix(in srgb, var(--wv-bg) 30%, transparent); }\n.wv-setup-plan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; }\n.wv-setup-plan ol { margin: 8px 0 0; padding-left: 18px; color: var(--wv-muted); font-size: 11px; line-height: 1.75; }\n.wv-setup-plan li::marker { color: var(--wv-accent); }\n.wv-setup-credentials { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }\n.wv-setup-field { display: grid; gap: 5px; }\n.wv-setup-field label { color: var(--wv-muted); font-size: 10.5px; }\n.wv-setup-field .wv-input { width: 100%; }\n.wv-setup-footnote { color: var(--wv-muted); font-size: 10px; }\n.wv-spacer { flex: 1; }\n.wv-setup-demo-strip { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 10px; }\n.wv-setup-demo-strip svg { color: var(--wv-accent); }\n\n.wv-provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }\n.wv-provider-card { display: block; width: 100%; min-height: 120px; padding: 11px; border: 1px solid var(--wv-hairline); border-radius: 9px; background: color-mix(in srgb, var(--wv-bg) 34%, transparent); color: var(--wv-text); text-align: left; cursor: pointer; }\n.wv-provider-card:hover:not(.disabled), .wv-provider-card.selected { border-color: color-mix(in srgb, var(--wv-accent) 34%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-provider-card.disabled { cursor: default; opacity: .65; }\n.wv-provider-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }\n.wv-provider-head strong { font-size: 12px; }\n.wv-provider-state { color: var(--wv-muted); font-size: 9.5px; white-space: nowrap; }\n.wv-provider-card p { margin: 6px 0; color: var(--wv-muted); font-size: 10.5px; line-height: 1.5; }\n.wv-provider-meta { display: block; color: var(--wv-muted); font-size: 9.5px; line-height: 1.45; }\n.wv-component-list { display: grid; gap: 0; margin-top: 12px; border: 1px solid var(--wv-hairline); border-radius: 9px; overflow: hidden; }\n.wv-component-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 11px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); }\n.wv-component-row:last-child { border-bottom: 0; }\n.wv-component-main strong { display: block; font-size: 11.5px; }\n.wv-component-main p { margin: 2px 0 0; color: var(--wv-muted); font-size: 10.5px; }\n.wv-component-detail { color: var(--wv-muted); font-size: 10px; white-space: nowrap; }\n\n@media (max-width: 760px) {\n  .wv-setup-banner { grid-template-columns: 32px minmax(0, 1fr); }\n  .wv-setup-banner-actions { grid-column: 1 / -1; justify-content: flex-start; }\n  .wv-setup-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }\n  .wv-setup-step { padding: 6px; }\n  .wv-setup-step-copy small { display: none; }\n  .wv-setup-checks.two, .wv-provider-grid, .wv-setup-credentials { grid-template-columns: 1fr; }\n  .wv-provider-card { min-height: 0; }\n  .wv-component-row { grid-template-columns: minmax(0, 1fr) auto; }\n  .wv-component-detail { display: none; }\n}\n\n.wv-dialog.sm { width: min(410px, calc(100vw - 32px)); }\n.wv-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--wv-hairline); }\n.wv-dialog-head h2 { margin: 0; font-size: 16px; font-weight: 650; }\n.wv-dialog-head p { margin: 3px 0 0; color: var(--wv-muted); font-size: 11.5px; }\n.wv-dialog-body { padding: 16px 20px; overflow-y: auto; min-height: 0; }\n.wv-dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 18%, transparent); }\n.wv-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }\n.wv-form-grid .full { grid-column: 1 / -1; }\n\n.wv-toast { position: fixed; z-index: 1100; right: 24px; bottom: 24px; display: flex; align-items: flex-start; gap: 9px; max-width: min(390px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 12px; line-height: 1.45; animation: wv-toastin .18s ease both; }\n.wv-toast.success { border-color: color-mix(in srgb, var(--wv-success) 25%, var(--wv-hairline)); }\n.wv-toast.success svg { color: var(--wv-success); }\n.wv-toast.error { border-color: color-mix(in srgb, var(--wv-error) 25%, var(--wv-hairline)); }\n.wv-toast.error svg { color: var(--wv-error); }\n.wv-toast svg { flex: none; margin-top: 1px; }\n@keyframes wv-toastin { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }\n\n.wv-tip { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 9px; cursor: help; vertical-align: 1px; }\n.wv-tip:hover { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 35%, var(--wv-hairline)); }\n.wv-tip .wv-tiptext { display: none; }\n.wv-tip:hover .wv-tiptext { display: block; position: absolute; z-index: 50; margin-top: 26px; margin-left: -150px; width: 220px; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 11px; font-weight: 400; line-height: 1.45; text-align: left; }\n\n.wv-root[data-layout=\"compact\"], .wv-root[data-layout=\"narrow\"] { --wv-frame-inset: 12px; }\n.wv-root[data-layout=\"compact\"] .wv-shell { grid-template-columns: 68px minmax(0, 1fr); }\n.wv-root[data-layout=\"compact\"] .wv-brand { justify-content: center; padding-left: 0; padding-right: 0; }\n.wv-root[data-layout=\"compact\"] .wv-brandtext, .wv-root[data-layout=\"compact\"] .wv-navlabel, .wv-root[data-layout=\"compact\"] .wv-navbadge { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-navitem { justify-content: center; padding-left: 0; padding-right: 0; }\n.wv-root[data-layout=\"compact\"] .wv-navicon { width: 24px; height: 24px; }\n.wv-root[data-layout=\"compact\"] .wv-sidefoot { padding-left: 0; padding-right: 0; align-items: center; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow { justify-content: center; font-size: 0; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow .wv-live { font-size: 9px; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow:last-child { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-content { padding-left: 18px; padding-right: 18px; }\n.wv-root[data-layout=\"compact\"] .wv-switchstate { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-hero { grid-template-columns: minmax(0, 1fr) 220px; }\n\n.wv-root[data-layout=\"narrow\"] .wv-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }\n.wv-root[data-layout=\"narrow\"] .wv-sidebar { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--wv-hairline); overflow: hidden; }\n.wv-root[data-layout=\"narrow\"] .wv-brand { flex: none; padding: 0; border: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-brandmark { width: 30px; height: 30px; border-radius: 9px; }\n.wv-root[data-layout=\"narrow\"] .wv-brandtext, .wv-root[data-layout=\"narrow\"] .wv-sidefoot { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 2px; gap: 3px; scrollbar-width: none; }\n.wv-root[data-layout=\"narrow\"] .wv-nav::-webkit-scrollbar { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-navitem { width: auto; flex: none; min-height: 32px; padding: 5px 9px; gap: 6px; }\n.wv-root[data-layout=\"narrow\"] .wv-navlabel { display: block; font-size: 11.5px; }\n.wv-root[data-layout=\"narrow\"] .wv-navbadge { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-topbar { min-height: 46px; padding: 7px 16px; }\n.wv-root[data-layout=\"narrow\"] .wv-topmeta { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-content { padding: 16px 16px 92px; }\n.wv-root[data-layout=\"narrow\"] .wv-pagehead { align-items: flex-start; flex-direction: column; gap: 10px; }\n.wv-root[data-layout=\"narrow\"] .wv-pagehead-actions { justify-content: flex-start; }\n.wv-root[data-layout=\"narrow\"] .wv-hero { grid-template-columns: 1fr; padding: 20px; }\n.wv-root[data-layout=\"narrow\"] .wv-hero-art { min-height: 150px; }\n.wv-root[data-layout=\"narrow\"] .wv-grid.three, .wv-root[data-layout=\"narrow\"] .wv-grid.two, .wv-root[data-layout=\"narrow\"] .wv-grid.four { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-studio { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-studio-profile { position: static; }\n.wv-root[data-layout=\"narrow\"] .wv-emotions { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"narrow\"] .wv-adv-grid { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-row { grid-template-columns: minmax(0, 1fr) 86px 20px; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-row .wv-hide-narrow { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-quick { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-quick-row:nth-child(even) { padding-left: 0; border-left: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-quick-row:nth-child(odd) { padding-right: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-perm-row { grid-template-columns: 30px minmax(0, 1fr) 86px 30px; }\n.wv-root[data-layout=\"narrow\"] .wv-perm-row .wv-perm-col.optional { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-group-row { grid-template-columns: minmax(0, 1fr) 82px 30px; }\n.wv-root[data-layout=\"narrow\"] .wv-group-row .wv-group-optional { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-form-grid { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-preview-controls { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-setting { align-items: flex-start; flex-direction: column; gap: 8px; }\n.wv-root[data-layout=\"narrow\"] .wv-setting-control { width: 100%; justify-content: flex-start; }\n.wv-root[data-layout=\"narrow\"] .wv-setting-control .wv-select { flex: 1; min-width: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-tablewrap { overflow-x: auto; }\n.wv-root[data-layout=\"narrow\"] .wv-table { min-width: 680px; }\n\n.wv-root[data-layout=\"compact\"] .wv-emotions { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"compact\"] .wv-studio { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"compact\"] .wv-studio-profile { position: static; }\n.wv-root[data-layout=\"compact\"] .wv-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"compact\"] .wv-grid.two { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"compact\"] .wv-service { padding-right: 120px; }\n.wv-root[data-layout=\"compact\"] .wv-adv-grid { grid-template-columns: 1fr; }\n\n@media (prefers-reduced-motion: reduce) {\n  .wv-root *, .wv-root *::before, .wv-root *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }\n}\n\n/* Real config readout - read-only Core snapshot */\n.wv-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }\n.wv-config-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 11px; border: 1px solid var(--wv-hairline); border-radius: var(--wv-r-sm); background: color-mix(in srgb, var(--wv-layer2) 26%, transparent); min-width: 0; }\n.wv-config-item span { color: var(--wv-muted); font-size: 10.5px; }\n.wv-config-item strong { font-size: 12.5px; font-weight: 620; overflow-wrap: anywhere; }\n.wv-config-item small { color: var(--wv-muted); font-size: 10.5px; line-height: 1.45; overflow-wrap: anywhere; }\n.wv-config-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 10.5px; }\n.wv-config-warn { color: var(--wv-warn); }\n@media (max-width: 760px) { .wv-config-grid { grid-template-columns: 1fr; } }\n\n/* Capability / status projection (Phase 4B-2B-2a) */\n.wv-cap-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }\n.wv-cap-chips .wv-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--wv-soft); border: 1px solid var(--wv-hairline); font-size: 11px; }\n.wv-cap-chips .wv-chip strong { font-size: 15px; color: var(--wv-ink); }\n.wv-cap-components { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }\n.wv-cap-component { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, var(--wv-ink) 3%, transparent); border: 1px solid var(--wv-hairline); min-width: 0; }\n.wv-cap-component strong { display: block; font-size: 12px; }\n.wv-cap-component small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-component-state { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }\n.wv-cap-surfaces { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }\n.wv-cap-surface { padding: 12px 0; border-top: 1px solid var(--wv-hairline); }\n.wv-cap-surface:first-child { border-top: 0; padding-top: 4px; }\n.wv-cap-surface-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }\n.wv-cap-surface-head strong { display: block; font-size: 12.5px; }\n.wv-cap-surface-head small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex: none; }\n.wv-cap-line { margin: 6px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--wv-muted); }\n.wv-cap-blockers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }\n.wv-cap-blocker { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 10.5px; color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 16%, transparent); }\n.wv-cap-details { margin-top: 8px; }\n.wv-cap-details summary { cursor: pointer; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; padding: 9px 0 2px; }\n.wv-cap-detail-grid > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }\n.wv-cap-detail-grid span { font-size: 10px; color: var(--wv-muted); }\n.wv-cap-detail-grid strong { font-size: 11px; font-weight: 560; overflow-wrap: anywhere; }\n.wv-cap-detail-blockers { display: flex; flex-direction: column; gap: 5px; padding: 8px 0 2px; }\n.wv-cap-detail-blockers > div { display: flex; gap: 7px; align-items: baseline; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-detail-blockers code { color: var(--wv-warn); font-size: 10px; }\n.wv-cap-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--wv-hairline); font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-foot-warn { color: var(--wv-warn); text-align: right; }\n@media (max-width: 760px) {\n  .wv-cap-components, .wv-cap-detail-grid { grid-template-columns: 1fr; }\n  .wv-cap-surface-head { flex-direction: column; }\n  .wv-cap-badges { justify-content: flex-start; }\n}\n";
+    const CSS = ".wv-root {\n  --wv-bg: var(--dsw-alias-bg-base);\n  --wv-base: #0e1624;\n  --wv-card-base: rgba(22, 31, 48, .78);\n  --wv-card-solid: #172133;\n  --wv-layer1: var(--dsw-alias-bg-layer-1);\n  --wv-layer2: var(--dsw-alias-bg-layer-2);\n  --wv-overlay: var(--dsw-alias-bg-overlay);\n  --wv-text: var(--dsw-alias-label-primary);\n  --wv-muted: color-mix(in srgb, var(--dsw-alias-label-secondary) 82%, var(--dsw-alias-label-primary));\n  --wv-muted-soft: color-mix(in srgb, var(--dsw-alias-label-secondary) 92%, var(--dsw-alias-label-primary));\n  --wv-border: var(--dsw-alias-border-l1);\n  --wv-border-strong: var(--dsw-alias-border-l2);\n  --wv-accent: var(--dsw-alias-brand-primary);\n  --wv-accent2: color-mix(in srgb, #a99bf5 58%, var(--dsw-alias-brand-primary));\n  --wv-success: var(--dsw-alias-state-success-primary);\n  --wv-warn: var(--dsw-alias-state-warn-primary);\n  --wv-error: var(--dsw-alias-state-error-primary);\n  --wv-idle: var(--dsw-alias-state-idle-primary);\n  --wv-glass: color-mix(in srgb, var(--wv-layer1) 58%, transparent);\n  --wv-card-fill: color-mix(in srgb, var(--wv-layer1) 64%, transparent);\n  --wv-card-fill-strong: color-mix(in srgb, var(--wv-layer1) 72%, transparent);\n  --wv-glass-strong: color-mix(in srgb, var(--wv-overlay) 88%, transparent);\n  --wv-soft: color-mix(in srgb, var(--wv-accent) 8%, transparent);\n  --wv-soft2: color-mix(in srgb, var(--wv-accent2) 8%, transparent);\n  --wv-hairline: color-mix(in srgb, var(--wv-border) 82%, transparent);\n  --wv-r-xs: 8px;\n  --wv-r-sm: 11px;\n  --wv-r-md: 14px;\n  --wv-r-lg: 16px;\n  --wv-r-xl: 22px;\n  --wv-frame-inset: 14px;\n  --wv-frame-radius: 16px;\n  --wv-frame-border: color-mix(in srgb, var(--wv-text) 11%, transparent);\n  --wv-frame-shadow: 0 10px 30px color-mix(in srgb, #000 16%, transparent);\n  --wv-shadow: 0 16px 44px color-mix(in srgb, var(--wv-text) 8%, transparent);\n  --wv-shadow-soft: 0 10px 28px color-mix(in srgb, var(--wv-text) 5%, transparent);\n  position: relative;\n  display: block;\n  width: calc(100% - var(--wv-frame-inset) * 2);\n  height: calc(100% - var(--wv-frame-inset) * 2);\n  margin: var(--wv-frame-inset);\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  border: 1px solid var(--wv-frame-border);\n  border-radius: var(--wv-frame-radius);\n  box-shadow: var(--wv-frame-shadow);\n  isolation: isolate;\n  color: var(--wv-text);\n  font-family: var(--dsw-font-family, \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif);\n  font-size: 13.5px;\n  line-height: 1.6;\n  -webkit-font-smoothing: antialiased;\n  background:\n    radial-gradient(900px 500px at -10% -14%, color-mix(in srgb, var(--wv-accent) 11%, transparent), transparent 64%),\n    radial-gradient(760px 460px at 108% -8%, color-mix(in srgb, var(--wv-accent2) 9%, transparent), transparent 66%),\n    linear-gradient(155deg, color-mix(in srgb, var(--wv-base) 89%, transparent), color-mix(in srgb, var(--wv-base) 96%, transparent));\n  -webkit-backdrop-filter: blur(30px) saturate(1.05);\n  backdrop-filter: blur(30px) saturate(1.05);\n  box-sizing: border-box;\n}\n.wv-root *, .wv-root *::before, .wv-root *::after { box-sizing: border-box; }\nbody[data-ds-dark-theme] .wv-root {\n  --wv-base: #0e1624;\n  --wv-card-base: rgba(22, 31, 48, .78);\n  --wv-card-solid: #172133;\n}\nbody:not([data-ds-dark-theme]) .wv-root {\n  --wv-base: #f3f5fb;\n  --wv-card-base: rgba(255, 255, 255, .82);\n  --wv-card-solid: #ffffff;\n}\n.wv-root button, .wv-root input, .wv-root select, .wv-root textarea { font: inherit; color: inherit; }\n.wv-root button { cursor: pointer; }\n.wv-root button:disabled { cursor: default; }\n.wv-root :focus-visible { outline: 2px solid color-mix(in srgb, var(--wv-accent) 75%, transparent); outline-offset: 2px; }\n.wv-root ::selection { background: color-mix(in srgb, var(--wv-accent) 26%, transparent); }\n\n.wv-aurora { position: absolute; inset: -20%; pointer-events: none; z-index: -1; opacity: .45; filter: blur(12px); }\n.wv-aurora::before, .wv-aurora::after { content: \"\"; position: absolute; border-radius: 50%; }\n.wv-aurora::before {\n  width: 46%; height: 46%; left: 16%; top: 8%;\n  background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent) 10%, transparent), transparent 68%);\n  animation: wv-drift 26s ease-in-out infinite alternate;\n}\n.wv-aurora::after {\n  width: 40%; height: 40%; right: 6%; bottom: 4%;\n  background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent2) 9%, transparent), transparent 68%);\n  animation: wv-drift 32s ease-in-out infinite alternate-reverse;\n}\n@keyframes wv-drift { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.06); } }\n\n.wv-shell { position: relative; z-index: 1; display: grid; grid-template-columns: 208px minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; }\n\n.wv-sidebar {\n  display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0;\n  padding: 18px 12px 14px;\n  border-right: 1px solid var(--wv-hairline);\n  background: linear-gradient(180deg, color-mix(in srgb, var(--wv-base) 88%, transparent), color-mix(in srgb, var(--wv-base) 96%, transparent));\n}\n.wv-brand { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 2px 8px 14px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 72%, transparent); }\n.wv-brandmark { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; color: var(--wv-accent); background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 18%, transparent), color-mix(in srgb, var(--wv-accent2) 14%, transparent)); border: 1px solid color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); box-shadow: 0 6px 18px color-mix(in srgb, var(--wv-accent) 12%, transparent); }\n.wv-brandtext { min-width: 0; }\n.wv-brandname { font-size: 14.5px; font-weight: 680; letter-spacing: .01em; white-space: nowrap; }\n.wv-brandsub { margin-top: 1px; font-size: 12px; color: var(--wv-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n\n.wv-nav { display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px; scrollbar-width: thin; }\n.wv-navitem {\n  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;\n  padding: 8px 10px; border: 1px solid transparent; border-radius: var(--wv-r-sm);\n  background: transparent; color: var(--wv-muted); text-align: left; text-decoration: none;\n  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease;\n}\n.wv-navitem:hover { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 44%, transparent); }\n.wv-navitem[aria-current=\"page\"] {\n  color: var(--wv-text);\n  background: linear-gradient(90deg, color-mix(in srgb, var(--wv-accent) 13%, transparent), color-mix(in srgb, var(--wv-accent2) 6%, transparent));\n  border-color: color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline));\n  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--wv-accent) 78%, transparent);\n}\n.wv-navicon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; opacity: .92; }\n.wv-navlabel { flex: 1; min-width: 0; font-size: 13px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-navbadge { flex: none; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 11px; text-align: center; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 70%, transparent); border: 1px solid var(--wv-hairline); }\n.wv-navitem[aria-current=\"page\"] .wv-navbadge { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 24%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n\n.wv-sidefoot { margin-top: auto; padding: 12px 8px 2px; border-top: 1px solid color-mix(in srgb, var(--wv-hairline) 72%, transparent); display: flex; flex-direction: column; gap: 7px; }\n.wv-sidefootrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--wv-muted); }\n.wv-sidefoot strong { font-weight: 600; color: color-mix(in srgb, var(--wv-text) 82%, var(--wv-muted)); }\n.wv-live { display: inline-flex; align-items: center; gap: 5px; }\n.wv-live::before { content: \"\"; width: 6px; height: 6px; border-radius: 50%; background: var(--wv-warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wv-warn) 12%, transparent); }\n\n.wv-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }\n.wv-topbar { position: relative; z-index: 3; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 52px; padding: 8px 24px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 68%, transparent); background: color-mix(in srgb, var(--wv-base) 78%, transparent); }\n.wv-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.wv-crumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--wv-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-crumb b { color: color-mix(in srgb, var(--wv-text) 88%, var(--wv-muted)); font-weight: 600; }\n.wv-topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }\n.wv-demo { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 22%, transparent); font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }\n.wv-demo::before { content: \"\"; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }\n.wv-topmeta { color: var(--wv-muted); font-size: 11.5px; white-space: nowrap; }\n\n.wv-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-width: thin; }\n.wv-scroll::-webkit-scrollbar, .wv-nav::-webkit-scrollbar { width: 8px; }\n.wv-scroll::-webkit-scrollbar-thumb, .wv-nav::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--wv-muted) 24%, transparent); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }\n.wv-scroll::-webkit-scrollbar-track { background: transparent; }\n.wv-content { width: 100%; max-width: none; margin: 0; padding: 22px 24px 96px; }\n.wv-page { animation: wv-pagein .18s ease both; }\n@keyframes wv-pagein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\n\n.wv-pagehead { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin: 0 0 18px; min-width: 0; }\n.wv-pagehead-main { min-width: 0; }\n.wv-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--wv-accent); font-size: 11px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }\n.wv-eyebrow::before { content: \"\"; width: 18px; height: 1px; background: currentColor; opacity: .55; }\n.wv-pagehead h1 { margin: 7px 0 0; font-size: clamp(22px, 2.1vw, 27px); line-height: 1.18; font-weight: 680; letter-spacing: -.02em; }\n.wv-pagehead p { margin: 6px 0 0; max-width: 760px; color: var(--wv-muted); font-size: 13px; line-height: 1.55; }\n.wv-pagehead-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: none; }\n\n.wv-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer2) 58%, transparent); color: var(--wv-text); font-size: 13px; font-weight: 560; white-space: nowrap; transition: background .15s ease, border-color .15s ease, transform .12s ease, opacity .15s ease; }\n.wv-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wv-accent) 45%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-layer2) 82%, transparent); }\n.wv-btn:active:not(:disabled) { transform: translateY(1px); }\n.wv-btn:disabled { opacity: .46; }\n.wv-btn.primary { color: var(--dsw-alias-label-primary-foreground, #fff); background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 92%, #fff 8%), color-mix(in srgb, var(--wv-accent2) 30%, var(--wv-accent))); border-color: color-mix(in srgb, var(--wv-accent) 70%, transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--wv-accent) 20%, transparent); }\n.wv-btn.primary:hover:not(:disabled) { background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 84%, #fff 16%), color-mix(in srgb, var(--wv-accent2) 38%, var(--wv-accent))); }\n.wv-btn.ghost { background: transparent; border-color: transparent; color: var(--wv-muted); }\n.wv-btn.ghost:hover:not(:disabled) { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 46%, transparent); border-color: transparent; }\n.wv-btn.danger { color: var(--wv-error); border-color: color-mix(in srgb, var(--wv-error) 25%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-error) 7%, transparent); }\n.wv-btn.sm { min-height: 27px; padding: 4px 9px; font-size: 12px; border-radius: 7px; }\n.wv-iconbtn { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--wv-muted); }\n.wv-iconbtn:hover { color: var(--wv-text); background: color-mix(in srgb, var(--wv-layer2) 52%, transparent); border-color: var(--wv-hairline); }\n\n.wv-card { position: relative; border: 1px solid var(--wv-hairline); border-radius: var(--wv-r-lg); background: linear-gradient(180deg, var(--wv-card-base), color-mix(in srgb, var(--wv-card-base) 86%, var(--wv-base))); box-shadow: 0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset, var(--wv-shadow-soft); }\n.wv-card.pad { padding: 17px; }\n.wv-card.soft { background: color-mix(in srgb, var(--wv-card-base) 68%, transparent); box-shadow: none; }\n.wv-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 12px; }\n.wv-card-title h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }\n.wv-card-title p { margin: 3px 0 0; color: var(--wv-muted); font-size: 12.5px; line-height: 1.5; }\n.wv-card-title .wv-actions { display: flex; align-items: center; gap: 7px; flex: none; }\n\n.wv-hero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(220px, .7fr); gap: 18px; overflow: hidden; padding: 20px 22px; border-radius: var(--wv-r-xl); border: 1px solid color-mix(in srgb, var(--wv-accent) 13%, var(--wv-hairline)); background: linear-gradient(125deg, color-mix(in srgb, var(--wv-card-base) 94%, transparent), color-mix(in srgb, var(--wv-accent2) 5%, transparent) 58%, color-mix(in srgb, var(--wv-accent) 6%, transparent)); box-shadow: var(--wv-shadow); }\n.wv-hero-copy { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }\n.wv-hero .wv-eyebrow { color: color-mix(in srgb, var(--wv-accent) 84%, var(--wv-text)); }\n.wv-hero h1 { margin: 8px 0 0; font-size: clamp(25px, 2.7vw, 34px); line-height: 1.08; letter-spacing: -.032em; font-weight: 690; }\n.wv-hero h1 span { color: color-mix(in srgb, var(--wv-accent) 78%, var(--wv-text)); }\n.wv-hero p { margin: 9px 0 0; max-width: 600px; color: var(--wv-muted); font-size: 13.5px; line-height: 1.55; }\n.wv-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }\n.wv-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 58%, transparent); color: var(--wv-muted); font-size: 11.5px; white-space: nowrap; }\n.wv-chip strong { color: var(--wv-text); font-weight: 600; }\n.wv-chip.accent { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); }\n.wv-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }\n.wv-hero-art { position: relative; min-height: 168px; display: grid; place-items: center; }\n.wv-hero-art svg { width: min(100%, 280px); height: auto; overflow: visible; filter: drop-shadow(0 14px 26px color-mix(in srgb, var(--wv-accent) 13%, transparent)); }\n\n.wv-grid { display: grid; gap: 16px; min-width: 0; }\n.wv-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 0 0 10px; }\n.wv-section-kicker { display: block; color: var(--wv-accent); font-size: 10.5px; font-weight: 650; letter-spacing: .12em; }\n.wv-section-head h2 { display: flex; align-items: center; gap: 8px; margin: 3px 0 0; font-size: 17px; font-weight: 660; letter-spacing: -.02em; }\n.wv-section-note { color: var(--wv-muted); font-size: 11.5px; }\n.wv-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-grid.three { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }\n.wv-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }\n.wv-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }\n.wv-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.wv-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.wv-wrap { flex-wrap: wrap; }\n.wv-grow { flex: 1; min-width: 0; }\n.wv-muted { color: var(--wv-muted); }\n.wv-small { font-size: 12px; }\n.wv-mono { font-family: ui-monospace, \"Cascadia Code\", \"Consolas\", monospace; font-size: 11.5px; letter-spacing: -.01em; }\n.wv-divider { height: 1px; background: var(--wv-hairline); margin: 4px 0; }\n\n.wv-service { display: flex; flex-direction: column; gap: 12px; padding: 16px; min-width: 0; }\n.wv-service-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }\n.wv-service-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 17%, var(--wv-hairline)); }\n.wv-service:nth-child(2) .wv-service-icon { color: var(--wv-accent2); background: color-mix(in srgb, var(--wv-accent2) 9%, transparent); border-color: color-mix(in srgb, var(--wv-accent2) 17%, var(--wv-hairline)); }\n.wv-service:nth-child(3) .wv-service-icon { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); border-color: color-mix(in srgb, var(--wv-success) 17%, var(--wv-hairline)); }\n.wv-service-name { margin: 1px 0 0; font-size: 13.5px; font-weight: 650; }\n.wv-service-desc { margin: 0; color: var(--wv-muted); font-size: 12px; line-height: 1.45; min-height: 30px; }\n.wv-service-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--wv-hairline); }\n.wv-service-meta .wv-btn { padding-left: 0; padding-right: 0; min-height: 20px; }\n\n.wv-status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 600; white-space: nowrap; }\n.wv-status::before { content: \"\"; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }\n.wv-status.online, .wv-status.sent { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); border-color: color-mix(in srgb, var(--wv-success) 20%, transparent); }\n.wv-status.busy, .wv-status.recording, .wv-status.sending, .wv-status.queued { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border-color: color-mix(in srgb, var(--wv-accent) 20%, transparent); }\n.wv-status.warn, .wv-status.unknown, .wv-status.waiting, .wv-status.ready { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border-color: color-mix(in srgb, var(--wv-warn) 20%, transparent); }\n.wv-status.error, .wv-status.failed, .wv-status.rejected { color: var(--wv-error); background: color-mix(in srgb, var(--wv-error) 9%, transparent); border-color: color-mix(in srgb, var(--wv-error) 20%, transparent); }\n.wv-status.idle, .wv-status.offline, .wv-status.disconnected, .wv-status.starting { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 8%, transparent); border-color: color-mix(in srgb, var(--wv-muted) 16%, transparent); }\n.wv-status.starting { color: var(--wv-accent); }\n.wv-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }\n\n.wv-stat { display: flex; flex-direction: column; gap: 2px; padding: 13px 15px; }\n.wv-stat-label { color: var(--wv-muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }\n.wv-stat-value { font-size: 19px; font-weight: 680; letter-spacing: -.02em; }\n.wv-stat-sub { color: var(--wv-muted); font-size: 11.5px; }\n\n.wv-voicecard { display: flex; flex-direction: column; gap: 15px; padding: 19px; overflow: hidden; }\n.wv-voicecard::after { content: \"\"; position: absolute; width: 190px; height: 190px; right: -70px; top: -90px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--wv-accent) 13%, transparent), transparent 65%); pointer-events: none; }\n.wv-voice-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; z-index: 1; }\n.wv-voicename { margin: 0; font-size: 20px; font-weight: 690; letter-spacing: -.02em; }\n.wv-voicesub { margin: 3px 0 0; color: var(--wv-muted); font-size: 12px; }\n.wv-voice-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 2px; }\n.wv-voicenote { margin: 0; padding: 9px 10px; border-left: 2px solid color-mix(in srgb, var(--wv-accent) 42%, transparent); border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--wv-accent) 5%, transparent); color: var(--wv-muted); font-size: 11.5px; line-height: 1.5; }\n.wv-metaitem { padding: 9px 10px; border-radius: 9px; background: color-mix(in srgb, var(--wv-layer1) 38%, transparent); border: 1px solid var(--wv-hairline); min-width: 0; }\n.wv-metaitem span { display: block; color: var(--wv-muted); font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; }\n.wv-metaitem strong { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-wave-mini { height: 38px; display: flex; align-items: center; gap: 2px; overflow: hidden; opacity: .8; }\n.wv-wave-mini i { display: block; width: 3px; border-radius: 99px; background: linear-gradient(180deg, var(--wv-accent), var(--wv-accent2)); opacity: .7; }\n\n.wv-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }\n.wv-quick-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 70%, transparent); }\n.wv-quick-row:nth-child(odd) { padding-right: 16px; }\n.wv-quick-row:nth-child(even) { padding-left: 16px; border-left: 1px solid color-mix(in srgb, var(--wv-hairline) 70%, transparent); }\n.wv-quick-row .wv-quicklabel { font-size: 12px; font-weight: 550; }\n.wv-quick-row .wv-quicksub { margin-top: 1px; color: var(--wv-muted); font-size: 11px; }\n.wv-quick-control { display: inline-flex; align-items: center; gap: 8px; flex: none; }\n.wv-switchstate { color: var(--wv-muted); font-size: 11px; white-space: nowrap; }\n\n.wv-switch { position: relative; flex: none; display: inline-flex; align-items: center; width: 36px; height: 20px; padding: 0; border: 1px solid var(--wv-hairline); border-radius: 999px; background: color-mix(in srgb, var(--wv-muted) 18%, transparent); transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }\n.wv-switch::after { content: \"\"; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px color-mix(in srgb, #000 24%, transparent); transition: transform .16s ease; }\n.wv-switch[aria-checked=\"true\"] { background: color-mix(in srgb, var(--wv-accent) 72%, transparent); border-color: color-mix(in srgb, var(--wv-accent) 60%, var(--wv-hairline)); }\n.wv-switch[aria-checked=\"true\"]::after { transform: translateX(16px); }\n.wv-switch:disabled { opacity: .42; }\n.wv-switch.saving { background: color-mix(in srgb, var(--wv-warn) 36%, transparent); }\n.wv-switch.saving::after { animation: wv-pulse 1s ease infinite; }\n@keyframes wv-pulse { 50% { opacity: .5; } }\n\n.wv-activity-list { display: flex; flex-direction: column; padding-right: 120px; }\n.wv-quick-foot { padding-right: 120px; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-list, .wv-root[data-layout=\"narrow\"] .wv-quick-foot { padding-right: 0; }\n@media (max-width: 1200px) {\n  .wv-service { padding-right: 110px; }\n}\n@media (max-width: 1550px) {\n  .wv-quick { grid-template-columns: 1fr; padding-right: 120px; }\n  .wv-quick-row:nth-child(odd) { padding-right: 0; }\n  .wv-quick-row:nth-child(even) { padding-left: 0; border-left: 0; }\n}\n.wv-activity-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 98px 84px 90px 20px; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); min-width: 0; }\n.wv-activity-row:last-child { border-bottom: 0; }\n.wv-activity-main { min-width: 0; }\n.wv-activity-target { font-size: 12px; font-weight: 580; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-activity-sub { margin-top: 1px; color: var(--wv-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-activity-time { color: var(--wv-muted); font-size: 11.5px; }\n.wv-activity-chev { color: var(--wv-muted); display: grid; place-items: center; }\n.wv-activity-row:hover .wv-activity-chev { color: var(--wv-accent); }\n\n.wv-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--wv-hairline); }\n.wv-search { position: relative; display: flex; align-items: center; min-width: 190px; flex: 1; max-width: 320px; }\n.wv-search svg { position: absolute; left: 9px; color: var(--wv-muted); pointer-events: none; }\n.wv-input, .wv-select, .wv-textarea { width: 100%; min-height: 30px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 50%, transparent); color: var(--wv-text); outline: none; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }\n.wv-input::placeholder, .wv-textarea::placeholder { color: color-mix(in srgb, var(--wv-muted) 76%, transparent); }\n.wv-input:focus, .wv-select:focus, .wv-textarea:focus { border-color: color-mix(in srgb, var(--wv-accent) 55%, var(--wv-hairline)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n.wv-input.withicon { padding-left: 29px; }\n.wv-textarea { resize: vertical; min-height: 76px; line-height: 1.55; }\n.wv-select { appearance: none; padding-right: 26px; background-image: linear-gradient(45deg, transparent 50%, var(--wv-muted) 50%), linear-gradient(135deg, var(--wv-muted) 50%, transparent 50%); background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }\n.wv-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }\n.wv-field > label, .wv-label { color: color-mix(in srgb, var(--wv-text) 78%, var(--wv-muted)); font-size: 12px; font-weight: 560; }\n.wv-hint { color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n.wv-error { color: var(--wv-error); font-size: 11px; }\n.wv-input.invalid, .wv-select.invalid, .wv-textarea.invalid { border-color: color-mix(in srgb, var(--wv-error) 55%, var(--wv-hairline)); }\n\n.wv-settings-group { display: flex; flex-direction: column; }\n.wv-setting { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 13px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 68%, transparent); min-width: 0; }\n.wv-setting:last-child { border-bottom: 0; }\n.wv-setting-copy { min-width: 0; }\n.wv-setting-copy strong { display: block; font-size: 13px; font-weight: 570; }\n.wv-setting-copy p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11.5px; line-height: 1.45; }\n.wv-setting-control { flex: none; display: flex; align-items: center; gap: 8px; }\n.wv-setting-control .wv-select { min-width: 150px; }\n.wv-setting-control .wv-input { width: 110px; text-align: right; }\n\n.wv-slider { --p: 50%; width: 170px; accent-color: var(--wv-accent); height: 18px; cursor: pointer; }\n.wv-slider:disabled { cursor: default; opacity: .45; }\n.wv-rangeval { min-width: 44px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--wv-muted); }\n\n.wv-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 620; letter-spacing: .02em; white-space: nowrap; }\n.wv-badge.demo { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 18%, transparent); }\n.wv-badge.backend { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-success) 18%, transparent); }\n.wv-badge.wait { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-muted) 14%, transparent); }\n.wv-badge.accent { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, transparent); }\n\n.wv-notice { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: var(--wv-r-sm); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer2) 34%, transparent); color: var(--wv-muted); font-size: 11.5px; line-height: 1.5; }\n.wv-notice svg { flex: none; margin-top: 1px; color: var(--wv-accent); }\n.wv-notice.warn { color: color-mix(in srgb, var(--wv-warn) 72%, var(--wv-text)); background: color-mix(in srgb, var(--wv-warn) 7%, transparent); border-color: color-mix(in srgb, var(--wv-warn) 16%, transparent); }\n.wv-notice.warn svg { color: var(--wv-warn); }\n.wv-notice.error { color: color-mix(in srgb, var(--wv-error) 72%, var(--wv-text)); background: color-mix(in srgb, var(--wv-error) 7%, transparent); border-color: color-mix(in srgb, var(--wv-error) 16%, transparent); }\n.wv-notice.error svg { color: var(--wv-error); }\n\n.wv-perm-row { display: grid; grid-template-columns: 34px minmax(0, 1.5fr) 110px minmax(110px, .9fr) 92px 32px; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); min-width: 0; }\n.wv-perm-row:last-child { border-bottom: 0; }\n.wv-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 16%, var(--wv-hairline)); font-size: 12px; font-weight: 650; }\n.wv-perm-name { font-size: 13px; font-weight: 580; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-perm-id { margin-top: 1px; color: var(--wv-muted); font-size: 10.5px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-perm-col { font-size: 11.5px; color: var(--wv-muted); min-width: 0; }\n.wv-perm-col strong { display: block; color: color-mix(in srgb, var(--wv-text) 78%, var(--wv-muted)); font-size: 11.5px; font-weight: 560; }\n.wv-more-wrap { position: relative; justify-self: end; }\n.wv-menu { position: absolute; z-index: 30; right: 0; top: calc(100% + 5px); min-width: 190px; padding: 5px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.1); backdrop-filter: blur(20px) saturate(1.1); box-shadow: var(--wv-shadow); }\n.wv-menu button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--wv-text); text-align: left; font-size: 12px; }\n.wv-menu button:hover { background: color-mix(in srgb, var(--wv-layer2) 60%, transparent); }\n.wv-menu .danger { color: var(--wv-error); }\n\n.wv-group-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 130px 90px 85px 32px; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 66%, transparent); }\n.wv-group-row:last-child { border-bottom: 0; }\n.wv-group-name { font-size: 13px; font-weight: 580; }\n.wv-group-id { color: var(--wv-muted); font-size: 10.5px; font-family: ui-monospace, Consolas, monospace; }\n.wv-checkline { display: flex; align-items: center; gap: 6px; color: var(--wv-muted); font-size: 11px; }\n\n.wv-studio { display: grid; grid-template-columns: minmax(290px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }\n.wv-studio-profile { position: sticky; top: 0; overflow: hidden; }\n.wv-studio-hero { position: relative; padding: 22px 20px 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--wv-accent) 12%, transparent), color-mix(in srgb, var(--wv-accent2) 8%, transparent) 55%, transparent); border-bottom: 1px solid var(--wv-hairline); overflow: hidden; }\n.wv-studio-hero::after { content: \"\"; position: absolute; width: 210px; height: 210px; right: -85px; top: -105px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, transparent); box-shadow: 0 0 0 24px color-mix(in srgb, var(--wv-accent) 3%, transparent), 0 0 0 48px color-mix(in srgb, var(--wv-accent) 2%, transparent); }\n.wv-studio-title { position: relative; z-index: 1; }\n.wv-studio-title h2 { margin: 0; font-size: 21px; font-weight: 690; letter-spacing: -.02em; }\n.wv-studio-title p { margin: 4px 0 0; color: var(--wv-muted); font-size: 12px; }\n.wv-studio-wave { position: relative; z-index: 1; height: 84px; margin: 18px 0 4px; display: flex; align-items: center; gap: 3px; }\n.wv-studio-wave i { flex: 1; min-width: 1px; border-radius: 99px; background: linear-gradient(180deg, color-mix(in srgb, var(--wv-accent) 88%, #fff 12%), color-mix(in srgb, var(--wv-accent2) 70%, transparent)); opacity: .72; }\n.wv-studio-meta { padding: 14px 20px 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }\n.wv-preview { display: flex; flex-direction: column; gap: 13px; }\n.wv-preview-text { min-height: 90px; }\n.wv-preview-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }\n.wv-player { display: flex; flex-direction: column; gap: 9px; padding: 12px; border-radius: var(--wv-r-sm); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 34%, transparent); }\n.wv-player-wave { height: 58px; display: flex; align-items: center; gap: 2px; overflow: hidden; position: relative; }\n.wv-player-wave i { flex: 1; min-width: 1px; border-radius: 99px; background: color-mix(in srgb, var(--wv-accent) 36%, transparent); }\n.wv-player-wave i.on { background: linear-gradient(180deg, var(--wv-accent), var(--wv-accent2)); }\n.wv-player-wave .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--wv-accent); left: 0; opacity: .6; }\n.wv-player-controls { display: flex; align-items: center; gap: 9px; }\n.wv-progress { flex: 1; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--wv-muted) 16%, transparent); overflow: hidden; }\n.wv-progress i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--wv-accent), var(--wv-accent2)); }\n.wv-time { color: var(--wv-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }\n.wv-volume { display: flex; align-items: center; gap: 7px; color: var(--wv-muted); }\n.wv-volume input { width: 90px; accent-color: var(--wv-accent); }\n\n.wv-versions { display: flex; flex-direction: column; gap: 7px; }\n.wv-version { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 30%, transparent); }\n.wv-version.on { border-color: color-mix(in srgb, var(--wv-accent) 22%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-version strong { font-size: 12px; font-weight: 620; }\n.wv-version span { display: block; margin-top: 1px; color: var(--wv-muted); font-size: 10.5px; }\n\n.wv-emotions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }\n.wv-emotion { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-height: 120px; padding: 14px; border-radius: var(--wv-r-md); border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 34%, transparent); text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }\n.wv-emotion:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--wv-accent) 28%, var(--wv-hairline)); }\n.wv-emotion[aria-pressed=\"true\"] { border-color: color-mix(in srgb, var(--wv-accent) 45%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wv-accent) 10%, transparent); }\n.wv-emotion-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 15%, var(--wv-hairline)); }\n.wv-emotion:nth-child(2) .wv-emotion-icon { color: #d18a9f; background: color-mix(in srgb, #d18a9f 10%, transparent); }\n.wv-emotion:nth-child(3) .wv-emotion-icon { color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 9%, transparent); }\n.wv-emotion:nth-child(4) .wv-emotion-icon { color: #c58bd8; background: color-mix(in srgb, #c58bd8 9%, transparent); }\n.wv-emotion:nth-child(5) .wv-emotion-icon { color: var(--wv-success); background: color-mix(in srgb, var(--wv-success) 9%, transparent); }\n.wv-emotion:nth-child(6) .wv-emotion-icon { color: var(--wv-muted); background: color-mix(in srgb, var(--wv-muted) 9%, transparent); }\n.wv-emotion strong { font-size: 13px; font-weight: 620; }\n.wv-emotion span { color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n\n.wv-filters { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }\n.wv-table { width: 100%; border-collapse: collapse; font-size: 12px; }\n.wv-table th { padding: 8px 10px; text-align: left; color: var(--wv-muted); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; border-bottom: 1px solid var(--wv-hairline); white-space: nowrap; }\n.wv-table td { padding: 10px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); vertical-align: middle; }\n.wv-table tbody tr { cursor: pointer; }\n.wv-table tbody tr:hover { background: color-mix(in srgb, var(--wv-layer2) 30%, transparent); }\n.wv-table tbody tr:last-child td { border-bottom: 0; }\n.wv-table .id { color: var(--wv-muted); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }\n.wv-table .num { font-variant-numeric: tabular-nums; white-space: nowrap; }\n\n.wv-adv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }\n.wv-kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 14px; align-items: center; }\n.wv-kv dt { color: var(--wv-muted); font-size: 11.5px; }\n.wv-kv dd { margin: 0; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }\n.wv-code { padding: 2px 6px; border-radius: 5px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 40%, transparent); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }\n.wv-diag { margin: 0; padding: 12px; max-height: 220px; overflow: auto; border-radius: 9px; border: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-bg) 45%, transparent); color: var(--wv-muted); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; white-space: pre-wrap; }\n\n.wv-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 150px; padding: 24px; text-align: center; border: 1px dashed color-mix(in srgb, var(--wv-border-strong) 54%, transparent); border-radius: var(--wv-r-md); color: var(--wv-muted); }\n.wv-empty-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 8%, transparent); }\n.wv-empty strong { color: color-mix(in srgb, var(--wv-text) 82%, var(--wv-muted)); font-size: 13px; }\n.wv-empty p { margin: 0; max-width: 380px; font-size: 11.5px; line-height: 1.5; }\n\n.wv-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 22px; background: color-mix(in srgb, var(--wv-bg) 42%, transparent); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); }\n.wv-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column; border-radius: var(--wv-r-xl); border: 1px solid color-mix(in srgb, var(--wv-border-strong) 72%, var(--wv-hairline)); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(26px) saturate(1.12); backdrop-filter: blur(26px) saturate(1.12); box-shadow: 0 28px 80px color-mix(in srgb, var(--wv-text) 22%, transparent); overflow: hidden; }\n.wv-dialog.lg { width: min(900px, calc(100vw - 32px)); max-height: min(90vh, 860px); }\n\n/* First-run setup wizard and component manager */\n.wv-setup-banner { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--wv-accent) 20%, var(--wv-hairline)); border-radius: var(--wv-r-md); background: linear-gradient(120deg, color-mix(in srgb, var(--wv-accent) 8%, var(--wv-card-base)), color-mix(in srgb, var(--wv-accent2) 5%, var(--wv-card-base))); }\n.wv-setup-banner-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline)); }\n.wv-setup-banner-copy strong { display: block; font-size: 12.5px; }\n.wv-setup-banner-copy p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11px; line-height: 1.45; }\n.wv-setup-banner-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }\n\n.wv-setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 4px; margin: -4px 0 16px; border: 1px solid var(--wv-hairline); border-radius: 10px; background: color-mix(in srgb, var(--wv-bg) 34%, transparent); }\n.wv-setup-step { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--wv-muted); text-align: left; cursor: pointer; }\n.wv-setup-step:hover:not(:disabled) { background: color-mix(in srgb, var(--wv-layer2) 35%, transparent); }\n.wv-setup-step.active { background: color-mix(in srgb, var(--wv-accent) 10%, transparent); color: var(--wv-text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wv-accent) 25%, transparent); }\n.wv-setup-step.done .wv-setup-step-num { color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 12%, transparent); }\n.wv-setup-step:disabled { cursor: default; opacity: .55; }\n.wv-setup-step-num { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 64%, transparent); }\n.wv-setup-step.active .wv-setup-step-num { color: #fff; background: var(--wv-accent); }\n.wv-setup-step-copy { min-width: 0; }\n.wv-setup-step-copy strong { display: block; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n.wv-setup-step-copy small { display: block; margin-top: 1px; font-size: 9.5px; color: var(--wv-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n\n.wv-setup-lead { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 14px; }\n.wv-setup-lead-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 18%, var(--wv-hairline)); }\n.wv-setup-lead-icon.ok { color: var(--wv-online, #61d6a2); background: color-mix(in srgb, #61d6a2 10%, transparent); border-color: color-mix(in srgb, #61d6a2 24%, var(--wv-hairline)); }\n.wv-setup-lead h3 { margin: 1px 0 3px; font-size: 16px; font-weight: 650; }\n.wv-setup-lead p { margin: 2px 0 0; color: var(--wv-muted); font-size: 11.5px; line-height: 1.55; }\n.wv-setup-lead .wv-badge { margin-top: 6px; }\n.wv-setup-statusline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }\n.wv-setup-statuslabel { font-size: 11px; font-weight: 650; color: var(--wv-text); }\n.wv-setup-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--wv-hairline); font-size: 9.5px; line-height: 1.5; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 35%, transparent); white-space: nowrap; }\n.wv-setup-pill.online { color: #65d6a5; border-color: color-mix(in srgb, #65d6a5 30%, var(--wv-hairline)); background: color-mix(in srgb, #65d6a5 8%, transparent); }\n.wv-setup-pill.starting { color: #e8c06b; border-color: color-mix(in srgb, #e8c06b 28%, var(--wv-hairline)); }\n.wv-setup-pill.error { color: #f19999; border-color: color-mix(in srgb, #f19999 28%, var(--wv-hairline)); }\n.wv-setup-pill.demo { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 25%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-setup-evidence { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: -4px 0 10px; color: var(--wv-muted); font-size: 9.5px; line-height: 1.45; }\n.wv-setup-evidence svg { flex: none; color: var(--wv-accent); opacity: .8; }\n.wv-setup-evidence-sep { opacity: .5; }\n\n.wv-setup-checks { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--wv-hairline); border-radius: 9px; overflow: hidden; background: color-mix(in srgb, var(--wv-bg) 26%, transparent); }\n.wv-setup-checks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-setup-check { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); font-size: 11px; }\n.wv-setup-check:last-child { border-bottom: 0; }\n.wv-setup-checks.two .wv-setup-check:nth-last-child(2) { border-bottom: 0; }\n.wv-setup-check-icon { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-layer2) 48%, transparent); }\n.wv-setup-check-icon.ok, .wv-setup-check-icon.pass { color: #61d6a2; background: color-mix(in srgb, #61d6a2 10%, transparent); }\n.wv-setup-check-icon.wait, .wv-setup-check-icon.unknown { color: #e7bf69; background: color-mix(in srgb, #e7bf69 10%, transparent); }\n.wv-setup-check-icon.fail { color: #f19999; background: color-mix(in srgb, #f19999 10%, transparent); }\n.wv-setup-check-label { min-width: 0; color: var(--wv-text); }\n.wv-setup-check-value { color: var(--wv-muted); font-size: 10.5px; white-space: nowrap; }\n\n.wv-setup-callout { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; padding: 10px 11px; border: 1px solid var(--wv-hairline); border-radius: 9px; color: var(--wv-muted); font-size: 11px; line-height: 1.5; background: color-mix(in srgb, var(--wv-layer2) 26%, transparent); }\n.wv-setup-callout svg { flex: none; margin-top: 2px; }\n.wv-setup-callout strong { display: block; color: var(--wv-text); font-size: 11.5px; margin-bottom: 2px; }\n.wv-setup-callout p { margin: 2px 0 0; }\n.wv-setup-callout.warn { border-color: color-mix(in srgb, #e8c06b 22%, var(--wv-hairline)); background: color-mix(in srgb, #e8c06b 5%, transparent); }\n.wv-setup-callout.warn svg { color: #e8c06b; }\n.wv-setup-callout.ok { border-color: color-mix(in srgb, #61d6a2 22%, var(--wv-hairline)); background: color-mix(in srgb, #61d6a2 5%, transparent); }\n.wv-setup-callout.ok svg { color: #61d6a2; }\n.wv-setup-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }\n.wv-setup-blocked { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 32px 18px; text-align: center; border: 1px dashed var(--wv-border-strong); border-radius: 12px; background: color-mix(in srgb, var(--wv-bg) 28%, transparent); }\n.wv-setup-blocked-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 9%, transparent); }\n.wv-setup-blocked h3 { margin: 3px 0 0; font-size: 14px; }\n.wv-setup-blocked p { max-width: 460px; margin: 0 0 5px; color: var(--wv-muted); font-size: 11.5px; line-height: 1.55; }\n.wv-setup-plan { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--wv-hairline); border-radius: 9px; background: color-mix(in srgb, var(--wv-bg) 30%, transparent); }\n.wv-setup-plan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; }\n.wv-setup-plan ol { margin: 8px 0 0; padding-left: 18px; color: var(--wv-muted); font-size: 11px; line-height: 1.75; }\n.wv-setup-plan li::marker { color: var(--wv-accent); }\n.wv-setup-credentials { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }\n.wv-setup-field { display: grid; gap: 5px; }\n.wv-setup-field label { color: var(--wv-muted); font-size: 10.5px; }\n.wv-setup-field .wv-input { width: 100%; }\n.wv-setup-footnote { color: var(--wv-muted); font-size: 10px; }\n.wv-spacer { flex: 1; }\n.wv-setup-demo-strip { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 10px; }\n.wv-setup-demo-strip svg { color: var(--wv-accent); }\n\n.wv-provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }\n.wv-provider-card { display: block; width: 100%; min-height: 120px; padding: 11px; border: 1px solid var(--wv-hairline); border-radius: 9px; background: color-mix(in srgb, var(--wv-bg) 34%, transparent); color: var(--wv-text); text-align: left; cursor: pointer; }\n.wv-provider-card:hover:not(.disabled), .wv-provider-card.selected { border-color: color-mix(in srgb, var(--wv-accent) 34%, var(--wv-hairline)); background: color-mix(in srgb, var(--wv-accent) 7%, transparent); }\n.wv-provider-card.disabled { cursor: default; opacity: .65; }\n.wv-provider-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }\n.wv-provider-head strong { font-size: 12px; }\n.wv-provider-state { color: var(--wv-muted); font-size: 9.5px; white-space: nowrap; }\n.wv-provider-card p { margin: 6px 0; color: var(--wv-muted); font-size: 10.5px; line-height: 1.5; }\n.wv-provider-meta { display: block; color: var(--wv-muted); font-size: 9.5px; line-height: 1.45; }\n.wv-component-list { display: grid; gap: 0; margin-top: 12px; border: 1px solid var(--wv-hairline); border-radius: 9px; overflow: hidden; }\n.wv-component-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 11px; border-bottom: 1px solid color-mix(in srgb, var(--wv-hairline) 62%, transparent); }\n.wv-component-row:last-child { border-bottom: 0; }\n.wv-component-main strong { display: block; font-size: 11.5px; }\n.wv-component-main p { margin: 2px 0 0; color: var(--wv-muted); font-size: 10.5px; }\n.wv-component-detail { color: var(--wv-muted); font-size: 10px; white-space: nowrap; }\n\n@media (max-width: 760px) {\n  .wv-setup-banner { grid-template-columns: 32px minmax(0, 1fr); }\n  .wv-setup-banner-actions { grid-column: 1 / -1; justify-content: flex-start; }\n  .wv-setup-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }\n  .wv-setup-step { padding: 6px; }\n  .wv-setup-step-copy small { display: none; }\n  .wv-setup-checks.two, .wv-provider-grid, .wv-setup-credentials { grid-template-columns: 1fr; }\n  .wv-provider-card { min-height: 0; }\n  .wv-component-row { grid-template-columns: minmax(0, 1fr) auto; }\n  .wv-component-detail { display: none; }\n}\n\n.wv-dialog.sm { width: min(410px, calc(100vw - 32px)); }\n.wv-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--wv-hairline); }\n.wv-dialog-head h2 { margin: 0; font-size: 16px; font-weight: 650; }\n.wv-dialog-head p { margin: 3px 0 0; color: var(--wv-muted); font-size: 11.5px; }\n.wv-dialog-body { padding: 16px 20px; overflow-y: auto; min-height: 0; }\n.wv-dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--wv-hairline); background: color-mix(in srgb, var(--wv-layer1) 18%, transparent); }\n.wv-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }\n.wv-form-grid .full { grid-column: 1 / -1; }\n\n.wv-toast { position: fixed; z-index: 1100; right: 24px; bottom: 24px; display: flex; align-items: flex-start; gap: 9px; max-width: min(390px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 12px; line-height: 1.45; animation: wv-toastin .18s ease both; }\n.wv-toast.success { border-color: color-mix(in srgb, var(--wv-success) 25%, var(--wv-hairline)); }\n.wv-toast.success svg { color: var(--wv-success); }\n.wv-toast.error { border-color: color-mix(in srgb, var(--wv-error) 25%, var(--wv-hairline)); }\n.wv-toast.error svg { color: var(--wv-error); }\n.wv-toast svg { flex: none; margin-top: 1px; }\n@keyframes wv-toastin { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }\n\n.wv-tip { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 9px; cursor: help; vertical-align: 1px; }\n.wv-tip:hover { color: var(--wv-accent); border-color: color-mix(in srgb, var(--wv-accent) 35%, var(--wv-hairline)); }\n.wv-tip .wv-tiptext { display: none; }\n.wv-tip:hover .wv-tiptext { display: block; position: absolute; z-index: 50; margin-top: 26px; margin-left: -150px; width: 220px; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 11px; font-weight: 400; line-height: 1.45; text-align: left; }\n\n.wv-root[data-layout=\"compact\"], .wv-root[data-layout=\"narrow\"] { --wv-frame-inset: 12px; }\n.wv-root[data-layout=\"compact\"] .wv-shell { grid-template-columns: 68px minmax(0, 1fr); }\n.wv-root[data-layout=\"compact\"] .wv-brand { justify-content: center; padding-left: 0; padding-right: 0; }\n.wv-root[data-layout=\"compact\"] .wv-brandtext, .wv-root[data-layout=\"compact\"] .wv-navlabel, .wv-root[data-layout=\"compact\"] .wv-navbadge { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-navitem { justify-content: center; padding-left: 0; padding-right: 0; }\n.wv-root[data-layout=\"compact\"] .wv-navicon { width: 24px; height: 24px; }\n.wv-root[data-layout=\"compact\"] .wv-sidefoot { padding-left: 0; padding-right: 0; align-items: center; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow { justify-content: center; font-size: 0; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow .wv-live { font-size: 9px; }\n.wv-root[data-layout=\"compact\"] .wv-sidefootrow:last-child { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-content { padding-left: 18px; padding-right: 18px; }\n.wv-root[data-layout=\"compact\"] .wv-switchstate { display: none; }\n.wv-root[data-layout=\"compact\"] .wv-hero { grid-template-columns: minmax(0, 1fr) 220px; }\n\n.wv-root[data-layout=\"narrow\"] .wv-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }\n.wv-root[data-layout=\"narrow\"] .wv-sidebar { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--wv-hairline); overflow: hidden; }\n.wv-root[data-layout=\"narrow\"] .wv-brand { flex: none; padding: 0; border: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-brandmark { width: 30px; height: 30px; border-radius: 9px; }\n.wv-root[data-layout=\"narrow\"] .wv-brandtext, .wv-root[data-layout=\"narrow\"] .wv-sidefoot { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 2px; gap: 3px; scrollbar-width: none; }\n.wv-root[data-layout=\"narrow\"] .wv-nav::-webkit-scrollbar { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-navitem { width: auto; flex: none; min-height: 32px; padding: 5px 9px; gap: 6px; }\n.wv-root[data-layout=\"narrow\"] .wv-navlabel { display: block; font-size: 11.5px; }\n.wv-root[data-layout=\"narrow\"] .wv-navbadge { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-topbar { min-height: 46px; padding: 7px 16px; }\n.wv-root[data-layout=\"narrow\"] .wv-topmeta { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-content { padding: 16px 16px 92px; }\n.wv-root[data-layout=\"narrow\"] .wv-pagehead { align-items: flex-start; flex-direction: column; gap: 10px; }\n.wv-root[data-layout=\"narrow\"] .wv-pagehead-actions { justify-content: flex-start; }\n.wv-root[data-layout=\"narrow\"] .wv-hero { grid-template-columns: 1fr; padding: 20px; }\n.wv-root[data-layout=\"narrow\"] .wv-hero-art { min-height: 150px; }\n.wv-root[data-layout=\"narrow\"] .wv-grid.three, .wv-root[data-layout=\"narrow\"] .wv-grid.two, .wv-root[data-layout=\"narrow\"] .wv-grid.four { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-studio { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-studio-profile { position: static; }\n.wv-root[data-layout=\"narrow\"] .wv-emotions { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"narrow\"] .wv-adv-grid { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-row { grid-template-columns: minmax(0, 1fr) 86px 20px; }\n.wv-root[data-layout=\"narrow\"] .wv-activity-row .wv-hide-narrow { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-quick { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-quick-row:nth-child(even) { padding-left: 0; border-left: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-quick-row:nth-child(odd) { padding-right: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-perm-row { grid-template-columns: 30px minmax(0, 1fr) 86px 30px; }\n.wv-root[data-layout=\"narrow\"] .wv-perm-row .wv-perm-col.optional { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-group-row { grid-template-columns: minmax(0, 1fr) 82px 30px; }\n.wv-root[data-layout=\"narrow\"] .wv-group-row .wv-group-optional { display: none; }\n.wv-root[data-layout=\"narrow\"] .wv-form-grid { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-preview-controls { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"narrow\"] .wv-setting { align-items: flex-start; flex-direction: column; gap: 8px; }\n.wv-root[data-layout=\"narrow\"] .wv-setting-control { width: 100%; justify-content: flex-start; }\n.wv-root[data-layout=\"narrow\"] .wv-setting-control .wv-select { flex: 1; min-width: 0; }\n.wv-root[data-layout=\"narrow\"] .wv-tablewrap { overflow-x: auto; }\n.wv-root[data-layout=\"narrow\"] .wv-table { min-width: 680px; }\n\n.wv-root[data-layout=\"compact\"] .wv-emotions { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"compact\"] .wv-studio { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"compact\"] .wv-studio-profile { position: static; }\n.wv-root[data-layout=\"compact\"] .wv-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n.wv-root[data-layout=\"compact\"] .wv-grid.two { grid-template-columns: 1fr; }\n.wv-root[data-layout=\"compact\"] .wv-service { padding-right: 120px; }\n.wv-root[data-layout=\"compact\"] .wv-adv-grid { grid-template-columns: 1fr; }\n\n@media (prefers-reduced-motion: reduce) {\n  .wv-root *, .wv-root *::before, .wv-root *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }\n}\n\n/* Real config readout - read-only Core snapshot */\n.wv-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }\n.wv-config-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 11px; border: 1px solid var(--wv-hairline); border-radius: var(--wv-r-sm); background: color-mix(in srgb, var(--wv-layer2) 26%, transparent); min-width: 0; }\n.wv-config-item span { color: var(--wv-muted); font-size: 10.5px; }\n.wv-config-item strong { font-size: 12.5px; font-weight: 620; overflow-wrap: anywhere; }\n.wv-config-item small { color: var(--wv-muted); font-size: 10.5px; line-height: 1.45; overflow-wrap: anywhere; }\n.wv-config-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--wv-hairline); color: var(--wv-muted); font-size: 10.5px; }\n.wv-config-warn { color: var(--wv-warn); }\n@media (max-width: 760px) { .wv-config-grid { grid-template-columns: 1fr; } }\n\n/* Capability / status projection (Phase 4B-2B-2a) */\n.wv-cap-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }\n.wv-cap-chips .wv-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--wv-soft); border: 1px solid var(--wv-hairline); font-size: 11px; }\n.wv-cap-chips .wv-chip strong { font-size: 15px; color: var(--wv-ink); }\n.wv-cap-components { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }\n.wv-cap-component { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, var(--wv-ink) 3%, transparent); border: 1px solid var(--wv-hairline); min-width: 0; }\n.wv-cap-component strong { display: block; font-size: 12px; }\n.wv-cap-component small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-component-state { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }\n.wv-cap-surfaces { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }\n.wv-cap-surface { padding: 12px 0; border-top: 1px solid var(--wv-hairline); }\n.wv-cap-surface:first-child { border-top: 0; padding-top: 4px; }\n.wv-cap-surface-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }\n.wv-cap-surface-head strong { display: block; font-size: 12.5px; }\n.wv-cap-surface-head small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex: none; }\n.wv-cap-line { margin: 6px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--wv-muted); }\n.wv-cap-blockers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }\n.wv-cap-blocker { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 10.5px; color: var(--wv-warn); background: color-mix(in srgb, var(--wv-warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-warn) 16%, transparent); }\n.wv-cap-details { margin-top: 8px; }\n.wv-cap-details summary { cursor: pointer; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; padding: 9px 0 2px; }\n.wv-cap-detail-grid > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }\n.wv-cap-detail-grid span { font-size: 10px; color: var(--wv-muted); }\n.wv-cap-detail-grid strong { font-size: 11px; font-weight: 560; overflow-wrap: anywhere; }\n.wv-cap-detail-blockers { display: flex; flex-direction: column; gap: 5px; padding: 8px 0 2px; }\n.wv-cap-detail-blockers > div { display: flex; gap: 7px; align-items: baseline; font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-detail-blockers code { color: var(--wv-warn); font-size: 10px; }\n.wv-cap-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--wv-hairline); font-size: 10.5px; color: var(--wv-muted); }\n.wv-cap-foot-warn { color: var(--wv-warn); text-align: right; }\n@media (max-width: 760px) {\n  .wv-cap-components, .wv-cap-detail-grid { grid-template-columns: 1fr; }\n  .wv-cap-surface-head { flex-direction: column; }\n  .wv-cap-badges { justify-content: flex-start; }\n}\n\n/* Plan 09 — dual entry, dependency wizard and isolated config drafts */\n.wv-plan09-intro { display: flex; gap: 12px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--wv-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--wv-accent) 24%, transparent); margin-bottom: 14px; }\n.wv-plan09-intro-icon { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: color-mix(in srgb, var(--wv-accent) 18%, transparent); color: var(--wv-accent); flex: 0 0 auto; }\n.wv-plan09-intro p { margin: 4px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--wv-muted); }\n.wv-plan09-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-bottom: 14px; }\n.wv-plan09-mode { text-align: left; padding: 10px 11px; border-radius: 12px; border: 1px solid var(--wv-border); background: color-mix(in srgb, var(--wv-panel) 82%, transparent); color: var(--wv-text); cursor: pointer; display: flex; flex-direction: column; gap: 3px; }\n.wv-plan09-mode strong { font-size: 12.5px; }\n.wv-plan09-mode span { font-size: 10.5px; color: var(--wv-muted); line-height: 1.5; }\n.wv-plan09-mode.active { border-color: color-mix(in srgb, var(--wv-accent) 60%, transparent); background: color-mix(in srgb, var(--wv-accent) 12%, transparent); }\n.wv-plan09-group { margin-bottom: 12px; }\n.wv-plan09-group h3 { font-size: 11.5px; margin: 0 0 6px; color: var(--wv-muted); font-weight: 600; }\n.wv-plan09-dep { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--wv-border) 60%, transparent); align-items: flex-start; }\n.wv-plan09-dep:last-child { border-bottom: 0; }\n.wv-plan09-dep strong { font-size: 12px; }\n.wv-plan09-dep p { margin: 3px 0 0; font-size: 10.5px; color: var(--wv-muted); line-height: 1.5; }\n.wv-plan09-error { color: var(--wv-danger); font-size: 11px; margin: 4px 0 0; }\n.wv-plan09-failure { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 11.5px; color: var(--wv-muted); }\n.wv-plan09-failure .wv-select { max-width: 220px; }\n.wv-plan09-check { display: flex; align-items: flex-start; gap: 7px; font-size: 11.5px; color: var(--wv-muted); line-height: 1.55; margin: 6px 0; }\n.wv-plan09-checks { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 8px; }\n.wv-plan09-form { display: flex; flex-direction: column; gap: 10px; }\n.wv-plan09-errors { border: 1px solid color-mix(in srgb, var(--wv-danger) 45%, transparent); background: color-mix(in srgb, var(--wv-danger) 8%, transparent); border-radius: 10px; padding: 8px 10px; }\n.wv-plan09-errors p { margin: 2px 0; font-size: 11px; color: var(--wv-danger); }\n.wv-plan09-preview { margin-top: 10px; display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; padding: 9px 10px; border-radius: 10px; background: color-mix(in srgb, var(--wv-accent) 8%, transparent); color: var(--wv-text); }\n.wv-plan09-txline { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--wv-muted); margin-top: 4px; }\n.wv-plan09-toggles { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }\n@media (max-width: 760px) {\n  .wv-plan09-dep { flex-direction: column; }\n  .wv-plan09-modes { grid-template-columns: 1fr; }\n}\n";
 
     const NAV = [
       { id: 'overview', label: '总览', en: 'Overview', icon: 'overview', hint: '一眼看清语音系统' },
+      { id: 'voice-bubbles', label: '语音气泡', en: 'Voice Bubbles', icon: 'wave', hint: '文字转私聊语音气泡' },
+      { id: 'singing', label: '唱歌', en: 'Singing', icon: 'spark', hint: '离线翻唱与歌声演示' },
       { id: 'settings', label: '语音设置', en: 'Voice', icon: 'settings', hint: '开关与生成参数' },
       { id: 'permissions', label: '权限管理', en: 'Access', icon: 'shield', hint: '私聊与群聊白名单' },
       { id: 'safety', label: '发送与安全', en: 'Safety', icon: 'lock', hint: '紧急停止、窗口焦点与游戏保护' },
@@ -1206,6 +1208,779 @@ function deriveCapabilityView(snapshot) {
   }
 }
 
+/* Whale Voice — Plan 09 dual-entry onboarding and offline config UX model.
+ *
+ * Pure, browser-safe helpers: feature catalog, per-feature/manifest wizard persistence, mode-based
+ * dependency projections, draft validation/cleanup, and the mapping from drafts to the Coordinator
+ * change protocol. It never writes production configuration or credentials and contains no toy
+ * transaction engine: the UI must call an injected isolated adapter.
+ */
+
+const PLAN09_MANIFEST_REVISION = 2
+
+const PLAN09_FEATURES = Object.freeze([
+  { id: 'voice-bubbles', label: '语音气泡', en: 'Voice Bubbles', icon: 'wave', hint: '把文字变成私聊语音气泡' },
+  { id: 'singing', label: '唱歌', en: 'Singing', icon: 'spark', hint: '离线翻唱与歌声演示' },
+])
+
+const PLAN09_MODES = Object.freeze([
+  { id: 'local', label: '本机 GPU', desc: '全部在本机运行，需要可用的显卡与模型文件。', gpu: true, cloud: false },
+  { id: 'cpu', label: '仅 CPU', desc: '不依赖显卡，速度较慢；真实唱歌质量未验证。', gpu: false, cloud: false },
+  { id: 'cloud', label: '云端服务', desc: '使用已授权的云端 Provider；费用与文本传输需单独确认。', gpu: false, cloud: true },
+  { id: 'existing', label: '已有服务', desc: '复用本机已经安装并通过检查的服务。', gpu: false, cloud: false },
+])
+
+const PLAN09_PROVIDERS = Object.freeze([
+  { id: 'qwen-local', label: '本机 Qwen 服务', kind: 'local', models: ['Qwen3-TTS-12Hz-1.7B-Base'], voices: ['demo-voice-a', 'demo-voice-b'] },
+  { id: 'fixture-cloud', label: '隔离云端 Fixture', kind: 'cloud', models: ['fixture-cloud-voice-v1'], voices: ['cloud-voice-a'] },
+  { id: 'custom-local', label: '自定义本机服务', kind: 'custom', models: ['custom-model'], voices: ['custom-voice-a'] },
+])
+
+const PLAN09_SINGING_VOICES = Object.freeze([
+  { id: 'fixture-rvc-female', label: 'RVC 示例女声（虚构）' },
+  { id: 'fixture-rvc-male', label: 'RVC 示例男声（虚构）' },
+  { id: 'fixture-gateway', label: '已有服务音色（Gateway）' },
+])
+
+const PLAN09_DEPENDENCY_CATALOG = Object.freeze({
+  core: { label: '鲸音 Core', desc: '配置、任务与状态的可信来源；仅投递不改变它是宿主入口。', required: true, shared: true, license: '随应用', size: '—' },
+  tts: { label: 'TTS Provider', desc: '把文字合成为音频；本地服务或已授权云端。', required: true, shared: true, license: '按 Provider', size: '按模型' },
+  cloud: { label: '云端授权与网络', desc: '需要明确授权、连通性与费用确认；真实调用始终禁用。', conditional: true, license: '用户授权', size: '按量计费' },
+  rvc: { label: 'RVC 翻唱模型（首发）', desc: '标准翻唱模型；需单独确认来源与许可，不承诺低资源。', required: true, license: '需确认', size: '未知' },
+  separation: { label: '人声分离模型', desc: '混合素材需要分离人声与伴奏；干净人声可跳过。', conditional: true, license: '需确认', size: '未知' },
+  gateway: { label: '已有服务 Gateway', desc: '复用已安装服务；能力与版本必须由检查确认。', conditional: true, license: '随服务', size: '—' },
+  sender: { label: '鲸递发送模块', desc: '仅投递时必需；Sender 是鲸递内部兼容执行模块，本计划不迁移。', delivery: true, shared: true, license: '随应用', size: '—' },
+  wechat: { label: 'WeChatAgent 桥', desc: '仅投递到微信时必需；未接入时只能浏览与保存草稿。', delivery: true, shared: true, license: '上游许可', size: '—' },
+  gpu: { label: '可用 GPU / 显存', desc: '本机模式下的资源检查；未知不会被当作可用。', conditional: true, license: '—', size: '按模型' },
+  storage: { label: '磁盘空间', desc: '模型与缓存空间；未知时显示未知而不是通过。', optional: true, license: '—', size: '未知' },
+})
+
+/** Stable storage key per workspace/profile, feature and manifest revision. */
+function plan09WizardKey({ workspace = 'demo-workspace', profile = 'demo-profile', feature, manifestRevision = PLAN09_MANIFEST_REVISION } = {}) {
+  return `wv.plan09.wizard.v2.${workspace}.${profile}.${feature}.${manifestRevision}`
+}
+
+const EMPTY_WIZARD = Object.freeze({
+  introAcknowledged: false,
+  selectedMode: null,
+  mode: null,
+  browseDismissedRevision: null,
+  capabilityRevisionSeen: null,
+  updatedAt: null,
+})
+
+function plan09ReadWizard(storage, key) {
+  if (!storage || typeof storage.getItem !== 'function') return { ...EMPTY_WIZARD }
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return { ...EMPTY_WIZARD }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return { ...EMPTY_WIZARD }
+    const mode = PLAN09_MODES.some((item) => item.id === parsed.selectedMode) ? parsed.selectedMode : null
+    return {
+      introAcknowledged: parsed.introAcknowledged === true,
+      selectedMode: mode,
+      mode,
+      browseDismissedRevision: Number.isInteger(parsed.browseDismissedRevision) ? parsed.browseDismissedRevision : null,
+      capabilityRevisionSeen: Number.isInteger(parsed.capabilityRevisionSeen) ? parsed.capabilityRevisionSeen : null,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
+    }
+  } catch {
+    return { ...EMPTY_WIZARD }
+  }
+}
+
+/** `mode` and `selectedMode` are both accepted so callers cannot silently lose the choice. */
+function plan09WriteWizard(storage, key, patch = {}) {
+  if (!storage || typeof storage.setItem !== 'function') return null
+  const current = plan09ReadWizard(storage, key)
+  const requestedMode = patch.selectedMode === undefined ? patch.mode : patch.selectedMode
+  const next = {
+    introAcknowledged: patch.introAcknowledged === undefined ? current.introAcknowledged : patch.introAcknowledged === true,
+    selectedMode: requestedMode === undefined ? current.selectedMode : (PLAN09_MODES.some((item) => item.id === requestedMode) ? requestedMode : null),
+    browseDismissedRevision: patch.browseDismissedRevision === undefined ? current.browseDismissedRevision : (Number.isInteger(patch.browseDismissedRevision) ? patch.browseDismissedRevision : null),
+    capabilityRevisionSeen: patch.capabilityRevisionSeen === undefined ? current.capabilityRevisionSeen : (Number.isInteger(patch.capabilityRevisionSeen) ? patch.capabilityRevisionSeen : null),
+    updatedAt: new Date().toISOString(),
+  }
+  next.mode = next.selectedMode
+  try {
+    storage.setItem(key, JSON.stringify(next))
+    return next
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Global Setup keeps priority. Browse-only dismisses only the current manifest revision; an
+ * acknowledgement is "read", never READY. A changed capability revision reopens with a reminder.
+ */
+function plan09DeriveWizardView({ stored, capabilityRevision = null, manifestRevision = PLAN09_MANIFEST_REVISION, globalSetupOpen = false, force = false } = {}) {
+  const state = stored || EMPTY_WIZARD
+  const changed = capabilityRevision !== null && state.capabilityRevisionSeen !== null && state.capabilityRevisionSeen !== capabilityRevision
+  if (globalSetupOpen) return { shouldOpen: false, deferred: true, changed, reminder: false, reason: 'GLOBAL_SETUP_FIRST' }
+  if (force) return { shouldOpen: true, deferred: false, changed, reminder: false, reason: 'MANUAL_REOPEN' }
+  if (changed) return { shouldOpen: false, deferred: false, changed, reminder: true, reason: 'CAPABILITY_CHANGED' }
+  if (!state.introAcknowledged) {
+    if (state.browseDismissedRevision === manifestRevision) return { shouldOpen: false, deferred: false, changed, reminder: false, reason: 'BROWSED_THIS_REVISION' }
+    return { shouldOpen: true, deferred: false, changed, reminder: false, reason: 'FIRST_VISIT' }
+  }
+  return { shouldOpen: false, deferred: false, changed: false, reminder: false, reason: 'ACKNOWLEDGED' }
+}
+
+/**
+ * Minimal dependency projection. It follows the selected mode and source layout instead of forcing
+ * local models for cloud/existing modes. Delivery dependencies never block browsing or drafts.
+ */
+function plan09DependencyGroups(feature, mode, options = {}) {
+  const { sourceLayout = 'MIXED', deliveryRequested = false } = options
+  const groups = { required: [], optional: [], deliveryOnly: [], conditional: [] }
+  const add = (group, key) => {
+    const item = PLAN09_DEPENDENCY_CATALOG[key]
+    if (item && !groups[group].some((entry) => entry.key === key)) groups[group].push({ key, ...item })
+  }
+  add('required', 'core')
+  if (feature === 'voice-bubbles') add('required', 'tts')
+  if (feature === 'singing') {
+    if (mode === 'cloud' || mode === 'existing') {
+      add('conditional', mode === 'cloud' ? 'cloud' : 'gateway')
+    } else {
+      add('required', 'rvc')
+      if (sourceLayout === 'MIXED') add('required', 'separation')
+    }
+  }
+  if (mode === 'local') add('conditional', 'gpu')
+  if (mode === 'cloud') add('conditional', 'cloud')
+  add('optional', 'storage')
+  if (deliveryRequested) {
+    add('deliveryOnly', 'sender')
+    add('deliveryOnly', 'wechat')
+  }
+  return groups
+}
+
+function plan09DependencySummary(groups) {
+  const count = (group) => (groups[group] || []).length
+  return {
+    required: count('required'),
+    optional: count('optional'),
+    deliveryOnly: count('deliveryOnly'),
+    conditional: count('conditional'),
+    text: `必需 ${count('required')} 项 · 可选 ${count('optional')} 项 · 仅投递 ${count('deliveryOnly')} 项 · 条件 ${count('conditional')} 项`,
+  }
+}
+
+/** Workspace/profile/manifest/capability identity shared by dependency evidence and transactions. */
+function plan09IdentityScope(context) {
+  const state = context || {}
+  return [state.workspace, state.profile, state.manifestRevision, state.capabilityRevision].join('|')
+}
+
+/** Mode/engine scope for model- and hardware-specific dependency evidence. */
+function plan09EngineScope(context, mode, engine) {
+  return plan09IdentityScope(context) + '|' + (mode || '') + '|' + (engine || '')
+}
+
+/**
+ * Evidence scope for one dependency row. Dependencies the catalog marks `shared` belong to the host
+ * identity itself (the same Core/TTS/delivery components serve every feature and mode), so switching
+ * page or engine reuses them instead of splitting one component into separate evidence. Feature/model
+ * dependencies stay scoped by mode and engine.
+ */
+function plan09DependencyScope(context, mode, engine, key) {
+  const item = PLAN09_DEPENDENCY_CATALOG[key]
+  if (item && item.shared === true) return plan09IdentityScope(context) + '|shared'
+  return plan09EngineScope(context, mode, engine)
+}
+
+/**
+ * Transaction authority key. One undecided write belongs to one configuration source
+ * (workspace/profile/feature), so switching only the manifest/wizard revision must not produce a
+ * fresh apparently-clean transaction while the old one is still unresolved.
+ */
+function plan09TransactionKey(context, feature) {
+  const state = context || {}
+  return `wv.plan09.tx.v2.${state.workspace}.${state.profile}.${feature}`
+}
+
+function plan09DefaultVoiceDraft() {
+  return { engine: 'local', provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voiceProfile: 'demo-voice-a', language: 'zh-CN', emotion: 'neutral', speed: 1, volume: 60, text: '晚安，今天也辛苦啦。' }
+}
+
+function plan09DefaultSingingDraft() {
+  return { engine: 'rvc', provider: 'qwen-local', voiceProfile: 'fixture-rvc-female', sourceAuthorized: false, voiceConsent: false, pitch: 0, vocalGainDb: 0, instrumentalGainDb: 0, sourceLayout: 'MIXED', mixMode: 'WITH_INSTRUMENTAL', deliveryRequested: false, sourceRef: '', text: '一段虚构的试唱文本。' }
+}
+
+/** Switch engines/providers and report every incompatible field that was cleared. */
+function plan09SwitchEngine(feature, draft, engine) {
+  const next = { ...draft, engine }
+  const cleared = []
+  if (feature === 'voice-bubbles') {
+    const provider = PLAN09_PROVIDERS.find((item) => item.kind === engine) || PLAN09_PROVIDERS[0]
+    if (next.provider !== provider.id) { next.provider = provider.id; cleared.push('provider') }
+    if (!provider.models.includes(next.model)) { next.model = provider.models[0]; cleared.push('model') }
+    if (!provider.voices.includes(next.voiceProfile)) { next.voiceProfile = provider.voices[0]; cleared.push('voiceProfile') }
+    if (engine === 'cloud') {
+      next.language = 'zh-CN'
+      next.emotion = 'neutral'
+      cleared.push('language', 'emotion')
+    }
+  } else if (engine === 'svc') {
+    next.deliveryRequested = false
+    cleared.push('deliveryRequested')
+  }
+  return { draft: next, cleared }
+}
+
+function plan09SwitchMode(feature, mode, draft) {
+  const next = { ...draft }
+  const cleared = []
+  if (feature === 'voice-bubbles') {
+    const target = mode === 'cloud' ? 'cloud' : mode === 'existing' ? 'custom' : 'local'
+    if (next.engine !== target) {
+      const switched = plan09SwitchEngine(feature, next, target)
+      return switched
+    }
+    if (mode === 'cloud' && next.engine !== 'cloud') { next.engine = 'cloud'; cleared.push('engine') }
+  } else {
+    if ((mode === 'cloud' || mode === 'existing') && next.engine !== 'gateway') { next.engine = 'gateway'; cleared.push('engine') }
+    if ((mode === 'local' || mode === 'cpu') && next.engine === 'gateway') { next.engine = 'rvc'; cleared.push('engine') }
+    if ((mode === 'cloud' || mode === 'existing') && next.voiceProfile !== 'fixture-gateway') { next.voiceProfile = 'fixture-gateway'; cleared.push('voiceProfile') }
+    if ((mode === 'local' || mode === 'cpu') && next.voiceProfile === 'fixture-gateway') { next.voiceProfile = 'fixture-rvc-female'; cleared.push('voiceProfile') }
+  }
+  return { draft: next, cleared }
+}
+
+const PLAN09_VOICE_ENGINES = ['local', 'cloud', 'custom']
+const PLAN09_SINGING_ENGINES = ['rvc', 'svc', 'gateway']
+/**
+ * Catalog IDs are UX IDs; the Coordinator's existing `tts.provider` enum is
+ * `qwen-local | cloud | custom`. This is the explicit adapter between the two — it never adds a
+ * provider to the writer whitelist. An unmapped catalog ID stays draft-only.
+ */
+const PLAN09_PROVIDER_PROTOCOL = Object.freeze({
+  'qwen-local': 'qwen-local',
+  'fixture-cloud': 'cloud',
+  'custom-local': 'custom',
+})
+const PLAN09_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'auto']
+const PLAN09_EMOTIONS = ['neutral', 'gentle', 'happy', 'shy', 'playful', 'sad']
+
+function plan09ValidateVoiceDraft(draft, { cloudAuthorized = false, mode = null } = {}) {
+  const errors = []
+  if (!PLAN09_VOICE_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择本机、云端或自定义引擎。' })
+  const provider = PLAN09_PROVIDERS.find((item) => item.id === draft.provider)
+  if (!provider) errors.push({ field: 'provider', message: '请选择已支持的服务方案。' })
+  if (provider && provider.kind !== draft.engine) errors.push({ field: 'provider', message: '服务方案与引擎不一致，请重新选择。' })
+  if (!provider || !provider.models.includes(draft.model)) errors.push({ field: 'model', message: '模型与所选服务不匹配。' })
+  if (!provider || !provider.voices.includes(draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '音色与所选服务不匹配，请重新选择。' })
+  if (!PLAN09_LANGUAGES.includes(draft.language)) errors.push({ field: 'language', message: '语言不在支持范围。' })
+  if (!PLAN09_EMOTIONS.includes(draft.emotion)) errors.push({ field: 'emotion', message: '情绪不在支持范围。' })
+  if (!Number.isFinite(draft.speed) || draft.speed < 0.5 || draft.speed > 2) errors.push({ field: 'speed', message: '语速需为 0.5–2.0 的数字。' })
+  if (!Number.isFinite(draft.volume) || draft.volume < 0 || draft.volume > 100) errors.push({ field: 'volume', message: '音量需为 0–100 的数字。' })
+  if ((draft.engine === 'cloud' || mode === 'cloud') && !cloudAuthorized) errors.push({ field: 'engine', message: '云端 Provider 尚未授权，不能预览或保存。' })
+  if (mode === 'existing' && draft.engine !== 'custom') errors.push({ field: 'engine', message: '已有服务模式需要自定义/已有服务方案。' })
+  if ((mode === 'local' || mode === 'cpu') && draft.engine !== 'local') errors.push({ field: 'engine', message: '本机/仅 CPU 模式不能使用云端引擎。' })
+  if (!draft.text || !draft.text.trim()) errors.push({ field: 'text', message: '请填写演示文本。' })
+  return { ok: errors.length === 0, errors }
+}
+
+const PLAN09_SINGING_VOICE_ENGINE = Object.freeze({ 'fixture-rvc-female': 'rvc', 'fixture-rvc-male': 'rvc', 'fixture-gateway': 'gateway' })
+
+function plan09ValidateSingingDraft(draft, { gpuAvailable = null, cloudAuthorized = false, deliveryAuthorized = false, mode = 'local' } = {}) {
+  const errors = []
+  if (!PLAN09_SINGING_ENGINES.includes(draft.engine)) errors.push({ field: 'engine', message: '请选择 RVC、SVC 或 Gateway。' })
+  if (draft.engine === 'svc') errors.push({ field: 'engine', message: 'SVC 仅为后续可选，当前不发包、不承诺可用。' })
+  if (mode === 'cloud' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '云端模式需要 Gateway/已有服务，不能使用本机 RVC。' })
+  if (mode === 'cloud' && !cloudAuthorized) errors.push({ field: 'engine', message: '云端服务尚未授权，不能预览或保存。' })
+  if (mode === 'existing' && draft.engine !== 'gateway') errors.push({ field: 'engine', message: '已有服务模式需要 Gateway。' })
+  if ((mode === 'local' || mode === 'cpu') && draft.engine !== 'rvc') errors.push({ field: 'engine', message: '本机/仅 CPU 模式需要 RVC。' })
+  if (!PLAN09_SINGING_VOICES.some((voice) => voice.id === draft.voiceProfile)) errors.push({ field: 'voiceProfile', message: '请选择音色方案。' })
+  else if (PLAN09_SINGING_VOICE_ENGINE[draft.voiceProfile] !== draft.engine) errors.push({ field: 'voiceProfile', message: '音色与所选方案不匹配，请重新选择。' })
+  if (!draft.sourceAuthorized) errors.push({ field: 'sourceAuthorized', message: '必须确认演示素材已获授权。' })
+  if (!draft.voiceConsent) errors.push({ field: 'voiceConsent', message: '必须确认音色使用已获同意。' })
+  if (!/^fixture:\/\/[a-z0-9-]+$/.test(draft.sourceRef || '')) errors.push({ field: 'sourceRef', message: '请使用虚构引用，例如 fixture://demo-song-01。' })
+  if (!Number.isInteger(draft.pitch) || draft.pitch < -12 || draft.pitch > 12) errors.push({ field: 'pitch', message: '音高需为 −12..12 的整数。' })
+  for (const key of ['vocalGainDb', 'instrumentalGainDb']) {
+    if (!Number.isFinite(draft[key]) || draft[key] < -12 || draft[key] > 12) errors.push({ field: key, message: '增益需为 −12..12 dB 的数字。' })
+  }
+  if (!['MIXED', 'CLEAN_VOCAL'].includes(draft.sourceLayout)) errors.push({ field: 'sourceLayout', message: '请选择素材类型。' })
+  if (!['WITH_INSTRUMENTAL', 'VOCAL_ONLY'].includes(draft.mixMode)) errors.push({ field: 'mixMode', message: '请选择混音方式。' })
+  if (draft.deliveryRequested && !deliveryAuthorized) errors.push({ field: 'deliveryRequested', message: '未授权微信投递，只能保存草稿。' })
+  if (gpuAvailable === false && mode === 'local') errors.push({ field: 'mode', message: '当前没有可用 GPU；请切换仅 CPU、云端或已有服务。' })
+  return { ok: errors.length === 0, errors }
+}
+
+/**
+ * Map an effective draft onto the Coordinator's existing writable fields. Unsupported fields stay
+ * local draft state and are reported as such; they must not be replaced with unrelated writes.
+ */
+function plan09DraftToChanges(feature, draft, { senderRevision } = {}) {
+  if (feature !== 'voice-bubbles') {
+    return {
+      supported: false,
+      changes: null,
+      applied: [],
+      unsupported: ['唱歌草稿没有对应的 Coordinator 可写字段；本页只保存草稿，不写配置。'],
+    }
+  }
+  const protocolProvider = Object.prototype.hasOwnProperty.call(PLAN09_PROVIDER_PROTOCOL, draft.provider)
+    ? PLAN09_PROVIDER_PROTOCOL[draft.provider]
+    : null
+  if (!protocolProvider) {
+    return {
+      supported: false,
+      changes: null,
+      applied: [],
+      unsupported: ['当前服务方案没有可用的真实协议映射，只能浏览草稿；不会把未知值写进配置。'],
+    }
+  }
+  const unsupported = []
+  if (draft.language !== 'zh-CN') unsupported.push('语言')
+  if (draft.emotion !== 'neutral') unsupported.push('情绪')
+  if (draft.speed !== 1) unsupported.push('语速')
+  if (draft.volume !== 60) unsupported.push('音量')
+  if (draft.engine === 'cloud') unsupported.push('云端真实调用（仅演示授权）')
+  return {
+    supported: true,
+    changes: {
+      schemaVersion: 1,
+      changes: {
+        senderService: {
+          expectedRevision: senderRevision,
+          set: {
+            tts: { provider: protocolProvider, model: draft.model, voice: draft.voiceProfile },
+          },
+        },
+      },
+    },
+    protocolProvider,
+    applied: ['Provider', '模型', '音色'],
+    unsupported,
+  }
+}
+
+const PLAN09_RESULT_STATES = ['PREPARED', 'SAVED', 'PENDING_APPLY', 'APPLIED', 'PARTIALLY_APPLIED', 'CONFLICT', 'UNKNOWN', 'FAILED']
+
+/**
+ * Classify an operation result by the Coordinator's own `state`. `ok` alone is not a transaction
+ * state: an empty/null response, `{ok:true}` without a state, or any unrecognised shape means the
+ * outcome of an already-sent operation is unknown — never saved and never "failed with no write".
+ * A `PREPARED` answer to an execute/apply call means the operation was refused before writing.
+ */
+function plan09ClassifyCoordinatorResult(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return { recognized: false, phase: 'UNKNOWN', transactionId: null, errorCode: 'EMPTY_RESPONSE', result: null }
+  }
+  const transactionId = typeof result.transactionId === 'string' && result.transactionId ? result.transactionId : null
+  const errorCode = result.error && typeof result.error.code === 'string' ? result.error.code : null
+  const state = typeof result.state === 'string' && PLAN09_RESULT_STATES.includes(result.state) ? result.state : null
+  if (!state) return { recognized: false, phase: 'UNKNOWN', transactionId, errorCode: errorCode || 'NO_TRUSTED_STATE', result }
+  if (state === 'PREPARED') return { recognized: true, phase: 'FAILED', transactionId, errorCode: errorCode || 'NOT_EXECUTED', result }
+  return { recognized: true, phase: state, transactionId, errorCode, result }
+}
+
+/** Project a Coordinator result into the labels the UI may truthfully show. */
+function plan09ProjectCoordinatorResult(result) {
+  if (!result || typeof result !== 'object') return { phase: 'UNKNOWN', label: '结果未知 · 只读', tone: 'error', canApply: false, text: '未收到可信事务结果。' }
+  const classified = plan09ClassifyCoordinatorResult(result)
+  const state = classified.phase
+  const map = {
+    PREPARED: ['已准备计划', 'wait', false],
+    SAVED: ['已保存 · 待生效', 'busy', true],
+    PENDING_APPLY: ['已保存 · 待生效', 'busy', true],
+    APPLIED: ['已生效', 'online', false],
+    PARTIALLY_APPLIED: ['部分生效 · 非 APPLIED', 'busy', false],
+    CONFLICT: ['冲突 / 已拒绝', 'error', false],
+    UNKNOWN: ['结果未知 · 只读', 'error', false],
+    FAILED: ['失败', 'error', false],
+  }
+  const [label, tone, canApply] = map[state] || ['结果未知 · 只读', 'error', false]
+  const steps = Array.isArray(result.steps) ? result.steps.map((step) => ({
+    source: step.source || null,
+    status: step.status || null,
+    savedRevision: step.savedRevision || null,
+    applyStatus: step.applyStatus || null,
+    activeRevision: step.activeRevision === undefined ? null : step.activeRevision,
+  })) : []
+  return {
+    phase: state,
+    label,
+    tone,
+    canApply,
+    transactionId: classified.transactionId,
+    planId: result.plan ? result.plan.planId : null,
+    expectedRevision: result.plan ? result.plan.expectedRevision : null,
+    activeRevision: result.activeRevision === undefined ? null : result.activeRevision,
+    activeConfirmed: result.activeConfirmed === true,
+    steps,
+    confirmed: Array.isArray(result.confirmed) ? result.confirmed : [],
+    mismatch: Array.isArray(result.mismatch) ? result.mismatch : [],
+    rejected: Array.isArray(result.rejected) ? result.rejected : [],
+    errorCode: classified.errorCode,
+    text: `事务 ${state} · ${result.applyState || '未生效'}`,
+  }
+}
+
+/**
+ * Transaction authority for the panel. One plain entry per workspace/profile/feature identity:
+ * the prepared snapshot, the operations already sent, the unresolved/unknown outcome and the
+ * determined terminal state live here instead of inside one component instance. Events are pure
+ * reducers so cross-page, late-response and lost-response behavior is testable without a browser.
+ */
+const PLAN09_TX_PREPARE_PHASES = ['DIRTY', 'CONFLICT', 'FAILED', 'APPLIED']
+const PLAN09_TX_RESETTABLE_PHASES = ['SAVED', 'PENDING_APPLY', 'APPLIED', 'PARTIALLY_APPLIED']
+
+function plan09TransactionInitial() {
+  return {
+    phase: 'DIRTY',
+    busy: false,
+    inFlight: null,
+    plan: null,
+    result: null,
+    txId: null,
+    error: null,
+    planStale: false,
+    contextStale: false,
+    draftDirty: false,
+    outcomeUnknown: false,
+    frozenChanges: null,
+    frozenSerial: null,
+    contextSerial: null,
+    history: [],
+    opSeq: 0,
+    inFlightSeq: 0,
+    draftVersion: 0,
+    inFlightContext: null,
+    noWriteConfirmed: false,
+  }
+}
+
+function plan09TransactionStartNext(current, event) {
+  const at = event && typeof event.at === 'string' ? event.at : null
+  const history = current.txId || current.phase === 'APPLIED'
+    ? [{ phase: current.phase, txId: current.txId, error: current.error, at }, ...(current.history || [])].slice(0, 5)
+    : current.history || []
+  const seq = (current.opSeq || 0) + 1
+  return {
+    ...plan09TransactionInitial(),
+    history,
+    draftVersion: current.draftVersion || 0,
+    opSeq: seq,
+    inFlightSeq: seq,
+  }
+}
+
+/**
+ * Trusted "nothing was written" evidence. The Coordinator only reports `FAILED` for an execute when
+ * the adapter declared `writeOutcome: NOT_WRITTEN` and every already-saved step was rolled back;
+ * recovery repeats `FAILED`/`committed:false`. Everything else (unknown write outcome, missing state,
+ * in-flight journal) is `UNKNOWN` and stays latched.
+ */
+function plan09NoWriteConfirmed(result) {
+  if (!result || typeof result !== 'object') return false
+  if (result.state !== 'FAILED') return false
+  const error = result.error && typeof result.error === 'object' ? result.error : null
+  if (error && (error.rolledBack === true || error.writeOutcome === 'NOT_WRITTEN')) return true
+  return result.committed === false && result.recoveryRequired === false
+}
+
+/**
+ * Finish an already-sent operation. The Coordinator's own `state` is authoritative; an empty or
+ * incomplete answer is an unknown outcome (no invented success, no invented pre-write failure).
+ */
+function plan09TransactionFinish(current, result) {
+  const classified = plan09ClassifyCoordinatorResult(result)
+  const txId = classified.transactionId || current.txId || null
+  return {
+    ...current,
+    busy: false,
+    inFlight: null,
+    phase: classified.phase,
+    plan: null,
+    result: classified.result,
+    txId,
+    error: classified.errorCode,
+    planStale: false,
+    contextStale: false,
+    outcomeUnknown: classified.phase === 'UNKNOWN' && !txId,
+    noWriteConfirmed: classified.phase === 'FAILED' && plan09NoWriteConfirmed(result),
+  }
+}
+
+function plan09ReduceTransaction(entry, event = {}) {
+  const current = { ...plan09TransactionInitial(), ...(entry || {}) }
+  switch (event.type) {
+    case 'DRAFT_EDITED': {
+      const draftVersion = (current.draftVersion || 0) + 1
+      const next = { ...current, draftDirty: true, draftVersion }
+      if (current.busy) return next
+      if (current.phase === 'APPLIED') return { ...plan09TransactionStartNext(current, event), draftDirty: true, draftVersion }
+      if (current.txId || current.outcomeUnknown || current.phase === 'UNKNOWN') return next
+      return {
+        ...next,
+        phase: 'DIRTY',
+        error: null,
+        plan: null,
+        result: null,
+        planStale: false,
+        frozenChanges: null,
+        frozenSerial: null,
+        contextSerial: null,
+      }
+    }
+    case 'START_NEXT_CYCLE':
+    case 'RESET': {
+      if (current.busy) return current
+      if (!plan09CanReset(current)) return current
+      return plan09TransactionStartNext(current, event)
+    }
+    case 'PREPARE_START': {
+      if (current.busy) return current
+      const seq = (current.opSeq || 0) + 1
+      return {
+        ...current,
+        busy: true,
+        inFlight: 'prepare',
+        opSeq: seq,
+        inFlightSeq: seq,
+        inFlightContext: typeof event.contextSerial === 'string' ? event.contextSerial : null,
+        error: null,
+      }
+    }
+    case 'PREPARE_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      const result = event.result || null
+      if (event.stale === true) {
+        return {
+          ...current,
+          busy: false,
+          inFlight: null,
+          phase: 'DIRTY',
+          plan: null,
+          result: null,
+          txId: null,
+          error: 'STALE_PREPARE',
+          draftDirty: true,
+          planStale: false,
+          frozenChanges: null,
+          frozenSerial: null,
+          contextSerial: null,
+        }
+      }
+      if (!result || result.ok !== true || !result.plan || typeof result.plan.planId !== 'string') {
+        return {
+          ...current,
+          busy: false,
+          inFlight: null,
+          phase: 'FAILED',
+          plan: null,
+          result: result || null,
+          txId: null,
+          error: result && result.error && result.error.code ? result.error.code : 'PREPARE_FAILED',
+          draftDirty: false,
+          planStale: false,
+          frozenChanges: null,
+          frozenSerial: null,
+          contextSerial: null,
+        }
+      }
+      const preparedContext = typeof event.contextSerial === 'string' ? event.contextSerial : null
+      const contextChanged = typeof current.inFlightContext === 'string' && preparedContext !== null && current.inFlightContext !== preparedContext
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'PREPARED',
+        plan: result.plan,
+        result,
+        txId: null,
+        error: contextChanged ? 'CONTEXT_CHANGED' : null,
+        draftDirty: false,
+        planStale: contextChanged,
+        contextStale: contextChanged,
+        frozenChanges: event.frozenChanges || null,
+        frozenSerial: typeof event.frozenSerial === 'string' ? event.frozenSerial : null,
+        contextSerial: preparedContext,
+      }
+    }
+    case 'PREPARE_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'FAILED',
+        plan: null,
+        result: null,
+        txId: null,
+        error: typeof event.error === 'string' ? event.error : 'PREPARE_REJECTED',
+        frozenChanges: null,
+        frozenSerial: null,
+        contextSerial: null,
+      }
+    }
+    case 'CONTEXT_CHANGED': {
+      const next = { ...current, contextStale: true }
+      if (current.plan && !current.busy) return { ...next, planStale: true, error: 'CONTEXT_CHANGED' }
+      return next
+    }
+    case 'PLAN_CONTENT_CHANGED':
+      return { ...current, planStale: true, error: 'PLAN_CONTENT_CHANGED' }
+    case 'AUTHORIZATION_CHANGED':
+      return { ...current, planStale: true, error: 'AUTHORIZATION_CHANGED' }
+    case 'EXECUTE_START': {
+      if (current.busy) return current
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'execute', opSeq: seq, inFlightSeq: seq, error: null }
+    }
+    case 'EXECUTE_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
+    case 'EXECUTE_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
+      return {
+        ...current,
+        busy: false,
+        inFlight: null,
+        phase: 'UNKNOWN',
+        plan: null,
+        result: null,
+        txId: null,
+        error: 'RESPONSE_LOST',
+        planStale: false,
+        outcomeUnknown: true,
+      }
+    }
+    case 'APPLY_START': {
+      if (current.busy) return current
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'apply', opSeq: seq, inFlightSeq: seq, error: null }
+    }
+    case 'APPLY_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
+    case 'APPLY_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
+      return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'APPLY_REJECTED', plan: null }
+    }
+    case 'STATUS_START': {
+      if (current.busy) return current
+      const seq = (current.opSeq || 0) + 1
+      return { ...current, busy: true, inFlight: 'status', opSeq: seq, inFlightSeq: seq, error: null }
+    }
+    case 'STATUS_DONE': {
+      if (event.seq !== current.inFlightSeq) return current
+      return plan09TransactionFinish(current, event.result)
+    }
+    case 'STATUS_LOST': {
+      if (event.seq !== current.inFlightSeq) return current
+      return { ...current, busy: false, inFlight: null, phase: 'UNKNOWN', error: 'STATUS_UNKNOWN', plan: null }
+    }
+    default:
+      return current
+  }
+}
+
+/** Buttons follow the shared authority, not a component-local busy flag. */
+function plan09CanPrepare(entry, { currentSerial = null } = {}) {
+  const current = entry || plan09TransactionInitial()
+  if (current.busy || current.txId || current.outcomeUnknown === true) return false
+  if (PLAN09_TX_PREPARE_PHASES.includes(current.phase)) return true
+  if (current.phase === 'PREPARED') {
+    if (current.planStale === true) return true
+    return typeof current.frozenSerial === 'string' && current.frozenSerial !== currentSerial
+  }
+  return false
+}
+
+function plan09CanConfirm(entry, { currentSerial = null, contextSerial = null } = {}) {
+  const current = entry || plan09TransactionInitial()
+  if (current.busy || !current.plan || current.phase !== 'PREPARED' || current.planStale) return false
+  if (typeof current.frozenSerial === 'string' && current.frozenSerial !== currentSerial) return false
+  if (typeof current.contextSerial === 'string' && current.contextSerial !== contextSerial) return false
+  return true
+}
+
+function plan09CanApply(entry) {
+  const current = entry || plan09TransactionInitial()
+  return !current.busy && Boolean(current.txId) && ['SAVED', 'PENDING_APPLY'].includes(current.phase) && current.outcomeUnknown !== true
+}
+
+function plan09CanReadStatus(entry) {
+  const current = entry || plan09TransactionInitial()
+  return !current.busy && Boolean(current.txId)
+}
+
+/**
+ * Only a determined outcome may end a transaction and start a new draft. UNKNOWN (with or without a
+ * transaction ID) is unresolved: it stays latched until a trusted status check decides it. A
+ * Coordinator `FAILED` is determined — and when it also carries trusted no-write/rollback evidence
+ * the UI may say so — but ending the association never replays the consumed plan.
+ */
+function plan09CanReset(entry) {
+  const current = entry || plan09TransactionInitial()
+  if (current.busy || current.outcomeUnknown === true) return false
+  if (PLAN09_TX_RESETTABLE_PHASES.includes(current.phase)) return true
+  if (current.phase !== 'FAILED') return false
+  if (current.noWriteConfirmed === true) return true
+  return Boolean(current.result) && current.result.state === 'FAILED'
+}
+
+/** Display projection for the panel: the entry phase decides, never `ok` or a stale result. */
+function plan09TransactionView(entry) {
+  const current = { ...plan09TransactionInitial(), ...(entry || {}) }
+  if (current.outcomeUnknown === true && !current.txId) {
+    return { phase: 'UNKNOWN', label: '结果未知 · 未收到响应', tone: 'error', text: '未收到保存响应：写入可能已经发生；没有可信结果，不能当作失败，也不能重置或自动重试。' }
+  }
+  const map = {
+    DIRTY: ['未保存草稿', 'wait'],
+    FAILED: ['失败', 'error'],
+    CONFLICT: ['冲突', 'error'],
+    PREPARED: ['已准备计划', 'wait'],
+    SAVED: ['已保存 · 待生效', 'busy'],
+    PENDING_APPLY: ['已保存 · 待生效', 'busy'],
+    APPLIED: ['已生效', 'online'],
+    PARTIALLY_APPLIED: ['部分生效 · 非 APPLIED', 'busy'],
+    UNKNOWN: ['结果未知 · 只读', 'error'],
+  }
+  const [label, tone] = map[current.phase] || ['未保存草稿', 'wait']
+  let text = '事务 ' + current.phase + ' · 尚未取得生效确认。'
+  if (current.phase === 'UNKNOWN') text = '事务结果未知 · 只读：取得可信状态前不能结束或开始新的写入。'
+  else if (current.phase === 'FAILED' && current.noWriteConfirmed === true) text = '已取得可信“未写入/已回滚”结论：结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'FAILED') text = '已确定失败；结束关联后可准备下一份草稿，旧计划不会重放。'
+  else if (current.phase === 'PREPARED' && current.planStale === true) text = '准备期间上下文/授权已变化：旧计划不可确认，可直接重新准备。'
+  return { phase: current.phase, label, tone, text }
+}
+
+function plan09InstallView(status) {
+  const map = {
+    idle: { label: '未检查', tone: 'wait', busy: false },
+    checking: { label: '检查中', tone: 'wait', busy: true },
+    unavailable: { label: '不可用', tone: 'error', busy: false },
+    installing: { label: '演示安装中', tone: 'busy', busy: true },
+    installed: { label: '已安装 · 待验证', tone: 'wait', busy: false },
+    ready: { label: '演示就绪', tone: 'demo', busy: false },
+    blocked: { label: '阻塞', tone: 'error', busy: false },
+    cancelled: { label: '已取消', tone: 'wait', busy: false },
+    failed: { label: '演示失败', tone: 'error', busy: false },
+  }
+  return map[status] || map.idle
+}
+
+function plan09InstallFailureReason(code) {
+  const map = {
+    NO_GPU: '没有检测到可用 GPU；可以切换 CPU 或云端，或稍后重试。',
+    OFFLINE: '网络不可用；演示不会发起真实下载，请恢复网络后重新检查。',
+    NO_SPACE: '磁盘空间不足；请清理空间或更换安装位置后重试。',
+    LICENSE_MISSING: '模型许可未确认；请阅读来源与许可并取得授权。',
+    NO_ADAPTER: '未接入隔离适配器，不能执行依赖检查。',
+    UNKNOWN: '状态未知；不会当作安装成功，请重新检查。',
+  }
+  return map[code] || map.UNKNOWN
+}
 function SettingRow({ title, desc, children, tip }) {
   return h('div', { className: 'wv-setting' },
     h('div', { className: 'wv-setting-copy' },
@@ -2041,6 +2816,687 @@ function AdvancedPage({ notify, setup, capability, onSetup, onComponents }) {
     ))
 }
 
+/* Plan 09 — two entry pages, shared dependency wizard and Coordinator-backed config drafts.
+ * All state is fake/local; the UI only talks to an injected isolated adapter and never writes
+ * production configuration or credentials.
+ */
+
+function plan09Adapter() {
+  try {
+    const adapter = window.__WHALE_PLAN09_CONFIG__
+    return adapter && typeof adapter.prepareChange === 'function' ? adapter : null
+  } catch {
+    return null
+  }
+}
+
+function plan09Context(adapter) {
+  const fallback = {
+    workspace: 'demo-workspace', profile: 'demo-profile', manifestRevision: PLAN09_MANIFEST_REVISION,
+    capabilityRevision: null, gpuAvailable: null, cloudAuthorized: false, deliveryAuthorized: false, senderRevision: null,
+  }
+  if (!adapter || typeof adapter.getContext !== 'function') return fallback
+  try {
+    const context = adapter.getContext() || {}
+    return { ...fallback, ...context, manifestRevision: context.manifestRevision || PLAN09_MANIFEST_REVISION }
+  } catch {
+    return fallback
+  }
+}
+
+/* Dependency evidence follows the shared host identity. Items the catalog marks `shared` are keyed
+ * by identity only, so Core/TTS/WeChat evidence is reused across pages; model/GPU evidence stays
+ * keyed by mode + engine. Every write notifies all observers of the identity, and a page cancels
+ * only the operations it started, so closing a wizard cannot leave a hidden pending check behind. */
+const PLAN09_DEP_STORE = { states: new Map(), timers: new Map(), generations: new Map(), owners: new Map(), listeners: new Map() }
+
+function plan09DepSubscribe(channel, listener) {
+  const list = PLAN09_DEP_STORE.listeners.get(channel) || new Set()
+  list.add(listener)
+  PLAN09_DEP_STORE.listeners.set(channel, list)
+  return () => { list.delete(listener); if (!list.size) PLAN09_DEP_STORE.listeners.delete(channel) }
+}
+
+function plan09DepNotify(channel) {
+  const list = PLAN09_DEP_STORE.listeners.get(channel)
+  if (list) for (const listener of [...list]) listener()
+}
+
+function plan09DepKey(context, mode, engine, key) {
+  return plan09DependencyScope(context, mode, engine, key) + '||' + key
+}
+
+function plan09DepClearTimer(mapKey) {
+  const timer = PLAN09_DEP_STORE.timers.get(mapKey)
+  if (timer) clearTimeout(timer)
+  PLAN09_DEP_STORE.timers.delete(mapKey)
+}
+
+function plan09DepState(context, mode, engine, key) {
+  return PLAN09_DEP_STORE.states.get(plan09DepKey(context, mode, engine, key)) || { status: 'idle' }
+}
+
+function plan09DepRun({ context, mode, engine, key, action, adapter, failure, owner }) {
+  const channel = plan09IdentityScope(context)
+  const mapKey = plan09DepKey(context, mode, engine, key)
+  const generation = (PLAN09_DEP_STORE.generations.get(mapKey) || 0) + 1
+  PLAN09_DEP_STORE.generations.set(mapKey, generation)
+  plan09DepClearTimer(mapKey)
+  const current = PLAN09_DEP_STORE.states.get(mapKey) || { status: 'idle' }
+  const write = (value) => {
+    PLAN09_DEP_STORE.states.set(mapKey, value)
+    plan09DepNotify(channel)
+  }
+  const settle = (value) => {
+    PLAN09_DEP_STORE.owners.delete(mapKey)
+    write(value)
+  }
+  if (action === 'cancel') {
+    PLAN09_DEP_STORE.owners.delete(mapKey)
+    write({ ...current, status: 'cancelled', busy: false, reason: 'CANCELLED' })
+    return
+  }
+  if (action === 'retry') {
+    PLAN09_DEP_STORE.owners.delete(mapKey)
+    write({ status: 'idle' })
+    return
+  }
+  PLAN09_DEP_STORE.owners.set(mapKey, owner)
+  if (action === 'check' || action === 'verify') {
+    write({ ...current, status: 'checking', busy: true })
+    const timer = setTimeout(() => {
+      if (PLAN09_DEP_STORE.generations.get(mapKey) !== generation) return
+      let result = { ready: false, reason: 'NO_ADAPTER' }
+      if (adapter) {
+        try {
+          result = adapter.checkDependency(key, { scope: plan09DependencyScope(context, mode, engine, key) }) || result
+        } catch {
+          result = { ready: false, reason: 'CHECK_FAILED' }
+        }
+      }
+      Promise.resolve(result).then((resolved) => {
+        if (PLAN09_DEP_STORE.generations.get(mapKey) !== generation) return
+        const value = resolved || { ready: false, reason: 'UNKNOWN' }
+        settle(value.ready
+          ? { status: 'ready', busy: false, demo: true, checkedAt: new Date().toISOString() }
+          : { status: 'unavailable', busy: false, reason: value.reason || 'UNKNOWN' })
+      }, () => {
+        if (PLAN09_DEP_STORE.generations.get(mapKey) !== generation) return
+        settle({ status: 'unavailable', busy: false, reason: 'CHECK_FAILED' })
+      })
+    }, 180)
+    PLAN09_DEP_STORE.timers.set(mapKey, timer)
+    return
+  }
+  if (action === 'install') {
+    write({ ...current, status: 'installing', busy: true })
+    const timer = setTimeout(() => {
+      if (PLAN09_DEP_STORE.generations.get(mapKey) !== generation) return
+      if (failure && failure !== 'NONE') settle({ status: 'blocked', busy: false, reason: failure })
+      else settle({ status: 'installed', busy: false, demo: true, checkedAt: null })
+    }, 260)
+    PLAN09_DEP_STORE.timers.set(mapKey, timer)
+  }
+}
+
+/* Cancel the engine scope plus every operation this page started (shared items included). Completed
+ * evidence stays; a pending operation becomes CANCELLED and its late result is discarded. */
+function plan09CancelDeps(context, mode, engine, owner) {
+  const channel = plan09IdentityScope(context)
+  const enginePrefix = plan09EngineScope(context, mode, engine) + '||'
+  const match = (mapKey) => mapKey.startsWith(enginePrefix) || (owner ? PLAN09_DEP_STORE.owners.get(mapKey) === owner : false)
+  for (const [mapKey, timer] of [...PLAN09_DEP_STORE.timers.entries()]) {
+    if (!match(mapKey)) continue
+    clearTimeout(timer)
+    PLAN09_DEP_STORE.timers.delete(mapKey)
+  }
+  let touched = false
+  for (const [mapKey, current] of [...PLAN09_DEP_STORE.states.entries()]) {
+    if (!match(mapKey)) continue
+    PLAN09_DEP_STORE.generations.set(mapKey, (PLAN09_DEP_STORE.generations.get(mapKey) || 0) + 1)
+    PLAN09_DEP_STORE.owners.delete(mapKey)
+    if (current && current.busy) {
+      PLAN09_DEP_STORE.states.set(mapKey, { ...current, status: 'cancelled', busy: false, reason: 'CANCELLED' })
+      touched = true
+    }
+  }
+  if (touched) plan09DepNotify(channel)
+}
+
+function Plan09Wizard({ open, feature, mode, engine = '', setMode, context, sourceLayout = 'MIXED', deliveryRequested = false, onClose, onAcknowledge, onBrowse, notify, owner }) {
+  const [, setDepTick] = React.useState(0)
+  const [failure, setFailure] = React.useState('NONE')
+  const [introChecked, setIntroChecked] = React.useState(false)
+  const channel = plan09IdentityScope(context)
+  React.useEffect(() => plan09DepSubscribe(channel, () => setDepTick((value) => value + 1)), [channel])
+  if (!open) return null
+  const featureId = feature && feature.id ? feature.id : feature
+  const adapter = plan09Adapter()
+  const groups = plan09DependencyGroups(featureId, mode, { sourceLayout, deliveryRequested })
+  const run = (key, action) => plan09DepRun({ context, mode, engine, key, action, adapter, failure, owner })
+  const close = () => { plan09CancelDeps(context, mode, engine, owner); onClose() }
+  const browse = () => { plan09CancelDeps(context, mode, engine, owner); onBrowse() }
+  const rowFor = (dep) => {
+    const state = plan09DepState(context, mode, engine, dep.key)
+    const view = plan09InstallView(state.status)
+    const buttons = [
+      h(Badge, { key: 'badge', tone: view.tone }, view.label),
+      h(Button, { key: 'check', size: 'sm', variant: 'ghost', disabled: state.busy, onClick: () => run(dep.key, 'check'), 'data-testid': 'plan09-check-' + dep.key }, '演示检查'),
+    ]
+    if (state.status !== 'ready') {
+      buttons.push(h(Button, { key: 'install', size: 'sm', disabled: state.busy || !adapter, title: adapter ? '' : '未接入配置适配器', onClick: () => run(dep.key, 'install'), 'data-testid': 'plan09-install-' + dep.key }, '演示安装'))
+    }
+    if (state.status === 'installed') {
+      buttons.push(h(Button, { key: 'verify', size: 'sm', onClick: () => run(dep.key, 'verify'), 'data-testid': 'plan09-verify-' + dep.key }, '验证能力'))
+    }
+    if (state.busy) buttons.push(h(Button, { key: 'cancel', size: 'sm', variant: 'ghost', onClick: () => run(dep.key, 'cancel'), 'data-testid': 'plan09-cancel-' + dep.key }, '取消'))
+    if (state.status === 'blocked' || state.status === 'failed' || state.status === 'unavailable') {
+      buttons.push(h(Button, { key: 'retry', size: 'sm', variant: 'ghost', onClick: () => run(dep.key, 'retry'), 'data-testid': 'plan09-retry-' + dep.key }, '重试'))
+    }
+    return h('div', { key: dep.key, className: 'wv-plan09-dep', 'data-testid': 'plan09-dep-' + dep.key, 'data-state': state.status },
+      h('div', null,
+        h('strong', null, dep.label),
+        h('p', null, dep.desc),
+        h('p', { className: 'wv-muted' }, '来源/许可：' + (dep.license || '未知') + ' · 体积：' + (dep.size || '未知')),
+        state.status === 'blocked' || state.status === 'unavailable' ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-dep-reason-' + dep.key }, plan09InstallFailureReason(state.reason)) : null),
+      h('div', { className: 'wv-row' }, buttons))
+  }
+  const groupSection = (key, title) => {
+    if (!groups[key].length) return null
+    return h('section', { key, className: 'wv-plan09-group' },
+      h('h3', null, title, h('span', { className: 'wv-muted' }, ' · ' + groups[key].length)),
+      groups[key].map(rowFor))
+  }
+  const footer = h(React.Fragment, null,
+    h('span', { className: 'wv-setup-footnote' }, '演示向导 · 不下载、不安装、不写生产配置'),
+    h('span', { className: 'wv-spacer' }),
+    h(Button, { variant: 'ghost', onClick: browse, 'data-testid': 'plan09-wizard-browse' }, '仅浏览'),
+    h(Button, {
+      variant: 'primary', disabled: !introChecked, 'data-testid': 'plan09-wizard-acknowledge',
+      onClick: () => { plan09CancelDeps(context, mode, engine, owner); onAcknowledge({ mode, introAcknowledged: true }) },
+    }, '知道啦，进入演示'))
+  return h(Modal, {
+    title: feature.label + ' · 首次依赖向导',
+    subtitle: '先看依赖，再决定本机、CPU、云端或已有服务；确认只代表读过说明，不代表已就绪。',
+    size: 'lg', onClose: close, footer,
+  },
+    h('div', { className: 'wv-plan09-intro', 'data-testid': 'plan09-wizard' },
+      h('div', { className: 'wv-plan09-intro-icon' }, h(Icon, { name: feature.icon, size: 20 })),
+      h('div', null,
+        h('strong', null, featureId === 'singing' ? '唱歌需要 RVC 与必要的人声分离' : '语音气泡需要 TTS 和微信投递组件'),
+        h('p', null, feature.hint + '。所有依赖检查、安装进度与失败恢复都是隔离演示，不会下载文件或启动真实服务。'),
+        h('p', { className: 'wv-muted' }, '音色、Provider 与依赖共用同一份来源；这里不会创建第二套账号或凭据。'))),
+    h('div', { className: 'wv-plan09-modes', role: 'group', 'aria-label': '运行模式' },
+      PLAN09_MODES.map((item) => h('button', {
+        key: item.id, type: 'button', 'data-testid': 'plan09-mode-' + item.id,
+        className: 'wv-plan09-mode' + (mode === item.id ? ' active' : ''),
+        onClick: () => setMode(item.id),
+      },
+        h('strong', null, item.label),
+        h('span', null, item.desc)))),
+    h('div', { className: 'wv-plan09-groups' },
+      groupSection('required', '必需依赖'),
+      groupSection('conditional', '按模式条件'),
+      groupSection('optional', '可选'),
+      groupSection('deliveryOnly', '仅投递时必需')),
+    h('div', { className: 'wv-plan09-failure' },
+      h('span', null, '演示失败原因：'),
+      h('select', {
+        className: 'wv-select', value: failure, 'data-testid': 'plan09-failure-select',
+        onChange: (event) => setFailure(event.target.value),
+      },
+        [['NONE', '不注入失败'], ['NO_GPU', '没有 GPU'], ['OFFLINE', '断网'], ['NO_SPACE', '磁盘空间不足'], ['LICENSE_MISSING', '许可缺失'], ['UNKNOWN', '状态未知']].map(([value, label]) => h('option', { key: value, value }, label)))),
+    h('label', { className: 'wv-plan09-check' },
+      h('input', { type: 'checkbox', checked: introChecked, 'data-testid': 'plan09-intro-check', onChange: (event) => setIntroChecked(event.target.checked) }),
+      h('span', null, '我已了解这是隔离演示；确认不会把组件标成真实安装成功，也不会提升生产权限。')),
+    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, '当前记录：' + (context.introAcknowledged ? '已确认过本版本说明' : '本版本尚未确认') + ' · manifest r' + context.manifestRevision))
+}
+
+function Plan09DraftField({ label, children, hint }) {
+  return h('div', { className: 'wv-field' }, h('label', null, label), children, hint ? h('small', { className: 'wv-muted' }, hint) : null)
+}
+
+const PLAN09_TX_STORE = new Map()
+const PLAN09_TX_LISTENERS = new Map()
+/* Latest context serial rendered for each transaction key. A prepare completed by an unmounted
+ * component must compare against this live value, not the closure captured at its own last render. */
+const PLAN09_TX_CONTEXT = new Map()
+
+function plan09TxRead(key) {
+  return PLAN09_TX_STORE.get(key) || plan09TransactionInitial()
+}
+
+function plan09TxSubscribe(key, listener) {
+  const list = PLAN09_TX_LISTENERS.get(key) || new Set()
+  list.add(listener)
+  PLAN09_TX_LISTENERS.set(key, list)
+  return () => { list.delete(listener); if (!list.size) PLAN09_TX_LISTENERS.delete(key) }
+}
+
+function plan09TxSet(key, next) {
+  if (next) PLAN09_TX_STORE.set(key, next)
+  else PLAN09_TX_STORE.delete(key)
+  const list = PLAN09_TX_LISTENERS.get(key)
+  if (list) for (const listener of [...list]) listener()
+}
+
+function Plan09TransactionPanel({ feature, draft, validate, context, txKey, contextSerial, onNotify }) {
+  const adapter = plan09Adapter()
+  const [, setTick] = React.useState(0)
+  const entry = plan09TxRead(txKey)
+  const draftRef = React.useRef(draft)
+  draftRef.current = draft
+  const contextRef = React.useRef(contextSerial)
+  contextRef.current = contextSerial
+  PLAN09_TX_CONTEXT.set(txKey, contextSerial)
+  const lastDraft = React.useRef(JSON.stringify(draft))
+  const changes = plan09DraftToChanges(feature, draft, { senderRevision: context.senderRevision })
+  const unsupported = changes.unsupported || []
+  const changesSerial = changes.supported ? JSON.stringify(changes.changes) : null
+
+  React.useEffect(() => plan09TxSubscribe(txKey, () => setTick((value) => value + 1)), [txKey])
+
+  const dispatch = (event) => {
+    const next = plan09ReduceTransaction(plan09TxRead(txKey), event)
+    plan09TxSet(txKey, next)
+    return next
+  }
+
+  React.useEffect(() => {
+    const serial = JSON.stringify(draft)
+    if (serial === lastDraft.current) return
+    lastDraft.current = serial
+    dispatch({ type: 'DRAFT_EDITED', at: new Date().toISOString() })
+  }, [draft, txKey])
+
+  React.useEffect(() => {
+    const current = plan09TxRead(txKey)
+    if (current.inFlight === 'prepare') {
+      if (typeof current.inFlightContext === 'string' && current.inFlightContext !== contextSerial) dispatch({ type: 'CONTEXT_CHANGED' })
+      return
+    }
+    if (!current.plan || typeof current.contextSerial !== 'string') return
+    if (current.contextSerial === contextSerial) return
+    dispatch({ type: 'CONTEXT_CHANGED' })
+  }, [contextSerial, txKey])
+
+  const planContextSerial = entry.plan && typeof entry.contextSerial === 'string' ? entry.contextSerial : null
+  React.useEffect(() => {
+    if (planContextSerial === null) return
+    if (planContextSerial === contextSerial) return
+    dispatch({ type: 'CONTEXT_CHANGED' })
+  }, [planContextSerial, contextSerial, txKey])
+
+  const prepare = async () => {
+    const current = plan09TxRead(txKey)
+    if (!adapter) return onNotify('未接入配置适配器：只能查看草稿，不能保存。', 'error')
+    if (current.outcomeUnknown) return onNotify('上次写入结果未知且没有可查证的 ID：不能直接开始新的写入。', 'error')
+    if (current.txId) return onNotify('已有已发出的隔离事务，请先只读查证或完成生效检查。', 'error')
+    if (current.phase === 'UNKNOWN') return onNotify('事务结果未知：取得可信状态前不能重新准备。', 'error')
+    if (!changes.supported) return onNotify('当前草稿没有可用的真实写入映射，不能准备变更。', 'error')
+    const valid = validate()
+    if (!valid.ok) return onNotify('草稿未通过校验，不能准备变更。', 'error')
+    if (!plan09CanPrepare(current, { currentSerial: changesSerial })) return
+    const started = dispatch({ type: 'PREPARE_START', contextSerial })
+    if (!started.busy) return
+    const seq = started.inFlightSeq
+    const versionAtStart = started.draftVersion
+    const frozenSerial = changesSerial
+    const frozenChanges = changes.changes
+    let result
+    try {
+      result = await adapter.prepareChange(frozenChanges)
+    } catch {
+      dispatch({ type: 'PREPARE_LOST', seq, error: 'ADAPTER_REJECTED' })
+      return
+    }
+    const latest = plan09TxRead(txKey)
+    const stale = latest.draftVersion !== versionAtStart
+    const next = dispatch({ type: 'PREPARE_DONE', seq, result, stale, frozenChanges, frozenSerial, contextSerial: PLAN09_TX_CONTEXT.get(txKey) || contextRef.current })
+    if (next.phase === 'PREPARED') onNotify('已准备隔离变更计划；请核对字段与 revision 后确认。', 'info')
+    else if (next.error === 'STALE_PREPARE') onNotify('草稿在准备期间已变化，迟到的计划已丢弃；请重新准备。', 'info')
+  }
+
+  const confirmSave = async () => {
+    const current = plan09TxRead(txKey)
+    if (!adapter || !current.plan) return
+    if (!plan09CanConfirm(current, { currentSerial: changesSerial, contextSerial })) {
+      if (current.planStale || (typeof current.contextSerial === 'string' && current.contextSerial !== contextSerial)) {
+        dispatch({ type: 'CONTEXT_CHANGED' })
+        return onNotify('上下文或授权已变化，旧计划不可确认，请重新准备。', 'error')
+      }
+      if (typeof current.frozenSerial === 'string' && current.frozenSerial !== changesSerial) {
+        dispatch({ type: 'PLAN_CONTENT_CHANGED' })
+        return onNotify('草稿内容与已准备的内容不一致，旧计划不可确认；可重新准备。', 'error')
+      }
+      return
+    }
+    const valid = validate()
+    if (!valid.ok) {
+      dispatch({ type: 'AUTHORIZATION_CHANGED' })
+      return onNotify('当前草稿/授权不再满足条件，已阻止确认。', 'error')
+    }
+    const planId = current.plan.planId
+    const started = dispatch({ type: 'EXECUTE_START' })
+    if (!started.busy) return
+    const seq = started.inFlightSeq
+    let result
+    try {
+      result = await adapter.execute(planId, { userConfirmed: true, confirmedPlanId: planId })
+    } catch {
+      dispatch({ type: 'EXECUTE_LOST', seq })
+      return onNotify('未收到保存响应：写入可能已经发生；事务保持未知，不会自动重试。', 'error')
+    }
+    const next = dispatch({ type: 'EXECUTE_DONE', seq, result })
+    if (next.phase === 'UNKNOWN') onNotify('事务结果未知 · 只读：没有可信终态，不会自动重试写入。', 'error')
+    else if (next.phase === 'APPLIED') onNotify('运行组件已确认同一 revision。', 'success')
+    else onNotify(next.phase === 'SAVED' || next.phase === 'PENDING_APPLY' ? '已保存到隔离设施，等待运行组件确认；SAVED 不等于 APPLIED。' : '结果 ' + next.phase + '；不会自动重试写入。', next.phase === 'SAVED' || next.phase === 'PENDING_APPLY' ? 'success' : 'info')
+  }
+
+  const applyCheck = async () => {
+    const current = plan09TxRead(txKey)
+    if (!adapter || !plan09CanApply(current)) return
+    const started = dispatch({ type: 'APPLY_START' })
+    if (!started.busy) return
+    const seq = started.inFlightSeq
+    let result
+    try {
+      result = await adapter.apply(current.txId, { userConfirmed: true })
+    } catch {
+      dispatch({ type: 'APPLY_LOST', seq })
+      return onNotify('生效检查未取得可信响应，保持只读 UNKNOWN；不会自动重试。', 'error')
+    }
+    const next = dispatch({ type: 'APPLY_DONE', seq, result })
+    onNotify(next.phase === 'APPLIED' ? '运行组件已确认同一 revision。' : '未取得可信运行确认，保持只读 UNKNOWN/待生效。', next.phase === 'APPLIED' ? 'success' : 'info')
+  }
+
+  const readStatus = async () => {
+    const current = plan09TxRead(txKey)
+    if (!adapter || !plan09CanReadStatus(current)) return
+    const started = dispatch({ type: 'STATUS_START' })
+    if (!started.busy) return
+    const seq = started.inFlightSeq
+    let result
+    try {
+      result = await (typeof adapter.recover === 'function' ? adapter.recover(current.txId) : adapter.getStatus(current.txId))
+    } catch {
+      dispatch({ type: 'STATUS_LOST', seq })
+      return onNotify('只读查证未取得可信响应，保持 UNKNOWN；不会自动重试写入。', 'error')
+    }
+    dispatch({ type: 'STATUS_DONE', seq, result })
+    onNotify('已只读查证事务状态；不会自动重试写入。', 'info')
+  }
+
+  const reset = () => {
+    const current = plan09TxRead(txKey)
+    if (!plan09CanReset(current)) return onNotify('当前事务未决或仍在查证，不能结束；请先取得可信结果。', 'error')
+    dispatch({ type: 'RESET', at: new Date().toISOString() })
+    onNotify('已结束上一份已确定的事务记录；可以开始下一份草稿。', 'info')
+  }
+
+  const view = plan09TransactionView(entry)
+  const phase = entry.phase
+  const frozenSet = entry.frozenChanges
+  const contentMismatch = phase === 'PREPARED' && typeof entry.frozenSerial === 'string' && entry.frozenSerial !== changesSerial
+  const canPrepare = Boolean(adapter) && changes.supported && plan09CanPrepare(entry, { currentSerial: changesSerial })
+  const canConfirm = Boolean(adapter) && changes.supported && plan09CanConfirm(entry, { currentSerial: changesSerial, contextSerial })
+  const canApply = Boolean(adapter) && plan09CanApply(entry)
+  const canReadStatus = Boolean(adapter) && plan09CanReadStatus(entry)
+  const canReset = plan09CanReset(entry)
+  return h('section', {
+    className: 'wv-card pad', 'data-testid': 'plan09-tx-panel', 'data-phase': phase,
+    'data-busy': entry.busy ? '1' : '0', 'data-tx': entry.txId || '',
+    'data-inflight': entry.inFlight || '', 'data-outcome-unknown': entry.outcomeUnknown ? '1' : '0',
+  },
+    h('div', { className: 'wv-card-title' },
+      h('div', null, h('h2', null, '配置事务 · 隔离 Adapter'), h('p', null, '有效草稿 → 不可变变更预览 → 精确确认 → 隔离保存 → 状态查证；未写生产配置。')),
+      h(Badge, { tone: view.tone }, view.label)),
+    !adapter ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-no-adapter' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入配置适配器：本页只读草稿，不能准备或保存变更。')) : null,
+    !changes.supported ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-unsupported' }, h(Icon, { name: 'info', size: 14 }), h('span', null, unsupported.join(' '))) : null,
+    entry.txId ? h('div', { className: 'wv-notice', 'data-testid': 'plan09-tx-authority' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '已发出的隔离事务仍保留：草稿编辑/切页不会丢弃 transactionId；只能只读查证或完成生效检查。')) : null,
+    entry.outcomeUnknown && !entry.txId ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-outcome-unknown' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '保存响应不完整或未返回：写入可能已经发生，但没有可查证的 transactionId。不能当作失败，不能结束该事务，也不会自动重试。')) : null,
+    entry.noWriteConfirmed && phase === 'FAILED' ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-no-write' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已取得可信“未写入/已回滚”结论（源未改变）；可结束关联后准备下一份草稿，旧计划不会重放。')) : null,
+    entry.planStale ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-stale' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '计划对应的草稿/上下文已变化，旧计划不可确认；可重新准备当前草稿。')) : null,
+    contentMismatch ? h('div', { className: 'wv-notice warn', 'data-testid': 'plan09-tx-content-mismatch' }, h(Icon, { name: 'alert', size: 14 }), h('span', null, '已准备的内容与当前草稿不一致（例如换页后回到默认值）；旧计划不可确认，请重新准备。')) : null,
+    h('div', { className: 'wv-plan09-txline' },
+      h('span', null, '可应用字段：' + (changes.applied.length ? changes.applied.join('、') : '无')),
+      changes.protocolProvider ? h('span', { className: 'wv-muted' }, '协议 Provider：' + changes.protocolProvider) : null,
+      unsupported.length ? h('span', { className: 'wv-muted' }, '草稿未应用：' + unsupported.join('、')) : null,
+      h('span', null, 'revision ' + (context.senderRevision === null ? '未知' : context.senderRevision))),
+    frozenSet ? h('div', { className: 'wv-plan09-frozen', 'data-testid': 'plan09-frozen-preview' },
+      h('strong', null, '已冻结的变更预览'),
+      h('pre', { className: 'wv-mono' }, JSON.stringify(frozenSet, null, 2))) : null,
+    h('div', { className: 'wv-row wv-wrap', style: { marginTop: 10 } },
+      h(Button, { onClick: prepare, disabled: !canPrepare, 'data-testid': 'plan09-prepare' }, entry.inFlight === 'prepare' ? '准备中…' : '预览变更'),
+      h(Button, { variant: 'primary', disabled: !canConfirm, onClick: confirmSave, 'data-testid': 'plan09-confirm-save' }, entry.inFlight === 'execute' ? '保存中…' : '确认并隔离保存'),
+      h(Button, { variant: 'ghost', disabled: !canApply, onClick: applyCheck, 'data-testid': 'plan09-apply-check' }, '检查是否生效'),
+      h(Button, { variant: 'ghost', disabled: !canReadStatus, onClick: readStatus, 'data-testid': 'plan09-read-status' }, '只读查证'),
+      phase !== 'DIRTY' || (entry.history && entry.history.length)
+        ? h(Button, { variant: 'ghost', disabled: !canReset, onClick: reset, 'data-testid': 'plan09-tx-reset' }, '结束并开始下一份')
+        : null),
+    entry.error ? h('p', { className: 'wv-plan09-error', 'data-testid': 'plan09-tx-error' }, entry.error) : null,
+    entry.draftDirty ? h('p', { className: 'wv-muted', 'data-testid': 'plan09-tx-draft-dirty' }, '草稿已编辑，但已发出事务与只读查证入口仍保留；不会自动重试写入。') : null,
+    entry.history && entry.history.length ? h('p', { className: 'wv-muted', 'data-testid': 'plan09-tx-history' },
+      '历史事务：' + entry.history.map((item) => item.phase + (item.txId ? '（' + item.txId + '）' : '')).join('、') + '；已确定完成。') : null,
+    h('p', { className: 'wv-muted', style: { margin: '8px 0 0', fontSize: 11 } }, view.text + ' · SAVED 不等于 APPLIED，更不等于 SENT。'))
+}
+
+const PLAN09_LANG_LABEL = { 'zh-CN': '中文（普通话）', 'en-US': '英语', 'ja-JP': '日语', auto: '自动识别' }
+const PLAN09_EMOTION_LABEL = { neutral: '自然', gentle: '温柔', happy: '开心', shy: '害羞', playful: '俏皮', sad: '难过' }
+const PLAN09_VOICE_LABELS = { 'demo-voice-a': '示例女声 A', 'demo-voice-b': '示例男声 B', 'cloud-voice-a': '云端示例音色', 'custom-voice-a': '自定义示例音色' }
+
+function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen = false, capabilityRevision = null }) {
+  const adapter = plan09Adapter()
+  const context = plan09Context(adapter)
+  const key = plan09WizardKey({ workspace: context.workspace, profile: context.profile, feature: feature.id, manifestRevision: context.manifestRevision })
+  const stored = plan09ReadWizard(window.localStorage, key)
+  const [, forceContext] = React.useState(0)
+  React.useEffect(() => {
+    const onChange = () => forceContext((value) => value + 1)
+    window.addEventListener('plan09-context-changed', onChange)
+    return () => window.removeEventListener('plan09-context-changed', onChange)
+  }, [])
+  const [mode, setMode] = React.useState(stored.selectedMode || 'local')
+  const [wizardOpen, setWizardOpen] = React.useState(false)
+  const [wizardContext, setWizardContext] = React.useState(stored)
+  const [reminder, setReminder] = React.useState(false)
+  const [errors, setErrors] = React.useState([])
+  const [preview, setPreview] = React.useState(null)
+  const [voiceDraft, setVoiceDraft] = React.useState(plan09DefaultVoiceDraft)
+  const [singingDraft, setSingingDraft] = React.useState(plan09DefaultSingingDraft)
+  const owner = React.useRef('plan09-owner-' + Math.random().toString(36).slice(2))
+  const depsSnapshot = React.useRef({ context, mode, engine: 'local' })
+  React.useEffect(() => {
+    const current = plan09ReadWizard(window.localStorage, key)
+    const view = plan09DeriveWizardView({
+      stored: current,
+      capabilityRevision: capabilityRevision === null ? context.capabilityRevision : capabilityRevision,
+      manifestRevision: context.manifestRevision,
+      globalSetupOpen,
+    })
+    setReminder(view.reminder)
+    if (view.shouldOpen) { setWizardContext(current); setWizardOpen(true) }
+  }, [key, globalSetupOpen, capabilityRevision, context.capabilityRevision, context.manifestRevision])
+  React.useEffect(() => {
+    if (!stored.selectedMode) return
+    const switched = plan09SwitchMode(feature.id, stored.selectedMode, feature.id === 'singing' ? plan09DefaultSingingDraft() : plan09DefaultVoiceDraft())
+    setDraft(switched.draft)
+    setMode(stored.selectedMode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const draft = feature.id === 'singing' ? singingDraft : voiceDraft
+  const setDraft = feature.id === 'singing' ? setSingingDraft : setVoiceDraft
+  depsSnapshot.current = { context, mode, engine: draft.engine }
+  const dependencyScope = React.useRef({ identity: plan09IdentityScope(context), context, mode, engine: draft.engine })
+  React.useEffect(() => {
+    const next = { identity: plan09IdentityScope(context), context, mode, engine: draft.engine }
+    const previous = dependencyScope.current
+    if (previous && (previous.identity !== next.identity || previous.mode !== next.mode || previous.engine !== next.engine)) {
+      plan09CancelDeps(previous.context, previous.mode, previous.engine, owner.current)
+    }
+    dependencyScope.current = next
+  })
+  React.useEffect(() => () => {
+    const snapshot = depsSnapshot.current
+    plan09CancelDeps(snapshot.context, snapshot.mode, snapshot.engine, owner.current)
+  }, [])
+  const patch = (part) => { setPreview(null); setErrors([]); setDraft((current) => ({ ...current, ...part })) }
+  const saveWizard = (patchValue) => {
+    const next = plan09WriteWizard(window.localStorage, key, {
+      mode: patchValue.mode,
+      introAcknowledged: true,
+      capabilityRevisionSeen: context.capabilityRevision,
+      browseDismissedRevision: null,
+    })
+    setWizardContext(next || stored)
+    setWizardOpen(false)
+    notify('已记录本功能的首次说明确认；这不是安装成功，也不代表能力 READY。', 'info')
+  }
+  const browseWizard = () => {
+    const next = plan09WriteWizard(window.localStorage, key, { browseDismissedRevision: context.manifestRevision, mode })
+    setWizardContext(next || stored)
+    setWizardOpen(false)
+  }
+  const changeMode = (nextMode) => {
+    plan09CancelDeps(context, mode, draft.engine, owner.current)
+    const switched = plan09SwitchMode(feature.id, nextMode, draft)
+    setDraft(switched.draft)
+    setMode(nextMode)
+    setPreview(null)
+    plan09WriteWizard(window.localStorage, key, { mode: nextMode })
+    setErrors([])
+    if (switched.cleared.length) notify('已切换模式并清理不兼容字段：' + switched.cleared.join('、'), 'info')
+  }
+  const validate = () => {
+    const result = feature.id === 'singing'
+      ? plan09ValidateSingingDraft(singingDraft, { gpuAvailable: context.gpuAvailable, cloudAuthorized: context.cloudAuthorized, deliveryAuthorized: context.deliveryAuthorized, mode })
+      : plan09ValidateVoiceDraft(voiceDraft, { cloudAuthorized: context.cloudAuthorized, mode })
+    setErrors(result.errors)
+    return result
+  }
+  const previewDraft = () => {
+    const result = validate()
+    if (!result.ok) { setPreview(null); notify('草稿还有未完成项，请先处理红色提示。', 'error'); return }
+    setPreview(feature.id === 'singing'
+      ? `唱歌 · ${singingDraft.engine.toUpperCase()} · ${PLAN09_SINGING_VOICES.find((voice) => voice.id === singingDraft.voiceProfile)?.label || singingDraft.voiceProfile} · 音高 ${singingDraft.pitch} · ${singingDraft.sourceLayout}`
+      : `语音气泡 · ${PLAN09_MODES.find((m) => m.id === mode)?.label || mode} · ${PLAN09_PROVIDERS.find((p) => p.id === voiceDraft.provider)?.label || voiceDraft.provider} · ${PLAN09_VOICE_LABELS[voiceDraft.voiceProfile] || voiceDraft.voiceProfile}`)
+    notify('已生成演示预览；没有合成或播放真实音频。', 'info')
+  }
+  const switchEngine = (engine) => {
+    plan09CancelDeps(context, mode, draft.engine, owner.current)
+    const result = plan09SwitchEngine(feature.id, draft, engine)
+    const nextMode = feature.id === 'singing'
+      ? (engine === 'gateway' ? (mode === 'cloud' ? 'cloud' : 'existing') : (mode === 'cloud' || mode === 'existing' ? 'local' : mode))
+      : (engine === 'cloud' ? 'cloud' : engine === 'custom' ? 'existing' : 'local')
+    setDraft(result.draft)
+    setMode(nextMode)
+    plan09WriteWizard(window.localStorage, key, { mode: nextMode })
+    setPreview(null)
+    setErrors([])
+    if (result.cleared.length) notify('已清理不兼容字段：' + result.cleared.join('、') + '。请重新确认参数。', 'info')
+  }
+  React.useEffect(() => { setPreview(null) }, [context.cloudAuthorized, context.deliveryAuthorized, context.capabilityRevision, context.profile])
+  const contextSerial = JSON.stringify({ workspace: context.workspace, profile: context.profile, manifest: context.manifestRevision, capability: context.capabilityRevision, cloud: context.cloudAuthorized, delivery: context.deliveryAuthorized, mode })
+  const txKey = plan09TransactionKey(context, feature.id)
+  const groups = plan09DependencyGroups(feature.id, mode, {
+    sourceLayout: feature.id === 'singing' ? singingDraft.sourceLayout : 'MIXED',
+    deliveryRequested: feature.id === 'singing' ? singingDraft.deliveryRequested : false,
+  })
+  return h('div', { 'data-testid': `page-${feature.id}` },
+    h(PageHead, {
+      eyebrow: feature.en, title: feature.label, description: feature.hint + '。本轮仅提供离线 Fake 界面与草稿，真实引擎尚未接入。',
+      actions: h(React.Fragment, null,
+        h(Badge, { tone: 'demo' }, '演示 · 未接入'),
+        h(Button, { variant: 'ghost', onClick: () => { setWizardContext(plan09ReadWizard(window.localStorage, key)); setWizardOpen(true) }, 'data-testid': 'plan09-reopen' }, '依赖向导')),
+    }),
+    h('div', { className: 'wv-notice', style: { marginBottom: 14 } },
+      h(Icon, { name: 'info', size: 15 }),
+      h('span', null, '当前入口是独立页面，但共享同一份音色、Provider、依赖与任务展示来源；不会创建第二套账号或凭据。')),
+    reminder ? h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'plan09-reminder' },
+      h(Icon, { name: 'alert', size: 15 }),
+      h('span', null, '能力或版本已有更新；请重新打开依赖向导核对，已确认的说明不会被当作新的能力验证。'),
+      h(Button, { size: 'sm', variant: 'ghost', onClick: () => { setWizardContext(plan09ReadWizard(window.localStorage, key)); setWizardOpen(true) }, 'data-testid': 'plan09-reminder-open' }, '重新检查')) : null,
+    h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan09-mode-summary' },
+      h('div', { className: 'wv-card-title' },
+        h('div', null, h('h2', null, '运行模式与依赖'), h('p', null, '按模式与素材类型显示必需、可选、仅投递与条件依赖；缺投递依赖不阻断草稿。')),
+        h(Badge, { tone: 'wait' }, PLAN09_MODES.find((m) => m.id === mode)?.label || '本机')),
+      h('div', { className: 'wv-row wv-wrap' },
+        PLAN09_MODES.map((item) => h(Button, {
+          key: item.id, size: 'sm', variant: mode === item.id ? 'primary' : 'ghost', 'data-testid': 'plan09-page-mode-' + item.id,
+          onClick: () => changeMode(item.id),
+        }, item.label))),
+      h('p', { className: 'wv-muted', style: { margin: '8px 0 0' } }, plan09DependencySummary(groups).text + '。共享已验证项不会重复模拟安装。')),
+    h('div', { className: 'wv-grid two', style: { marginBottom: 14 } },
+      h('section', { className: 'wv-card pad' },
+        h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '配置草稿'), h('p', null, '新手用中文方案；高级自定义折叠。切换引擎/模式会清理不兼容字段。'))),
+        h('div', { className: 'wv-plan09-form' },
+          h(Plan09DraftField, { label: '方案' },
+            h('select', {
+              className: 'wv-select', value: draft.engine, 'data-testid': 'plan09-draft-engine',
+              onChange: (event) => switchEngine(event.target.value),
+            }, (feature.id === 'singing' ? [['rvc', 'RVC 标准翻唱（首发）'], ['gateway', '已有服务 Gateway'], ['svc', 'SVC（后续可选，不安装）']] : [['local', '本机 Qwen 服务'], ['cloud', '隔离云端 Fixture'], ['custom', '自定义本机服务']]).map(([value, label]) => h('option', { key: value, value }, label)))),
+          feature.id === 'singing' ? h(React.Fragment, null,
+            h(Plan09DraftField, { label: '音色方案' },
+              h('select', { className: 'wv-select', value: singingDraft.voiceProfile, 'data-testid': 'plan09-singing-voice', onChange: (e) => patch({ voiceProfile: e.target.value }) }, PLAN09_SINGING_VOICES.map((voice) => h('option', { key: voice.id, value: voice.id }, voice.label)))),
+            h(Plan09DraftField, { label: '虚构素材引用', hint: '只接受 fixture:// 虚构引用；不会读取、上传或抓取真实素材。' },
+              h('input', { className: 'wv-input', value: singingDraft.sourceRef, placeholder: 'fixture://demo-song-01', 'data-testid': 'plan09-draft-source', onChange: (e) => patch({ sourceRef: e.target.value }) })),
+            h('div', { className: 'wv-grid two' },
+              h(Plan09DraftField, { label: '素材类型' }, h('select', { className: 'wv-select', value: singingDraft.sourceLayout, 'data-testid': 'plan09-source-layout', onChange: (e) => patch({ sourceLayout: e.target.value }) }, h('option', { value: 'MIXED' }, '混合素材（需分离）'), h('option', { value: 'CLEAN_VOCAL' }, '干净人声（可跳过分离）'))),
+              h(Plan09DraftField, { label: '混音方式' }, h('select', { className: 'wv-select', value: singingDraft.mixMode, 'data-testid': 'plan09-mix-mode', onChange: (e) => patch({ mixMode: e.target.value }) }, h('option', { value: 'WITH_INSTRUMENTAL' }, '人声 + 伴奏'), h('option', { value: 'VOCAL_ONLY' }, '仅人声')))),
+            h('div', { className: 'wv-plan09-checks' },
+              h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.sourceAuthorized, 'data-testid': 'plan09-source-authorized', onChange: (e) => patch({ sourceAuthorized: e.target.checked }) }), h('span', null, '我确认演示素材已获授权')),
+              h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.voiceConsent, 'data-testid': 'plan09-voice-consent', onChange: (e) => patch({ voiceConsent: e.target.checked }) }), h('span', null, '我确认音色使用已获同意'))),
+            h(Plan09DraftField, { label: `音高 ${singingDraft.pitch > 0 ? '+' : ''}${singingDraft.pitch}（−12..12）` },
+              h('input', { className: 'wv-input', type: 'range', min: -12, max: 12, step: 1, value: singingDraft.pitch, 'data-testid': 'plan09-pitch', onChange: (e) => patch({ pitch: Number(e.target.value) }) })),
+            h(Plan09DraftField, { label: '人声增益 dB' },
+              h('input', { className: 'wv-input', type: 'number', min: -12, max: 12, value: singingDraft.vocalGainDb, 'data-testid': 'plan09-vocal-gain', onChange: (e) => patch({ vocalGainDb: Number(e.target.value) }) })),
+            h(Plan09DraftField, { label: '伴奏增益 dB' },
+              h('input', { className: 'wv-input', type: 'number', min: -12, max: 12, value: singingDraft.instrumentalGainDb, 'data-testid': 'plan09-instrumental-gain', onChange: (e) => patch({ instrumentalGainDb: Number(e.target.value) }) })),
+            h('label', { className: 'wv-plan09-check' }, h('input', { type: 'checkbox', checked: singingDraft.deliveryRequested, 'data-testid': 'plan09-delivery', onChange: (e) => patch({ deliveryRequested: e.target.checked }) }), h('span', null, '保存后申请投递到微信（未授权时仅保存草稿）')))
+          : h(React.Fragment, null,
+            h(Plan09DraftField, { label: '音色' },
+              h('select', { className: 'wv-select', value: voiceDraft.voiceProfile, 'data-testid': 'plan09-draft-voice', onChange: (e) => patch({ voiceProfile: e.target.value }) }, (PLAN09_PROVIDERS.find((p) => p.id === voiceDraft.provider)?.voices || []).map((voice) => h('option', { key: voice, value: voice }, PLAN09_VOICE_LABELS[voice] || voice))),
+            h('div', { className: 'wv-grid two' },
+              h(Plan09DraftField, { label: '语言' }, h('select', { className: 'wv-select', value: voiceDraft.language, 'data-testid': 'plan09-draft-language', onChange: (e) => patch({ language: e.target.value }) }, PLAN09_LANGUAGES.map((v) => h('option', { key: v, value: v }, PLAN09_LANG_LABEL[v] || v)))),
+              h(Plan09DraftField, { label: '情绪' }, h('select', { className: 'wv-select', value: voiceDraft.emotion, 'data-testid': 'plan09-draft-emotion', onChange: (e) => patch({ emotion: e.target.value }) }, PLAN09_EMOTIONS.map((v) => h('option', { key: v, value: v }, PLAN09_EMOTION_LABEL[v] || v))))),
+            h(Plan09DraftField, { label: `语速 ${Number(voiceDraft.speed).toFixed(1)}×` },
+              h('input', { className: 'wv-input', type: 'range', min: 0.5, max: 2, step: 0.1, value: voiceDraft.speed, 'data-testid': 'plan09-draft-speed', onChange: (e) => patch({ speed: Number(e.target.value) }) })),
+            h(Plan09DraftField, { label: `音量 ${voiceDraft.volume}%` },
+              h('input', { className: 'wv-input', type: 'range', min: 0, max: 100, step: 1, value: voiceDraft.volume, 'data-testid': 'plan09-draft-volume', onChange: (e) => patch({ volume: Number(e.target.value) }) })),
+            h('details', { className: 'wv-plan09-advanced' },
+              h('summary', null, '高级自定义（默认折叠）'),
+              h(Plan09DraftField, { label: 'Provider' },
+                h('input', { className: 'wv-input', value: voiceDraft.provider, 'data-testid': 'plan09-draft-provider', onChange: (e) => patch({ provider: e.target.value }) })),
+              h(Plan09DraftField, { label: '模型' },
+                h('input', { className: 'wv-input', value: voiceDraft.model, 'data-testid': 'plan09-draft-model', onChange: (e) => patch({ model: e.target.value }) }))))),
+          h(Plan09DraftField, { label: '演示文本 / 试唱文本' },
+            h('textarea', { className: 'wv-textarea', rows: 3, value: draft.text, 'data-testid': 'plan09-draft-text', onChange: (e) => patch({ text: e.target.value }) })),
+          errors.length ? h('div', { className: 'wv-plan09-errors', 'data-testid': 'plan09-errors' }, errors.map((error) => h('p', { key: error.field + error.message }, '· ' + error.message))) : null,
+          h('div', { className: 'wv-row wv-wrap', style: { marginTop: 8 } },
+            h(Button, { onClick: previewDraft, 'data-testid': 'plan09-preview' }, '生成演示预览'),
+            h(Button, { variant: 'ghost', onClick: () => { setErrors([]); notify('已重置提示；草稿参数保留。', 'info') }, 'data-testid': 'plan09-clear-errors' }, '清除提示'))),
+        preview ? h('div', { className: 'wv-plan09-preview', 'data-testid': 'plan09-preview-result' }, h(Icon, { name: 'check', size: 14 }), h('span', null, preview + '。未合成、未播放、未发送。')) : null),
+      h('section', { className: 'wv-card pad' },
+        h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '投递权限与能力边界'), h('p', null, 'SAVED ≠ APPLIED ≠ SENT；未授权时只能保存草稿。'))),
+        h('div', { className: 'wv-settings-group' },
+          h(SettingRow, { title: '微信投递', desc: '需要 WeChatAgent 与鲸递发送模块；未授权时禁用演示发送。' }, h(Badge, { tone: 'wait' }, '未授权')),
+          h(SettingRow, { title: '云端费用与文本', desc: '云端模式会把文本发送到 Provider；真实调用始终禁用。' }, h(Badge, { tone: 'demo' }, '仅说明')),
+          h(SettingRow, { title: '真实音频', desc: '不接收、不存储、不输出真实音频或密钥。' }, h(Badge, { tone: 'demo' }, 'Fake')),
+          h(SettingRow, { title: '首次说明', desc: '确认只记录读过说明，不等于 READY。' }, h('span', { className: 'wv-muted', 'data-testid': 'plan09-ack-state' }, stored.introAcknowledged ? '本版本已确认' : '未确认')))),
+    h(Plan09TransactionPanel, { key: txKey, feature: feature.id, draft, validate, context, txKey, contextSerial, onNotify: notify }),
+    wizardOpen ? h(Plan09Wizard, {
+      open: true, feature, mode, setMode: changeMode, context: { ...context, introAcknowledged: wizardContext.introAcknowledged },
+      engine: draft.engine,
+      sourceLayout: feature.id === 'singing' ? singingDraft.sourceLayout : 'MIXED',
+      deliveryRequested: feature.id === 'singing' ? singingDraft.deliveryRequested : false,
+      onClose: browseWizard,
+      onAcknowledge: (value) => saveWizard(value),
+      onBrowse: browseWizard,
+      owner: owner.current,
+      notify,
+    }) : null))
+}
+
 /* Whale Voice first-run setup UI and component manager.
  *
  * This module is injected after pages.js by build.mjs. It contains browser UI only.
@@ -2559,6 +4015,14 @@ function SetupBanner({ status, onSetup, onComponents }) {
 
       let body = null
       if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'voice-bubbles' || page === 'singing') {
+        const feature = PLAN09_FEATURES.find((item) => item.id === page)
+        body = h(Plan09FeaturePage, {
+          feature, setup, notify, profileKey: 'demo-profile',
+          globalSetupOpen: setupOpen || setup.checking,
+          capabilityRevision: capability && capability.data && Number.isInteger(capability.data.revision) ? capability.data.revision : null,
+        })
+      }
       else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup, capability })
       else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup, capability })
       else if (page === 'safety') body = h(SafetyPage, { settings, setup, capability })

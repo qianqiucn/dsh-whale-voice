@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
+import { createConfigSandbox } from '../../core/config-sandbox.mjs'
+import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -65,7 +69,7 @@ const results = []
 const consoleMessages = []
 const failedRequests = []
 
-async function withPage(query, fn) {
+async function withPage(query, fn, setupPage) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
@@ -80,6 +84,7 @@ async function withPage(query, fn) {
     failedRequests.push(item)
   })
   try {
+    if (setupPage) await setupPage(page)
     await page.goto(base + (query || ''), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
@@ -503,6 +508,1020 @@ await check('narrow viewport remains usable', async () => {
     assert.match(metrics.text, /真实配置/)
     await page.screenshot({ path: path.join(artifactDir, 'layout-780.png') })
   })
+})
+
+await check('plan09 entries persist mode/browse and keep independent wizards', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-mode-cpu"]').click()
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 0)
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-intro-check"]').check()
+    await page.locator('[data-testid="plan09-wizard-acknowledge"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'hidden' })
+    assert.match(await page.locator('[data-testid="plan09-mode-summary"]').innerText(), /仅 CPU/)
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+  })
+})
+
+await check('plan09 dependencies follow mode and install/verify lifecycle is shared', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-testid="plan09-dep-rvc"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-separation"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').count(), 1)
+    await page.locator('[data-testid="plan09-mode-cpu"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').count(), 0)
+    await page.locator('[data-testid="plan09-mode-cloud"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-separation"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan09-dep-cloud"]').count(), 1)
+    await page.locator('[data-testid="plan09-mode-local"]').click()
+    await page.locator('[data-testid="plan09-failure-select"]').selectOption('NO_GPU')
+    await page.locator('[data-testid="plan09-install-rvc"]').click()
+    const reason = page.locator('[data-testid="plan09-dep-reason-rvc"]')
+    await reason.waitFor({ state: 'visible' })
+    assert.match(await reason.innerText(), /GPU/)
+    await page.locator('[data-testid="plan09-retry-rvc"]').click()
+    await page.locator('[data-testid="plan09-failure-select"]').selectOption('NONE')
+    await page.locator('[data-testid="plan09-install-rvc"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-rvc"]')?.getAttribute('data-state') === 'installed')
+    await page.locator('[data-testid="plan09-verify-rvc"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-rvc"]')?.getAttribute('data-state') === 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-rvc"]')?.getAttribute('data-state') === 'ready')
+    assert.equal(await page.locator('[data-testid="plan09-install-rvc"]').count(), 0)
+  })
+})
+
+await check('plan09 voice draft drives the injected adapter transaction', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-preview"]').click()
+    await page.locator('[data-testid="plan09-preview-result"]').waitFor()
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+    await page.locator('[data-testid="plan09-preview"]').click()
+    await page.locator('[data-testid="plan09-errors"]').waitFor()
+    assert.match(await page.locator('[data-testid="plan09-errors"]').innerText(), /云端 Provider 尚未授权/)
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('local')
+    await page.locator('[data-testid="plan09-draft-emotion"]').selectOption('happy')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /草稿未应用：情绪/)
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForTimeout(500)
+    const phase = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+    const calls = await page.evaluate(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).join(','))
+    assert.equal(phase, 'PENDING_APPLY', calls)
+    const recorded = await page.evaluate(() => window.__WHALE_PLAN09_ADAPTER_CALLS__ || [])
+    assert.ok(recorded.includes('prepareChange') && recorded.includes('execute') && recorded.includes('apply'))
+  })
+})
+
+await check('plan09 invalid draft is blocked and external revision change conflicts', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-text"]').fill('')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    assert.match(await page.locator('[data-testid="plan09-errors"]').innerText(), /演示文本/)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'DIRTY')
+    await page.locator('[data-testid="plan09-draft-text"]').fill('晚安，这是虚构演示。')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.bumpRevision())
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'CONFLICT')
+    assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /CONFIG_COORDINATION_CONFLICT/)
+  })
+})
+
+await check('plan09 singing validates source, consent, mode and SVC limits', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-preview"]').click()
+    const errors = page.locator('[data-testid="plan09-errors"]')
+    assert.match(await errors.innerText(), /虚构引用/)
+    await page.locator('[data-testid="plan09-draft-source"]').fill('fixture://demo-song-01')
+    await page.locator('[data-testid="plan09-source-authorized"]').check()
+    await page.locator('[data-testid="plan09-voice-consent"]').check()
+    await page.locator('[data-testid="plan09-source-layout"]').selectOption('CLEAN_VOCAL')
+    await page.locator('[data-testid="plan09-preview"]').click()
+    await page.locator('[data-testid="plan09-preview-result"]').waitFor()
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('svc')
+    await page.locator('[data-testid="plan09-preview"]').click()
+    assert.match(await errors.innerText(), /SVC/)
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('rvc')
+    await page.locator('[data-testid="plan09-page-mode-cloud"]').click()
+    await page.locator('[data-testid="plan09-delivery"]').check()
+    await page.locator('[data-testid="plan09-preview"]').click()
+    assert.match(await errors.innerText(), /未授权微信投递/)
+    assert.equal(await page.locator('[data-testid="plan09-unsupported"]').count(), 1)
+  })
+})
+
+await check('plan09 global setup priority and narrow layout', async () => {
+  await withPage('?wizard=1', async (page) => {
+    const dialogs = page.getByRole('dialog')
+    await dialogs.first().waitFor()
+    assert.equal(await dialogs.count(), 1)
+    assert.match(await dialogs.first().innerText(), /首次安装向导/)
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 0)
+    await dialogs.first().getByRole('button', { name: '稍后继续', exact: true }).click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.equal(await page.getByRole('dialog').count(), 1)
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.setViewportSize({ width: 780, height: 900 })
+    await page.waitForTimeout(250)
+    const metrics = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }))
+    assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, 'plan09 narrow overflow: ' + metrics.scrollWidth + ' > ' + metrics.clientWidth)
+    await page.screenshot({ path: path.join(artifactDir, 'plan09-780.png') })
+  })
+})
+
+await check('plan09 scoped dependency evidence resets on context change and uses actual source layout', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-gpu"]')?.getAttribute('data-state') === 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'second-profile', capabilityRevision: 9, gpuAvailable: false }))
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'ready')
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-gpu"]')?.getAttribute('data-state') === 'unavailable')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'hidden' })
+    await page.locator('[data-testid="plan09-source-layout"]').selectOption('CLEAN_VOCAL')
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-separation"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan09-dep-rvc"]').count(), 1)
+  })
+})
+
+await check('plan09 keeps authority after UNKNOWN and edits', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+    await page.locator('[data-testid="plan09-draft-text"]').fill('编辑后的未知事务文本')
+    await page.waitForTimeout(250)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+  })
+})
+
+await check('plan09 late execute keeps authority and context change blocks confirm', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForTimeout(200)
+    await page.locator('[data-testid="plan09-draft-text"]').fill('执行发出后再编辑')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseExecute())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    assert.notEqual(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+  })
+})
+
+await check('plan09 context change blocks a prepared plan', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+  })
+})
+
+await check('plan09 adapter failures clear busy and keep transaction authority', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.nullNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForTimeout(800)
+    const nullPhase = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+    const nullError = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+    assert.equal(nullPhase, 'FAILED', 'null prepare phase=' + nullPhase + ' err=' + nullError)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '0')
+
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '0')
+    assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /RESPONSE_LOST/)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true)
+
+    // The unresolved latch is local to this demo page and deliberately not clearable from the UI.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.waitForTimeout(700)
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    if (await page.locator('[data-testid="plan09-wizard"]').count()) await page.locator('[data-testid="plan09-wizard-browse"]').click()
+
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    const txId = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx')
+    assert.notEqual(txId, '')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.throwNextRecover())
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+  })
+})
+
+
+await check('plan09 keeps an unresolved UNKNOWN across edits and manifest revisions', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+    await page.locator('[data-testid="plan09-draft-text"]').fill('编辑后仍然是未知事务')
+    await page.waitForTimeout(250)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true)
+
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ manifestRevision: 9 }))
+    await page.waitForTimeout(350)
+    if (await page.locator('[data-testid="plan09-wizard"]').count()) await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN', 'manifest switch must not clear the pending transaction')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ manifestRevision: 2 }))
+    await page.waitForTimeout(350)
+    if (await page.locator('[data-testid="plan09-wizard"]').count()) await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-unknown')
+  })
+})
+
+await check('plan09 does not accept an empty or ok-only save response as success', async () => {
+  for (const kind of ['null', 'object', 'okonly']) {
+    await withPage(normal, async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.evaluate((mode) => window.__WHALE_PLAN09_CONFIG__.emptyNextExecuteResponse(mode), kind)
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '', kind)
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true, kind)
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true, kind)
+    })
+  }
+})
+
+await check('plan09 keeps the in-flight mutex when the draft is edited during execute', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextExecute())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForTimeout(200)
+    await page.locator('[data-testid="plan09-draft-text"]').fill('保存发出后立刻编辑')
+    await page.waitForTimeout(250)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '1')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseExecute())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    assert.notEqual(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+  })
+})
+
+await check('plan09 discards a prepare that returns after the draft changed', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForTimeout(150)
+    await page.locator('[data-testid="plan09-draft-text"]').fill('准备期间编辑过的文本')
+    await page.waitForTimeout(120)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-busy'), '1')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+    assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /STALE_PREPARE/)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+  })
+})
+
+await check('plan09 re-prepares a frozen plan after the draft changed across pages', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-voice"]').selectOption('demo-voice-b')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(350)
+    assert.equal(await page.locator('[data-testid="plan09-tx-content-mismatch"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+  })
+})
+
+await check('plan09 ends a trusted not-written failure and prepares a new draft', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.failNextExecuteWithoutWrite())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-failed')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), 'fixture-tx-failed')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+    await page.locator('[data-testid="plan09-tx-reset"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+    assert.equal(await page.locator('[data-testid="plan09-tx-history"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+  })
+})
+
+await check('plan09 re-prepares after the context changed during prepare', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 0)
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+  })
+})
+
+await check('plan09 cancels old-identity checks when the profile changes', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:core'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'second-profile' }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'fixture-profile' }))
+    await page.waitForTimeout(450)
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'cancelled')
+    await page.waitForTimeout(300)
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'ready')
+  })
+})
+
+await check('plan09 cancels old-identity checks when the capability revision changes', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:gpu'), null, { timeout: 8000 })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 12 }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(450)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 1 }))
+    await page.waitForTimeout(450)
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'cancelled')
+  })
+})
+
+await check('plan09 recovers a late prepare after returning from another page', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.waitForTimeout(250)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
+    await page.waitForTimeout(350)
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 0)
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+  })
+})
+
+await check('plan09 marks a late prepare stale for manifest and delivery variants', async () => {
+  for (const patch of [{ manifestRevision: 9 }, { deliveryAuthorized: true }]) {
+    await withPage(normal, async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+      await page.getByRole('button', { name: '唱歌', exact: true }).click()
+      await page.waitForTimeout(250)
+      await page.evaluate((value) => window.__WHALE_PLAN09_CONFIG__.setContext(value), patch)
+      await page.waitForTimeout(350)
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.waitForTimeout(400)
+      if (await page.locator('[data-testid="plan09-wizard"]').count()) await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1, JSON.stringify(patch))
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false, JSON.stringify(patch))
+    })
+  }
+})
+
+await check('plan09 keeps a valid confirmation when the context completes before return or reverts', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.waitForTimeout(250)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 12 }))
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForTimeout(450)
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+  })
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.waitForTimeout(250)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 13 }))
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 1 }))
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), false)
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+  })
+})
+
+await check('plan09 recovers a late prepare failure or empty answer after unmount', async () => {
+  for (const kind of ['throw', 'null', 'object']) {
+    await withPage(normal, async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextPrepare())
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
+      await page.getByRole('button', { name: '唱歌', exact: true }).click()
+      await page.waitForTimeout(250)
+      await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 14 }))
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.evaluate((mode) => window.__WHALE_PLAN09_CONFIG__.releasePrepare(mode), kind)
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED', null, { timeout: 8000 })
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false, kind)
+      assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true, kind)
+    })
+  }
+})
+
+await check('plan09 hides the no-write note once a status check is unknown', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.failNextExecuteWithoutWrite())
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextRecover())
+    await page.locator('[data-testid="plan09-read-status"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true)
+  })
+})
+
+await check('plan09 cancels a pending shared check when the wizard closes', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'checking')
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:core'), null, { timeout: 8000 })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'cancelled')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(350)
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'cancelled')
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'ready')
+  })
+})
+
+await check('plan09 shared pending evidence is not stuck after another page opens it', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'checking')
+    await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:core'), null, { timeout: 8000 })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'checking')
+    assert.equal(await page.locator('[data-testid="plan09-check-core"]').isDisabled(), false)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(350)
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'ready')
+  })
+})
+
+await check('plan09 keeps in-flight authority across pages', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-voice"]').selectOption('demo-voice-b')
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextExecute())
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForTimeout(200)
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-confirm-save"]').isDisabled(), true)
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseExecute())
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    assert.notEqual(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+  })
+})
+
+await check('plan09 honours a legitimate UNKNOWN without allowing apply', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.unknownNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+    assert.equal(await page.locator('[data-testid="plan09-apply-check"]').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true)
+  })
+})
+
+await check('plan09 allows a new cycle after APPLIED', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.appliedNextApply())
+    await page.locator('[data-testid="plan09-apply-check"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'APPLIED')
+    await page.locator('[data-testid="plan09-tx-reset"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+    assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+  })
+})
+
+await check('plan09 does not carry a transaction into another profile', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+    await page.locator('[data-testid="plan09-confirm-save"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'other-profile' }))
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '')
+    assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'DIRTY')
+  })
+})
+
+await check('plan09 shares core evidence and clears preview on authorization revoke', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-check-core"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'ready')
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    if (await page.locator('[data-testid="plan09-wizard"]').count() === 0) await page.locator('[data-testid="plan09-reopen"]').click()
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ cloudAuthorized: true }))
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+    await page.locator('[data-testid="plan09-preview"]').click()
+    await page.locator('[data-testid="plan09-preview-result"]').waitFor()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ cloudAuthorized: false }))
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-preview-result"]').count(), 0)
+    await page.locator('[data-testid="plan09-prepare"]').click()
+    assert.match(await page.locator('[data-testid="plan09-errors"]').innerText(), /尚未授权/)
+  })
+})
+
+
+await check('plan09 cancels pending dependency checks on mode change', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.deferNextCheck())
+    await page.locator('[data-testid="plan09-check-gpu"]').click()
+    await page.locator('[data-testid="plan09-mode-cpu"]').click()
+    await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releaseCheck({ ready: true }))
+    await page.waitForTimeout(400)
+    await page.locator('[data-testid="plan09-mode-local"]').click()
+    assert.notEqual(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'ready')
+  })
+})
+
+await check('plan09 existing mode and manual gateway stay consistent', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-page-mode-existing"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-draft-engine"]').inputValue(), 'gateway')
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-gateway"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-rvc"]').count(), 0)
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+    assert.match(await page.locator('[data-testid="plan09-mode-summary"]').innerText(), /云端服务/)
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    assert.equal(await page.locator('[data-testid="plan09-dep-cloud"]').count(), 1)
+    assert.equal(await page.locator('[data-testid="plan09-dep-gpu"]').count(), 0)
+  })
+})
+
+
+await check('plan09 browser calls a real isolated Coordinator end to end', async () => {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', { document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' } })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.locator('[data-testid="plan09-preview"]').click()
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForTimeout(1200)
+      const phaseAfterPrepare = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterPrepare = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterPrepare, 'PREPARED', 'prepare phase=' + phaseAfterPrepare + ' err=' + errAfterPrepare)
+      const frozen = await page.locator('[data-testid="plan09-frozen-preview"]').innerText()
+      assert.match(frozen, /demo-voice-a/)
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForTimeout(1500)
+      const phaseAfterSave = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterSave = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterSave, 'SAVED', 'save phase=' + phaseAfterSave + ' err=' + errAfterSave)
+      assert.equal(sender.document.tts.voice, 'demo-voice-a')
+      assert.equal(sender.saveCount, 1)
+      await page.locator('[data-testid="plan09-apply-check"]').click()
+      await page.waitForTimeout(1500)
+      const phaseAfterApply = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase')
+      const errAfterApply = await page.locator('[data-testid="plan09-tx-error"]').count() ? await page.locator('[data-testid="plan09-tx-error"]').innerText() : ''
+      assert.equal(phaseAfterApply, 'PENDING_APPLY', 'apply phase=' + phaseAfterApply + ' err=' + errAfterApply)
+      const calls = await page.evaluate(() => window.__WHALE_PLAN09_ADAPTER_CALLS__ || [])
+      assert.ok(calls.includes('prepareChange') && calls.includes('execute') && calls.includes('apply'))
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+})
+
+async function checkRealResponseFault(fault) {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', { document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' } })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'UNKNOWN')
+      assert.equal(sender.saveCount, 1, 'the real save happened before the response fault: ' + fault)
+      assert.equal(sender.document.tts.voice, 'demo-voice-a', fault)
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), '', fault)
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), true, fault)
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), true, fault)
+      assert.match(await page.locator('[data-testid="plan09-tx-panel"]').innerText(), /未知|未收到|无法/, fault)
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((payload) => {
+        window.__PLAN09_REAL__ = {
+          context: payload.context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: async (planId, options) => {
+            const result = await window.__p9execute(planId, options)
+            if (payload.fault === 'lost') throw new Error('response channel lost after the real save')
+            if (payload.fault === 'null') return null
+            if (payload.fault === 'okonly') return { ok: true }
+            return {}
+          },
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, { context: bridgeContext, fault })
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+}
+
+async function checkRealNotWrittenFailure() {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', {
+      document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' },
+      saveFailure: 'CONFIG_COORDINATION_SAVE_FAILED',
+      saveFailureOutcome: 'NOT_WRITTEN',
+    })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: false, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED', null, { timeout: 15000 })
+      const txId = await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx')
+      assert.notEqual(txId, '', 'a determinate no-write failure still has a transaction id')
+      assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+      assert.equal(sender.saveCount, 1)
+      assert.equal(sender.document.tts.voice, 'whale-v1')
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+      await page.locator('[data-testid="plan09-read-status"]').click()
+      await page.waitForTimeout(1200)
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'FAILED')
+      assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-tx'), txId)
+      assert.equal(await page.locator('[data-testid="plan09-tx-no-write"]').count(), 1)
+      assert.equal(await page.locator('[data-testid="plan09-tx-reset"]').isDisabled(), false)
+
+      await page.locator('[data-testid="plan09-tx-reset"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'DIRTY')
+      assert.equal(await page.locator('[data-testid="plan09-tx-history"]').count(), 1)
+      assert.equal(await page.locator('[data-testid="plan09-prepare"]').isDisabled(), false)
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      assert.equal(sender.saveCount, 1, 'ending the association must not replay the consumed plan')
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+}
+
+await check('plan09 real not-written failure can end and prepare a new draft', checkRealNotWrittenFailure)
+
+await check('plan09 real lost or empty save responses stay UNKNOWN without claiming failure', async () => {
+  for (const fault of ['lost', 'null', 'okonly', 'object']) await checkRealResponseFault(fault)
+})
+
+async function checkRealProviderMode(mode, expectedProvider) {
+  const sandbox = createConfigSandbox()
+  try {
+    const bridge = createFixtureSource('bridgeVoice', { document: { schemaVersion: 1, enabled: false, mode: 'explicit', forGroup: false, autoProbability: 0, defaultVoice: 'whale-v1', allowedTargets: ['fixture-private-target'], token: 'fixture-bridge-token' } })
+    const sender = createFixtureSource('senderService', { document: { schemaVersion: 1, tts: { provider: 'qwen-local', model: 'Qwen3-TTS-12Hz-1.7B-Base', voice: 'whale-v1', baseUrl: 'http://127.0.0.1:8765' }, automation: 'manual', allowedChats: ['fixture-private-target'], token: 'fixture-sender-token' } })
+    const core = createFixtureSource('core', { document: { schemaVersion: 1, qwenUrl: 'http://127.0.0.1:8765', roots: { wechatAgent: 'fixture-root', sender: 'fixture-root' }, token: 'fixture-core-token' } })
+    const worker = createFixtureSource('workerSafety', { document: { schemaVersion: 1, voice_enabled: true, voice_auto_mode: 'manual', token: 'fixture-worker-token' } })
+    const permissions = createFixtureSource('wechatPermissions', { document: { schemaVersion: 1, wechat: { whitelist: ['fixture-private-target'], wake_mode: 'explicit' }, token: 'fixture-wechat-token' } })
+    const coordinator = createConfigCoordinator({ sandbox, sources: { bridgeVoice: bridge, senderService: sender, core, workerSafety: worker, wechatPermissions: permissions } })
+    const bridgeContext = { workspace: 'fixture-workspace', profile: 'fixture-profile', manifestRevision: 2, capabilityRevision: 1, senderRevision: sender.revision, gpuAvailable: true, cloudAuthorized: true, deliveryAuthorized: false }
+    await withPage('?plan09=real', async (page) => {
+      await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+      await page.locator('[data-testid="plan09-wizard-browse"]').click()
+      if (mode === 'existing') await page.locator('[data-testid="plan09-page-mode-existing"]').click()
+      else await page.locator('[data-testid="plan09-draft-engine"]').selectOption('cloud')
+      await page.locator('[data-testid="plan09-prepare"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
+      await page.locator('[data-testid="plan09-confirm-save"]').click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'SAVED')
+      assert.equal(sender.document.tts.provider, expectedProvider)
+      assert.equal(sender.saveCount, 1)
+    }, async (page) => {
+      await page.exposeFunction('__p9prepare', (draft) => coordinator.prepareChange(draft))
+      await page.exposeFunction('__p9execute', (planId, options) => coordinator.execute(planId, options))
+      await page.exposeFunction('__p9apply', (transactionId, options) => coordinator.apply(transactionId, options))
+      await page.exposeFunction('__p9recover', (transactionId) => coordinator.recover(transactionId))
+      await page.addInitScript((context) => {
+        window.__PLAN09_REAL__ = {
+          context,
+          prepare: (draft) => window.__p9prepare(draft),
+          execute: (planId, options) => window.__p9execute(planId, options),
+          apply: (transactionId, options) => window.__p9apply(transactionId, options),
+          recover: (transactionId) => window.__p9recover(transactionId),
+          check: () => ({ ready: true }),
+        }
+      }, bridgeContext)
+    })
+  } finally {
+    await rm(sandbox.root, { recursive: true, force: true })
+  }
+}
+
+await check('plan09 real Coordinator accepts the cloud provider mapping', async () => {
+  await checkRealProviderMode('cloud', 'cloud')
+})
+
+await check('plan09 real Coordinator accepts the existing/custom provider mapping', async () => {
+  await checkRealProviderMode('existing', 'custom')
 })
 
 await check('no console errors or failed resources', async () => {

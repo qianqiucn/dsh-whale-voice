@@ -381,6 +381,155 @@
   const fakeBridge = bridge(bridgeMode)
   if (fakeBridge) window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
 
+  // Plan 09 test-only adapter. It never touches production config; it records the calls the UI makes
+  // and enforces the same confirmation/expiry/consumed/revision semantics as the real Coordinator.
+  function createPlan09Adapter() {
+    const query = new URLSearchParams(location.search)
+    let revision = 4
+    let sequence = 0
+    const plans = new Map()
+    const transactions = new Map()
+    const calls = []
+    const context = {
+      workspace: 'fixture-workspace', profile: query.get('profile') || 'fixture-profile', manifestRevision: 2, capabilityRevision: 1,
+      senderRevision: 4, gpuAvailable: query.get('gpu') !== 'off', cloudAuthorized: query.get('cloud') === 'on', deliveryAuthorized: false,
+    }
+    const real = window.__PLAN09_REAL__ || null
+    const record = (name) => calls.push(name)
+    let deferCheck = false
+    let checkResolver = null
+    let deferPrepare = false
+    let prepareResolver = null
+    let deferExecute = false
+    let executeResolver = null
+    let deferApply = false
+    let applyResolver = null
+    let throwExecute = false
+    let throwApply = false
+    let throwRecover = false
+    let nullPrepare = false
+    let unknownExecute = false
+    let unknownApply = false
+    let appliedApply = false
+    let loseExecuteResponse = false
+    let emptyExecuteResponse = null
+    let failNoWriteExecute = false
+    let unknownRecover = false
+    const failedTransactions = new Map()
+    const adapter = {
+      calls,
+      getContext() { return { ...context, ...(real && real.context ? real.context : {}) } },
+      async checkDependency(key) {
+        record('check:' + key)
+        if (deferCheck) { deferCheck = false; return new Promise((resolve) => { checkResolver = resolve }) }
+        if (real) return real.check(key)
+        return { ready: key !== 'gpu' || context.gpuAvailable !== false }
+      },
+      deferNextCheck() { deferCheck = true },
+      releaseCheck(value) { if (checkResolver) { const resolve = checkResolver; checkResolver = null; resolve(value || { ready: true }) } },
+      deferNextPrepare() { deferPrepare = true },
+      releasePrepare(kind) { if (prepareResolver) { const resolve = prepareResolver; prepareResolver = null; resolve(kind || 'ok') } },
+      deferNextExecute() { deferExecute = true },
+      releaseExecute() { if (executeResolver) { const resolve = executeResolver; executeResolver = null; resolve() } },
+      deferNextApply() { deferApply = true },
+      releaseApply() { if (applyResolver) { const resolve = applyResolver; applyResolver = null; resolve() } },
+      throwNextExecute() { throwExecute = true },
+      throwNextApply() { throwApply = true },
+      throwNextRecover() { throwRecover = true },
+      nullNextPrepare() { nullPrepare = true },
+      unknownNextExecute() { unknownExecute = true },
+      unknownNextApply() { unknownApply = true },
+      appliedNextApply() { appliedApply = true },
+      unknownNextRecover() { unknownRecover = true },
+      loseNextExecuteResponse() { loseExecuteResponse = true },
+      emptyNextExecuteResponse(kind) { emptyExecuteResponse = kind || 'object' },
+      failNextExecuteWithoutWrite() { failNoWriteExecute = true },
+      bumpRevision() { revision += 1 },
+      setContext(patch) { Object.assign(context, patch || {}); window.dispatchEvent(new Event('plan09-context-changed')) },
+      async prepareChange(draft) {
+        record('prepareChange')
+        if (nullPrepare) { nullPrepare = false; return null }
+        if (deferPrepare) {
+          deferPrepare = false
+          const outcome = await new Promise((resolve) => { prepareResolver = resolve })
+          if (outcome === 'throw') throw new Error('fixture prepare failure after deferral')
+          if (outcome === 'null') return null
+          if (outcome === 'object') return {}
+        }
+        if (real) return real.prepare(draft)
+        if (!draft || draft.schemaVersion !== 1 || !draft.changes || !draft.changes.senderService) return { ok: false, error: { code: 'CONFIG_COORDINATION_SCHEMA_INVALID' } }
+        const plan = { planId: 'fixture-plan-' + (++sequence), expectedRevision: revision, expiresAt: Date.now() + 60000, state: 'PREPARED', previewOnly: true, saved: false, changes: draft }
+        plans.set(plan.planId, plan)
+        return { ok: true, plan }
+      },
+      async execute(planId, options = {}) {
+        record('execute')
+        if (throwExecute) { throwExecute = false; throw new Error('fixture execute failure') }
+        if (deferExecute) { deferExecute = false; await new Promise((resolve) => { executeResolver = resolve }) }
+        if (unknownExecute) { unknownExecute = false; return { ok: false, state: 'UNKNOWN', transactionId: 'fixture-tx-unknown', error: { code: 'CONFIG_COORDINATION_WRITE_UNKNOWN' } } }
+        if (failNoWriteExecute) {
+          failNoWriteExecute = false
+          const transactionId = 'fixture-tx-failed'
+          const failed = { ok: false, state: 'FAILED', saveState: 'FAILED', applyState: 'NOT_APPLIED', activeRevision: null, activeConfirmed: false, transactionId, planId, error: { code: 'CONFIG_COORDINATION_SAVE_FAILED', rolledBack: true, writeOutcome: 'NOT_WRITTEN' }, steps: [] }
+          failedTransactions.set(transactionId, failed)
+          return failed
+        }
+        let result
+        if (real) {
+          result = await real.execute(planId, options)
+        } else {
+          const plan = plans.get(planId)
+          if (!plan) result = { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_UNKNOWN' } }
+          else if (options.userConfirmed !== true || options.confirmedPlanId !== planId) result = { ok: false, error: { code: 'CONFIG_COORDINATION_CONFIRMATION_REQUIRED' } }
+          else if (plan.consumed) result = { ok: false, error: { code: 'CONFIG_COORDINATION_PLAN_CONSUMED' } }
+          else if (Date.now() > plan.expiresAt) result = { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_PLAN_EXPIRED' } }
+          else if (plan.expectedRevision !== revision) result = { ok: false, state: 'CONFLICT', error: { code: 'CONFIG_COORDINATION_CONFLICT' } }
+          else {
+            plan.consumed = true
+            revision += 1
+            const transactionId = 'fixture-tx-' + sequence
+            result = { ok: true, transactionId, state: 'SAVED', applyState: 'PENDING_APPLY', activeRevision: 'fixture-rev-' + sequence, activeConfirmed: false, steps: [{ source: 'senderService', status: 'SAVED', savedRevision: 'fixture-rev-' + sequence }] }
+            transactions.set(transactionId, result)
+          }
+        }
+        if (loseExecuteResponse) { loseExecuteResponse = false; throw new Error('response channel lost after the save was attempted') }
+        if (emptyExecuteResponse) {
+          const kind = emptyExecuteResponse
+          emptyExecuteResponse = null
+          if (kind === 'null') return null
+          if (kind === 'undefined') return undefined
+          if (kind === 'okonly') return { ok: true }
+          return {}
+        }
+        return result
+      },
+      async apply(transactionId, options = {}) {
+        record('apply')
+        if (throwApply) { throwApply = false; throw new Error('fixture apply failure') }
+        if (deferApply) { deferApply = false; await new Promise((resolve) => { applyResolver = resolve }) }
+        if (unknownApply) { unknownApply = false; return { ok: true, transactionId, state: 'UNKNOWN', applyState: 'UNKNOWN', activeRevision: null, activeConfirmed: false } }
+        if (appliedApply) { appliedApply = false; return { ok: true, transactionId, state: 'APPLIED', applyState: 'APPLIED', activeRevision: 'opaque-applied', activeConfirmed: true } }
+        if (real) return real.apply(transactionId, options)
+        const tx = transactions.get(transactionId)
+        if (!tx) return { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+        return { ...tx, state: 'PENDING_APPLY', applyState: 'PENDING_APPLY', activeRevision: null, activeConfirmed: false }
+      },
+      async recover(transactionId, options = {}) {
+        record('recover')
+        if (throwRecover) { throwRecover = false; throw new Error('fixture recover failure') }
+        if (unknownRecover) { unknownRecover = false; return { ok: false, state: 'UNKNOWN', transactionId, error: { code: 'CONFIG_COORDINATION_STATUS_UNKNOWN' } } }
+        const failed = failedTransactions.get(transactionId)
+        if (failed) return { ok: true, state: 'FAILED', phase: 'FAILED', committed: false, recoveryRequired: false, transactionId, version: 1, steps: [], replayed: false }
+        if (real) return real.recover(transactionId, options)
+        const tx = transactions.get(transactionId)
+        return tx ? { ...tx, replayed: false, state: 'PENDING_APPLY' } : { ok: false, state: 'UNKNOWN', error: { code: 'CONFIG_COORDINATION_UNKNOWN' } }
+      },
+    }
+    window.__WHALE_PLAN09_ADAPTER_CALLS__ = calls
+    return adapter
+  }
+  window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
+
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {
     document.getElementById('wv-harness-root').textContent = 'harness module missing'

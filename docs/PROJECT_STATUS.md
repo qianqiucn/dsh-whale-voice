@@ -513,3 +513,35 @@ owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained
 observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips; build
 unchanged. Contract §15.7 records the as-built state. PR #43 remains open/unmerged; status stays
 OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+### Plan 08 closure and Plan 09 UX (2026-11-02)
+
+Status correction: PR #43 was merged into main as `a9d3ce9` (merge commit; first parent `2c0cb94`,
+second parent `9d8eaf8`, tree `6a4cf00f`), and the parent Plan 08 offline/Fake scope is DONE
+(NOT_INTEGRATED). The 091 merge evidence is recorded in PR #43 and the 0110 report outside the repo.
+
+Plan 09 is implemented on `feature/plan09-config-ux` from `a9d3ce9`: two independent entries
+(`voice-bubbles`, `singing`), per-workspace/profile/feature/manifest first-use wizard with global
+Setup priority/no stacking/browse-only demo/capability reminder, mode/source-aware dependency groups,
+a shared fake dependency store with install/verify separation and late-callback cancellation, and
+multi-engine voice/singing drafts. The config panel now calls an injected isolated adapter and maps
+its effective draft onto the existing Coordinator writable fields; unsupported fields are shown as
+draft-only, and no adapter means read-only. Full suite 888/884 pass/4 platform skips; UI 30/30;
+build 266,702 bytes with no diff after rebuild.
+Status: OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; no real install/download/Provider/GPU/WeChat/send.
+
+0112 review (A/B/C) is addressed: async adapter transaction with frozen preview and UNKNOWN read-only;
+scoped dependency evidence with invalidation and manifest/capability-aware persistence; mode-aware
+draft/authorization consistency; singing cloud/existing no longer requires local RVC/separation.
+UI 32/32 includes a real isolated Coordinator browser chain; full suite 888/884 pass/4 platform skips;
+build 273,806 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0113 review fixes: transaction authority survives draft edits/page switches for dispatched execute/apply and known transactionId; UNKNOWN stays read-only with recover; adapter exceptions/null responses clear busy with authoritative phases; prepared plans are blocked when context/authorization changes; dependency checks are cancelled on mode change/unmount; voice engine changes sync mode and singing existing keeps gateway. UI 38/38; full suite 888/884 pass/4 platform skips; build 279,373 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0114 review fixes: cross-page transaction authority with global busy mutex and draft/context-bound plans; response-loss UNKNOWN and legitimate UNKNOWN/PARTIALLY_APPLIED projection; explicit APPLIED reset; shared Core/Sender/WeChat evidence vs mode/engine-scoped models; provider protocol mapping verified via real isolated Coordinator for cloud/existing; preview invalidation on authorization change. UI 45/45; full suite 888/884 pass/4 platform skips; build 290,994 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0115 review fixes: the panel now runs the shared transaction reducer (prepared snapshot, monotonic operation sequence, unresolved latch, determined terminal state) and keys transactions by workspace/profile/feature, so switching only the manifest revision cannot clear a pending UNKNOWN. Empty/lost/ok-only operation responses are UNKNOWN and cannot be reset or re-prepared; `state:PREPARED` is a no-write rejection; only determined SAVED/PENDING_APPLY/APPLIED/PARTIALLY_APPLIED results can be ended explicitly. Late prepare/execute/apply/status answers only settle their own operation, editing a draft no longer releases the in-flight mutex, and a frozen plan whose draft changed across pages can be re-prepared directly. Shared pending dependency checks are cancelled by the owning page on exit/mode switch/unmount/page switch, completed shared evidence is still reused, and every write notifies the identity's current observer. UI 53/53; full suite 896/892 pass/4 platform skips; build 296,236 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0116 review residuals: a Coordinator `FAILED` carrying trusted `writeOutcome: NOT_WRITTEN` plus confirmed rollback (or recovery `FAILED`/`committed:false`/`recoveryRequired:false`) can end the association and prepare the next draft without replaying the consumed plan; plain failures are not labelled "never written" and UNKNOWN stays latched. A prepare that returns after a context/authorization change is marked stale (`CONTEXT_CHANGED`) with confirm blocked and a direct re-prepare available, and dependency identity changes (profile/manifest/capability) also cancel the previous identity's pending checks through the old snapshot, so a late response cannot become ready after returning. UI 58/58; full suite 898/894 pass/4 platform skips; build 299,314 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+0117 review residual (same-page A2 was accepted): a prepare that completes after its page was unmounted now compares against the live context serial kept for the transaction key, and any plan that appears later is re-checked against the current context, so a late old plan is marked stale with a Chinese notice, confirm blocked and a direct re-prepare path; completing inside or returning to the same context still confirms legitimately. The no-write note is only shown for a `FAILED` result and disappears if a status check turns UNKNOWN, and `FAILED` distinguishes definite no-write/rollback from an apply rejection after a committed save. UI 63/63; full suite 898/894 pass/4 platform skips; build 299,972 JS characters / client.js 324,799 UTF-8 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.

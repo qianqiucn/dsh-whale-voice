@@ -6,6 +6,25 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: Plan 09 offline onboarding UX. Adds two independent entries (`语音气泡`/`voice-bubbles` and
+  `唱歌`/`singing`) that share the existing voice, Provider, dependency and task sources. Each feature
+  has a first-use dependency wizard with per workspace/profile/feature/manifest persistence, global
+  SetupWizard priority, no stacking, explicit "仅浏览" demo entry and capability-change reminder; the
+  acknowledgement is never treated as READY. Mode-based dependency groups (local/CPU/cloud/existing)
+  separate required, optional, delivery-only and conditional items, with a clearly labelled fake
+  installer simulation (check/install/cancel/failure/retry and Chinese failure reasons; no downloads
+  or real install). Adds multi-engine drafts for voice bubbles (provider/model/voice/language/emotion/
+  speed/volume) and singing (RVC/Gateway, SVC only as a later unavailable option, rights/consent,
+  pitch −12..12, vocal/instrumental gain, delivery), incompatible-field cleanup, preview. The config
+  panel now awaits an injected isolated adapter (busy/error/late-result handling), freezes the
+  preview at prepare time, keeps UNKNOWN read-only, and talks only to that adapter and maps the effective voice draft to the
+  existing Coordinator writable fields; language/emotion/speed/volume are reported as draft-only, and
+  singing has no writable mapping and stays read-only. The old front-end demo transaction engine was
+  removed; without an adapter the panel is read-only. 6 unit tests exercise the same adapter contract
+  against the real Coordinator with Fake sources plus wizard/draft rules; the UI checks also drive a browser → exposeFunction → real isolated
+  Coordinator chain (sender saved value and saveCount asserted), scoped dependency invalidation,
+  async adapter calls, mode/browse persistence, install/verify, negative drafts, UNKNOWN/late-execute authority, adapter exception lifecycle, context-change plan blocking and scoped mode-change cancellation, cross-page transaction authority, provider protocol mapping, shared-core evidence and authorization-driven preview invalidation. Full
+  suite 896/892 pass/4 platform skips; UI 53/53; client.js 296,236 bytes.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task
@@ -263,6 +282,14 @@ not invent earlier releases or imply production maturity.
 - Documentation-only WeChatAgent dependency/status updates.
 - `.gitignore` and a real build/syntax CI workflow.
 - Privacy sanitization of demo contacts/targets to fictional placeholders.
+
+### Fixed
+
+- Plan 09 transaction and shared-dependency authority after the 0115 review. The panel now runs the shared `plan09ReduceTransaction` entry (prepared snapshot, monotonic operation sequence, unresolved latch, determined terminal state) instead of component-local copies, and transactions are keyed by `workspace/profile/feature`, so switching only the manifest revision can no longer present a clean DIRTY transaction while the previous UNKNOWN is still unresolved. Operation results are classified by the Coordinator's own `state`: `null`/`undefined`/`{}`/`{ok:true}`-only responses are UNKNOWN (no prepare, apply, reset or re-prepare), `state:PREPARED` is a no-write rejection, and only SAVED/PENDING_APPLY/APPLIED/PARTIALLY_APPLIED results can be ended explicitly with history kept. Each operation carries a sequence so a late prepare/execute/apply/status answer only settles its own operation, editing a draft no longer releases the in-flight mutex, and a frozen plan whose draft changed across pages shows a content-mismatch notice and can be re-prepared directly. Shared dependency operations are cancelled by the page that started them on wizard exit, mode switch, unmount or page switch while completed shared evidence is still reused; every write notifies the current observer of the identity, and the browser code uses the single `core/plan09-ux-internal.mjs` scope helpers. 8 reducer/classification unit tests (14 in the Plan 09 file); full suite 896/892 pass/4 platform skips/0 fail; UI 53/53 including real isolated Coordinator loss/empty responses; build 296,236 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+- Plan 09 0116 review residuals. A Coordinator `FAILED` that proves no write (`writeOutcome: NOT_WRITTEN` with confirmed rollback, or recovery `FAILED`/`committed:false`/`recoveryRequired:false`) can now end its association and prepare the next draft without replaying the consumed plan; plain failures are not labelled "never written" and UNKNOWN stays latched. A prepare that returns after a context/authorization change is marked stale (`CONTEXT_CHANGED`) with confirm blocked but a direct re-prepare available, and dependency identity changes (profile/manifest/capability) cancel the previous identity's pending checks through the old snapshot so a late response cannot become ready after returning. 2 new reducer tests (16 in the Plan 09 file); full suite 898/894 pass/4 platform skips/0 fail; UI 58/58; build 299,314 bytes. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+- Plan 09 0117 review residual (cross-page late prepare). The prepare completion now compares against the live context serial rendered for the transaction key instead of the closure of a possibly unmounted component, and a plan that appears later is re-checked against the current context, so a late old plan shows the Chinese stale notice with confirm blocked but a direct re-prepare path, while completing inside or returning to the same context still confirms legitimately. The no-write note is only shown for a `FAILED` result (a later UNKNOWN status hides it), and `FAILED` semantics distinguish a definite no-write/rollback from an apply rejection after a committed save. UI 63/63; full suite 898/894 pass/4 platform skips/0 fail; build 299,972 (JS string length; client.js is 324,799 UTF-8 bytes). Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
 
 ## [0.1.0] — 2026-10-24
 

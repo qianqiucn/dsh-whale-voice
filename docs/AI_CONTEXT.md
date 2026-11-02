@@ -662,3 +662,63 @@ while keeping a STORED MASTER. A failed owner/Artifact post-FINAL JOINT confirma
 domains, so status/retry/resume stay UNKNOWN and the lease is retained. Cancellation-observation
 read errors are mapped through `stopIfCancelled` and a top-level error boundary to the fixed envelope
 instead of rejecting. 6 lifecycle tests; full suite 882/878 pass/4 platform skips.
+
+### Plan 09 offline onboarding UX (branch feature/plan09-config-ux)
+
+Plan 08 is offline-closed and PR #43 was merged as `a9d3ce9` (tree `6a4cf00f`); this work starts from
+that main. Two independent entries (`voice-bubbles`, `singing`) share the existing sources. A
+first-use wizard persists per workspace/profile/feature/manifest revision, defers to global Setup,
+never stacks, supports browse-only demo and capability-change reminders, and treats acknowledgement
+as "read", never READY. Dependencies are grouped by mode (local/CPU/cloud/existing) with a labelled
+fake installer (check/install/cancel/failure/retry; no downloads). Multi-engine drafts cover voice
+and singing (rights/consent, pitch −12..12, gains, delivery) with engine cleanup, preview and an
+isolated DIRTY→PREPARED→VALIDATED→SAVED/PENDING_APPLY/UNKNOWN/CONFLICT panel. Real Coordinator
+semantics are verified with Fake sources in `test/plan09-ux.test.mjs`. Full suite 888/884 pass/4
+platform skips; UI 30/30; still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+### Plan 09 0111 review fixes (R01–R06)
+
+The config panel now calls an injected isolated adapter (`getContext/checkDependency/prepareChange/
+execute/apply/recover`) instead of a local toy state machine; effective voice drafts map only to the
+existing `senderService.tts.provider/model/voice` fields, unsupported fields are shown as draft-only,
+and singing stays read-only. No adapter means read-only. Wizard mode is persisted correctly, browse
+dismissal is per revision, and workspace/profile/feature/manifest plus capability revision are
+context-driven. Dependencies follow mode and source layout; install and capability verification are
+separate, cancellation invalidates late callbacks, and ready items are shared across pages. Drafts
+use the shared provider/voice catalog, Chinese novice options, `fixture://` source validation, finite
+numeric checks and mode/engine consistency. 6 unit tests drive the real Coordinator through the same
+adapter contract; 6 UI checks cover the adapter calls and negative flows. Full suite 888/884 pass/4
+platform skips; UI 30/30; build 266,702 bytes.
+
+### Plan 09 0112 review fixes (A/B/C)
+
+The config panel now awaits every adapter call with busy/error/late-token handling, freezes the
+preview at prepare time and keeps UNKNOWN read-only (recover/getStatus only; no apply). Projection
+preserves opaque revisions and per-source/partial states. Dependency evidence is scoped by
+workspace/profile/manifest/capability/mode, cancel/close invalidates that scope, and browse dismissal
+uses the current manifest; a capability change shows a reminder instead of auto-opening. Wizard and
+page share the actual source layout/delivery choice; singing cloud/existing no longer requires local
+RVC/separation, and 鲸音 Core is separate from the 鲸递 delivery module. Voice mode changes sync
+engine/provider, cloud authorization and provider-kind/voice bindings are validated, and any draft
+change invalidates preview/plan. UI 32/32 includes a browser→exposeFunction→real isolated Coordinator
+save chain; full suite 888/884 pass/4 platform skips; build 273,806 bytes.
+
+### Plan 09 0113 review fixes
+
+Dispatched execute/apply and known transaction IDs survive draft edits and page switches; UNKNOWN remains read-only and recover keeps the ID. Adapter null/throw responses clear busy with authoritative phases; prepared plans are blocked when context/authorization changes. Dependency checks are cancelled when the mode/scope exits or the page unmounts, and voice engine changes sync the mode while singing existing keeps gateway. UI 38/38 includes lifecycle/exception tests plus the real isolated Coordinator chain; full suite 888/884 pass/4 platform skips; build 279,373 bytes.
+
+### Plan 09 0114 review fixes
+
+Transactions now live in a shared store keyed by workspace/profile/feature/manifest with cross-page in-flight authority, global busy mutex, draft/context-bound plans, legitimate UNKNOWN/PARTIALLY_APPLIED handling, response-loss UNKNOWN and an explicit reset after APPLIED. Dependencies use real shared identities (Core/Sender/WeChat) versus mode/engine-scoped models, with store-backed cancellation display. UI provider IDs map to the existing `tts.provider` enum and cloud/existing modes are verified through the real isolated Coordinator. Authorization/context changes clear previews. UI 45/45; full suite 888/884 pass/4 platform skips; build 290,994 bytes.
+
+### Plan 09 0115 review fixes
+
+The panel runs the shared `plan09ReduceTransaction` entry and transactions are keyed by workspace/profile/feature, so a manifest-only switch cannot clear an unresolved UNKNOWN. Empty/lost/ok-only operation responses are UNKNOWN and cannot be reset or re-prepared; `state:PREPARED` is a no-write rejection; only determined SAVED/PENDING_APPLY/APPLIED/PARTIALLY_APPLIED results can be ended (history kept). Operation sequences stop late prepare/execute/apply/status answers from overwriting a newer operation or releasing an in-flight mutex; a frozen plan whose draft changed across pages shows a mismatch notice and can be re-prepared directly. Shared pending dependency checks are cancelled by the owning page on wizard exit/mode switch/unmount/page switch while completed shared evidence is reused; every write notifies the identity's current observer; the browser code uses the single core scope helpers. 8 new reducer/classification unit tests (14 in the Plan 09 file); UI 53/53 including real isolated Coordinator loss/empty responses; full suite 896/892 pass/4 platform skips; build 296,236 bytes. OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+### Plan 09 0116 review residuals
+
+A Coordinator `FAILED` with trusted no-write evidence (`writeOutcome: NOT_WRITTEN` + rolled-back steps, or recovery `FAILED`/`committed:false`/`recoveryRequired:false`) can end its association and prepare the next draft without replaying the consumed plan; plain failures are not labelled never-written and UNKNOWN stays latched. A prepare that returns after a context/authorization change is marked stale with confirm blocked and a direct re-prepare path, and dependency identity changes cancel the previous identity's pending checks through the old snapshot so a late response cannot become ready after returning. 2 new reducer tests (16 in the Plan 09 file); UI 58/58 including a real Coordinator not-written failure; full suite 898/894 pass/4 platform skips; build 299,314 bytes. OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.
+
+### Plan 09 0117 review residual
+
+A prepare that completes after its page was unmounted compares against the live context serial kept per transaction key (not the unmounted component's closure), and a late plan is re-checked against the current context when it appears, so the stale notice, blocked confirm and direct re-prepare path work across pages while same-context completion still confirms. The no-write note is now shown only for a `FAILED` result and disappears when a status check turns UNKNOWN; `FAILED` distinguishes definite no-write/rollback from an apply rejection after a committed save. UI 63/63; full suite 898/894 pass/4 platform skips; build 299,972 JS characters / client.js 324,799 UTF-8 bytes. OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 unmerged.

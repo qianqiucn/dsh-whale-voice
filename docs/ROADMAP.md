@@ -524,3 +524,36 @@ owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained
 observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips. Status
 remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not
 complete.
+
+### Plan 08 closure and Plan 09 UX (2026-11-02)
+
+Correction: PR #43 is merged into main as `a9d3ce9` (parents `2c0cb94`/`9d8eaf8`, tree `6a4cf00f`);
+Plan 08 offline/Fake scope is DONE and remains NOT_INTEGRATED. Plan 09 is implemented on
+`feature/plan09-config-ux`: two entries (`voice-bubbles`, `singing`), first-use wizard with
+workspace/profile/feature/manifest persistence and global Setup priority, mode-based dependency groups
+with a labelled fake installer, multi-engine voice/singing drafts, and an isolated demo transaction
+panel. Full suite 888/884 pass/4 platform skips; UI 30/30. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; real install/Provider/GPU/media/WeChat/send are later stages.
+
+### Plan 09 0111 review fixes
+
+Plan 09 now uses a real adapter contract and maps only supported voice fields to the existing
+Coordinator, reporting other fields as draft-only; singing is read-only. Dependencies are mode/source
+aware, the fake installer is shared/cancellable with install and verification separated, and wizard
+persistence is context/revision aware. Full suite 888/884 pass/4 platform skips; UI 30/30. Still
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 remains unmerged.
+
+0112 review (A/B/C): async adapter transaction with frozen preview/UNKNOWN read-only, scoped dependency
+evidence with invalidation, mode-aware draft/authorization consistency, and a real isolated Coordinator
+browser chain. UI 32/32; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED.
+
+0113 review fixes: transaction authority for dispatched writes/UNKNOWN, exception/null busy handling, context-change plan blocking, scoped mode/unmount dependency cancellation, and mode/engine consistency. UI 38/38; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+0114 review fixes: cross-page transaction authority, response-loss/legitimate UNKNOWN handling, shared dependency identity and cancellation display, provider protocol mapping for cloud/existing, and authorization-driven preview invalidation. UI 45/45; full suite 888/884 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+0115 review fixes: the panel runs the shared transaction reducer with a workspace/profile/feature transaction key (a manifest switch cannot clear an unresolved UNKNOWN), empty/lost/ok-only responses stay UNKNOWN and cannot be reset or re-prepared, only determined results end a transaction, operation sequences keep late answers from overwriting newer work or releasing an in-flight mutex, a changed frozen plan can be re-prepared, and shared pending dependency checks are cancelled by the owning page while every write notifies the current observer. UI 53/53; full suite 896/892 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+0116 review residuals: a trusted not-written/rolled-back failure can end its association and prepare a new draft without replaying the consumed plan (plain failures are not labelled never-written; UNKNOWN stays latched), a prepare returning after a context change is marked stale with a direct re-prepare path, and dependency identity changes cancel the old identity's pending checks so late responses cannot become ready after returning. UI 58/58; full suite 898/894 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
+
+0117 review residual: a prepare that completes after its page was unmounted compares against the live context serial for the transaction key (and a late plan is re-checked when it appears), so the stale notice, blocked confirm and direct re-prepare path hold across pages while same-context completion still confirms; the no-write note is shown only for FAILED and disappears after an UNKNOWN status. UI 63/63; full suite 898/894 pass/4 platform skips. Still OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED.
