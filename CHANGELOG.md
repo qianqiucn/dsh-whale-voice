@@ -6,6 +6,23 @@ not invent earlier releases or imply production maturity.
 ## [Unreleased]
 
 ### Added
+- Feat: Plan 09 offline onboarding UX. Adds two independent entries (`语音气泡`/`voice-bubbles` and
+  `唱歌`/`singing`) that share the existing voice, Provider, dependency and task sources. Each feature
+  has a first-use dependency wizard with per workspace/profile/feature/manifest persistence, global
+  SetupWizard priority, no stacking, explicit "仅浏览" demo entry and capability-change reminder; the
+  acknowledgement is never treated as READY. Mode-based dependency groups (local/CPU/cloud/existing)
+  separate required, optional, delivery-only and conditional items, with a clearly labelled fake
+  installer simulation (check/install/cancel/failure/retry and Chinese failure reasons; no downloads
+  or real install). Adds multi-engine drafts for voice bubbles (provider/model/voice/language/emotion/
+  speed/volume) and singing (RVC/Gateway, SVC only as a later unavailable option, rights/consent,
+  pitch −12..12, vocal/instrumental gain, delivery), incompatible-field cleanup, preview. The config
+  panel now talks only to an injected isolated adapter and maps the effective voice draft to the
+  existing Coordinator writable fields; language/emotion/speed/volume are reported as draft-only, and
+  singing has no writable mapping and stays read-only. The old front-end demo transaction engine was
+  removed; without an adapter the panel is read-only. 6 unit tests exercise the same adapter contract
+  against the real Coordinator with Fake sources plus wizard/draft rules; 6 UI checks cover the
+  adapter calls, mode/browse persistence, shared dependency install/verify and negative drafts. Full
+  suite 888/884 pass/4 platform skips; UI 30/30; client.js 266,702 bytes.
 - Feat: 090 v1.80 lifecycle unification. `resumeCoverFinal` now re-checks identity/phase inside the
   short queue, returns the completed result for a FINAL (EXISTING/CANCELLED/FAILED) and releases the
   exact attempt lease by `leaseId`, so a real interrupted receipt resumes to SAVED and the next task

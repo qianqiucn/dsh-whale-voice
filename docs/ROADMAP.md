@@ -524,3 +524,21 @@ owner/Artifact JOINTs lock both domains and stay UNKNOWN with the lease retained
 observation errors map to the fixed envelope. Full suite 882/878 pass/4 platform skips. Status
 remains OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #43 is unmerged and parent Plan 08 is not
 complete.
+
+### Plan 08 closure and Plan 09 UX (2026-11-02)
+
+Correction: PR #43 is merged into main as `a9d3ce9` (parents `2c0cb94`/`9d8eaf8`, tree `6a4cf00f`);
+Plan 08 offline/Fake scope is DONE and remains NOT_INTEGRATED. Plan 09 is implemented on
+`feature/plan09-config-ux`: two entries (`voice-bubbles`, `singing`), first-use wizard with
+workspace/profile/feature/manifest persistence and global Setup priority, mode-based dependency groups
+with a labelled fake installer, multi-engine voice/singing drafts, and an isolated demo transaction
+panel. Full suite 888/884 pass/4 platform skips; UI 30/30. Still OFFLINE / FIXTURE_ONLY /
+NOT_INTEGRATED; real install/Provider/GPU/media/WeChat/send are later stages.
+
+### Plan 09 0111 review fixes
+
+Plan 09 now uses a real adapter contract and maps only supported voice fields to the existing
+Coordinator, reporting other fields as draft-only; singing is read-only. Dependencies are mode/source
+aware, the fake installer is shared/cancellable with install and verification separated, and wizard
+persistence is context/revision aware. Full suite 888/884 pass/4 platform skips; UI 30/30. Still
+OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED; PR #44 remains unmerged.

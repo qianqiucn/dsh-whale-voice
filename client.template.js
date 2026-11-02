@@ -10,6 +10,8 @@ window.__ModuleLoader__.load({
 
     const NAV = [
       { id: 'overview', label: '总览', en: 'Overview', icon: 'overview', hint: '一眼看清语音系统' },
+      { id: 'voice-bubbles', label: '语音气泡', en: 'Voice Bubbles', icon: 'wave', hint: '文字转私聊语音气泡' },
+      { id: 'singing', label: '唱歌', en: 'Singing', icon: 'spark', hint: '离线翻唱与歌声演示' },
       { id: 'settings', label: '语音设置', en: 'Voice', icon: 'settings', hint: '开关与生成参数' },
       { id: 'permissions', label: '权限管理', en: 'Access', icon: 'shield', hint: '私聊与群聊白名单' },
       { id: 'safety', label: '发送与安全', en: 'Safety', icon: 'lock', hint: '紧急停止、窗口焦点与游戏保护' },
@@ -531,6 +533,14 @@ window.__ModuleLoader__.load({
 
       let body = null
       if (page === 'overview') body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
+      else if (page === 'voice-bubbles' || page === 'singing') {
+        const feature = PLAN09_FEATURES.find((item) => item.id === page)
+        body = h(Plan09FeaturePage, {
+          feature, setup, notify, profileKey: 'demo-profile',
+          globalSetupOpen: setupOpen || setup.checking,
+          capabilityRevision: capability && capability.data && Number.isInteger(capability.data.revision) ? capability.data.revision : null,
+        })
+      }
       else if (page === 'settings') body = h(SettingsPage, { settings, setSetting, dirty, saveSettings, resetSettings: () => setConfirmReset(true), notify, setup, capability })
       else if (page === 'permissions') body = h(PermissionsPage, { contacts, setContacts, groups, addGroup, removeGroup, notify, setup, capability })
       else if (page === 'safety') body = h(SafetyPage, { settings, setup, capability })
