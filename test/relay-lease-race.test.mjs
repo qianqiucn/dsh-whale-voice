@@ -127,3 +127,93 @@ test('PERSIST-02 a stolen live lease cannot let a stale snapshot overwrite a new
     removeConfigSandbox(sandbox)
   }
 })
+
+/* The same three-process interleaving, but with the pause *after* the lease/revision fence and after
+ * the temp file was written/fsynced, immediately before the final temp → store rename (the 0140
+ * after-fence window). The commit reservation must keep this revision exclusively ours: C cannot
+ * commit the same revision, A's publish is the only one, and no successful result is lost. */
+test('PERSIST-02 a stolen lease after the fence cannot let another process publish the same revision', async () => {
+  const sandbox = createConfigSandbox()
+  const outDir = path.join(sandbox.root, 'race-out')
+  fs.mkdirSync(outDir, { recursive: true })
+  let childA = null
+  const originalRename = fs.renameSync
+  try {
+    const voice = await createVoiceSavedTask(sandbox, {
+      now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z',
+      expiresAt: '2026-10-28T00:00:00.000Z', proofRef: 'fixture-rights:relay-demo',
+    })
+    const backend = createFakeDeliveryBackend({ targets: [TARGET_A, TARGET_B] })
+    const relay = await openUnifiedRelay({ sandbox, backend, targets: [TARGET_A, TARGET_B], now: () => NOW })
+    assert.equal(relay.ok, true, JSON.stringify(relay))
+    const first = await relay.ensureDelivery(relayHandoff({
+      scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+      targetId: TARGET_A.targetId, requestKey: 'after-fence-a', proofRef: 'fixture-rights:relay-demo',
+    }))
+    const second = await relay.ensureDelivery(relayHandoff({
+      scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+      targetId: TARGET_B.targetId, requestKey: 'after-fence-b', proofRef: 'fixture-rights:relay-demo',
+    }))
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(second.ok, true, JSON.stringify(second))
+    const lockFile = path.join(sandbox.root, LOCK)
+    const storeFile = path.join(sandbox.root, STORE)
+    const ready = path.join(sandbox.root, 'race.ready')
+    const release = path.join(sandbox.root, 'race.release')
+    const payloadFile = path.join(outDir, 'race-payload.json')
+    fs.writeFileSync(payloadFile, JSON.stringify({
+      root: sandbox.root, target: TARGET_A, now: NOW, outDir,
+      idA: first.delivery.deliveryId, idB: second.delivery.deliveryId, ready, release,
+    }))
+    const worker = fileURLToPath(new URL('./support/relay-lease-worker.mjs', import.meta.url))
+    fs.writeFileSync(lockFile, JSON.stringify({ token: 'dead-lease', pid: 2147483646, host: 'fixture-host' }) + '\n')
+    let injected = false
+    fs.renameSync = function patchedRename(from, to) {
+      if (!injected && typeof from === 'string' && path.resolve(from) === lockFile && String(to).includes('.stale.')) {
+        injected = true
+        childA = spawn(process.execPath, [worker, 'A_RENAME', payloadFile], { cwd: sandbox.root, stdio: 'ignore', windowsHide: true })
+        if (!waitForFile(ready, 15000)) throw new Error('worker A never paused before its final rename')
+        const moved = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
+        assert.equal(moved.pid, childA.pid, 'worker A must hold the live lease that gets moved aside')
+        originalRename(from, to)
+        const workerC = spawnSync(process.execPath, [worker, 'C', payloadFile], {
+          cwd: sandbox.root, encoding: 'utf8', timeout: 20000, windowsHide: true,
+        })
+        assert.equal(workerC.status, 0, 'worker C: ' + String(workerC.stderr || workerC.stdout || '').slice(0, 400))
+        fs.writeFileSync(release, 'release')
+        return
+      }
+      return originalRename(from, to)
+    }
+    let observed = null
+    try {
+      observed = await openUnifiedRelay({ sandbox, backend, targets: [TARGET_A, TARGET_B], now: () => NOW })
+    } finally {
+      fs.renameSync = originalRename
+    }
+    assert.equal(injected, true)
+    const resultAFile = path.join(outDir, 'worker-A_RENAME-result.json')
+    const resultCFile = path.join(outDir, 'worker-C-result.json')
+    assert.equal(waitForFile(resultAFile, 20000), true, 'worker A never wrote its result')
+    assert.equal(waitForFile(resultCFile, 5000), true, 'worker C never wrote its result')
+    const resultA = JSON.parse(fs.readFileSync(resultAFile, 'utf8'))
+    const resultC = JSON.parse(fs.readFileSync(resultCFile, 'utf8'))
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    const storedA = store.deliveries.find((item) => item.deliveryId === first.delivery.deliveryId)
+    const storedB = store.deliveries.find((item) => item.deliveryId === second.delivery.deliveryId)
+    // The commit reservation was already held by A, so C cannot publish the same revision.
+    assert.equal(resultC.ok, false, JSON.stringify(resultC))
+    assert.equal(resultC.code, 'RELAY_CORE_STORE_BUSY', JSON.stringify(resultC))
+    assert.equal(storedB.state, 'QUEUED', 'C must not have committed a cancel')
+    // A owns the revision and its publish is the only one.
+    assert.equal(resultA.ok, true, JSON.stringify(resultA))
+    assert.equal(storedA.state, 'CANCEL_REQUESTED')
+    assert.equal(observed && observed.ok !== undefined, true)
+  } finally {
+    fs.renameSync = originalRename
+    if (childA && childA.exitCode === null) {
+      try { childA.kill() } catch {}
+    }
+    removeConfigSandbox(sandbox)
+  }
+})

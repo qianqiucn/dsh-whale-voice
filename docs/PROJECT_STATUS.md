@@ -696,3 +696,36 @@ skips / 0 fail**; UI **72/72** (unchanged product UI; the narrow-host fixture no
 `min-height` bookkeeping item `RELAY-DEFER-UI-FIXTURE-139`); `client.js` 314,687 chars (build unchanged by the
 Core-only revision). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and
 unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 110 revision — revision-reservation commit boundary and canonical digest (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes exactly the two persistence items confirmed
+by the 0140 review (`54642e8`); the accepted 109 work (Cover source permit, accept-boundary expiry, store index
+gate) and the accepted UI are not redone.
+
+1. **Commit boundary (137-PERSIST-02/LEASE_AFTER_FENCE).** The advisory lease is no longer the write
+   authority. A commit first reserves `unified-relay-v1.json.commit-<revision+1>`: the guard is prepared as a
+   complete file and published with an atomic hard link (create-or-fail), so it is never observed empty, and
+   only its owner may publish that revision. The reservation is taken before the final `rename` and held until
+   the store rename really happened; after reserving, the writer still re-checks its lease token and starting
+   revision. A third process that legally acquires the canonical lock after a stale reclaim moved the live
+   lease cannot reserve the same revision and fails closed with `STORE_BUSY`; the paused writer's publish is
+   the only one. Guards for published revisions are cleaned best-effort; a dead guard owner is fenced by
+   move-then-verify, an unreadable guard is conservative `STORE_BUSY`. Replayed with two real three-process
+   tests: the 0139 first-read interleaving and the 0140 after-fence interleaving (pause after the fence and
+   after the temp file was fsynced, immediately before the final rename).
+2. **Canonical digest (137-PERSIST-01/CANONICAL_DIGEST).** The delivery digest is recomputed from the
+   persisted semantic facts by one `canonicalDeliveryDigest` function used at creation and at store
+   validation (authority kind, task identity hash, task/artifact refs, artifact hash/bytes/duration/format,
+   target id/kind, rights proof/expiry, permit). A record whose digest and index were edited without the facts
+   is not a trustworthy store: `openUnifiedRelay` fails with `STORE_INVALID`, the file is not rewritten, and
+   the same semantic request cannot be accepted under a new alias a second time. Healthy stores keep
+   `EXISTING` for new aliases, key conflicts, terminal/UNKNOWN behavior and capacity.
+
+Evidence: 4 relay test files / 33 tests (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races),
+including the exact 0140 after-fence and digest-tamper counterexamples replayed against the fix; full suite
+**1105 / 1101 pass / 4 platform skips / 0 fail**; UI **72/72** reused from 0139 (no product UI change; the CI
+`ui` job passes on this head); `client.js` 314,687 chars (unchanged). Status remains `13-A/OFFLINE` /
+`FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged; real DSH page visual, real Sender/WeChat,
+13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. The permit cross-record redundancy limitation stays
+booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.

@@ -598,4 +598,12 @@ The only backend is `createFakeDeliveryBackend`: capabilities/health/resolveTarg
 
 109 revision (0139 review): a SAVED Cover MASTER is not a delivery permission — `issueDeliveryPermit` persists a versioned, immutable source permit bound to scope/task/MASTER/target/rights, and a Cover `ensureDelivery` without a valid permit is `PERMIT_REQUIRED`; the accept boundary re-samples the clock after the final awaited artifact read; every commit re-reads its canonical lease token and the store revision it started from (a stolen lease/old snapshot fails closed with `STORE_BUSY`); and the store is accepted only when records, digest/request-key indexes (aliases included) and permits are mutually consistent, so a corrupt index is `STORE_INVALID` and can never re-accept an already accepted request. The real three-process lease race is replayed as a test: A pauses before commit, its live lease is moved aside, C legally commits a cancel, A fails closed — C's result survives.
 
-Evidence: 32 relay tests in 4 files (12 core + 9 TRUST + 10 PERSIST + 1 real three-process lease race), full suite 1104/1100 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
+110 revision (0140 review): the advisory lease is not the write authority — a commit reserves
+`unified-relay-v1.json.commit-<revision+1>` through an atomic hard link, holds it across the final rename, and
+re-checks its lease/revision after reserving, so a writer whose live lease was moved aside cannot lose the
+revision to a third process (the after-fence three-process interleaving now fails closed on the intruder). The
+delivery digest is recomputed with one `canonicalDeliveryDigest` from the persisted facts at creation and at
+store validation, so a digest/index edited without the facts is `STORE_INVALID` and can never re-accept an
+already accepted request under a new alias.
+
+Evidence: 33 relay tests in 4 files (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races), full suite 1105/1101 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.

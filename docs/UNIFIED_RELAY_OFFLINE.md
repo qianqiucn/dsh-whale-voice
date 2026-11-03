@@ -80,11 +80,17 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
   replacement is restored with a create-or-fail link/copy (never overwritten) or left in quarantine and
   reported busy. A release moves its own lease aside, verifies it, and restores a moved foreign lease
   without overwriting a third live lease.
-- The lock alone is not the write authority: before every commit the writer re-reads the canonical lease
-  and requires its own token, re-reads the store and requires the revision it started from. A writer whose
-  lease was moved aside (the reported window in which a third process legally takes the empty canonical
-  name) or whose snapshot was overtaken fails closed with `STORE_BUSY` and writes nothing, so it can never
-  overwrite a newer successful cancel/terminal write with an old snapshot.
+- The lock alone is not the write authority. A commit first reserves `unified-relay-v1.json.commit-<rev>`
+  for exactly `revision + 1`: the guard is published with its full content through an atomic hard link
+  (create-or-fail), so it is never observed empty, and only its owner may publish that revision. The
+  reservation is taken before the final publish and held until the store rename really happened; a third
+  process that legally acquires the canonical lock after a stale reclaim moved the live lease still cannot
+  reserve the same revision and therefore cannot commit — it fails closed with `STORE_BUSY`. After the
+  reservation the writer also re-checks its lease token and the store revision it started from. A writer
+  that lost its lease or was overtaken writes nothing. Guards for already published revisions are
+  best-effort cleaned; a dead guard owner is fenced by move-then-verify, an unreadable guard is
+  conservative `STORE_BUSY`. This makes the acquisition, reclaim, release and the final rename one
+  explainable single-writer boundary rather than a check followed by another race window.
 - `ensureDelivery` persists the record before any backend call. `submit` claims the record with an owner
   token, persists `SUBMITTING` (the live token is registered only after that commit really happened, so a
   failed claim never leaves a phantom live owner), then re-reads the artifact/target.
@@ -146,11 +152,15 @@ legacy IDs remain valid; the Plan09 wizard already presents one "鲸递（统一
 The store is accepted only when its persisted records, the digest/request-key indexes and the delivery
 permits are mutually consistent (every record indexed both ways, every index entry pointing at a matching
 record, unique ids/digests/permit keys, legal terminal/owner relations, `ACCEPTED` with receipt, `SUBMITTING`
-with owner). Any missing, extra, duplicated or mismatched entry is treated as a corrupt store:
-`openUnifiedRelay` fails with `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh
-store, and no second delivery can be created for an already accepted request.
+with owner). The delivery digest is not trusted as a string: validation recomputes it with the same
+`canonicalDeliveryDigest` used at creation from the persisted semantic facts (authority kind, task identity
+hash, task/artifact refs, artifact hash/bytes/duration/format, target id/kind, rights proof/expiry, permit),
+so a record whose digest/index was edited without the facts (or vice versa) is not a trustworthy store. Any
+missing, extra, duplicated or mismatched entry is treated as a corrupt store: `openUnifiedRelay` fails with
+`STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
+can be created for an already accepted request.
 
-Four offline relay files cover the unit (32 tests):
+Four offline relay files cover the unit (33 tests):
 
 `test/relay-core-offline.test.mjs` (12): real SAVED task + actual Fixture library bytes, stable delivery
 id/alias/intent, safe legacy request id, conflict; a caller-supplied record is never an authority; one submit
@@ -181,14 +191,14 @@ was moved aside fails closed with `STORE_BUSY` without writing; corrupt/inconsis
 index, missing key index, both, dangling entry, duplicate record, illegal terminal relation) are refused with
 `STORE_INVALID` without being rewritten and without a second acceptance.
 
-`test/relay-lease-race.test.mjs` (1) replays the reported real three-process interleaving: a live writer A
+`test/relay-lease-race.test.mjs` (2) replays both reported real three-process interleavings: a live writer A
 reads the store and pauses before its commit, a stale reclaim moves A's live lease aside, C legally acquires
 the empty canonical name and commits a normal cancel, then A tries to commit its old snapshot. A fails closed
 with `STORE_BUSY` and writes nothing; C's successful cancellation survives (`CANCEL_REQUESTED`), so no
-successful result is lost. `test/support/relay-lease-worker.mjs` is the process worker; the interleaving is
+successful result is lost; the after-fence variant pauses A after the lease/revision fence and after the temp\nfile was written/fsynced, immediately before the final rename — the commit reservation keeps that revision\nexclusively A's, so C fails closed with `STORE_BUSY` and A's publish is the only one. `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are
 arranged with real child processes and file markers, never by editing a relay record.
 
-Local: **1104 tests / 1100 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
+Local: **1105 tests / 1101 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
 (build unchanged by the Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

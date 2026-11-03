@@ -117,6 +117,31 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
+/**
+ * The one canonical semantic digest of a delivery. Creation and store validation both call this
+ * function over the persisted record facts, so a record whose digest/index was edited without the
+ * facts (or vice versa) is not a trustworthy store and is refused instead of re-accepting the same
+ * request under a new alias.
+ */
+function canonicalDeliveryDigest(facts) {
+  return sha256([
+    'relay-v3',
+    facts.kind,
+    facts.taskIdentityHash,
+    facts.taskId,
+    facts.artifactRef,
+    facts.artifactSha256,
+    String(facts.byteLength),
+    String(facts.durationMs),
+    facts.format,
+    facts.targetId,
+    facts.targetKind,
+    facts.proofRef,
+    facts.expiresAt,
+    facts.permitId || '',
+  ].join('|'))
+}
+
 function publicRecord(record) {
   if (!record) return null
   return {
@@ -229,6 +254,21 @@ function validateStoreState(store) {
     if (typeof record.deliveryId !== 'string' || !DELIVERY_ID.test(record.deliveryId)) return false
     if (deliveries.has(record.deliveryId)) return false
     if (typeof record.digest !== 'string' || !SHA256.test(record.digest)) return false
+    if (canonicalDeliveryDigest({
+      kind: record.intent ? record.intent.kind : null,
+      taskIdentityHash: record.intent ? record.intent.taskIdentityHash : null,
+      taskId: record.taskId,
+      artifactRef: record.artifactRef,
+      artifactSha256: record.artifactSha256,
+      byteLength: record.byteLength,
+      durationMs: record.durationMs,
+      format: record.format,
+      targetId: record.targetId,
+      targetKind: record.targetKind,
+      proofRef: record.rightsProofRef,
+      expiresAt: record.rightsExpiresAt,
+      permitId: record.permitId,
+    }) !== record.digest) return false
     if (typeof record.requestKey !== 'string' || !REQUEST_KEY.test(record.requestKey)) return false
     if (!Array.isArray(record.requestKeys) || record.requestKeys.length < 1) return false
     if (record.requestKeys[0] !== record.requestKey) return false
@@ -384,6 +424,98 @@ function restoreQuarantine(quarantine, file) {
   }
   try { fs.rmSync(quarantine, { force: true }) } catch {}
   return true
+}
+
+function commitGuardPath(root, revision) {
+  return path.join(root, RELAY_STORE_FILE + '.commit-' + revision)
+}
+
+function readCommitGuard(file) {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!value || !Number.isInteger(value.revision) || typeof value.token !== 'string' || !Number.isInteger(value.pid)) return null
+    return value
+  } catch {
+    return null
+  }
+}
+
+/** Commit guards for already-published revisions are obsolete; safe best-effort cleanup. */
+function removeObsoleteCommitGuards(root, revision) {
+  let names = []
+  try { names = fs.readdirSync(root) } catch { return }
+  const prefix = RELAY_STORE_FILE + '.commit-'
+  for (const name of names) {
+    if (typeof name !== 'string' || !name.startsWith(prefix)) continue
+    const suffix = name.slice(prefix.length)
+    if (!/^[0-9]+$/.test(suffix)) continue
+    if (Number(suffix) > revision) continue
+    try { fs.rmSync(path.join(root, name), { force: true }) } catch {}
+  }
+}
+
+/**
+ * The commit reservation for exactly `baseRevision + 1`. The guard is created with its full content
+ * through an atomic hard link (a create-or-fail publish of a prepared file), so it is never observed
+ * empty. Only the guard owner may publish that revision: even if the advisory lease is moved aside
+ * and a third process legally acquires the canonical lock, that process cannot reserve the same
+ * revision and therefore cannot commit. A dead guard owner is provably fenced by move-then-verify
+ * before it is removed; an unreadable guard is conservative BUSY.
+ */
+function reserveCommitGuard(root, revision, owner) {
+  const guard = commitGuardPath(root, revision)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const temp = guard + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp'
+    let prepared = false
+    try {
+      const handle = fs.openSync(temp, 'wx', 0o600)
+      try {
+        fs.writeFileSync(handle, JSON.stringify({ token: owner.token, pid: process.pid, revision, createdAt: new Date().toISOString() }) + '\n', 'utf8')
+        fs.fsyncSync(handle)
+      } finally {
+        fs.closeSync(handle)
+      }
+      prepared = true
+    } catch {
+      prepared = false
+    }
+    let created = false
+    if (prepared) {
+      try {
+        fs.linkSync(temp, guard)
+        created = true
+      } catch (error) {
+        if (error && error.code !== 'EEXIST') {
+          try { fs.copyFileSync(temp, guard, fs.constants.COPYFILE_EXCL); created = true } catch { created = false }
+        }
+      }
+    }
+    try { fs.rmSync(temp, { force: true }) } catch {}
+    if (created) return { ok: true, file: guard }
+    if (!prepared) return { ok: false, code: RELAY_ERRORS.STORE_INVALID, detail: 'commit guard write failed' }
+    const existing = readCommitGuard(guard)
+    if (!existing) return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard unreadable' }
+    if (!pidAlive(existing.pid)) {
+      const quarantine = guard + '.stale.' + owner.token + '.' + crypto.randomBytes(4).toString('hex')
+      let moved = false
+      try { fs.renameSync(guard, quarantine); moved = true } catch { moved = false }
+      if (moved) {
+        const verified = readCommitGuard(quarantine)
+        if (verified && verified.token === existing.token && !pidAlive(verified.pid)) {
+          try { fs.rmSync(quarantine, { force: true }) } catch {}
+          continue
+        }
+        restoreQuarantine(quarantine, guard)
+      }
+    }
+    return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard held' }
+  }
+  return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard contention' }
+}
+
+function releaseCommitGuard(guard) {
+  if (!guard || typeof guard.file !== 'string') return
+  try { fs.rmSync(guard.file, { force: true }) } catch {}
 }
 
 async function acquireLock(root, owner) {
@@ -675,19 +807,30 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         const outcome = await fn(store)
         if (outcome && outcome.persist === true) {
           if (!Number.isInteger(store.revision)) store.revision = 0
-          // Commit fence: the canonical lease must still be this run's lease and no other writer may
-          // have committed since this run read the store. A writer whose lease was moved aside (or
-          // whose snapshot was overtaken) fails closed instead of overwriting a newer state.
-          let current = null
-          try { current = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
-          const lease = readLease(lockPath(root))
-          if (!lease || lease.token !== owner.token) return fail(RELAY_ERRORS.STORE_BUSY, 'lease lost before commit')
-          if (current.revision !== baseRevision) return fail(RELAY_ERRORS.STORE_BUSY, 'store advanced before commit')
-          store.revision = baseRevision + 1
-          atomicWrite(storeFile, store)
-          // A live owner token is registered only once its claim commit really happened, so a failed
-          // claim can never leave a phantom live token behind.
-          if (typeof outcome.liveToken === 'string') LIVE_SUBMITS.set(outcome.liveToken, ownerPid)
+          const nextRevision = baseRevision + 1
+          try { removeObsoleteCommitGuards(root, baseRevision) } catch {}
+          // The commit reservation is the single-writer authority for this revision: it is taken
+          // before the final publish and held until the rename really happened. A writer whose live
+          // lease was moved aside still owns its revision, so a third process cannot publish the same
+          // revision; it fails closed instead of overwriting this snapshot.
+          const guard = reserveCommitGuard(root, nextRevision, owner)
+          if (!guard.ok) return fail(guard.code, guard.detail)
+          try {
+            // Belt-and-braces fence after the reservation: the advisory lease must still be this
+            // run's lease and no other writer may have committed since this run read the store.
+            let current = null
+            try { current = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
+            const lease = readLease(lockPath(root))
+            if (!lease || lease.token !== owner.token) return fail(RELAY_ERRORS.STORE_BUSY, 'lease lost before commit')
+            if (current.revision !== baseRevision) return fail(RELAY_ERRORS.STORE_BUSY, 'store advanced before commit')
+            store.revision = nextRevision
+            atomicWrite(storeFile, store)
+            // A live owner token is registered only once its claim commit really happened, so a
+            // failed claim can never leave a phantom live token behind.
+            if (typeof outcome.liveToken === 'string') LIVE_SUBMITS.set(outcome.liveToken, ownerPid)
+          } finally {
+            releaseCommitGuard(guard)
+          }
         }
         return outcome ? outcome.value : fail(RELAY_ERRORS.INPUT_INVALID)
       } catch (error) {
@@ -884,11 +1027,21 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
             artifactSha256: artifact.sha256, targetId: target.targetId, targetKind: target.kind, proofRef: rights.proofRef,
           })
         : null
-      const digest = sha256([
-        'relay-v2', authority.value.kind, authority.value.taskIdentityHash,
-        handoff.taskId, artifact.artifactRef, artifact.sha256, target.targetId, target.kind,
-        rights.proofRef, expiresAt, permitRequired ? handoff.permitId : '',
-      ].join('|'))
+      const digest = canonicalDeliveryDigest({
+        kind: authority.value.kind,
+        taskIdentityHash: authority.value.taskIdentityHash,
+        taskId: handoff.taskId,
+        artifactRef: artifact.artifactRef,
+        artifactSha256: artifact.sha256,
+        byteLength: artifact.byteLength,
+        durationMs: artifact.durationMs,
+        format: artifact.format,
+        targetId: target.targetId,
+        targetKind: target.kind,
+        proofRef: rights.proofRef,
+        expiresAt,
+        permitId: permitRequired ? handoff.permitId : null,
+      })
       return run((store) => {
         if (permitRequired) {
           const permitRecord = store.permits.find((item) => item.permitId === handoff.permitId)

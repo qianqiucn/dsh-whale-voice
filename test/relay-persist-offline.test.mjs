@@ -349,7 +349,7 @@ test('PERSIST-02 a terminal-state write failure stays BUSY for the live owner in
 /* ------------------------------------------------------------------ PERSIST-01/STORE */
 
 test('PERSIST-01 a corrupt or inconsistent store is refused instead of re-minting an accepted delivery', async () => {
-  const variants = ['digest-index', 'key-index', 'both-indexes', 'dangling-digest', 'duplicate-record', 'terminal-state']
+  const variants = ['digest-index', 'key-index', 'both-indexes', 'dangling-digest', 'duplicate-record', 'terminal-state', 'canonical-digest']
   for (const variant of variants) {
     await withSandbox(async (sandbox) => {
       const voice = await createVoiceSavedTask(sandbox, {
@@ -375,6 +375,14 @@ test('PERSIST-01 a corrupt or inconsistent store is refused instead of re-mintin
       if (variant === 'dangling-digest') store.byDigest['f'.repeat(64)] = first.delivery.deliveryId
       if (variant === 'duplicate-record') store.deliveries.push({ ...store.deliveries[0], deliveryId: 'delivery:' + 'e'.repeat(32) })
       if (variant === 'terminal-state') store.deliveries[0].receiptId = null
+      if (variant === 'canonical-digest') {
+        // Keep every semantic fact and the terminal state, re-point only the digest (and its index)
+        // to another syntactically valid 64-hex value.
+        const record = store.deliveries[0]
+        delete store.byDigest[record.digest]
+        record.digest = 'a'.repeat(64)
+        store.byDigest[record.digest] = record.deliveryId
+      }
       fs.writeFileSync(storeFile, JSON.stringify(store) + '\n')
       const before = fs.readFileSync(storeFile)
       const reopened = await openUnifiedRelay(args)

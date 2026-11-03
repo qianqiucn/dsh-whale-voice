@@ -736,3 +736,37 @@ replaying a corrupt store; locking only by file presence without a commit-time l
 a stolen-lease write as success.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-027 — A revision reservation is the commit authority; the delivery digest is recomputed from facts
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** The advisory lease is not the write authority. Before publishing revision `N+1` a writer must
+reserve `unified-relay-v1.json.commit-<N+1>`: the guard is prepared as a complete file and published with an
+atomic hard link (create-or-fail; `COPYFILE_EXCL` only as a fallback), so it is never observed empty. The
+reservation is taken before the final `rename` and held until the store rename really happened, and it is
+not transferable: a third process that legally acquires the canonical lock after a stale reclaim moved the
+live lease still cannot reserve the same revision and fails closed with `STORE_BUSY`. The writer also
+re-checks its lease token and starting revision after reserving. Guards for already published revisions are
+cleaned best-effort; a dead guard owner is fenced by move-then-verify before removal, and an unreadable guard
+is conservative `STORE_BUSY`.
+
+The delivery digest is a *verified function of persisted facts*, not a stored string: creation and store
+validation both call `canonicalDeliveryDigest` over the authority kind, task identity hash, task/artifact
+refs, artifact hash/bytes/duration/format, target id/kind, rights proof/expiry and permit. A record whose
+digest or index was edited without the facts (or vice versa) makes the whole store `STORE_INVALID`, so it can
+never be used to re-accept an already accepted request under a new alias.
+
+**Reason:** the 0140 review proved that a pause between the lease/revision check and the final rename let a
+stale reclaim move the live lease, a third process commit, and the paused writer overwrite it with an old
+snapshot; and that editing only the digest (and its index) kept the store valid while the same request was
+accepted a second time. Both are data-loss/duplicate-acceptance risks. A check followed by another window is
+not a proof of exclusion; the reservation is an exclusive claim held across the publish, and the digest is
+recomputed from the record it is supposed to describe.
+
+**Rejected alternatives:** another pre-rename read check (moves the window instead of closing it); treating
+guard file age/mtime as staleness (could delete a live reservation); repairing/recomputing a damaged store;
+re-minting ids or replaying; trusting the stored digest/index strings.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

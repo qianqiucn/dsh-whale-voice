@@ -27,6 +27,25 @@ if (!relay.ok) {
   fs.writeFileSync(resultFile, JSON.stringify({ ok: false, code: relay.code }))
   process.exit(0)
 }
+if (mode === 'A_RENAME') {
+  // Pause after the commit reservation and after the temp file was written/fsynced, immediately
+  // before the final temp → store rename (the after-fence window from the 0140 review).
+  const storeFile = path.join(data.root, 'unified-relay-v1.json')
+  const originalRename = fs.renameSync
+  let paused = false
+  fs.renameSync = function patchedRename(from, to) {
+    if (!paused && typeof to === 'string' && path.resolve(to) === storeFile) {
+      paused = true
+      fs.writeFileSync(data.ready, 'ready')
+      const deadline = Date.now() + 15000
+      while (!fs.existsSync(data.release)) {
+        if (Date.now() > deadline) throw new Error('A_RELEASE_TIMEOUT')
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+      }
+    }
+    return originalRename(from, to)
+  }
+}
 if (mode === 'A') {
   const storeFile = path.join(data.root, 'unified-relay-v1.json')
   let seen = false
@@ -45,5 +64,5 @@ if (mode === 'A') {
     return bytes
   }
 }
-const result = await relay.cancel(mode === 'A' ? data.idA : data.idB)
+const result = await relay.cancel(mode === 'C' ? data.idB : data.idA)
 fs.writeFileSync(resultFile, JSON.stringify(result))
