@@ -26,6 +26,12 @@ async function ledger(t) {
   return openCostLedger({ rootDir: root, limitMicros: 100000, unitPriceMicrosPerCharacter: 10 })
 }
 
+async function freeLedger(t) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wv-pipeline-free-'))
+  t.after(async () => { await fs.rm(root, { recursive: true, force: true }) })
+  return openCostLedger({ rootDir: root, mode: 'free', maxCalls: 100, limitMicros: 0, unitPriceMicrosPerCharacter: 0 })
+}
+
 test('both cloud adapters complete the neutral fixture flow without Task, Artifact or delivery', async (t) => {
   const azure = createAzureSpeechProvider({
     region: 'eastus',
@@ -44,6 +50,9 @@ test('both cloud adapters complete the neutral fixture flow without Task, Artifa
     target: 'http://127.0.0.1:9/tts',
     networkEnabled: true,
     consent: { textUpload: true, providerId: 'custom-http' },
+    costMode: 'free',
+    freeConfirmed: true,
+    costLedger: await freeLedger(t),
     transport: async () => ({ ok: true, status: 200, body: wavBytes(), headers: {}, live: false }),
   })
 

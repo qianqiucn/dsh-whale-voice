@@ -213,6 +213,86 @@ test('timeout and cancellation are UNKNOWN/CANCELLED and never resent', async (t
   assert.equal(cancelled.terminal, 'CANCELLED')
 })
 
+test('same requestId concurrent calls enter transport exactly once', async (t) => {
+  const ledger = await ledgerFor(t)
+  let calls = 0
+  const provider = createAzureSpeechProvider({
+    ...baseOptions(),
+    costLedger: ledger,
+    transport: async () => {
+      calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return { ok: true, status: 200, body: wavBytes(), headers: {}, live: false }
+    },
+  })
+  const [first, second] = await Promise.all([
+    provider.synthesize({ ...goodRequest, requestId: 'azure-concurrent-001' }),
+    provider.synthesize({ ...goodRequest, requestId: 'azure-concurrent-001' }),
+  ])
+  assert.equal(calls, 1)
+  assert.equal([first, second].filter((item) => item.ok === true).length, 1)
+  assert.equal([first, second].filter((item) => item.code === AZURE_SPEECH_ERRORS.COST_DUPLICATE_REQUEST).length, 1)
+})
+
+test('pre-cancel and cancel during credential resolution never create a request', async (t) => {
+  const ledger = await ledgerFor(t)
+  let transportCalls = 0
+  const pre = new AbortController()
+  pre.abort()
+  const preProvider = createAzureSpeechProvider({
+    ...baseOptions(),
+    costLedger: ledger,
+    transport: async () => { transportCalls += 1; return { ok: true, status: 200, body: wavBytes(), headers: {} } },
+  })
+  const preResult = await preProvider.synthesize({ ...goodRequest, requestId: 'azure-pre-cancel' }, { signal: pre.signal })
+  assert.equal(preResult.code, AZURE_SPEECH_ERRORS.CANCELLED)
+  assert.equal(preResult.sent, false)
+
+  const controller = new AbortController()
+  const slowStore = {
+    async has() { await new Promise((resolve) => setTimeout(resolve, 40)); return { ok: true, present: true } },
+    async resolve() { return { ok: true, secret: 'synthetic' } },
+  }
+  const provider = createAzureSpeechProvider({
+    ...baseOptions({ credentialStore: slowStore }),
+    costLedger: ledger,
+    transport: async () => { transportCalls += 1; return { ok: true, status: 200, body: wavBytes(), headers: {} } },
+  })
+  setTimeout(() => controller.abort(), 5)
+  const result = await provider.synthesize({ ...goodRequest, requestId: 'azure-credential-cancel' }, { signal: controller.signal })
+  assert.equal(result.code, AZURE_SPEECH_ERRORS.CANCELLED)
+  assert.equal(result.sent, false)
+  assert.equal(transportCalls, 0)
+})
+
+test('cancel during cost commit does not return success audio and keeps the charge/UNKNOWN', async (t) => {
+  const baseLedger = await ledgerFor(t)
+  const slowLedger = {
+    ...baseLedger,
+    async commit(args) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      return baseLedger.commit(args)
+    },
+  }
+  const controller = new AbortController()
+  const provider = createAzureSpeechProvider({
+    ...baseOptions(),
+    costLedger: slowLedger,
+    transport: async () => {
+      setTimeout(() => controller.abort(), 5)
+      return { ok: true, status: 200, body: wavBytes(), headers: {}, live: false }
+    },
+  })
+  const result = await provider.synthesize({ ...goodRequest, requestId: 'azure-commit-cancel' }, { signal: controller.signal })
+  assert.equal(result.code, AZURE_SPEECH_ERRORS.CANCELLED)
+  assert.equal(result.cancelled, true)
+  assert.equal(result.ok, false)
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'bytes'), false)
+  const snapshot = baseLedger.snapshot()
+  assert.equal(snapshot.pendingMicros, 0)
+  assert.ok(snapshot.spentMicros > 0 || snapshot.unknownMicros > 0)
+})
+
 test('transport secrets never appear in results, errors or public projection', async (t) => {
   const ledger = await ledgerFor(t)
   const secret = 'SECRET-SHOULD-NOT-LEAK-0123456789'

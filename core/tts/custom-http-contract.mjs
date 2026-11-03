@@ -41,8 +41,10 @@ export const CUSTOM_HTTP_ERRORS = Object.freeze({
   NETWORK_DISABLED: 'CUSTOM_NETWORK_DISABLED',
   TEXT_UPLOAD_NOT_CONFIRMED: 'CUSTOM_TEXT_UPLOAD_NOT_CONFIRMED',
   COST_UNKNOWN: 'CUSTOM_COST_UNKNOWN',
+  COST_MODE_INVALID: 'CUSTOM_COST_MODE_INVALID',
   COST_QUOTA_EXCEEDED: 'CUSTOM_COST_QUOTA_EXCEEDED',
   COST_DUPLICATE_REQUEST: 'CUSTOM_COST_DUPLICATE_REQUEST',
+  COST_CALL_LIMIT_EXCEEDED: 'CUSTOM_COST_CALL_LIMIT_EXCEEDED',
   AUTH_FAILED: 'CUSTOM_AUTH_FAILED',
   RATE_LIMITED: 'CUSTOM_RATE_LIMITED',
   PROVIDER_ERROR: 'CUSTOM_PROVIDER_ERROR',
@@ -57,6 +59,7 @@ export const CUSTOM_HTTP_ERRORS = Object.freeze({
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{1,127}$/
 const VOICE_IDS = new Set(['custom-default'])
 const LANGUAGES = new Set(['zh-CN', 'en-US'])
+export const CUSTOM_COST_MODES = Object.freeze(['unknown', 'free', 'paid'])
 
 export function isCustomVoice(value) {
   return typeof value === 'string' && VOICE_IDS.has(value)
@@ -97,9 +100,10 @@ export function customAuthHeader(auth, secret) {
   return null
 }
 
-export function buildCustomHttpManifest({ target, auth = { mode: 'none', credentialRef: null }, limits = null } = {}) {
+export function buildCustomHttpManifest({ target, auth = { mode: 'none', credentialRef: null }, limits = null, costMode = 'unknown' } = {}) {
   const shape = validateCustomTargetShape(target)
   if (!shape.ok) return { ok: false, code: shape.code }
+  if (!CUSTOM_COST_MODES.includes(costMode)) return { ok: false, code: CUSTOM_HTTP_ERRORS.COST_MODE_INVALID }
   if (!auth || !['none', 'bearer', 'x-api-key'].includes(auth.mode)) return { ok: false, code: CUSTOM_HTTP_ERRORS.AUTH_INVALID }
   const credentialRef = auth.credentialRef || null
   if (auth.mode !== 'none') {
@@ -146,11 +150,11 @@ export function buildCustomHttpManifest({ target, auth = { mode: 'none', credent
         retention: 'unknown',
         note: '自定义服务端的留存、日志和训练政策 UNKNOWN；不得继承 Azure 的留存说明，真实启用前需由服务方确认。',
       },
-      cost: {
-        paid: false,
-        model: 'free',
-        note: '默认按自托管/免费服务处理；若实际为付费服务，必须在接入配置中显式提供单价与额度，未知价格不得执行。',
-      },
+      cost: costMode === 'free'
+        ? { paid: false, model: 'free', note: '接入方已明确确认该自定义服务免费/自托管；仍受调用次数与文字上限及持久去重约束。' }
+        : costMode === 'paid'
+          ? { paid: true, model: 'per-character', note: '接入方明确声明付费；必须提供已知单价与硬额度，未知价格不得执行。' }
+          : { paid: false, model: 'unknown', note: '费用未知；不得发起请求，也不能被展示为免费或按免费执行。' },
       resources: { local: false, gpuRequired: false, cpuCapable: true },
     },
   }

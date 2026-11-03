@@ -26,9 +26,9 @@ test('cost ledger reserves before send, commits actual and rejects duplicate req
   assert.equal(reservation.micros, 100)
   assert.equal(ledger.snapshot().pendingMicros, 100)
   const duplicate = await ledger.reserve({ requestId: 'req-001', charCount: 10 })
-  assert.equal(duplicate.ok, true)
-  assert.equal(duplicate.duplicate, true)
-  assert.equal(duplicate.reservationId, reservation.reservationId)
+  assert.equal(duplicate.ok, false)
+  assert.equal(duplicate.code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+  assert.equal(duplicate.detail, 'PENDING')
   const commit = await ledger.commit({ reservationId: reservation.reservationId, actualMicros: 100 })
   assert.equal(commit.ok, true)
   const snapshot = ledger.snapshot()
@@ -119,4 +119,69 @@ test('a changed budget/price does not silently reuse the old ledger', async (t) 
   assert.equal(first.ok, true)
   const changed = await openCostLedger({ rootDir: root, limitMicros: 2000, unitPriceMicrosPerCharacter: 10 })
   assert.equal(changed.code, CLOUD_COST_ERRORS.CONFIG_MISMATCH)
+})
+
+test('two handles on the same root share one atomic authority and cannot overspend', async (t) => {
+  const root = await tempRoot(t)
+  const first = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  const second = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(first.ok, true)
+  assert.equal(second.ok, true)
+  const reservationA = await first.reserve({ requestId: 'shared-a', charCount: 10 })
+  assert.equal(reservationA.ok, true)
+  assert.equal((await first.commit({ reservationId: reservationA.reservationId, actualMicros: 100 })).ok, true)
+  const reservationB = await second.reserve({ requestId: 'shared-b', charCount: 95 })
+  assert.equal(reservationB.code, CLOUD_COST_ERRORS.QUOTA_EXCEEDED)
+  const reservationC = await second.reserve({ requestId: 'shared-c', charCount: 10 })
+  assert.equal(reservationC.ok, true)
+  assert.equal((await second.commit({ reservationId: reservationC.reservationId, actualMicros: 100 })).ok, true)
+  const reopened = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(reopened.snapshot().spentMicros, 200)
+  const over = await reopened.reserve({ requestId: 'shared-d', charCount: 100 })
+  assert.equal(over.code, CLOUD_COST_ERRORS.QUOTA_EXCEEDED)
+})
+
+test('a full dedup history fails closed without losing an old UNKNOWN request', async (t) => {
+  const root = await tempRoot(t)
+  const dir = path.join(root, CLOUD_COST_NAMESPACE)
+  await fs.mkdir(dir, { recursive: true })
+  const completed = Array.from({ length: 512 }, (_, index) => ({
+    requestId: `old-${index}`,
+    state: 'UNKNOWN',
+    micros: 10,
+    at: '2026-11-03T00:00:00.000Z',
+  }))
+  const state = {
+    schemaVersion: 1,
+    currency: 'USD',
+    mode: 'paid',
+    maxCalls: 512,
+    limitMicros: 1000000,
+    unitPriceMicrosPerCharacter: 10,
+    spentMicros: 0,
+    unknownMicros: 5120,
+    reservations: [],
+    completed,
+    updatedAt: '2026-11-03T00:00:00.000Z',
+  }
+  await fs.writeFile(path.join(dir, 'cost-ledger-v1.json'), JSON.stringify(state), 'utf8')
+  const ledger = await openCostLedger({ rootDir: root, limitMicros: 1000000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(ledger.ok, true)
+  assert.equal((await ledger.reserve({ requestId: 'old-0', charCount: 1 })).code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+  assert.equal((await ledger.reserve({ requestId: 'new-after-full', charCount: 1 })).code, CLOUD_COST_ERRORS.CALL_LIMIT_EXCEEDED)
+})
+
+test('a free ledger still enforces a durable call limit and deduplication', async (t) => {
+  const root = await tempRoot(t)
+  const ledger = await openCostLedger({ rootDir: root, mode: 'free', maxCalls: 2, limitMicros: 0, unitPriceMicrosPerCharacter: 0 })
+  assert.equal(ledger.ok, true)
+  const first = await ledger.reserve({ requestId: 'free-1', charCount: 10 })
+  const second = await ledger.reserve({ requestId: 'free-2', charCount: 10 })
+  assert.equal(first.ok, true)
+  assert.equal(second.ok, true)
+  assert.equal(first.micros, 0)
+  assert.equal((await ledger.reserve({ requestId: 'free-3', charCount: 10 })).code, CLOUD_COST_ERRORS.CALL_LIMIT_EXCEEDED)
+  assert.equal((await ledger.reserve({ requestId: 'free-1', charCount: 10 })).code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+  assert.equal(ledger.snapshot().mode, 'free')
+  assert.equal(ledger.snapshot().callsUsed, 2)
 })

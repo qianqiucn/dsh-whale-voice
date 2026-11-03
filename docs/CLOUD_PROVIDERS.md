@@ -32,9 +32,11 @@ A cloud/custom synthesis is attempted only when **all** of these are true:
    `consent.providerId` matches the adapter. This is separate from enabling the network.
 3. **Credential present** — the credentialRef resolves through the application-owned store; a
    missing/corrupt credential never falls back to plaintext or an environment variable.
-4. **Known cost bound and budget** — Azure is paid; an unknown unit price fails closed. A
-   character-based upper bound is reserved in a durable ledger before the request. A free/self-hosted
-   custom service may skip the ledger, but must not be silently treated as paid.
+4. **Known cost mode/bound** — Azure is paid; an unknown unit price fails closed. A
+   character-based upper bound is reserved in a durable ledger before the request. A custom service
+   must be explicitly `free` (with confirmation and a free ledger for call/dedup limits), explicitly
+   `paid` (known price and hard budget), or `unknown` — and `unknown` makes **zero** requests. It is
+   never silently treated as free.
 
 In addition, the adapter's own **network gate** defaults to disabled. `NETWORK_DISABLED` is a
 normal state, not an error to be retried silently.
@@ -65,15 +67,20 @@ normal state, not an error to be retried silently.
 `core/tts/cloud-cost.mjs` is a small atomic JSON ledger:
 
 - The integer price is `unitPriceMicrosPerCharacter` in a configured currency; there is no float
-  money and no default price.
-- `reserve` computes `charCount × price`, checks `spent + unknown + pending + new <= limit`, and
-  persists a `PENDING` reservation **before** the request.
-- A success commits the actual amount; a failure before the request releases it; a timeout,
-  broken connection or any post-send uncertainty becomes `UNKNOWN` and keeps the reserved amount
-  (never a free retry).
-- A restart converts any leftover `PENDING` reservation to `UNKNOWN`. Duplicate requestIds are
-  rejected after commit/release/unknown; a concurrent burst is serialized and cannot overspend.
-- A corrupt ledger, changed price/limit or unknown price fails closed instead of resetting the
+  money and no default price. A `free` mode uses price 0 and still keeps a durable call/character
+  limit and request dedup.
+- One ledger file is the authority. Every operation re-reads it under an in-process queue plus a
+  bounded file lock, so two handles on the same root cannot spend the same budget or overwrite each
+  other. `reserve` computes `charCount × price`, checks `spent + unknown + pending + new <= limit`,
+  and persists a `PENDING` reservation **before** the request.
+- A same-requestId `PENDING` duplicate is refused, not allowed into transport a second time. A
+  success commits the actual amount; a failure before the request releases it; a timeout, broken
+  connection or any post-send uncertainty becomes `UNKNOWN` and keeps the reserved amount (never a
+  free retry).
+- A restart converts any leftover `PENDING` reservation to `UNKNOWN`. Completed/UNKNOWN requestIds
+  stay deduplicated; at the bounded capacity (`maxCalls`) the ledger fails closed
+  (`CALL_LIMIT_EXCEEDED`/`DEDUP_CAPACITY`) instead of truncating old records and reusing an UNKNOWN id.
+- A corrupt ledger, changed mode/price/limit or unknown price fails closed instead of resetting the
   budget.
 
 ## 5. Azure Speech adapter
@@ -165,7 +172,17 @@ script, URL downloader, arbitrary header name or clone/emotion/streaming field.
 - Response starts with `audio/wav`/`audio/x-wav`; the body is streamed under an immediate byte cap
   and total timeout, then re-inspected as 24 kHz mono PCM16 WAV.
 
-### 6.3 Authentication and retention
+### 6.3 Cost modes
+
+- `unknown` (default): zero request; the projection says “费用未知，禁止请求”.
+- `free`: only with explicit `freeConfirmed:true` and a free ledger; still subject to the text
+  limit, call limit and persistent request dedup.
+- `paid`: needs an explicit integer price and hard budget; uses the same durable ledger authority
+  as Azure (no second billing/dedup truth). A missing price or exhausted budget makes zero request.
+
+The old “FREE_OR_UNKNOWN” fallback is removed; unknown cost is never displayed or executed as free.
+
+### 6.4 Authentication and retention
 
 - Auth modes are only `none`, `bearer` (`Authorization: Bearer …`) or `x-api-key`
   (`X-API-Key: …`). The secret comes from a credentialRef resolved by Core.
@@ -189,7 +206,7 @@ script, URL downloader, arbitrary header name or clone/emotion/streaming field.
 
 | Area | Examples |
 |---|---|
-| Gates | `NETWORK_DISABLED`, `TEXT_UPLOAD_NOT_CONFIRMED`, `CREDENTIALS_MISSING`, `COST_UNKNOWN`, `COST_QUOTA_EXCEEDED`, `COST_DUPLICATE_REQUEST` |
+| Gates | `NETWORK_DISABLED`, `TEXT_UPLOAD_NOT_CONFIRMED`, `CREDENTIALS_MISSING`, `COST_UNKNOWN`, `COST_QUOTA_EXCEEDED`, `COST_DUPLICATE_REQUEST`, `COST_CALL_LIMIT_EXCEEDED`, `COST_DEDUP_CAPACITY` |
 | Target/security | `TARGET_PRIVATE`, `TARGET_LOOPBACK_ONLY`, `TARGET_CREDENTIALS`, `TARGET_DNS_FAILED`, `REDIRECT_REJECTED`, `HEADER_LIMIT` |
 | Transport | `TIMEOUT`, `CANCELLED`, `NETWORK_ERROR`, `RESPONSE_TOO_LARGE`, `CONTENT_TYPE` |
 | Provider | `AUTH_FAILED` (401/403), `RATE_LIMITED` (429), `PROVIDER_ERROR` (5xx), `INVALID_AUDIO` |
@@ -199,6 +216,13 @@ Non-success response bodies are not passed through. Error objects and public pro
 contain the key, credentialRef, endpoint or request text. `UNKNOWN`/`CANCELLED` are terminal for
 automatic retry; no provider auto-switch or paid downgrade exists.
 
+Cancellation is checked before request construction and after credential/DNS/cost awaits. A
+pre-cancel creates zero outbound requests and installs no request object. The request error listener
+is installed before any destroy, so a cancel race cannot surface as an unhandled `ECONNRESET`. A
+non-2xx response is finished and destroyed immediately instead of draining an unbounded error body.
+A cancel during Azure/custom cost commit does not return success audio; the sent charge is
+committed or kept as `UNKNOWN`, never released as if unsent.
+
 ## 9. Tests and evidence
 
 New tests (all offline / synthetic):
@@ -206,17 +230,21 @@ New tests (all offline / synthetic):
 - Credential ciphertext roundtrip, corruption/write-failure old-value preservation, non-Windows
   unavailable, invalid refs and a real Windows DPAPI temp-fixture roundtrip.
 - Cost reserve/commit, duplicate, unknown price/limit, concurrent quota, restart UNKNOWN, corrupt
-  ledger and changed config.
+  ledger, changed config, two handles on one root, full dedup capacity and explicit-free call limits.
+- Same-requestId concurrency/restart for Azure and custom; pre-cancel, credential/DNS-await cancel,
+  commit-during-cancel, non-2xx infinite-stream destruction, request-listener-before-destroy.
 - Public address policy, DNS pinning, mixed/private/loopback rejection, redirect/content-type/header/
   body/timeout/abort/broken-stream behaviour, plus a real loopback HTTP fixture.
 - SSML escaping; Azure gates, 401/403/429/5xx, timeout, cancel, bad WAV, oversize, duplicate and
   secret-free projections.
-- Custom fixed JSON protocol, auth headers, unsupported modalities, caller target rejection, error
-  mapping, real loopback success/redirect and secret-free projections.
+- Custom fixed JSON protocol, explicit unknown/free/paid cost modes, auth headers, unsupported
+  modalities, caller target rejection, error mapping, real loopback success/redirect and secret-free
+  projections.
 - Neutral fixture results for both adapters; no Task/Artifact/delivery is created.
 
-Local result at this unit: **1047 Node tests / 1043 pass / 4 platform skips / 0 fail**, UI **63/63**,
-`node build.mjs` unchanged. These are offline/injected evidence; no real Azure/custom API was called.
+Local result at this unit: **49 Plan11 tests** (all offline/synthetic), full suite **1059 / 1055 pass /
+4 platform skips / 0 fail**, UI **63/63**, `node build.mjs` unchanged. These are offline/injected
+evidence; no real Azure/custom API was called.
 
 ## 10. Not implemented / next authorization
 

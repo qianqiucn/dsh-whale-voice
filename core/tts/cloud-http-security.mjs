@@ -272,6 +272,7 @@ export function requestBuffer({
     }
     if (lookup) options.lookup = lookup
     if (parsed.protocol === 'https:' && net.isIP(parsed.hostname) === 0) options.servername = parsed.hostname
+    if (signal && signal.aborted) return resolve(errorWith(CLOUD_HTTP_ERRORS.CANCELLED, { sent: false }))
     const requestFn = requestImpl || (parsed.protocol === 'https:' ? https.request : http.request)
     let request
     try {
@@ -303,6 +304,15 @@ export function requestBuffer({
       finish(errorWith(CLOUD_HTTP_ERRORS.CANCELLED, { sent: true }))
       destroy()
     }
+    /* The error listener must exist before any destroy path. A pre-aborted signal is handled
+     * before request creation; a race after creation still reaches this listener, never an
+     * unhandled ECONNRESET/socket hang up. */
+    request.on('error', (error) => {
+      if (cancelled) return finish(errorWith(CLOUD_HTTP_ERRORS.CANCELLED, { sent: true }))
+      if (timedOut) return finish(errorWith(CLOUD_HTTP_ERRORS.TIMEOUT, { sent: true }))
+      if (error && error.code === 'HPE_HEADER_OVERFLOW') return finish(errorWith(CLOUD_HTTP_ERRORS.HEADER_LIMIT, { sent: true }))
+      finish(errorWith(CLOUD_HTTP_ERRORS.NETWORK_ERROR, { sent: true }))
+    })
     if (signal) {
       if (signal.aborted) return onAbort()
       signal.addEventListener('abort', onAbort, { once: true })
@@ -312,12 +322,6 @@ export function requestBuffer({
       finish(errorWith(CLOUD_HTTP_ERRORS.TIMEOUT, { sent: true }))
       destroy()
     }, timeoutMs)
-    request.on('error', (error) => {
-      if (cancelled) return finish(errorWith(CLOUD_HTTP_ERRORS.CANCELLED, { sent: true }))
-      if (timedOut) return finish(errorWith(CLOUD_HTTP_ERRORS.TIMEOUT, { sent: true }))
-      if (error && error.code === 'HPE_HEADER_OVERFLOW') return finish(errorWith(CLOUD_HTTP_ERRORS.HEADER_LIMIT, { sent: true }))
-      finish(errorWith(CLOUD_HTTP_ERRORS.NETWORK_ERROR, { sent: true }))
-    })
     request.on('response', (res) => {
       response = res
       const status = res.statusCode || 0
@@ -333,8 +337,11 @@ export function requestBuffer({
         return
       }
       if (status < 200 || status >= 300) {
-        try { res.resume() } catch {}
-        return finish(errorWith(CLOUD_HTTP_ERRORS.HTTP_STATUS, { sent: true, status }))
+        /* Do not drain an error body: an infinite non-2xx stream would otherwise outlive the
+         * timeout/abort cleanup. Finish first, then destroy the response and socket. */
+        finish(errorWith(CLOUD_HTTP_ERRORS.HTTP_STATUS, { sent: true, status }))
+        destroy()
+        return
       }
       if (expectedMime) {
         const type = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
@@ -347,6 +354,7 @@ export function requestBuffer({
       const chunks = []
       let total = 0
       res.on('data', (chunk) => {
+        if (settled) return
         total += chunk.length
         if (total > maxResponseBytes) {
           finish(errorWith(CLOUD_HTTP_ERRORS.RESPONSE_TOO_LARGE, { sent: true, status, bytes: total }))
@@ -371,8 +379,8 @@ export function requestBuffer({
     try {
       request.end(payload)
     } catch {
-      destroy()
       finish(errorWith(CLOUD_HTTP_ERRORS.INVALID_REQUEST))
+      destroy()
     }
   })
 }

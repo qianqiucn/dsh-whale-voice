@@ -367,17 +367,20 @@ Plan 11 adds the first cloud/custom implementations as **OFFLINE / FIXTURE_ONLY 
 
 - `cloud-credentials.mjs` — application-owned Windows DPAPI CurrentUser namespace, atomic ciphertext
   files, exact-ref lookup, no plaintext fallback and explicit non-Windows `UNAVAILABLE`.
-- `cloud-cost.mjs` — integer character-price budget, reserve-before-send, commit on success,
-  UNKNOWN on post-send uncertainty, restart-recovered PENDING → UNKNOWN and duplicate-request
-  rejection.
+- `cloud-cost.mjs` — one atomic ledger authority per file (reload + in-process queue + bounded
+  file lock), integer character price or explicit-free mode, reserve-before-send, same-ID PENDING
+  refusal, commit on success, UNKNOWN on post-send uncertainty, restart-recovered PENDING → UNKNOWN
+  and bounded dedup that fails closed instead of truncating old UNKNOWN ids.
 - `cloud-http-security.mjs` — HTTPS or numeric-loopback HTTP target validation, public-address DNS
-  policy, pinned lookup, no redirects, bounded headers/body/time and abort.
+  policy, pinned lookup, no redirects, bounded headers/body/time, pre-cancel before request
+  construction, error-listener-before-destroy, prompt non-2xx destruction and abort.
 - `azure-speech-contract.mjs` / `azure-speech-adapter.mjs` — fixed regions and preset zh-CN/en-US
-  neural voices, escaped plain-text SSML, required key header, 24 kHz mono PCM16 validation and
-  `CONFIGURED_UNVERIFIED` vs `AVAILABLE` separation.
+  neural voices, escaped plain-text SSML, required key header, 24 kHz mono PCM16 validation,
+  `CONFIGURED_UNVERIFIED` vs `AVAILABLE` separation and cancel checks around credential/reserve/
+  commit.
 - `custom-http-contract.mjs` / `custom-http-adapter.mjs` — fixed `whale-voice-custom-tts` v1 JSON
-  request → WAV response, predefined bearer/x-api-key auth, target pinning and explicit
-  `retention: unknown`.
+  request → WAV response, predefined bearer/x-api-key auth, target pinning, explicit
+  `unknown`/confirmed `free`/`paid` cost modes and `retention: unknown`.
 - `cloud-provider-pipeline.mjs` — neutral non-persisted result (`PENDING_ROUTER`), Chinese gate/status
   projection and no Task/Artifact/delivery creation.
 

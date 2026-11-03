@@ -107,6 +107,55 @@ test('bounded request returns bytes, rejects redirects, content type and oversiz
   assert.equal((await requestBuffer({ url: `${base}/headers`, expectedMime: 'audio/wav', lookup, timeoutMs: 5000, maxHeaderBytes: 1024 })).code, CLOUD_HTTP_ERRORS.HEADER_LIMIT)
 })
 
+test('a pre-aborted signal creates no outbound request and returns CANCELLED sent=false', async (t) => {
+  let requests = 0
+  const { server, port } = await startServer((req, res) => {
+    requests += 1
+    res.writeHead(200, { 'Content-Type': 'audio/wav' })
+    res.end(fixtureWav())
+  })
+  t.after(() => server.close())
+  const controller = new AbortController()
+  controller.abort()
+  const result = await requestBuffer({
+    url: `http://127.0.0.1:${port}/never`,
+    expectedMime: 'audio/wav',
+    lookup: pinnedLookup('127.0.0.1', 4),
+    signal: controller.signal,
+  })
+  assert.equal(result.code, CLOUD_HTTP_ERRORS.CANCELLED)
+  assert.equal(result.sent, false)
+  assert.equal(requests, 0)
+})
+
+test('a non-2xx infinite error stream is destroyed promptly instead of drained', async (t) => {
+  let closed = false
+  let timer = null
+  const { server, port } = await startServer((req, res) => {
+    res.writeHead(500, { 'Content-Type': 'text/plain' })
+    timer = setInterval(() => {
+      try { res.write('error-body') } catch {}
+    }, 10)
+    res.on('close', () => {
+      closed = true
+      if (timer) clearInterval(timer)
+    })
+  })
+  t.after(() => { if (timer) clearInterval(timer); server.close() })
+  const started = Date.now()
+  const result = await requestBuffer({
+    url: `http://127.0.0.1:${port}/infinite-error`,
+    lookup: pinnedLookup('127.0.0.1', 4),
+    timeoutMs: 5000,
+  })
+  const elapsed = Date.now() - started
+  assert.equal(result.code, CLOUD_HTTP_ERRORS.HTTP_STATUS)
+  assert.equal(result.status, 500)
+  assert.ok(elapsed < 1000)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(closed, true)
+})
+
 test('a broken response stream is a network error, not a partial success', async (t) => {
   const wav = fixtureWav()
   const { server, port } = await startServer((req, res) => {

@@ -94,10 +94,15 @@ export function createCustomHttpProvider(options = {}) {
     consent = null,
     now = () => new Date(),
     limits = null,
+    costMode = 'unknown',
+    freeConfirmed = false,
+    costLedger = null,
+    unitPriceMicrosPerCharacter = null,
+    dnsLookup = null,
     requestIdFactory = () => `custom-${crypto.randomUUID()}`,
   } = options
   const shape = validateCustomTargetShape(target)
-  const built = shape.ok ? buildCustomHttpManifest({ target, auth, limits }) : shape
+  const built = shape.ok ? buildCustomHttpManifest({ target, auth, limits, costMode }) : shape
   const manifest = built.ok ? built.manifest : null
   const authMode = auth && auth.mode ? auth.mode : 'none'
   const credentialRef = auth && auth.credentialRef ? auth.credentialRef : null
@@ -158,6 +163,7 @@ export function createCustomHttpProvider(options = {}) {
         credentials: authMode === 'none' ? 'NOT_REQUIRED' : (credentialPresent ? 'PRESENT' : 'MISSING'),
         credentialCheckedAt,
         network: networkEnabled ? (lastVerifiedAt && lastVerificationSource === 'LIVE' ? 'VERIFIED' : 'ENABLED_UNVERIFIED') : 'DISABLED',
+        costMode: costMode === 'free' && freeConfirmed === true ? 'FREE' : (costMode === 'paid' ? 'PAID' : 'UNKNOWN'),
         lastVerifiedAt,
         lastVerificationSource,
       },
@@ -190,8 +196,12 @@ export function createCustomHttpProvider(options = {}) {
         uploadLabel: consent && consent.textUpload === true ? '已确认文字上传' : '未确认文字上传',
         credential: authMode === 'none' ? 'NOT_REQUIRED' : (credentialPresent ? 'PRESENT' : 'MISSING'),
         credentialLabel: authMode === 'none' ? '无需凭据' : (credentialPresent ? '凭据已配置' : '凭据缺失'),
-        cost: 'FREE_OR_UNKNOWN',
-        costLabel: '默认自托管/免费；若服务实际收费，必须在接入配置中显式提供单价与额度。',
+        cost: costMode === 'free' && freeConfirmed === true ? 'FREE' : (costMode === 'paid' ? 'PAID' : 'UNKNOWN'),
+        costLabel: costMode === 'free' && freeConfirmed === true
+          ? '已明确确认免费（仍受调用次数与文字上限及持久去重约束）'
+          : costMode === 'paid'
+            ? (unitPriceMicrosPerCharacter ? '明确付费，单价已配置' : '明确付费，但单价未知，禁止请求')
+            : '费用未知，禁止请求；不能按免费执行',
       },
       retention: 'unknown',
       retentionLabel: '自定义服务留存政策 UNKNOWN，不能继承 Azure 的说明。',
@@ -214,6 +224,10 @@ export function createCustomHttpProvider(options = {}) {
   async function synthesize(request, context = {}) {
     if (!manifest) return fail(CUSTOM_HTTP_ERRORS.PROVIDER_NOT_AVAILABLE)
     if (!request || typeof request !== 'object' || Array.isArray(request)) return fail(PROVIDER_ERRORS.INVALID_RESPONSE)
+    const signal = context.signal || null
+    if (signal && signal.aborted) {
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     const requestId = typeof request.requestId === 'string' ? request.requestId : requestIdFactory()
     if (!REQUEST_ID_PATTERN.test(requestId)) return fail(CUSTOM_HTTP_ERRORS.PROTOCOL_INVALID)
     const builtRequest = buildCustomRequest({
@@ -228,7 +242,13 @@ export function createCustomHttpProvider(options = {}) {
       return fail(CUSTOM_HTTP_ERRORS.TEXT_UPLOAD_NOT_CONFIRMED)
     }
     await refreshCredential()
+    if (signal && signal.aborted) {
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     const secret = await resolveSecret()
+    if (signal && signal.aborted) {
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     if (authMode !== 'none' && (!secret || secret.ok !== true || typeof secret.secret !== 'string' || secret.secret.length === 0)) {
       return fail(CUSTOM_HTTP_ERRORS.CREDENTIALS_MISSING)
     }
@@ -242,10 +262,45 @@ export function createCustomHttpProvider(options = {}) {
       language: request.language || 'zh-CN',
     })
     if (!checked.ok) return fail(checked.code)
-    const targetInfo = await validateCustomTarget(target)
+    const targetInfo = dnsLookup
+      ? await validateCustomTarget(target, { dnsLookup })
+      : await validateCustomTarget(target)
     if (!targetInfo.ok) return fail(targetInfo.code, { sent: false })
+    if (signal && signal.aborted) {
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
+    if (costMode === 'unknown' || (costMode === 'free' && freeConfirmed !== true)) {
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, { sent: false })
+    }
+    if (!costLedger || typeof costLedger.reserve !== 'function') {
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, { sent: false })
+    }
+    const ledgerView = costLedger.snapshot ? costLedger.snapshot() : null
+    if (!ledgerView || !ledgerView.ok || ledgerView.mode !== costMode) {
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, { sent: false })
+    }
+    if (costMode === 'paid' && !(ledgerView.unitPriceMicrosPerCharacter > 0)) {
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, { sent: false })
+    }
+    const reservation = await costLedger.reserve({ requestId, charCount: String(request.text).length })
+    if (!reservation || reservation.ok !== true) {
+      const code = reservation && reservation.code
+      if (code === 'COST_DUPLICATE_REQUEST') return fail(CUSTOM_HTTP_ERRORS.COST_DUPLICATE_REQUEST, { sent: false })
+      if (code === 'COST_CALL_LIMIT_EXCEEDED') return fail(CUSTOM_HTTP_ERRORS.COST_CALL_LIMIT_EXCEEDED, { sent: false })
+      if (code === 'COST_QUOTA_EXCEEDED' || code === 'COST_DEDUP_CAPACITY') {
+        return fail(CUSTOM_HTTP_ERRORS.COST_QUOTA_EXCEEDED, { sent: false })
+      }
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, { sent: false })
+    }
+    if (signal && signal.aborted) {
+      await costLedger.release({ reservationId: reservation.reservationId }).catch(() => {})
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     const authHeader = customAuthHeader(auth, secret && secret.secret ? secret.secret : '')
-    if (!authHeader) return fail(CUSTOM_HTTP_ERRORS.AUTH_INVALID)
+    if (!authHeader) {
+      await costLedger.release({ reservationId: reservation.reservationId }).catch(() => {})
+      return fail(CUSTOM_HTTP_ERRORS.AUTH_INVALID, { sent: false })
+    }
     const startedAt = now().toISOString()
     const transportFn = transport || ((requestOptions) => defaultTransport(requestOptions, targetInfo))
     let response
@@ -271,14 +326,38 @@ export function createCustomHttpProvider(options = {}) {
 
     if (!response || response.ok !== true) {
       const mapped = mapTransportFailure(response)
+      if (mapped.sent === true) {
+        await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      } else {
+        await costLedger.release({ reservationId: reservation.reservationId }).catch(() => {})
+      }
       lastError = mapped.code
       return fail(mapped.code, {
         terminal: mapped.cancelled ? 'CANCELLED' : (mapped.unknown ? 'UNKNOWN' : 'FAILED'),
         cancelled: mapped.cancelled === true,
         unknown: mapped.unknown === true,
+        sent: mapped.sent === true,
         requestId,
         startedAt,
         finishedAt: now().toISOString(),
+        cost: costLedger.snapshot ? costLedger.snapshot() : null,
+      })
+    }
+
+    if (signal && signal.aborted) {
+      const committedOnCancel = await costLedger.commit({ reservationId: reservation.reservationId, actualMicros: reservation.micros }).catch(() => null)
+      if (!committedOnCancel || committedOnCancel.ok !== true) {
+        await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      }
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, {
+        terminal: 'CANCELLED',
+        cancelled: true,
+        unknown: false,
+        sent: true,
+        requestId,
+        startedAt,
+        finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
       })
     }
 
@@ -287,13 +366,16 @@ export function createCustomHttpProvider(options = {}) {
     if (!inspection || inspection.sampleRate !== CUSTOM_HTTP_SAMPLE_RATE ||
         inspection.channels !== CUSTOM_HTTP_CHANNELS ||
         inspection.durationMs > manifest.capabilities.limits.maxAudioSeconds * 1000) {
+      await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
       lastError = CUSTOM_HTTP_ERRORS.INVALID_AUDIO
       return fail(CUSTOM_HTTP_ERRORS.INVALID_AUDIO, {
         terminal: 'UNKNOWN',
         unknown: true,
+        sent: true,
         requestId,
         startedAt,
         finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
       })
     }
 
@@ -313,8 +395,42 @@ export function createCustomHttpProvider(options = {}) {
       delivery: { state: 'PENDING_ROUTER' },
     })
     if (!normalized.ok) {
+      await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
       lastError = PROVIDER_ERRORS.INVALID_RESPONSE
-      return fail(PROVIDER_ERRORS.INVALID_RESPONSE, { terminal: 'FAILED', requestId, startedAt, finishedAt: now().toISOString() })
+      return fail(PROVIDER_ERRORS.INVALID_RESPONSE, { terminal: 'FAILED', requestId, startedAt, finishedAt: now().toISOString(), cost: costLedger.snapshot() })
+    }
+    let committed
+    try {
+      committed = await costLedger.commit({ reservationId: reservation.reservationId, actualMicros: reservation.micros })
+    } catch {
+      committed = null
+    }
+    if (signal && signal.aborted) {
+      if (!committed || committed.ok !== true) {
+        await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      }
+      return fail(CUSTOM_HTTP_ERRORS.CANCELLED, {
+        terminal: 'CANCELLED',
+        cancelled: true,
+        unknown: false,
+        sent: true,
+        requestId,
+        startedAt,
+        finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
+      })
+    }
+    if (!committed || committed.ok !== true) {
+      await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      return fail(CUSTOM_HTTP_ERRORS.COST_UNKNOWN, {
+        terminal: 'UNKNOWN',
+        unknown: true,
+        sent: true,
+        requestId,
+        startedAt,
+        finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
+      })
     }
     if (response.live === true) {
       lastVerifiedAt = now().toISOString()
@@ -333,6 +449,7 @@ export function createCustomHttpProvider(options = {}) {
       persisted: false,
       startedAt,
       finishedAt: now().toISOString(),
+      cost: costLedger.snapshot(),
     }
   }
 
@@ -352,6 +469,7 @@ export function createCustomHttpProvider(options = {}) {
       channels: CUSTOM_HTTP_CHANNELS,
       targetPolicy: 'https or explicit numeric loopback HTTP; DNS pinned; redirects rejected',
       retention: 'UNKNOWN',
+      costMode: costMode === 'free' && freeConfirmed === true ? 'FREE' : (costMode === 'paid' ? 'PAID' : 'UNKNOWN'),
     }),
   }
 }

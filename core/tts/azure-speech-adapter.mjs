@@ -226,6 +226,10 @@ export function createAzureSpeechProvider(options = {}) {
   async function synthesize(request, context = {}) {
     if (!manifest) return fail(AZURE_SPEECH_ERRORS.PROVIDER_NOT_AVAILABLE)
     if (!request || typeof request !== 'object' || Array.isArray(request)) return fail(PROVIDER_ERRORS.INVALID_RESPONSE)
+    const signal = context.signal || null
+    if (signal && signal.aborted) {
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     const text = request.text
     const voiceId = request.voiceId
     const language = request.language || null
@@ -237,7 +241,13 @@ export function createAzureSpeechProvider(options = {}) {
       return fail(AZURE_SPEECH_ERRORS.TEXT_UPLOAD_NOT_CONFIRMED)
     }
     await refreshCredential()
+    if (signal && signal.aborted) {
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     const secret = await resolveSecret()
+    if (signal && signal.aborted) {
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
+    }
     if (!secret || secret.ok !== true || typeof secret.secret !== 'string' || secret.secret.length === 0) {
       return fail(AZURE_SPEECH_ERRORS.CREDENTIALS_MISSING)
     }
@@ -254,9 +264,15 @@ export function createAzureSpeechProvider(options = {}) {
     const reservation = await costLedger.reserve({ requestId, charCount: text.length })
     if (!reservation || reservation.ok !== true) {
       const code = reservation && reservation.code
-      if (code === 'COST_QUOTA_EXCEEDED') return fail(AZURE_SPEECH_ERRORS.COST_QUOTA_EXCEEDED)
+      if (code === 'COST_QUOTA_EXCEEDED' || code === 'COST_CALL_LIMIT_EXCEEDED' || code === 'COST_DEDUP_CAPACITY') {
+        return fail(AZURE_SPEECH_ERRORS.COST_QUOTA_EXCEEDED)
+      }
       if (code === 'COST_DUPLICATE_REQUEST') return fail(AZURE_SPEECH_ERRORS.COST_DUPLICATE_REQUEST)
       return fail(AZURE_SPEECH_ERRORS.COST_UNKNOWN)
+    }
+    if (signal && signal.aborted) {
+      await costLedger.release({ reservationId: reservation.reservationId }).catch(() => {})
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, { terminal: 'CANCELLED', cancelled: true, sent: false })
     }
     const startedAt = now().toISOString()
     const transportFn = transport || defaultTransport
@@ -303,6 +319,23 @@ export function createAzureSpeechProvider(options = {}) {
       })
     }
 
+    if (signal && signal.aborted) {
+      const committedOnCancel = await costLedger.commit({ reservationId: reservation.reservationId, actualMicros: reservation.micros }).catch(() => null)
+      if (!committedOnCancel || committedOnCancel.ok !== true) {
+        await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      }
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, {
+        terminal: 'CANCELLED',
+        cancelled: true,
+        unknown: false,
+        sent: true,
+        requestId,
+        startedAt,
+        finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
+      })
+    }
+
     const inspected = inspectFixtureWavBytes({ schemaVersion: 1, bytes: response.body })
     const inspection = inspected.ok ? inspected.value : null
     if (!inspection || inspection.sampleRate !== AZURE_SPEECH_SAMPLE_RATE ||
@@ -321,7 +354,27 @@ export function createAzureSpeechProvider(options = {}) {
     }
 
     const actualMicros = reservation.micros
-    const committed = await costLedger.commit({ reservationId: reservation.reservationId, actualMicros })
+    let committed
+    try {
+      committed = await costLedger.commit({ reservationId: reservation.reservationId, actualMicros })
+    } catch {
+      committed = null
+    }
+    if (signal && signal.aborted) {
+      if (!committed || committed.ok !== true) {
+        await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
+      }
+      return fail(AZURE_SPEECH_ERRORS.CANCELLED, {
+        terminal: 'CANCELLED',
+        cancelled: true,
+        unknown: false,
+        sent: true,
+        requestId,
+        startedAt,
+        finishedAt: now().toISOString(),
+        cost: costLedger.snapshot(),
+      })
+    }
     if (!committed || committed.ok !== true) {
       await costLedger.markUnknown({ reservationId: reservation.reservationId }).catch(() => {})
       return fail(AZURE_SPEECH_ERRORS.COST_UNKNOWN, {
