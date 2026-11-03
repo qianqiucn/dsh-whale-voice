@@ -978,7 +978,7 @@ test('121-R01 a large model file is copied, not hardlinked, and a same-size sour
 test('121-R01 snapshots are owned by the supervisor temporary directory and removed on stop', { skip: pythonSkip, timeout: 120000 }, async () => {
   const workspace = makeWorkspace()
   try {
-    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
       const started = await provider.start()
       assert.equal(started.ok, true, JSON.stringify(started))
       const synthesized = await provider.synthesize(
@@ -986,6 +986,8 @@ test('121-R01 snapshots are owned by the supervisor temporary directory and remo
         { taskId: 'task-snapshot-owner' },
       )
       assert.equal(synthesized.ok, true, JSON.stringify(synthesized.code || synthesized.qwenCode))
+      const health = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(health.payload.snapshotCleanupPending, 0)
       const workerTmp = tempDirs(workspace)[0]
       assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 1)
       await provider.shutdown()
@@ -1021,6 +1023,86 @@ test('121-R01 a denied snapshot cleanup stays tracked and is retried', { skip: p
       fs.rmSync(denyMarker)
       const recovered = await supervisor.health({ timeoutMs: 2000 })
       assert.equal(recovered.payload.snapshotCleanupPending, 0)
+      assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 the cumulative snapshot budget is shared while writing each file', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    fs.writeFileSync(path.join(workspace.customModel, 'part-a.safetensors'), Buffer.alloc(3 * 1024 * 1024, 0x11))
+    fs.writeFileSync(path.join(workspace.customModel, 'part-b.safetensors'), Buffer.alloc(3 * 1024 * 1024, 0x22))
+    await withOfficialProvider(workspace, { workerArgs: ['--snapshot-budget-bytes=4194304'] }, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const synthesized = await provider.synthesize(
+        { text: '超额预算', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-budget-cross-file' },
+      )
+      assert.equal(synthesized.ok, false)
+      assert.equal(synthesized.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_custom_voice').length, 0)
+      const workerTmp = tempDirs(workspace)[0]
+      assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a health cleanup during loading keeps the active snapshot owned', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中清理', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-health-active' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const during = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(during.payload.snapshotCleanupPending, 0)
+      const ack = await begun.cancel()
+      assert.equal(ack.ok, true)
+      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
+      const after = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(after.payload.snapshotCleanupPending, 0)
+      const workerTmp = tempDirs(workspace)[0]
+      assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a health cleanup during loading does not orphan a failed candidate', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700, loadError: true })
+      const begun = await provider.beginSynthesis(
+        { text: '加载失败清理', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-health-load-error' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const during = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(during.payload.snapshotCleanupPending, 0)
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.qwenCode, QWEN_ERRORS.RESOURCE_UNVERIFIED)
+      const after = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(after.payload.snapshotCleanupPending, 0)
+      const workerTmp = tempDirs(workspace)[0]
       assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 0)
     })
   } finally {

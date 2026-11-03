@@ -138,6 +138,8 @@ class Qwen3TTSModel:
             _record("model_weight_read", path=weights_path, bytes=total, sha256=digest.hexdigest())
         except OSError:
             _record("model_weight_read", path=weights_path, error="missing")
+        if _mode().get("loadError"):
+            raise RuntimeError("fixture model load failure")
         return cls(path)
 
     def _maybe_delay(self):

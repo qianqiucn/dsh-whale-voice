@@ -436,6 +436,13 @@ worker cleans them on shutdown/EOF, a denied cleanup keeps a retryable `snapshot
 with host temp cleanup as the final owner, and only exact worker-created directories are removed. A
 later missing-package request cannot downgrade a known ImportError to `missing`.
 
+The 0125 residual repair shares the snapshot copy budget across files and deducts it before each
+chunk write, so a cumulative overrun fails at the write boundary instead of after an extra file. It
+registers the active snapshot parent under a lock before any child mkdir/copy, and health cleanup
+skips and retains active/build-in-progress registrations instead of clearing the ownership set, so a
+health check during loading cannot orphan a snapshot that cancel or a load failure later leaves
+behind.
+
 **Rejected alternatives:** Importing `qwen_tts`/torch inside Core; trusting a worker-declared model
 name without an audited model identity and a matching local `config.json`; passing reference audio
 paths, URLs or base64 through the protocol; accepting `ok` from any response type; treating a kill

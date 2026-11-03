@@ -87,8 +87,11 @@ Provider 候选：固定上游元数据、官方 SDK 惰性 worker、Provider �
   `AutoProcessor` 的缺失回退若尝试联网会得到 `QWEN_NETWORK_BLOCKED`，不会静默下载。
 - **首次加载使用稳定快照**：`from_pretrained` 指向审计后生成的私有快照。**所有**普通文件逐字节
   复制并记录 SHA256，不使用 hardlink；因此源文件原地改写（即使同尺寸并恢复 mtime）不会改变 SDK
-  消费的内容。总复制预算 8 GiB，超出即失败关闭，不会静默共享可变内容。快照位于 supervisor 负责
-  清理的 worker 临时目录内；worker 在 `shutdown`/EOF 显式清理，若删除失败则保留
+  消费的内容。总复制预算 8 GiB，**剩余额度在所有文件间共享并在每次写入 chunk 前扣减**：单文件或
+  跨文件累计超限都在写入边界失败关闭，不会先写完一个超限文件再拒绝；测试可通过有界
+  `--snapshot-budget-bytes` 缩小额度（上限仍为 8 GiB）。快照位于 supervisor 负责清理的 worker
+  临时目录内；父目录创建时即登记为活动快照（锁保护），`health` 清理会跳过并保留活动/构建中的
+  登记，不会误删或丢失归属；worker 在 `shutdown`/EOF 显式清理，若删除失败则保留
   `snapshotCleanupPending` 事实并由宿主临时目录清理兜底。加载完成后再次审计原始模型目录/配置/
   子资源树与快照哈希：原始目录在加载窗口被换成根外 junction、config/子资源被改写时拒绝；SDK
   读取的是快照，不会先读到根外 config。
@@ -214,21 +217,22 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
   字节/格式/限额、clone 实际身份、输出四项身份、UNKNOWN/CANCELLED 终态、超时/重入占用、迟到不
   晋升、取消句柄、期限约束、深嵌套隔离、未确认停止、error≠exit 代际、关闭中拒绝新工作、清理失败
   可重试。
-- `test/qwen-official-worker.test.mjs`（24 项，Python 3 可用时执行）：CustomVoice 官方映射与
+- `test/qwen-official-worker.test.mjs`（27 项，Python 3 可用时执行）：CustomVoice 官方映射与
   嵌套加载/离线 guard、Base 克隆本地引用映射（SDK 收到 data-uri 字节与 SHA256）、缺包/配置矛盾/
   资源越界失败关闭、取消 ack 与迟到结果、模型配置变更/参考超限/参考消失/junction 越界/模型目录
   junction 越界、同尺寸参考原地改写、加载中参考变化仍使用已审计字节、加载中配置变化拒绝、
   speech-tokenizer 子资源越界、运行期 `soundfile` 失效与 health 恢复、加载中目录换 junction 仍
   只消费快照、加载中取消丢弃候选缓存、审计失败丢弃缓存后重新加载、ImportError 保留至成功导入、
   显式缺包请求不覆盖历史 ImportError、大文件复制不共享源内容、快照归属与 stop 清理、清理拒绝后
-  保留 pending 并重试、缺 `soundfile` 直接依赖、加载前与加载中取消。
+  保留 pending 并重试、跨文件累计预算在写入边界拒绝、加载中 health 保留活动快照、加载失败后无
+  孤儿快照、缺 `soundfile` 直接依赖、加载前与加载中取消。
 - `test/qwen-095-repair.test.mjs`（16 项）：语音语言空交集、产物时长上限、小 timeout 生效、
   取消拒绝/超时/错身份/progress、幽灵 messageId、错误身份/类型占用、正确关联 UNKNOWN 释放、
   错误 claimed 迟到、迟到 progress、启停竞态、通用/缺/null requestId/错身份不完整终态、
   非终态迟到不破坏恢复关联、旧代启动失败不停止新代、取消终止错模型不清占用。
 - 若执行环境禁止子进程管道（EPERM）、目录链接或没有 Python 3，对应测试按平台跳过并在报告中注明；
   不得用内存 mock 替代进程生命周期证据。
-- 本轮 Qwen 专项 **65/65**；全量 **963/959 pass/4 platform skips/0 fail**；UI 63/63；build 后
+- 本轮 Qwen 专项 **68/68**；全量 **966/962 pass/4 platform skips/0 fail**；UI 63/63；build 后
   `client.js` 无 diff。
 
 ## 9. 明确未完成（Plan10 集成 OPEN）

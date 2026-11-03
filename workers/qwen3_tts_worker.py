@@ -115,6 +115,8 @@ MODEL_SNAPSHOT = None
 SNAPSHOT_HASHES = {}
 SNAPSHOT_PATHS = set()
 SNAPSHOT_PARENT = None
+SNAPSHOT_LOCK = threading.RLock()
+SNAPSHOT_BUDGET_BYTES = MAX_SNAPSHOT_TOTAL_BYTES
 NETWORK_GUARDED = False
 DIRECT_DEPENDENCIES = {"qwenTts": False, "soundfile": False}
 DEPENDENCY_FAILURES = {}
@@ -234,45 +236,53 @@ def audit_model_tree():
 
 
 def choose_snapshot_parent():
+    global SNAPSHOT_PARENT
     tmp_dir = ARGS.get("tmp-dir")
     if not isinstance(tmp_dir, str) or not os.path.isdir(tmp_dir):
         raise ResourceChanged("the worker temporary directory is unavailable")
-    try:
-        parent = tempfile.mkdtemp(prefix="wv-qwen-snap-", dir=tmp_dir)
-    except OSError as error:
-        raise ResourceChanged("the snapshot directory could not be created") from error
-    SNAPSHOT_PATHS.add(parent)
-    return parent
+    with SNAPSHOT_LOCK:
+        try:
+            parent = tempfile.mkdtemp(prefix="wv-qwen-snap-", dir=tmp_dir)
+        except OSError as error:
+            raise ResourceChanged("the snapshot directory could not be created") from error
+        SNAPSHOT_PATHS.add(parent)
+        # Register the active snapshot before any child mkdir/copy so a concurrent health cleanup
+        # cannot delete a directory that is still being built.
+        SNAPSHOT_PARENT = parent
+        return parent
 
 
 def snapshot_cleanup_pending():
-    active = SNAPSHOT_PARENT
-    return len([path for path in SNAPSHOT_PATHS if path != active])
+    with SNAPSHOT_LOCK:
+        active = SNAPSHOT_PARENT
+        return len([path for path in SNAPSHOT_PATHS if path != active])
 
 
 def cleanup_snapshot_paths(force=False):
     """Retry deleting only the snapshot directories this worker created."""
-    active = None if force else SNAPSHOT_PARENT
-    deny_marker = os.path.join(ARGS.get("tmp-dir") or "", "snapshot-cleanup-deny")
-    deny = bool(ARGS.get("tmp-dir")) and os.path.exists(deny_marker)
-    failed = set()
-    for path in list(SNAPSHOT_PATHS):
-        if active and path == active:
-            continue
-        if deny:
-            failed.add(path)
-            continue
-        try:
-            if os.path.exists(path):
-                shutil.rmtree(path)
-        except OSError:
-            failed.add(path)
-    SNAPSHOT_PATHS.clear()
-    SNAPSHOT_PATHS.update(failed)
-    return len(failed) == 0
+    with SNAPSHOT_LOCK:
+        active = None if force else SNAPSHOT_PARENT
+        deny_marker = os.path.join(ARGS.get("tmp-dir") or "", "snapshot-cleanup-deny")
+        deny = bool(ARGS.get("tmp-dir")) and os.path.exists(deny_marker)
+        failed = set()
+        for path in list(SNAPSHOT_PATHS):
+            if active and path == active:
+                failed.add(path)
+                continue
+            if deny:
+                failed.add(path)
+                continue
+            try:
+                if os.path.exists(path):
+                    shutil.rmtree(path)
+            except OSError:
+                failed.add(path)
+        SNAPSHOT_PATHS.clear()
+        SNAPSHOT_PATHS.update(failed)
+        return len([path for path in SNAPSHOT_PATHS if path != active]) == 0
 
 
-def copy_model_file(source, target):
+def copy_model_file(source, target, remaining):
     digest = hashlib.sha256()
     total = 0
     with open(source, "rb") as src, open(target, "wb") as dst:
@@ -280,9 +290,9 @@ def copy_model_file(source, target):
             chunk = src.read(1024 * 1024)
             if not chunk:
                 break
-            total += len(chunk)
-            if total > MAX_SNAPSHOT_TOTAL_BYTES:
+            if total + len(chunk) > remaining:
                 raise ResourceChanged("the model snapshot exceeds its copy budget")
+            total += len(chunk)
             digest.update(chunk)
             dst.write(chunk)
     return total, digest.hexdigest()
@@ -335,10 +345,11 @@ def build_model_snapshot():
                         continue
                     if not os.path.isfile(real):
                         raise ResourceChanged("the model tree contains a non-regular entry")
-                    size, digest = copy_model_file(real, target)
-                    copied += size
-                    if copied > MAX_SNAPSHOT_TOTAL_BYTES:
+                    remaining = SNAPSHOT_BUDGET_BYTES - copied
+                    if remaining <= 0:
                         raise ResourceChanged("the model snapshot exceeds its copy budget")
+                    size, digest = copy_model_file(real, target, remaining)
+                    copied += size
                     hashes[os.path.relpath(target, snapshot)] = digest
         MODEL_SNAPSHOT = snapshot
         SNAPSHOT_HASHES = hashes
@@ -372,10 +383,11 @@ def audit_snapshot():
 
 def discard_model_snapshot(force=True):
     global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_PARENT
-    MODEL_SNAPSHOT = None
-    SNAPSHOT_HASHES = {}
-    SNAPSHOT_PARENT = None
-    cleanup_snapshot_paths(force=force)
+    with SNAPSHOT_LOCK:
+        MODEL_SNAPSHOT = None
+        SNAPSHOT_HASHES = {}
+        SNAPSHOT_PARENT = None
+        cleanup_snapshot_paths(force=force)
 
 
 def discard_model():
@@ -628,6 +640,18 @@ def discover_languages(config):
 def load_configuration():
     global MODEL_DIR, MODEL_ID, BACKEND, MODEL_TYPE, MODEL_SIZE, INSTRUCT_SUPPORTED
     global LANGUAGES, VOICES, BINDING_INDEX, PACKAGE_VERSION_DETECTED, MODEL_AUDIT
+    global SNAPSHOT_BUDGET_BYTES
+
+    budget_raw = ARGS.get("snapshot-budget-bytes")
+    if budget_raw is not None:
+        if not isinstance(budget_raw, str) or not re.fullmatch(r"[0-9]+", budget_raw):
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "the snapshot budget must be a positive integer")
+            return
+        budget_value = int(budget_raw)
+        if budget_value < 1 or budget_value > MAX_SNAPSHOT_TOTAL_BYTES:
+            start_error(ERRORS["RESOURCE_UNVERIFIED"], "the snapshot budget is outside its bounds")
+            return
+        SNAPSHOT_BUDGET_BYTES = budget_value
 
     model_dir = ARGS.get("model-dir")
     allowed_root = ARGS.get("allowed-root")

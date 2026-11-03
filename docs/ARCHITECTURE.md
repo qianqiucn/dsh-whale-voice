@@ -181,12 +181,15 @@ trusted clone reference immediately before each SDK call (realpath inside the al
 existence, size, dev/ino, held fd) instead of trusting a startup stat. Clone reference bytes are
 read through the audited fd, checked against a SHA256 baseline and handed to the SDK as a
 `data:audio` value. The actual model load runs against a private audited snapshot: every regular file
-is copied with a SHA256 baseline (no hardlinks, 8 GiB copy budget, fail closed above it), and the
+is copied with a SHA256 baseline (no hardlinks; an 8 GiB copy budget is shared across files and
+deducted before each chunk write, so a cumulative overrun fails at the write boundary), and the
 original tree/config are re-audited after loading. A model directory swapped for an out-of-root
 junction during loading therefore cannot feed the SDK an outside config, and a same-size source
 rewrite cannot change the copied content. Snapshots live in the supervisor-owned worker temporary
-directory and are tracked from creation; the worker cleans them on shutdown/EOF, a denied cleanup
-keeps a retryable `snapshotCleanupPending` fact with host temp cleanup as the final owner. The
+directory; the active parent is registered under a lock before any child mkdir/copy, and health
+cleanup skips and retains active/build-in-progress registrations. The worker cleans them on
+shutdown/EOF, a denied cleanup keeps a retryable `snapshotCleanupPending` fact with host temp cleanup
+as the final owner. The
 candidate model is committed to the cache only after validation; load-time cancellation, audit failure
 or an exception discards it so the next request reloads, while a normally completed valid cache
 survives ordinary cancellation. Runtime dependency health distinguishes a missing module from a
