@@ -631,3 +631,202 @@ task-ref guard and letting a late result overwrite the current task.
 
 **Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).
+
+## ADR-024 — One persistent delivery owner in Whale Relay Core, one Fake backend for 13-A
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Decision:** `core/audio/relay-core-offline.mjs` is the only writer of delivery records. It validates the actual
+SAVED Audio Task record, reads the real Fixture Artifact bytes through the existing library under the supplied
+scope/rights proof, computes the artifact hash/bytes/duration/format itself, and resolves the target from a trusted
+Core target directory. It mints one persistent `delivery:<32hex>` plus a separate `[A-Za-z0-9_-]{8,64}` backend
+request id; it stores `taskId → deliveryId → backendRequestId`, rights proof/expiry, target and fixed backend. A
+semantic digest (task/artifact hash/target/proof/expiry, **not** requestKey) returns `EXISTING` for the same
+request and rejects a same-`requestKey` content/target conflict; a changed requestKey is only an alias. The store
+is atomic (temp+fsync+rename) under a token-owned lock with token-quarantine release, has bounded capacity, persists
+`SUBMITTING` before submit, protects a same-process/global live owner from another normal open, and recovers a real
+dead child-process owner to `UNKNOWN`; `UNKNOWN` is terminal and never retried. Submit re-reads the artifact and
+target before any Fake call. Cancel is requested first and only `confirmCancel` becomes `CANCELLED`. Normal handles
+have no reset API, so tombstones cannot be cleared.
+
+The only accepted backend for this unit is `createFakeDeliveryBackend`, which has its own target directory and
+rechecks target identity/type/authorization and the Bridge/Worker two-gate, then records only simulated `QUEUED`
+receipts. Sender is not imported, no production config/token/port/process/network/device/WeChat is touched.
+`projectUnifiedRelayComponent` is one product view with legacy `whale-relay`/`voice-sender` aliases and no second
+install store; WeChatAgent remains independent.
+
+**Reason:** ADR-001 requires `SAVED ≠ SENT` and one delivery owner; the previous Fake Relay was an in-memory Map
+without durable delivery id or restart protection. A single persistent store plus a Fake backend is the minimum
+offline proof without copying Sender or claiming real send.
+
+**Rejected alternatives:** A second global task/ID authority; using colon task ids as Sender request ids or
+truncating them; a second install/health store; retrying `UNKNOWN`, switching backend or synthesizing text; importing
+Sender's server top-level into the Fake adapter; treating `ACCEPTED`/HTTP 200 as `SENT_LOCAL`.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
+
+## ADR-025 — Relay delivery authority is a persisted SAVED relation plus a versioned issuance, not caller JSON
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** `ensureDelivery` accepts only a *reference* handoff
+(`{schemaVersion, scopeId, taskId, artifactRef, targetId, requestKey, rights}`); any unknown key — most importantly a
+caller-supplied `taskRecord` — is refused. For that reference the relay re-reads the persisted authority itself: the
+AudioTask owner store (v2 `get` + `artifactStatus` at the current time, requiring `SAVED`, `READABLE`, the same
+`outputArtifactRef` and the persisted `deliveryRequested === true`) or, when the Cover v3 owner store is present, the
+Cover status (`SAVED` + MASTER `artifactRef`). A successful delivery persists a versioned issuance (`intentId:
+intent:<32hex>` plus `intent{version, kind, taskIdentityHash, deliveryRequested, authorizedBy, issuedAt}`). The frozen
+Cover record keeps `deliveryRequested:false` and is never edited: for it the persisted issuance
+(`RELAY_ISSUED_FOR_FROZEN_COVER`) is the authorized handoff, while a legacy Task record must already carry the
+persisted delivery intent (`PERSISTED_TASK_DELIVERY_INTENT`). A `requestKey` is an immutable binding checked before
+any digest reuse: a bound key can never be re-pointed at another content/target digest, and an unbound key may only
+register an alias for the digest it first resolves to. Right before the Fake Worker is asked to accept (after the
+health/capabilities/resolve awaits), the relay re-reads the authority identity hash, the artifact bytes/hash/expiry and
+the Core target, so a revocation/expiry during preflight produces zero backend submit. The Fake Worker's own `submit`
+resolves the target from its own directory by the *persisted* delivery target id/kind and backend id and never treats
+the upstream booleans or a handed-over resolver result as authorization.
+
+**Reason:** the 0138 review proved that a JSON `SAVED` record (or a flipped copy of a real one) was accepted as the
+task authority, that expiry/deletion during an awaited preflight still reached the Fake Worker, and that the Fake
+Worker only checked the three upstream booleans. Keeping the persisted relation as the single authority (with the
+issuance as the only way to bind a frozen Cover record) closes those paths without rewriting the frozen AudioTask or
+Cover schemas.
+
+**Rejected alternatives:** trusting a caller-provided record or `deliveryRequested` copy; editing the frozen Cover
+record; a second task/id authority; treating an upstream resolver/three booleans as the Worker's authorization; an
+opaque "session" token that is not persisted; relaxing to Best-Effort busy/unknown instead of failing closed.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-026 — A Cover delivery needs a separate persisted source permit; store and lease authority fail closed
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, ADR-025, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** A persisted SAVED Cover MASTER is a save, not a delivery permission. The frozen v3 Cover record
+keeps `deliveryRequested:false` forever and is never edited, so a Cover delivery requires a **separate,
+versioned, persisted source permit** created through `issueDeliveryPermit({permit})` with
+`{schemaVersion, scopeId, taskId, artifactRef, targetId, rights}`: the permit is checked against the persisted
+Cover authority (SAVED + MASTER ref/hash), the real artifact bytes and the trusted target directory, is bound
+to the same scope/task/MASTER/target/kind/rights proof, is idempotent per relation and immutable afterwards.
+`ensureDelivery` for a Cover task requires the `permitId` and asserts the permit key, `taskIdentityHash` and
+expiry; a missing/fabricated/mismatched/expired permit is `RELAY_CORE_PERMIT_REQUIRED` with no delivery. A
+Voice task keeps its persisted `deliveryRequested:true` intent and is refused a permit. The delivery issuance
+records `authorizedBy: PERSISTED_COVER_DELIVERY_PERMIT` plus the `permitId`.
+
+Two persistence fences are mandatory: (1) the store is accepted only when records, digest/request-key indexes
+and permits are mutually consistent, so a corrupt/partial index is `STORE_INVALID` and is never repaired,
+re-minted or treated as a fresh store; (2) a writer may commit only after re-reading the canonical lease (its
+own token) and the store revision it started from, so a writer whose live lease was moved aside — the window
+in which a third process legitimally takes the empty canonical lock name — fails closed with `STORE_BUSY`
+instead of overwriting a newer successful state with an old snapshot.
+
+**Reason:** the 0139 review proved that the relay minted its own `RELAY_ISSUED_FOR_FROZEN_COVER` authorization
+from a SAVED Cover record (no source authorization), that a clock crossing inside the final awaited artifact
+read still reached the Fake accept, that a moved live lease let a stale writer overwrite a newer cancel, and
+that a corrupt index could re-mint an already accepted delivery. Each is a permission, duplicate-acceptance or
+data-loss risk; each is now closed by an explicit persisted source authority or a fail-closed fence.
+
+**Rejected alternatives:** treating a SAVED MASTER or `deliveryRequested` as a delivery permission; a
+self-signed in-`ensureDelivery` cover flag; editing the frozen Cover record; repairing/分空 indexes or
+replaying a corrupt store; locking only by file presence without a commit-time lease/revision check; treating
+a stolen-lease write as success.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-027 — A revision reservation is the commit authority; the delivery digest is recomputed from facts
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** The advisory lease is not the write authority. Before publishing revision `N+1` a writer must
+reserve `unified-relay-v1.json.commit-<N+1>`: the guard is prepared as a complete file and published with an
+atomic hard link (create-or-fail; `COPYFILE_EXCL` only as a fallback), so it is never observed empty. The
+reservation is taken before the final `rename` and held until the store rename really happened, and it is
+not transferable: a third process that legally acquires the canonical lock after a stale reclaim moved the
+live lease still cannot reserve the same revision and fails closed with `STORE_BUSY`. The writer also
+re-checks its lease token and starting revision after reserving. Guards for already published revisions are
+cleaned best-effort; a dead guard owner is fenced by move-then-verify before removal, and an unreadable guard
+is conservative `STORE_BUSY`.
+
+The delivery digest is a *verified function of persisted facts*, not a stored string: creation and store
+validation both call `canonicalDeliveryDigest` over the authority kind, task identity hash, task/artifact
+refs, artifact hash/bytes/duration/format, target id/kind, rights proof/expiry and permit. A record whose
+digest or index was edited without the facts (or vice versa) makes the whole store `STORE_INVALID`, so it can
+never be used to re-accept an already accepted request under a new alias.
+
+**Reason:** the 0140 review proved that a pause between the lease/revision check and the final rename let a
+stale reclaim move the live lease, a third process commit, and the paused writer overwrite it with an old
+snapshot; and that editing only the digest (and its index) kept the store valid while the same request was
+accepted a second time. Both are data-loss/duplicate-acceptance risks. A check followed by another window is
+not a proof of exclusion; the reservation is an exclusive claim held across the publish, and the digest is
+recomputed from the record it is supposed to describe.
+
+**Rejected alternatives:** another pre-rename read check (moves the window instead of closing it); treating
+guard file age/mtime as staleness (could delete a live reservation); repairing/recomputing a damaged store;
+re-minting ids or replaying; trusting the stored digest/index strings.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-028 — The store is an immutable revision log; the create-or-fail revision file is the commit
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03). Supersedes ADR-027.
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** The delivery store is an append-only log of immutable revision files
+`unified-relay-v1.r<N>.json`. A commit is the atomic create-or-fail publication of exactly the next revision
+file: the complete new state is written and fsynced to a private temp file, then published with a hard link
+(exclusive copy only on filesystems that cannot hard-link). The create *is* the commit; there is no fixed
+"current store" name that is renamed, replaced, reclaimed or deleted, and no post-create step. A writer whose
+advisory lease was moved aside by a stale reclaim can therefore never overwrite a newer commit: it either
+creates a revision nobody else took, or the create fails and it reports `STORE_BUSY` — two writers can never
+publish the same revision. Readers take the highest validated revision; a corrupt higher revision fails
+closed instead of falling back to older data. Old revisions are pruned best-effort (newest four kept) and can
+never be a writer's base again, so pruning cannot create an empty-current window. Private temp files are never
+authoritative and only a provably dead owner's temp is removed. The advisory lease and a latest-revision
+re-check are kept only as contention hints, never as write authority.
+
+**Reason:** the 0141 review showed that the revision guard of ADR-027 was itself a movable/deletable
+same-name file: a dead-guard reclaim could move a live replacement, a released path could be reused by a new
+guard, and the holder's exclusivity during the final rename was therefore not proven. Replacing the guard with
+an immutable log makes the exclusivity structural (the name is the committed data) instead of a lock
+lifecycle, without adding another reclaimable lock or moving the window.
+
+**Rejected alternatives:** another reclaimable reservation/lock; verifying and re-verifying the guard around
+the rename (still a window); pid/mtime-based guard stealing; repairing or falling back from a corrupt highest
+revision; migrating the unmerged previous store format.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-029 — Pruned revision numbers stay occupied; a failed enumeration is never an empty store
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03). Extends ADR-028.
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, ADR-028, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** Retention never frees a revision number. The newest four payloads are kept; older revision
+files are replaced in place by a small immutable tombstone (`{pruned:true,revision:N}`) with the same name,
+so a late writer whose base is older can never re-create an already published revision and report a success
+that readers would ignore. The payload stays bounded (one tiny tombstone per revision) and no stale snapshot
+is re-authorised. Retention failures are best-effort and never touch the highest revision.
+
+Directory enumeration is a three-way fact, not a boolean: *confirmed empty* (successful enumeration, no
+revision files), *has revisions*, or *cannot enumerate*. `readdir` errors are propagated; the read, the
+commit-time version check and any cleanup that needs the list fail closed with `STORE_INVALID` instead of
+treating the store as new (which previously allowed a low revision to be rebuilt and a `CREATED` success to be
+returned for a record that was not in the highest authority). A highest revision that is a tombstone is
+refused as corrupt.
+
+**Reason:** the 0142 review proved two success-consistency failures of the new revision store: pruning r3
+freed the name so a paused writer's stale snapshot could be re-published as r3 and return success while
+readers stayed at r9 (lost successful cancel); and two `readdir` EIO made an existing store look empty, so a
+`CREATED` r1 was returned for a record absent from r6. Both are repaired by making revision numbers
+non-reusable and by treating enumeration failure as an unknown store.
+
+**Rejected alternatives:** another pre-link read sample (moves the window); deleting tombstones or pruning by
+age; rebuilding a lower revision on enumeration failure; returning a fake new store or `CREATED` when the
+store cannot be enumerated; repairing a corrupt highest revision by falling back.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

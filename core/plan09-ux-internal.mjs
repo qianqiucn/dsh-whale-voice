@@ -39,7 +39,7 @@ export const PLAN09_DEPENDENCY_CATALOG = Object.freeze({
   rvc: { label: 'RVC 翻唱模型（首发）', desc: '标准翻唱模型；需单独确认来源与许可，不承诺低资源。', required: true, license: '需确认', size: '未知' },
   separation: { label: '人声分离模型', desc: '混合素材需要分离人声与伴奏；干净人声可跳过。', conditional: true, license: '需确认', size: '未知' },
   gateway: { label: '已有服务 Gateway', desc: '复用已安装服务；能力与版本必须由检查确认。', conditional: true, license: '随服务', size: '—' },
-  sender: { label: '鲸递发送模块', desc: '仅投递时必需；Sender 是鲸递内部兼容执行模块，本计划不迁移。', delivery: true, shared: true, license: '随应用', size: '—' },
+  sender: { label: '鲸递（统一投递）', desc: '仅投递时必需；一个鲸递安装/管理项，内部包含兼容的 Windows 发送模块，WeChatAgent 仍是独立身份依赖。', delivery: true, shared: true, license: '随应用', size: '—' },
   wechat: { label: 'WeChatAgent 桥', desc: '仅投递到微信时必需；未接入时只能浏览与保存草稿。', delivery: true, shared: true, license: '上游许可', size: '—' },
   gpu: { label: '可用 GPU / 显存', desc: '本机模式下的资源检查；未知不会被当作可用。', conditional: true, license: '—', size: '按模型' },
   storage: { label: '磁盘空间', desc: '模型与缓存空间；未知时显示未知而不是通过。', optional: true, license: '—', size: '未知' },

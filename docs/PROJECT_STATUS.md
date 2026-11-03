@@ -600,3 +600,192 @@ The Singing page gets a FIXTURE/OFFLINE card only when `window.__WHALE_SINGING_A
 R01 uses a test-only HTTP bridge (`tests/ui/singing-bridge.mjs`) whose browser fetch adapter calls actual `openSingingApp`/Cover executor/Fixture library in a temporary sandbox; there are no fixed task/stage/hash returns. The bridge imports two synthetic WAVs and exposes actual `masterCount`, MASTER bytes/hash, preview metadata and per-task state. 105 changes it to an immutable `taskId → {draft,sourceRef,voiceProfileId}` map: execute/preview only from that task record and reject a missing/mismatched task id, so a global `lastDraft`/`lastTaskId` cannot give old A execution rights under B. Test-only hold/release/fail-next-create controls cover delayed success and rejection. It is never registered by `index.js`.
 
 Tests: 7 new `singing-app` Core tests (trusted list/no proof leak, MIXED run + one MASTER + bounded preview, CLEAN_VOCAL, controlled slow run status/cancel → CANCELLED with no MASTER, parameter conflict, missing dependencies/unknown source/voice, rejected rights); UI harness **69/69** including real bridge create→execute→SAVED→preview, confirmed cancel during a slow run with zero MASTER, delayed A create/rejection not rebinding after selecting B (B saves, A remains `NO_ATTEMPT`), switched-task late-response guard and missing-adapter fail-closed; full suite **1070 / 1066 pass / 4 platform skips / 0 fail**; `client.js` 308,426 chars regenerated. Still `12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; entire Plan12-A and 12-B/C/D, real RVC/13-A, production Host and delivery remain OPEN.
+
+## Plan 13-A / Unified Relay OFFLINE (2026-11-03)
+
+Branch `feature/plan13-unified-relay-offline` from merged Plan12 M=`42b96ceeed3ce03a161489770edfa84fa49b98c0`; independent PR pending, not merged.
+
+The first offline delivery-persistence owner after ADR-001: `core/audio/relay-core-offline.mjs` consumes a validated SAVED Audio Task record, reads the actual Fixture Artifact bytes through the existing Artifact library under the same scope/rights, and resolves the target from a trusted target directory. It computes the artifact hash/bytes/duration/format from those bytes, mints one persistent `delivery:<32hex>` and one internal `[A-Za-z0-9_-]{8,64}` backend request id, and stores `taskId → deliveryId → backendRequestId`, rights proof/expiry, target and fixed backend. The digest is semantic (task/artifact hash/target/proof/expiry, not requestKey), so a changed requestKey returns the original delivery; a same requestKey with different content/target is `CONFLICT`; capacity fails closed and normal handles have no reset API. The store is atomic temp+fsync+rename under a token-owned lock; release uses a token quarantine, same-process live owners are protected by a global live-submit map, and child-process exits recover `SUBMITTING` to `UNKNOWN`.
+
+`createFakeDeliveryBackend` has its own trusted target directory and rechecks target id/kind/authorization plus `bridgeAllowed && workerAllowed && identityVerified`; the Core side separately re-resolves the stored target before submit. WAV/8MiB/15min gates, a simulated `QUEUED` receipt and zero real Sender/network/device/WeChat action. Submit re-reads the Artifact before any Fake call: deleted/changed/expired bytes fail closed with zero Fake submit. `projectUnifiedRelayComponent` projects one user-facing 鲸递 item (`legacyAliases: whale-relay, voice-sender`, internal modules, one install unit, no second store, realReady=false); the Plan09 wizard already presents one 鲸递 delivery item and WeChatAgent remains independent. No real Sender import, port, token, production config or send.
+
+Tests: 12 new relay tests (real SAVED + actual library bytes, stable IDs/alias/conflict, one submit + duplicate, target directory + Fake Worker gate, forged task/artifact, deleted artifact zero submit, UNKNOWN no re-sign, cancel requested/confirmed, capacity, concurrent one submit, live same-process owner protection, real child-process restart UNKNOWN, unified component view); full suite **1082 / 1078 pass / 4 platform skips / 0 fail**, UI 69/69, `client.js` 308,455 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and the entire Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 108 revision — persisted authority, immutable request-key binding and lock fencing (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision is the集中修复 required by the 0138 review
+(`REVIEWED` / `CHANGES_REQUIRED`) plus the user's dependency-wizard layout screenshots.
+
+**A · dependency wizard (frontend).** The wizard is no longer a page-local child. `client.template.js` adds a
+plugin-owned controlled root overlay (`createRootOverlay()`, `OverlayHostContext`, `RootOverlayLayer`); the shared
+`Modal` publishes its surface into that layer and `ModalSurface` keeps the whole focus trap/Escape/focus-return
+logic. `.wv-overlay-layer` is a direct child of `.wv-root` next to `.wv-shell` (inside the plugin theme scope, no
+portal/`react-dom` dependency), so neither the `.wv-scroll` clip nor the `wv-pagein` transform can become the
+containing block. `client.css` makes the overlay absolute inside that layer, sizes the dialog from the container
+(`min(560px,100%)`, `max-height:100%`, no `100vw`/`vh`), keeps head/footer non-shrinking with an independently
+scrolling body, reflows dependency rows/mode cards/footer from the actual plugin width (`.wv-root[data-layout="narrow"]`
+plus `minmax(min(190px,100%),1fr)`, `min-width:0`, `overflow-wrap:anywhere`), and gives the dialog an opaque local
+fallback surface (`--wv-overlay`/palette fallbacks, `--wv-danger`/`--wv-panel`/`--wv-ink` aliases, `var(--wv-card-solid)`
+background under the themed gradient) so a missing host token cannot make it transparent. The toast is positioned
+inside the root as well. Existing demo/installation/no-write boundaries are unchanged.
+
+**B · Core/relay.** `ensureDelivery({handoff})` now accepts only a reference envelope (schemaVersion/scopeId/taskId/
+artifactRef/targetId/requestKey/rights); unknown keys — including a caller-supplied `taskRecord` — are refused. The
+relay re-reads the persisted SAVED authority itself: AudioTask owner v2 (`get` SAVED + `artifactStatus` READABLE with
+the same ref + persisted `deliveryRequested:true`) or Cover owner v3 (`coverStatus` SAVED + MASTER ref). A delivery
+persists a versioned issuance (`intentId` + `intent{version,kind,taskIdentityHash,deliveryRequested,authorizedBy,issuedAt}`);
+the frozen Cover record keeps `deliveryRequested:false` and is never edited (`RELAY_ISSUED_FOR_FROZEN_COVER`), while a
+legacy Task record must already carry the persisted delivery intent (`PERSISTED_TASK_DELIVERY_INTENT`). A `requestKey`
+is an immutable binding checked before digest reuse (a bound key can never be re-pointed; an unbound key may only
+register the digest it first resolves to). After `health`/`capabilities`/`resolveTarget` awaits, the relay re-reads the
+authority identity hash, the artifact bytes/hash/expiry and the Core target immediately before the Fake Worker accepts,
+so revocation/deletion/expiry during preflight produces zero submit. The live owner token is retired only after the
+terminal state was durably committed (bounded retry on lock contention; an unproven commit stays conservative busy
+instead of silently becoming UNKNOWN), and the claim token is registered only after its commit. All lock paths are
+fenced by “move aside, then verify the moved bytes”: stale reclaim deletes only the exact lease it proved dead, a live
+replacement is restored with create-or-fail semantics, and a release restore can never overwrite a third live lease.
+The Fake Worker's `submit` resolves the target from its own directory by the persisted delivery target id/kind/backend
+id and its own identity/authorization/allowlist/Bridge/Worker gates; the upstream booleans or a handed-over resolver
+result cannot grant anything. One new fixed code (`RELAY_CORE_TASK_NOT_SAVED`) documents the persisted-authority refusal.
+
+Evidence: 3 relay test files / 28 tests (12 reworked core + 8 TRUST + 8 PERSIST, including the exact
+concurrent-open-at-accept-boundary, stale-reclaim and release-restore interleavings); full suite **1099 / 1095 pass /
+4 platform skips / 0 fail**; UI **72/72** with three new dialog-layout checks (root-layer containment/nav block/focus/
+reduced motion, narrow simulated host panel, missing host token); `client.js` 314,687 chars. Status remains
+`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged, 13-B/C, real WeChat/Sender,
+Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 109 revision — Cover source permit, accept-boundary expiry, lease/revision fence and store gate (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes exactly the four items confirmed by the 0139
+review (`4ef791b`); the accepted 108 work (dependency-wizard UI, Fake Worker gate, Voice persisted relation,
+normal requestKey/finalize behavior) is not redone.
+
+1. **Cover source permit (137-TRUST-01).** A SAVED Cover MASTER is no longer a delivery permission. The relay
+   exposes `issueDeliveryPermit({permit})` (`{schemaVersion, scopeId, taskId, artifactRef, targetId, rights}`):
+   it re-reads the persisted Cover authority, requires the same MASTER ref/hash and the real artifact bytes,
+   resolves the target from the trusted directory, and persists an immutable, versioned, idempotent permit
+   (`permitId:"permit:<32hex>"`, `permitKey`, `authorityKind:COVER_OWNER_SAVED_V3`, bounded capacity) bound to
+   scope/task/MASTER/target/kind/rights. `ensureDelivery` for a Cover task requires `permitId` and checks key,
+   `taskIdentityHash` and expiry; missing/fabricated/mismatched/expired → `RELAY_CORE_PERMIT_REQUIRED` with no
+   delivery. The frozen v3 record is never edited; the delivery issuance records
+   `authorizedBy:PERSISTED_COVER_DELIVERY_PERMIT` + `permitId`. The Voice path keeps its persisted
+   `deliveryRequested:true` intent and refuses a permit (`permitId` refused for Voice). ADR-026.
+2. **Last awaited read (137-TRUST-01).** `readFreshArtifact` now samples the trusted clock again after its
+   asynchronous read, and `submit` samples the accept-time clock once more after every await (authority,
+   artifact, target) immediately before the Fake accept, requiring `rightsExpiresAt`/`expiresAt` to still be
+   in the future. A crossing that happens inside the final read is refused with zero backend submit; an
+   unexpired chain still accepts.
+3. **Lease/transaction authority (137-PERSIST-02).** The relay store commit re-reads the canonical lease and
+   requires its own token, then re-reads the store and requires the revision this run started from. A writer
+   whose live lease was moved aside (the empty-canonical window in which a third process legally takes the
+   lock) or whose snapshot was overtaken fails closed with `STORE_BUSY` and writes nothing. Replayed as a real
+   three-process test: A pauses before commit after reading the store, a stale reclaim moves A's live lease
+   aside, C legally acquires the lock and commits a normal cancel, A then tries to commit its old snapshot — A
+   fails closed and C's `CANCEL_REQUESTED` survives, so no successful result is lost.
+4. **Store consistency (137-PERSIST-01).** The store is accepted only when persisted deliveries, the
+   digest/request-key indexes (including request-key aliases recorded on the delivery) and the permits are
+   mutually consistent: unique ids/digests/permit keys, every record indexed both ways, every index entry
+   pointing at a matching record, legal terminal/owner relations, `ACCEPTED` with receipt, `SUBMITTING` with
+   owner. Any missing/extra/duplicated/mismatched entry → `STORE_INVALID` on open; the file is not repaired,
+   re-minted or treated as a fresh store, so an already accepted request cannot be re-accepted.
+
+Evidence: 4 relay test files / 32 tests (12 core + 9 TRUST + 10 PERSIST + 1 real three-process lease race),
+including the exact 0139 counterexamples replayed against the fix; full suite **1104 / 1100 pass / 4 platform
+skips / 0 fail**; UI **72/72** (unchanged product UI; the narrow-host fixture now also clears the harness
+`min-height` bookkeeping item `RELAY-DEFER-UI-FIXTURE-139`); `client.js` 314,687 chars (build unchanged by the
+Core-only revision). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and
+unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 110 revision — revision-reservation commit boundary and canonical digest (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes exactly the two persistence items confirmed
+by the 0140 review (`54642e8`); the accepted 109 work (Cover source permit, accept-boundary expiry, store index
+gate) and the accepted UI are not redone.
+
+1. **Commit boundary (137-PERSIST-02/LEASE_AFTER_FENCE).** The advisory lease is no longer the write
+   authority. A commit first reserves `unified-relay-v1.json.commit-<revision+1>`: the guard is prepared as a
+   complete file and published with an atomic hard link (create-or-fail), so it is never observed empty, and
+   only its owner may publish that revision. The reservation is taken before the final `rename` and held until
+   the store rename really happened; after reserving, the writer still re-checks its lease token and starting
+   revision. A third process that legally acquires the canonical lock after a stale reclaim moved the live
+   lease cannot reserve the same revision and fails closed with `STORE_BUSY`; the paused writer's publish is
+   the only one. Guards for published revisions are cleaned best-effort; a dead guard owner is fenced by
+   move-then-verify, an unreadable guard is conservative `STORE_BUSY`. Replayed with two real three-process
+   tests: the 0139 first-read interleaving and the 0140 after-fence interleaving (pause after the fence and
+   after the temp file was fsynced, immediately before the final rename).
+2. **Canonical digest (137-PERSIST-01/CANONICAL_DIGEST).** The delivery digest is recomputed from the
+   persisted semantic facts by one `canonicalDeliveryDigest` function used at creation and at store
+   validation (authority kind, task identity hash, task/artifact refs, artifact hash/bytes/duration/format,
+   target id/kind, rights proof/expiry, permit). A record whose digest and index were edited without the facts
+   is not a trustworthy store: `openUnifiedRelay` fails with `STORE_INVALID`, the file is not rewritten, and
+   the same semantic request cannot be accepted under a new alias a second time. Healthy stores keep
+   `EXISTING` for new aliases, key conflicts, terminal/UNKNOWN behavior and capacity.
+
+Evidence: 4 relay test files / 33 tests (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races),
+including the exact 0140 after-fence and digest-tamper counterexamples replayed against the fix; full suite
+**1105 / 1101 pass / 4 platform skips / 0 fail**; UI **72/72** reused from 0139 (no product UI change; the CI
+`ui` job passes on this head); `client.js` 314,687 chars (unchanged). Status remains `13-A/OFFLINE` /
+`FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged; real DSH page visual, real Sender/WeChat,
+13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. The permit cross-record redundancy limitation stays
+booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.
+
+### Plan 13-A 111 revision — immutable revision-log commit (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes the last 137-PERSIST-02 lifecycle item named
+by the 0141 review (`3e696ee`); the accepted canonical digest, Cover permit, accept-boundary expiry, Voice/Worker
+and UI evidence are not redone.
+
+- **Root cause:** the revision reservation introduced in 110 was itself a movable/deletable same-name file. A
+  dead-guard reclaim could move a live replacement, a release could hit a newly reused path, and the holder's
+  exclusivity across the final rename was therefore not provable. Adding checks around the rename would only
+  move the window again.
+- **Change:** the store is now an append-only log of immutable revision files
+  (`unified-relay-v1.r<N>.json`). A commit writes the complete next state to a private fsynced temp and
+  publishes it with a create-or-fail hard link; the create *is* the commit. No fixed "current store" name is
+  renamed, replaced, reclaimed or deleted, so a writer whose advisory lease was moved aside can never overwrite
+  a newer commit — it either creates a revision nobody else took or fails closed with `STORE_BUSY`.
+  Readers take the highest validated revision (a corrupt higher revision is `STORE_INVALID`, never a fallback);
+  old revisions are pruned best-effort (newest four kept) and can never be a writer's base; only a provably
+  dead owner's private temp is removed. The advisory lease and latest-revision re-check are contention hints
+  only. Crash/dead-owner delivery recovery (`SUBMITTING` → `UNKNOWN` on reopen) is unchanged.
+- **Tests:** the two real three-process interleavings now run against the immutable publish: A pauses before
+  its publish (after the temp was fsynced), a stale reclaim moves A's live lease aside, C legally acquires the
+  lock and publishes its cancel; A's create of the same revision fails closed and C's `CANCEL_REQUESTED`
+  survives. The store-corruption matrix (7 variants incl. canonical digest), key binding, finalize timing,
+  claim failure, terminal failure and both child-process recoveries stay green. A new in-process test proves a
+  commit can never overwrite an already published revision (create-or-fail collision with a competing valid
+  snapshot, our writer reports `STORE_BUSY`, the competitor's state survives byte-for-byte).
+
+Evidence: 4 relay files / 33 tests (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races); full suite
+**1105 / 1101 pass / 4 platform skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js`
+314,687 chars (unchanged). Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and
+unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.
+The permit cross-record redundancy limitation stays booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.
+
+### Plan 13-A 112 revision — retention tombstones and enumeration fail-closed (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes the two success-consistency items confirmed
+by the 0142 review (`64ee5ba`); the accepted guard removal/immutable log, canonical digest, Cover permit,
+accept-boundary expiry and UI are not redone.
+
+1. **REVISION_RETENTION.** Pruning no longer frees a revision number: the newest four payloads are kept and
+   older revision files are replaced in place by a small immutable tombstone (`{pruned:true,revision:N}`) at
+   the same name. A late writer whose base is older can never re-create an already published revision and
+   return a success readers would ignore; the payload stays bounded and no stale snapshot is re-authorised.
+   Retention failures are best-effort and never touch the highest revision.
+2. **ENUMERATION_FAIL_CLOSED.** Confirmed-empty (successful `readdir`, no revision files) is now distinct from
+   cannot-enumerate: `readdir` errors are propagated and the read, commit-time version check and cleanup fail
+   closed with `STORE_INVALID` instead of treating an existing store as new. A highest revision that is a
+   tombstone is refused. The previously observed `CREATED` r1 for a record absent from r6 is impossible.
+
+Evidence: 4 relay files / 35 tests (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), including
+the exact 0142 counterexamples replayed at their native boundaries: (a) a store advanced to r9 with r3 pruned
+keeps r3 occupied by a tombstone so replaying the captured historical r3 snapshot at the link boundary is
+`EEXIST` and the highest authority/cancel state is unchanged; (b) injected `readdir` EIO on the read and on
+the commit-time check both fail `STORE_INVALID` with no new revision and no fake empty store, and a later
+normal request creates the next revision against the real store. Full suite **1107 / 1103 pass / 4 platform
+skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js` 314,687 chars (unchanged).
+Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and unmerged; real DSH page
+visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. `RELAY-DEFER-COPY-PUBLISH-142`
+and `RELAY-DEFER-PERMIT-CROSSCHECK-140` stay booked.

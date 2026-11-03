@@ -293,7 +293,62 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wv-wave-mini', 'aria-hidden': true }, bars)
     }
 
-    function Modal({ title, subtitle, size = '', onClose, children, footer }) {
+    /* Plugin-owned controlled root overlay layer. Every dialog is mounted as a child of the plugin's
+     * own `.wv-root`, next to (never inside) the scrolling/animated `.wv-shell`/`.wv-page` tree, so
+     * an entered page animation can never become the containing block of the overlay. It is a plain
+     * React sibling layer, not a portal: no undeclared host/portal dependency is assumed, and the
+     * plugin theme variables keep applying because the layer stays inside `.wv-root`. */
+    function createRootOverlay() {
+      const entries = new Map()
+      const listeners = new Set()
+      let seq = 0
+      let snapshot = []
+      const emit = () => {
+        snapshot = Array.from(entries.values())
+        for (const listener of Array.from(listeners)) listener()
+      }
+      return {
+        open(render) {
+          const id = ++seq
+          entries.set(id, { id, render })
+          emit()
+          return {
+            update(nextRender) {
+              const entry = entries.get(id)
+              if (!entry || entry.render === nextRender) return
+              entry.render = nextRender
+              emit()
+            },
+            close() {
+              if (!entries.delete(id)) return
+              emit()
+            },
+          }
+        },
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+        getSnapshot() { return snapshot },
+      }
+    }
+
+    const OverlayHostContext = React.createContext(null)
+
+    function RootOverlayLayer({ host }) {
+      const entries = React.useSyncExternalStore(host.subscribe, host.getSnapshot)
+      if (!entries.length) return null
+      return h('div', { className: 'wv-overlay-layer', 'data-wv-overlay-layer': '' },
+        entries.map((entry) => h(RootOverlayEntry, { key: entry.id, entry })))
+    }
+
+    /* The entry is a stable React position for one dialog; re-publishing a new renderer keeps the
+     * dialog's own React state (mode, dependency ticks, focus) instead of remounting it. */
+    function RootOverlayEntry({ entry }) {
+      return entry.render()
+    }
+
+    function ModalSurface({ title, subtitle, size = '', onClose, children, footer }) {
       const ref = React.useRef(null)
       React.useEffect(() => {
         const previous = document.activeElement
@@ -325,6 +380,25 @@ window.__ModuleLoader__.load({
           h(IconButton, { icon: 'x', label: '关闭', onClick: onClose })),
         h('div', { className: 'wv-dialog-body' }, children),
         footer ? h('div', { className: 'wv-dialog-foot' }, footer) : null))
+    }
+
+    function Modal(props) {
+      const host = React.useContext(OverlayHostContext)
+      const handle = React.useRef(null)
+      const latest = React.useRef(props)
+      latest.current = props
+      React.useLayoutEffect(() => {
+        if (!host) return
+        const next = () => h(ModalSurface, latest.current)
+        if (handle.current === null) handle.current = host.open(next)
+        else handle.current.update(next)
+      })
+      React.useEffect(() => () => {
+        if (handle.current) { handle.current.close(); handle.current = null }
+      }, [])
+      // Safety fallback only: every real mount is inside WhaleVoiceApp, which provides the layer.
+      if (!host) return h(ModalSurface, props)
+      return null
     }
 
     function Toast({ toast }) {
@@ -445,6 +519,9 @@ window.__ModuleLoader__.load({
 
     function WhaleVoiceApp({ locale }) {
       const rootRef = React.useRef(null)
+      const overlayHostRef = React.useRef(null)
+      if (overlayHostRef.current === null) overlayHostRef.current = createRootOverlay()
+      const overlayHost = overlayHostRef.current
       const layout = useLayout(rootRef)
       const [page, setPage] = React.useState('overview')
       const [settings, setSettings] = React.useState(DEFAULT_SETTINGS)
@@ -550,33 +627,35 @@ window.__ModuleLoader__.load({
       else if (page === 'advanced') body = h(AdvancedPage, { notify, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
       else body = h(OverviewPage, { settings, setSetting, setPage, notify, openService: setServiceDetail, openActivity: setActivityDetail, setup, capability, onSetup: () => setSetupOpen(true), onComponents: () => setComponentsOpen(true) })
 
-      return h('div', { ref: rootRef, className: 'wv-root', 'data-layout': layout },
-        h('div', { className: 'wv-aurora', 'aria-hidden': true }),
-        h('div', { className: 'wv-shell' },
-          h(Sidebar, { page, setPage, settings, layout }),
-          h('div', { className: 'wv-main' },
-            h(Topbar, { page, layout, notify }),
-            h('div', { className: 'wv-scroll' },
-              h('div', { className: 'wv-content' },
-                h('div', { className: 'wv-page', key: page }, body))))),
-        serviceDetail ? h(ServiceDialog, { service: serviceDetail, onClose: () => setServiceDetail(null) }) : null,
-        activityDetail ? h(ActivityDialog, { activity: activityDetail, onClose: () => setActivityDetail(null), notify }) : null,
-        confirmReset ? h(Modal, {
-          title: '恢复默认演示设置？', subtitle: '只影响当前前端状态，不会写入生产配置。', size: 'sm', onClose: () => setConfirmReset(false),
-          footer: h(React.Fragment, null,
-            h(Button, { onClick: () => setConfirmReset(false) }, '取消'),
-            h(Button, { variant: 'danger', onClick: resetSettings }, '恢复默认')),
-        }, h('p', { style: { margin: 0, color: 'var(--wv-muted)', fontSize: 12, lineHeight: 1.6 } }, '当前未保存的演示表单内容会丢失。')) : null,
-        setupOpen ? h(SetupWizard, {
-          open: true, status: setup, onClose: () => setSetupOpen(false), onRefresh: refreshSetup, onNotify: notify,
-          onGoPermissions: () => { setSetupOpen(false); setPage('permissions') },
-        }) : null,
-        componentsOpen ? h(ComponentsDialog, {
-          open: true, status: setup, capability, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
-          onSetup: () => { setComponentsOpen(false); setSetupOpen(true) },
-          onAdvanced: () => { setComponentsOpen(false); setPage('advanced') }, onNotify: notify,
-        }) : null,
-        h(Toast, { toast }))
+      return h(OverlayHostContext.Provider, { value: overlayHost },
+        h('div', { ref: rootRef, className: 'wv-root', 'data-layout': layout },
+          h('div', { className: 'wv-aurora', 'aria-hidden': true }),
+          h('div', { className: 'wv-shell' },
+            h(Sidebar, { page, setPage, settings, layout }),
+            h('div', { className: 'wv-main' },
+              h(Topbar, { page, layout, notify }),
+              h('div', { className: 'wv-scroll' },
+                h('div', { className: 'wv-content' },
+                  h('div', { className: 'wv-page', key: page }, body))))),
+          serviceDetail ? h(ServiceDialog, { service: serviceDetail, onClose: () => setServiceDetail(null) }) : null,
+          activityDetail ? h(ActivityDialog, { activity: activityDetail, onClose: () => setActivityDetail(null), notify }) : null,
+          confirmReset ? h(Modal, {
+            title: '恢复默认演示设置？', subtitle: '只影响当前前端状态，不会写入生产配置。', size: 'sm', onClose: () => setConfirmReset(false),
+            footer: h(React.Fragment, null,
+              h(Button, { onClick: () => setConfirmReset(false) }, '取消'),
+              h(Button, { variant: 'danger', onClick: resetSettings }, '恢复默认')),
+          }, h('p', { style: { margin: 0, color: 'var(--wv-muted)', fontSize: 12, lineHeight: 1.6 } }, '当前未保存的演示表单内容会丢失。')) : null,
+          setupOpen ? h(SetupWizard, {
+            open: true, status: setup, onClose: () => setSetupOpen(false), onRefresh: refreshSetup, onNotify: notify,
+            onGoPermissions: () => { setSetupOpen(false); setPage('permissions') },
+          }) : null,
+          componentsOpen ? h(ComponentsDialog, {
+            open: true, status: setup, capability, onClose: () => setComponentsOpen(false), onRefresh: refreshSetup,
+            onSetup: () => { setComponentsOpen(false); setSetupOpen(true) },
+            onAdvanced: () => { setComponentsOpen(false); setPage('advanced') }, onNotify: notify,
+          }) : null,
+          h(RootOverlayLayer, { host: overlayHost }),
+          h(Toast, { toast })))
     }
 
     function apply(ctx) {

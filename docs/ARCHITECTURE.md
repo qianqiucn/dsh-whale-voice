@@ -347,3 +347,19 @@ confirmed path, reconnect to the same task and read a bounded preview of the sav
 ready flags, hashes, paths or URLs from the browser; missing adapter/dependencies fail closed. No real RVC/TTS,
 Relay/WeChat delivery, 13-A, 12-B/C/D, playback device or production Host write route is added. See
 [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md) and [ADR-022](DECISIONS.md).
+
+### Plan 13-A / Unified Relay Core (OFFLINE)
+
+```text
+Whale Audio Core taskId + SAVED Fixture Artifact + rights/target facts
+  -> core/audio/relay-core-offline.mjs (one persistent store + token lock)
+  -> deliveryId + task/delivery/backendRequestId mapping + canonical digest
+  -> createFakeDeliveryBackend (capabilities/health/target/2-gate/submit/status/cancel)
+  -> simulated QUEUED receipt only
+```
+
+The relay is the only delivery writer; it references the Audio Core task/artifact rather than creating a second
+generation task. `SUBMITTING` is persisted before the backend call, a dead child owner recovers to `UNKNOWN`, and
+`UNKNOWN` never retries or switches backend/ID. The only backend is Fake and no Sender server/config/network/device/
+WeChat is touched. `projectUnifiedRelayComponent` gives one 鲸递 product view with `whale-relay`/`voice-sender` as
+internal/legacy aliases. See [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md) and [ADR-024](DECISIONS.md).
