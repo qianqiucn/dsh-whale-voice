@@ -104,7 +104,7 @@ function makeSupervisor(workspace, args, options = {}) {
 
 function tempDirs(workspace) {
   return fs.readdirSync(workspace.tmpRoot)
-    .filter((name) => name.startsWith('wv-qwen-'))
+    .filter((name) => name.startsWith('wv-qwen-') && !name.startsWith('wv-qwen-snap-'))
     .map((name) => path.join(workspace.tmpRoot, name))
     .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs)
 }
@@ -217,7 +217,8 @@ test('official worker maps CustomVoice through the real worker without loading a
       const calls = sdkCalls(workspace)
       const loaded = calls.filter((call) => call.event === 'from_pretrained')
       assert.equal(loaded.length, 1)
-      assert.equal(loaded[0].path, fs.realpathSync(workspace.customModel))
+      assert.equal(loaded[0].path.includes('wv-qwen-snap-'), true)
+      assert.equal(path.basename(loaded[0].path), 'model')
       assert.equal(loaded[0].local_files_only, true)
       assert.equal(loaded[0].trust_remote_code, false)
       assert.equal(loaded[0].offline_env.HF_HUB_OFFLINE, '1')
@@ -762,6 +763,165 @@ test('121-R01 a runtime dependency that disappears after hello is reported by he
       assert.equal(recovered.ok, true)
       assert.equal(recovered.payload.state, 'ok')
       assert.equal(recovered.payload.dependencies.soundfile, true)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 the loader consumes a stable snapshot when the original model tree is swapped during loading', { skip: pythonSkip, timeout: 120000 }, async (t) => {
+  const workspace = makeWorkspace()
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wv-qwen-model-swap-'))
+  const outsideModel = path.join(outsideRoot, 'model')
+  fs.mkdirSync(outsideModel, { recursive: true })
+  fs.writeFileSync(path.join(outsideModel, 'config.json'), JSON.stringify(configFor('custom_voice', '1b7', { speakers: { Vivian: 1, Ryan: 2 } })))
+  const modelPath = workspace.customModel
+  const modelReal = path.join(workspace.root, 'models', 'custom-real')
+  let linked = false
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中换目录', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-model-swap' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      fs.renameSync(modelPath, modelReal)
+      try {
+        createDirLink(modelPath, outsideModel)
+        linked = true
+      } catch {
+        fs.renameSync(modelReal, modelPath)
+        t.skip('directory links are not permitted on this platform')
+        return
+      }
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      const configRead = sdkCalls(workspace).filter((call) => call.event === 'model_config_read')
+      assert.equal(configRead.length, 1)
+      assert.equal(configRead[0].path.includes('wv-qwen-snap-'), true)
+      assert.equal(configRead[0].path.includes('outside'), false)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'generate_custom_voice').length, 0)
+      removeDirLink(modelPath)
+      fs.renameSync(modelReal, modelPath)
+      linked = false
+    })
+  } finally {
+    if (linked) {
+      removeDirLink(modelPath)
+      try { fs.renameSync(modelReal, modelPath) } catch { /* best effort */ }
+    }
+    fs.rmSync(outsideRoot, { recursive: true, force: true })
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a load-time cancellation discards the unvalidated model cache', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中取消缓存', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-cancel-cache' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const ack = await begun.cancel()
+      assert.equal(ack.ok, true)
+      assert.equal(ack.confirmed, true)
+      const result = await begun.result
+      assert.equal(result.ok, false)
+      assert.equal(result.cancelled, true)
+      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
+      setFakeMode(workspace, {})
+      const after = await provider.synthesize(
+        { text: '取消后重新加载', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-cancel-cache' },
+      )
+      assert.equal(after.ok, true, JSON.stringify(after.code || after.qwenCode))
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 2)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 an audit failure discards the model cache and the next request reloads the restored resources', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const configPath = path.join(workspace.customModel, 'config.json')
+      const originalConfig = fs.readFileSync(configPath)
+      const originalHash = crypto.createHash('sha256').update(originalConfig).digest('hex')
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '加载中改配置缓存', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-audit-cache' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const changed = JSON.parse(originalConfig.toString('utf8'))
+      changed.tts_model_size = '0b6'
+      fs.writeFileSync(configPath, JSON.stringify(changed))
+      const failed = await begun.result
+      assert.equal(failed.ok, false)
+      assert.equal(failed.qwenCode, QWEN_ERRORS.RESOURCE_CHANGED)
+      fs.writeFileSync(configPath, originalConfig)
+      setFakeMode(workspace, {})
+      const after = await provider.synthesize(
+        { text: '恢复后重新加载', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-audit-cache' },
+      )
+      assert.equal(after.ok, true, JSON.stringify(after.code || after.qwenCode))
+      const configReads = sdkCalls(workspace).filter((call) => call.event === 'model_config_read')
+      assert.equal(configReads.length, 2)
+      assert.equal(configReads[1].sha256, originalHash)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 2)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a known import error stays unhealthy until a successful import', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const marker = path.join(workspace.runtime, 'qwen_tts', 'raise-import')
+      fs.writeFileSync(marker, '1')
+      const failed = await provider.synthesize(
+        { text: '导入失败', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-import-error' },
+      )
+      assert.equal(failed.ok, false)
+      assert.equal(failed.qwenCode, QWEN_ERRORS.DEPENDENCY_MISSING)
+      assert.equal(sdkCalls(workspace).filter((call) => call.event === 'from_pretrained').length, 0)
+      const degraded = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(degraded.payload.state, 'degraded')
+      assert.equal(degraded.payload.dependencies.qwenTts, false)
+      fs.rmSync(marker)
+      const stillDegraded = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(stillDegraded.payload.state, 'degraded')
+      assert.equal(stillDegraded.payload.dependencies.qwenTts, false)
+      const recovered = await provider.synthesize(
+        { text: '导入恢复', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-import-error' },
+      )
+      assert.equal(recovered.ok, true, JSON.stringify(recovered.code || recovered.qwenCode))
+      const healthy = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(healthy.payload.state, 'ok')
+      assert.equal(healthy.payload.dependencies.qwenTts, true)
     })
   } finally {
     workspace.dispose()

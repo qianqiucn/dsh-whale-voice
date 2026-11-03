@@ -22,6 +22,10 @@ _RECORD_FILE = "fake-sdk-calls.jsonl"
 _MODE_FILE = "fake-sdk-mode.json"
 _FRAMES = 2400
 
+if os.path.exists(os.path.join(os.path.dirname(__file__), "raise-import")):
+    # A resolvable spec with a failing import: find_spec succeeds but importing raises.
+    raise ImportError("fixture qwen_tts import failure")
+
 
 def _record(event, **fields):
     tmp = os.environ.get("WV_QWEN_TMP")

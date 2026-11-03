@@ -180,12 +180,19 @@ nested loader chain cannot download, and it re-audits the model directory, confi
 trusted clone reference immediately before each SDK call (realpath inside the allowed root,
 existence, size, dev/ino, held fd) instead of trusting a startup snapshot. Clone reference bytes are
 read through the audited fd, checked against a SHA256 baseline and handed to the SDK as a
-`data:audio` value; the model sub-resource tree is walked for junction/symlink escapes and config/tree
-are re-audited after loading before generation. Each supervisor start owns one process generation
-with an operation table; an `error` event is not an exit, an unconfirmed exit is a failure, failed
-temp cleanup stays owned/retryable, and occupancy is released only by a complete terminal message
-correlated through its issued message id, request id and exact model/backend/voice identity; invalid
-late messages keep the recovery correlation, and a start failure is scoped to its own generation.
+`data:audio` value. The actual model load runs against a private audited snapshot: small loader
+resources are copied with SHA256 baselines, large files are same-volume hardlinks with recorded
+identity, and the original tree/config are re-audited after loading. A model directory swapped for an
+out-of-root junction during loading therefore cannot feed the SDK an outside config. The candidate
+model is committed to the cache only after validation; load-time cancellation, audit failure or an
+exception discards it so the next request reloads, while a normally completed valid cache survives
+ordinary cancellation. Runtime dependency health distinguishes a missing module from a resolvable
+module whose import raises ImportError, which stays degraded until a successful import. Each
+supervisor start owns one process generation with an operation table; an `error` event is not an
+exit, an unconfirmed exit is a failure, failed temp cleanup stays owned/retryable, and occupancy is
+released only by a complete terminal message correlated through its issued message id, request id and
+exact model/backend/voice identity; invalid late messages keep the recovery correlation, and a start
+failure is scoped to its own generation.
 The provider result is non-persisted (`PENDING_ROUTER`) and the provider never creates a Task or sends
 WeChat. Real model/Host/Artifact integration remains OPEN; see
 [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).

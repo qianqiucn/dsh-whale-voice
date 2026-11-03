@@ -85,10 +85,18 @@ Provider 候选：固定上游元数据、官方 SDK 惰性 worker、Provider �
 - **网络 guard**：导入官方包前设置离线环境变量并替换 `socket.socket.connect`、
   `socket.create_connection`、`urllib.request.urlopen`；嵌套 `AutoConfig`/`AutoModel`/
   `AutoProcessor` 的缺失回退若尝试联网会得到 `QWEN_NETWORK_BLOCKED`，不会静默下载。
+- **首次加载使用稳定快照**：`from_pretrained` 指向审计后生成的私有快照。小文件（config、
+  processor/tokenizer 等 ≤8 MiB，总 ≤64 MiB）逐字节复制并记录 SHA256；大文件在同卷上 hardlink
+  并记录 dev/ino/size/mtime。加载完成后再次审计原始模型目录/配置/子资源树与快照哈希：原始目录
+  在加载窗口被换成根外 junction、config/子资源被改写时拒绝；SDK 读取的是快照，不会先读到根外
+  config。快照目录在 worker 退出时清理。
+- **候选缓存提交**：模型只在快照/原始资源验证闭合后才写入 `MODEL/LOADED`。加载中取消、审计失败
+  或异常会丢弃候选模型与快照，下一次请求重新加载；正常完成后的合法缓存不会被普通取消销毁。
 - **直接依赖健康**：启动时用 `importlib.util.find_spec` 检查 worker 直接导入的 `qwen_tts` 与
   `soundfile`（不 import 重型包）；缺任一或版本不符即 `hello` 失败关闭，后续不会加载模型。
-  运行期导入失败会记录为该依赖已知失效，随后 `health` 返回 `degraded` 与
-  `dependencies.soundfile=false`；依赖恢复后 `health` 通过重新 `find_spec` 明确恢复为 `ok`。
+  运行期导入失败会区分“模块不可定位（missing）”与“可定位但 ImportError”：前者在路径恢复后
+  可经 `find_spec` 明确恢复；后者必须等到一次**成功导入**才清除故障。`health` 在已知失效期间
+  返回 `degraded` 与对应 `dependencies=false`，且不加载模型。
 - 同一时间只允许一个合成；`cancel` 立即回 ack 并置取消标记，但**ack 不等于实际停止**；如果取消
   在加载开始前到达，worker 在 50 ms 预检窗口内直接返回 `cancelled` 而不加载；加载中取消则在加载
   结束后、`generate_*` 之前返回 `cancelled`。正在运行的生成结束后才会发终止结果，迟到结果不会
@@ -204,19 +212,20 @@ NDJSON over stdio，`v:1`；请求 `hello/health/discover/synthesize/cancel/shut
   字节/格式/限额、clone 实际身份、输出四项身份、UNKNOWN/CANCELLED 终态、超时/重入占用、迟到不
   晋升、取消句柄、期限约束、深嵌套隔离、未确认停止、error≠exit 代际、关闭中拒绝新工作、清理失败
   可重试。
-- `test/qwen-official-worker.test.mjs`（17 项，Python 3 可用时执行）：CustomVoice 官方映射与
+- `test/qwen-official-worker.test.mjs`（21 项，Python 3 可用时执行）：CustomVoice 官方映射与
   嵌套加载/离线 guard、Base 克隆本地引用映射（SDK 收到 data-uri 字节与 SHA256）、缺包/配置矛盾/
   资源越界失败关闭、取消 ack 与迟到结果、模型配置变更/参考超限/参考消失/junction 越界/模型目录
   junction 越界、同尺寸参考原地改写、加载中参考变化仍使用已审计字节、加载中配置变化拒绝、
-  speech-tokenizer 子资源越界、运行期 `soundfile` 失效与 health 恢复、缺 `soundfile` 直接依赖、
-  加载前与加载中取消。
-- `test/qwen-095-repair.test.mjs`（15 项）：语音语言空交集、产物时长上限、小 timeout 生效、
+  speech-tokenizer 子资源越界、运行期 `soundfile` 失效与 health 恢复、加载中目录换 junction 仍
+  只消费快照、加载中取消丢弃候选缓存、审计失败丢弃缓存后重新加载、ImportError 保留至成功导入、
+  缺 `soundfile` 直接依赖、加载前与加载中取消。
+- `test/qwen-095-repair.test.mjs`（16 项）：语音语言空交集、产物时长上限、小 timeout 生效、
   取消拒绝/超时/错身份/progress、幽灵 messageId、错误身份/类型占用、正确关联 UNKNOWN 释放、
   错误 claimed 迟到、迟到 progress、启停竞态、通用/缺/null requestId/错身份不完整终态、
-  非终态迟到不破坏恢复关联、旧代启动失败不停止新代。
+  非终态迟到不破坏恢复关联、旧代启动失败不停止新代、取消终止错模型不清占用。
 - 若执行环境禁止子进程管道（EPERM）、目录链接或没有 Python 3，对应测试按平台跳过并在报告中注明；
   不得用内存 mock 替代进程生命周期证据。
-- 本轮 Qwen 专项 **58/58**；全量 **956/952 pass/4 platform skips/0 fail**；UI 63/63；build 后
+- 本轮 Qwen 专项 **62/62**；全量 **960/956 pass/4 platform skips/0 fail**；UI 63/63；build 后
   `client.js` 无 diff。
 
 ## 9. 明确未完成（Plan10 集成 OPEN）

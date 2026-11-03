@@ -17,12 +17,14 @@
 # never touches WeChat, the DSH host or production configuration.
 
 import base64
+import atexit
 import hashlib
 import importlib.metadata
 import importlib.util
 import json
 import os
 import re
+import shutil
 import socket
 import stat
 import sys
@@ -37,6 +39,9 @@ MAX_INDEX_BYTES = 256 * 1024
 MAX_REFERENCE_BYTES = 20 * 1024 * 1024
 MAX_BINDING_TOTAL_BYTES = 32 * 1024 * 1024
 MAX_TREE_ENTRIES = 10000
+MAX_SNAPSHOT_COPY_BYTES = 8 * 1024 * 1024
+MAX_SNAPSHOT_SMALL_TOTAL = 64 * 1024 * 1024
+MAX_SNAPSHOT_ENTRIES = 10000
 MAX_TEXT_CHARS = 200
 MAX_AUDIO_SECONDS = 20
 MAX_OUTPUT_BYTES = 1024 * 1024
@@ -106,6 +111,10 @@ ACTIVE_REQUEST = None
 CANCEL_EVENTS = {}
 CANCEL_LOCK = threading.Lock()
 MODEL_AUDIT = None
+MODEL_SNAPSHOT = None
+SNAPSHOT_HASHES = {}
+SNAPSHOT_LINKS = {}
+SNAPSHOT_PARENT = None
 NETWORK_GUARDED = False
 DIRECT_DEPENDENCIES = {"qwenTts": False, "soundfile": False}
 DEPENDENCY_FAILURES = {}
@@ -170,11 +179,20 @@ def module_available(name):
 
 
 def refresh_dependency_state():
-    DIRECT_DEPENDENCIES["qwenTts"] = module_available("qwen_tts")
-    DIRECT_DEPENDENCIES["soundfile"] = module_available("soundfile")
-    for key, available in DIRECT_DEPENDENCIES.items():
-        if available:
-            DEPENDENCY_FAILURES.pop(key, None)
+    for key, name in (("qwenTts", "qwen_tts"), ("soundfile", "soundfile")):
+        spec_ok = module_available(name)
+        failure = DEPENDENCY_FAILURES.get(key)
+        if not spec_ok:
+            DIRECT_DEPENDENCIES[key] = False
+            if not failure or failure.get("kind") != "import-error":
+                DEPENDENCY_FAILURES[key] = {"kind": "missing"}
+            continue
+        if failure and failure.get("kind") == "import-error":
+            # A resolvable spec does not prove that a previously failed import recovered.
+            DIRECT_DEPENDENCIES[key] = False
+            continue
+        DIRECT_DEPENDENCIES[key] = True
+        DEPENDENCY_FAILURES.pop(key, None)
     return all(DIRECT_DEPENDENCIES.values())
 
 
@@ -212,6 +230,161 @@ def audit_model_tree():
                         stack.append(real)
         except OSError as error:
             raise ResourceChanged("the model tree is unreadable") from error
+
+
+def choose_snapshot_parent():
+    model_root = MODEL_AUDIT["real"] if MODEL_AUDIT else None
+    if not model_root:
+        raise ResourceChanged("the model directory was not audited")
+    try:
+        model_dev = os.stat(model_root).st_dev
+    except OSError as error:
+        raise ResourceChanged("the model directory is unreadable") from error
+    candidates = []
+    tmp_dir = ARGS.get("tmp-dir")
+    if isinstance(tmp_dir, str) and os.path.isdir(tmp_dir):
+        candidates.append(tmp_dir)
+    allowed_root = ARGS.get("allowed-root")
+    if isinstance(allowed_root, str) and os.path.isdir(allowed_root):
+        candidates.append(allowed_root)
+    for candidate in candidates:
+        try:
+            if os.stat(candidate).st_dev != model_dev:
+                continue
+            return tempfile.mkdtemp(prefix="wv-qwen-snap-", dir=candidate)
+        except OSError:
+            continue
+    raise ResourceChanged("no trusted same-volume snapshot directory is available")
+
+
+def build_model_snapshot():
+    """Materialize the audited model tree into a stable private snapshot.
+
+    Small loader resources (config, processor/tokenizer files) are copied byte-for-byte; large
+    weight files are hardlinked to the audited inode and their identity is checked after loading.
+    The official loader is pointed at this snapshot, so it cannot consume a path that was swapped
+    for an out-of-root junction or rewritten after the audit.
+    """
+    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_LINKS, SNAPSHOT_PARENT
+    allowed_root = ARGS.get("allowed-root")
+    source_root = MODEL_AUDIT["real"] if MODEL_AUDIT else None
+    if not source_root:
+        raise ResourceChanged("the model directory was not audited")
+    parent = choose_snapshot_parent()
+    snapshot = os.path.join(parent, "model")
+    os.makedirs(snapshot, exist_ok=False)
+    stack = [(source_root, snapshot)]
+    visited = set()
+    entries = 0
+    copied = 0
+    hashes = {}
+    links = {}
+    try:
+        while stack:
+            source_dir, target_dir = stack.pop()
+            real_dir = os.path.realpath(source_dir)
+            if real_dir in visited:
+                continue
+            visited.add(real_dir)
+            if inside(allowed_root, real_dir) is None:
+                raise ResourceChanged("a model sub-resource resolved outside the allowed root")
+            os.makedirs(target_dir, exist_ok=True)
+            with os.scandir(real_dir) as iterator:
+                for entry in iterator:
+                    entries += 1
+                    if entries > MAX_SNAPSHOT_ENTRIES:
+                        raise ResourceChanged("the model tree exceeds its snapshot budget")
+                    real = os.path.realpath(entry.path)
+                    if inside(allowed_root, real) is None:
+                        raise ResourceChanged("a model sub-resource resolved outside the allowed root")
+                    target = os.path.join(target_dir, entry.name)
+                    if os.path.isdir(real):
+                        stack.append((real, target))
+                        continue
+                    if not os.path.isfile(real):
+                        raise ResourceChanged("the model tree contains a non-regular entry")
+                    size = os.path.getsize(real)
+                    relative = os.path.relpath(target, snapshot)
+                    if size <= MAX_SNAPSHOT_COPY_BYTES and copied + size <= MAX_SNAPSHOT_SMALL_TOTAL:
+                        with open(real, "rb") as handle:
+                            data = handle.read(size + 1)
+                        if len(data) != size:
+                            raise ResourceChanged("a model resource changed while it was copied")
+                        with open(target, "wb") as handle:
+                            handle.write(data)
+                        hashes[relative] = hashlib.sha256(data).hexdigest()
+                        copied += size
+                        continue
+                    try:
+                        os.link(real, target)
+                        stat_info = os.stat(real)
+                        links[relative] = (stat_info.st_dev, stat_info.st_ino, stat_info.st_size, stat_info.st_mtime_ns)
+                    except OSError as error:
+                        if size <= MAX_SNAPSHOT_COPY_BYTES and copied + size <= MAX_SNAPSHOT_SMALL_TOTAL:
+                            with open(real, "rb") as handle:
+                                data = handle.read(size + 1)
+                            if len(data) != size:
+                                raise ResourceChanged("a model resource changed while it was copied") from error
+                            with open(target, "wb") as handle:
+                                handle.write(data)
+                            hashes[relative] = hashlib.sha256(data).hexdigest()
+                            copied += size
+                        else:
+                            raise ResourceChanged("a large model file cannot be snapshotted safely") from error
+        MODEL_SNAPSHOT = snapshot
+        SNAPSHOT_HASHES = hashes
+        SNAPSHOT_LINKS = links
+        SNAPSHOT_PARENT = parent
+        return snapshot
+    except Exception:
+        shutil.rmtree(parent, ignore_errors=True)
+        MODEL_SNAPSHOT = None
+        SNAPSHOT_HASHES = {}
+        SNAPSHOT_LINKS = {}
+        SNAPSHOT_PARENT = None
+        raise
+
+
+def audit_snapshot():
+    if not MODEL_SNAPSHOT:
+        raise ResourceChanged("the model snapshot is missing")
+    for relative, digest in SNAPSHOT_HASHES.items():
+        path = os.path.join(MODEL_SNAPSHOT, relative)
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+        except OSError as error:
+            raise ResourceChanged("a snapshotted model resource is unreadable") from error
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise ResourceChanged("a snapshotted model resource changed")
+    for relative, meta in SNAPSHOT_LINKS.items():
+        path = os.path.join(MODEL_SNAPSHOT, relative)
+        try:
+            stat_info = os.stat(path)
+        except OSError as error:
+            raise ResourceChanged("a linked model resource is unreadable") from error
+        if (stat_info.st_dev, stat_info.st_ino, stat_info.st_size, stat_info.st_mtime_ns) != meta:
+            raise ResourceChanged("a linked model resource changed")
+
+
+def discard_model_snapshot():
+    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_LINKS, SNAPSHOT_PARENT
+    if SNAPSHOT_PARENT:
+        shutil.rmtree(SNAPSHOT_PARENT, ignore_errors=True)
+    MODEL_SNAPSHOT = None
+    SNAPSHOT_HASHES = {}
+    SNAPSHOT_LINKS = {}
+    SNAPSHOT_PARENT = None
+
+
+def discard_model():
+    global MODEL, LOADED
+    MODEL = None
+    LOADED = False
+    discard_model_snapshot()
+
+
+atexit.register(discard_model_snapshot)
 
 
 def audit_model():
@@ -592,15 +765,26 @@ def ensure_runtime():
         runtime_real = inside(ARGS.get("allowed-root"), runtime_dir) if ARGS.get("allowed-root") else None
         if runtime_real is None:
             raise ResourceChanged("runtime directory escapes the allowed root")
+    if not module_available("qwen_tts"):
+        DIRECT_DEPENDENCIES["qwenTts"] = False
+        DEPENDENCY_FAILURES["qwenTts"] = {"kind": "missing"}
+        raise DependencyMissing("qwen-tts dependency is not importable")
     try:
         import qwen_tts  # noqa: F401  (lazy: only a real synthesis imports the heavy package)
+    except ImportError as error:
+        DIRECT_DEPENDENCIES["qwenTts"] = False
+        DEPENDENCY_FAILURES["qwenTts"] = {"kind": "import-error", "error": type(error).__name__}
+        raise DependencyMissing("qwen-tts dependency is not importable") from error
+    if not module_available("soundfile"):
+        DIRECT_DEPENDENCIES["soundfile"] = False
+        DEPENDENCY_FAILURES["soundfile"] = {"kind": "missing"}
+        raise DependencyMissing("soundfile dependency is not importable")
+    try:
         import soundfile  # noqa: F401
     except ImportError as error:
-        for name, key in (("qwen_tts", "qwenTts"), ("soundfile", "soundfile")):
-            if not module_available(name):
-                DIRECT_DEPENDENCIES[key] = False
-                DEPENDENCY_FAILURES[key] = type(error).__name__
-        raise DependencyMissing("qwen-tts dependency is not importable") from error
+        DIRECT_DEPENDENCIES["soundfile"] = False
+        DEPENDENCY_FAILURES["soundfile"] = {"kind": "import-error", "error": type(error).__name__}
+        raise DependencyMissing("soundfile dependency is not importable") from error
     DIRECT_DEPENDENCIES["qwenTts"] = True
     DIRECT_DEPENDENCIES["soundfile"] = True
     DEPENDENCY_FAILURES.clear()
@@ -615,11 +799,22 @@ def ensure_model():
         return MODEL
     audit_model()
     qwen, _soundfile = ensure_runtime()
-    MODEL = qwen.Qwen3TTSModel.from_pretrained(
-        MODEL_DIR,
-        local_files_only=True,
-        trust_remote_code=False,
-    )
+    snapshot = build_model_snapshot()
+    candidate = None
+    try:
+        candidate = qwen.Qwen3TTSModel.from_pretrained(
+            snapshot,
+            local_files_only=True,
+            trust_remote_code=False,
+        )
+        audit_model()
+        audit_snapshot()
+    except Exception:
+        MODEL = None
+        LOADED = False
+        discard_model_snapshot()
+        raise
+    MODEL = candidate
     LOADED = True
     return MODEL
 
@@ -735,6 +930,7 @@ def run_synthesis(message, payload):
         if event is not None and event.is_set():
             emit_cancelled(message, payload, request_id)
             return
+        created_model = MODEL is None
         try:
             model = ensure_model()
         except DependencyMissing:
@@ -750,14 +946,11 @@ def run_synthesis(message, payload):
             fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local model could not be loaded", request_id)
             return
         if event is not None and event.is_set():
+            if created_model:
+                # A load interrupted by cancellation did not complete a trusted use of the
+                # candidate cache; discard it so the next request reloads and re-validates.
+                discard_model()
             emit_cancelled(message, payload, request_id)
-            return
-        try:
-            # The configuration and sub-resource tree are re-audited after the loader has actually
-            # read them; a change during loading is refused before generation.
-            audit_model()
-        except ResourceChanged as error:
-            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
             return
         try:
             if payload["modality"] == "preset":
