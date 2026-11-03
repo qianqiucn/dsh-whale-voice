@@ -311,3 +311,23 @@ uses `KModel(config=…, model=…, disable_complex=True).to("cpu")` with
 multiple chunks are joined with a fixed short silence. Clone/voice-design/emotion are not exposed;
 the result is non-persisted and no Task/Artifact/delivery is created. See
 [KOKORO_PROVIDER.md](KOKORO_PROVIDER.md) and [ADR-020](DECISIONS.md).
+
+### Plan 11 cloud/custom boundary (offline)
+
+Plan 11 adds a separate credential/cost/network boundary above the provider-neutral contracts:
+
+```text
+Core configuration + consent + cost budget + credentialRef
+        -> cloud-credentials.mjs (DPAPI CurrentUser, exact ref, atomic ciphertext)
+        -> cloud-cost.mjs (integer character budget; reserve/commit/UNKNOWN)
+        -> cloud-http-security.mjs (HTTPS/numeric loopback, pinned DNS, no redirect, bounded stream)
+        -> azure-speech-adapter.mjs | custom-http-adapter.mjs
+        -> cloud-provider-pipeline.mjs (non-persisted PENDING_ROUTER result, Chinese projection)
+```
+
+The adapters return `persisted:false`; they never create a Task, Artifact, delivery or WeChat send
+path. The browser never receives the key/credentialRef/endpoint, and no Host route is registered in
+this unit. Network is disabled by default; an explicit trusted target, text-upload consent, resolved
+credential and known cost bound are all required before a request. A Fake/injected success is not
+`AVAILABLE`; only a real live response can set the verified state. See
+[CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md) and [ADR-021](DECISIONS.md).
