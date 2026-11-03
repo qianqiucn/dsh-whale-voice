@@ -134,11 +134,11 @@ allowed to hand audio to the existing Voice Sender flow.
 
 | Candidate | Kind | Status |
 |---|---|---|
-| Qwen3-TTS (`qwen3-tts`, legacy alias `qwen-local`) | LOCAL | reference implementation; not a product default; not a registry adapter |
+| Qwen3-TTS (`qwen3-tts`, legacy alias `qwen-local`) | LOCAL | implemented OFFLINE candidate (`qwen-*` modules); merged to `main` as M `fb3a669`; real model/Host unverified; not a product default |
 | Piper | LOCAL | candidate only |
 | Kokoro | LOCAL | candidate only |
 | sherpa-onnx | LOCAL | candidate only |
-| IndexTTS | LOCAL | candidate only; model variants/license/clone/emotion/CPU-GPU unverified |
+| IndexTTS | LOCAL | implemented OFFLINE candidate (`index-tts-*` modules + worker); independent PR pending; real weights/GPU/licence rights unverified |
 | Azure Speech | CLOUD | candidate only |
 | ElevenLabs | CLOUD | candidate only |
 | Google Gemini TTS | CLOUD | candidate only; API/voices/languages/retention/cost unverified |
