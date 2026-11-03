@@ -19,6 +19,7 @@
 import base64
 import atexit
 import hashlib
+import importlib
 import importlib.metadata
 import importlib.util
 import json
@@ -39,8 +40,7 @@ MAX_INDEX_BYTES = 256 * 1024
 MAX_REFERENCE_BYTES = 20 * 1024 * 1024
 MAX_BINDING_TOTAL_BYTES = 32 * 1024 * 1024
 MAX_TREE_ENTRIES = 10000
-MAX_SNAPSHOT_COPY_BYTES = 8 * 1024 * 1024
-MAX_SNAPSHOT_SMALL_TOTAL = 64 * 1024 * 1024
+MAX_SNAPSHOT_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 MAX_SNAPSHOT_ENTRIES = 10000
 MAX_TEXT_CHARS = 200
 MAX_AUDIO_SECONDS = 20
@@ -113,7 +113,7 @@ CANCEL_LOCK = threading.Lock()
 MODEL_AUDIT = None
 MODEL_SNAPSHOT = None
 SNAPSHOT_HASHES = {}
-SNAPSHOT_LINKS = {}
+SNAPSHOT_PATHS = set()
 SNAPSHOT_PARENT = None
 NETWORK_GUARDED = False
 DIRECT_DEPENDENCIES = {"qwenTts": False, "soundfile": False}
@@ -161,6 +161,7 @@ def install_network_guard():
 
 
 def module_available(name):
+    importlib.invalidate_caches()
     try:
         spec = importlib.util.find_spec(name)
     except (ImportError, ValueError, AttributeError):
@@ -233,53 +234,84 @@ def audit_model_tree():
 
 
 def choose_snapshot_parent():
-    model_root = MODEL_AUDIT["real"] if MODEL_AUDIT else None
-    if not model_root:
-        raise ResourceChanged("the model directory was not audited")
-    try:
-        model_dev = os.stat(model_root).st_dev
-    except OSError as error:
-        raise ResourceChanged("the model directory is unreadable") from error
-    candidates = []
     tmp_dir = ARGS.get("tmp-dir")
-    if isinstance(tmp_dir, str) and os.path.isdir(tmp_dir):
-        candidates.append(tmp_dir)
-    allowed_root = ARGS.get("allowed-root")
-    if isinstance(allowed_root, str) and os.path.isdir(allowed_root):
-        candidates.append(allowed_root)
-    for candidate in candidates:
-        try:
-            if os.stat(candidate).st_dev != model_dev:
-                continue
-            return tempfile.mkdtemp(prefix="wv-qwen-snap-", dir=candidate)
-        except OSError:
+    if not isinstance(tmp_dir, str) or not os.path.isdir(tmp_dir):
+        raise ResourceChanged("the worker temporary directory is unavailable")
+    try:
+        parent = tempfile.mkdtemp(prefix="wv-qwen-snap-", dir=tmp_dir)
+    except OSError as error:
+        raise ResourceChanged("the snapshot directory could not be created") from error
+    SNAPSHOT_PATHS.add(parent)
+    return parent
+
+
+def snapshot_cleanup_pending():
+    active = SNAPSHOT_PARENT
+    return len([path for path in SNAPSHOT_PATHS if path != active])
+
+
+def cleanup_snapshot_paths(force=False):
+    """Retry deleting only the snapshot directories this worker created."""
+    active = None if force else SNAPSHOT_PARENT
+    deny_marker = os.path.join(ARGS.get("tmp-dir") or "", "snapshot-cleanup-deny")
+    deny = bool(ARGS.get("tmp-dir")) and os.path.exists(deny_marker)
+    failed = set()
+    for path in list(SNAPSHOT_PATHS):
+        if active and path == active:
             continue
-    raise ResourceChanged("no trusted same-volume snapshot directory is available")
+        if deny:
+            failed.add(path)
+            continue
+        try:
+            if os.path.exists(path):
+                shutil.rmtree(path)
+        except OSError:
+            failed.add(path)
+    SNAPSHOT_PATHS.clear()
+    SNAPSHOT_PATHS.update(failed)
+    return len(failed) == 0
+
+
+def copy_model_file(source, target):
+    digest = hashlib.sha256()
+    total = 0
+    with open(source, "rb") as src, open(target, "wb") as dst:
+        while True:
+            chunk = src.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_SNAPSHOT_TOTAL_BYTES:
+                raise ResourceChanged("the model snapshot exceeds its copy budget")
+            digest.update(chunk)
+            dst.write(chunk)
+    return total, digest.hexdigest()
 
 
 def build_model_snapshot():
-    """Materialize the audited model tree into a stable private snapshot.
+    """Copy the audited model tree into a stable private snapshot.
 
-    Small loader resources (config, processor/tokenizer files) are copied byte-for-byte; large
-    weight files are hardlinked to the audited inode and their identity is checked after loading.
-    The official loader is pointed at this snapshot, so it cannot consume a path that was swapped
-    for an out-of-root junction or rewritten after the audit.
+    Every regular file is copied byte-for-byte and never hardlinked, so a later in-place rewrite of
+    the source cannot change what the SDK consumes. The total copy budget is enforced while copying;
+    exceeding it fails closed instead of silently sharing mutable content. The snapshot lives inside
+    the supervisor-owned worker temporary directory, so the host retains cleanup responsibility even
+    when the worker exits without running atexit.
     """
-    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_LINKS, SNAPSHOT_PARENT
+    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_PARENT
     allowed_root = ARGS.get("allowed-root")
     source_root = MODEL_AUDIT["real"] if MODEL_AUDIT else None
     if not source_root:
         raise ResourceChanged("the model directory was not audited")
     parent = choose_snapshot_parent()
     snapshot = os.path.join(parent, "model")
-    os.makedirs(snapshot, exist_ok=False)
-    stack = [(source_root, snapshot)]
-    visited = set()
-    entries = 0
-    copied = 0
-    hashes = {}
-    links = {}
+    SNAPSHOT_PARENT = parent
     try:
+        os.makedirs(snapshot, exist_ok=False)
+        stack = [(source_root, snapshot)]
+        visited = set()
+        entries = 0
+        copied = 0
+        hashes = {}
         while stack:
             source_dir, target_dir = stack.pop()
             real_dir = os.path.realpath(source_dir)
@@ -303,45 +335,19 @@ def build_model_snapshot():
                         continue
                     if not os.path.isfile(real):
                         raise ResourceChanged("the model tree contains a non-regular entry")
-                    size = os.path.getsize(real)
-                    relative = os.path.relpath(target, snapshot)
-                    if size <= MAX_SNAPSHOT_COPY_BYTES and copied + size <= MAX_SNAPSHOT_SMALL_TOTAL:
-                        with open(real, "rb") as handle:
-                            data = handle.read(size + 1)
-                        if len(data) != size:
-                            raise ResourceChanged("a model resource changed while it was copied")
-                        with open(target, "wb") as handle:
-                            handle.write(data)
-                        hashes[relative] = hashlib.sha256(data).hexdigest()
-                        copied += size
-                        continue
-                    try:
-                        os.link(real, target)
-                        stat_info = os.stat(real)
-                        links[relative] = (stat_info.st_dev, stat_info.st_ino, stat_info.st_size, stat_info.st_mtime_ns)
-                    except OSError as error:
-                        if size <= MAX_SNAPSHOT_COPY_BYTES and copied + size <= MAX_SNAPSHOT_SMALL_TOTAL:
-                            with open(real, "rb") as handle:
-                                data = handle.read(size + 1)
-                            if len(data) != size:
-                                raise ResourceChanged("a model resource changed while it was copied") from error
-                            with open(target, "wb") as handle:
-                                handle.write(data)
-                            hashes[relative] = hashlib.sha256(data).hexdigest()
-                            copied += size
-                        else:
-                            raise ResourceChanged("a large model file cannot be snapshotted safely") from error
+                    size, digest = copy_model_file(real, target)
+                    copied += size
+                    if copied > MAX_SNAPSHOT_TOTAL_BYTES:
+                        raise ResourceChanged("the model snapshot exceeds its copy budget")
+                    hashes[os.path.relpath(target, snapshot)] = digest
         MODEL_SNAPSHOT = snapshot
         SNAPSHOT_HASHES = hashes
-        SNAPSHOT_LINKS = links
-        SNAPSHOT_PARENT = parent
         return snapshot
     except Exception:
-        shutil.rmtree(parent, ignore_errors=True)
         MODEL_SNAPSHOT = None
         SNAPSHOT_HASHES = {}
-        SNAPSHOT_LINKS = {}
         SNAPSHOT_PARENT = None
+        cleanup_snapshot_paths(force=True)
         raise
 
 
@@ -350,38 +356,33 @@ def audit_snapshot():
         raise ResourceChanged("the model snapshot is missing")
     for relative, digest in SNAPSHOT_HASHES.items():
         path = os.path.join(MODEL_SNAPSHOT, relative)
+        computed = hashlib.sha256()
         try:
             with open(path, "rb") as handle:
-                data = handle.read()
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    computed.update(chunk)
         except OSError as error:
             raise ResourceChanged("a snapshotted model resource is unreadable") from error
-        if hashlib.sha256(data).hexdigest() != digest:
+        if computed.hexdigest() != digest:
             raise ResourceChanged("a snapshotted model resource changed")
-    for relative, meta in SNAPSHOT_LINKS.items():
-        path = os.path.join(MODEL_SNAPSHOT, relative)
-        try:
-            stat_info = os.stat(path)
-        except OSError as error:
-            raise ResourceChanged("a linked model resource is unreadable") from error
-        if (stat_info.st_dev, stat_info.st_ino, stat_info.st_size, stat_info.st_mtime_ns) != meta:
-            raise ResourceChanged("a linked model resource changed")
 
 
-def discard_model_snapshot():
-    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_LINKS, SNAPSHOT_PARENT
-    if SNAPSHOT_PARENT:
-        shutil.rmtree(SNAPSHOT_PARENT, ignore_errors=True)
+def discard_model_snapshot(force=True):
+    global MODEL_SNAPSHOT, SNAPSHOT_HASHES, SNAPSHOT_PARENT
     MODEL_SNAPSHOT = None
     SNAPSHOT_HASHES = {}
-    SNAPSHOT_LINKS = {}
     SNAPSHOT_PARENT = None
+    cleanup_snapshot_paths(force=force)
 
 
 def discard_model():
     global MODEL, LOADED
     MODEL = None
     LOADED = False
-    discard_model_snapshot()
+    discard_model_snapshot(force=True)
 
 
 atexit.register(discard_model_snapshot)
@@ -726,7 +727,16 @@ def load_configuration():
         return
 
 
+def record_missing_dependency(key):
+    existing = DEPENDENCY_FAILURES.get(key)
+    if existing and existing.get("kind") == "import-error":
+        # A stronger known import failure must not be downgraded by a later path-missing request.
+        return
+    DEPENDENCY_FAILURES[key] = {"kind": "missing"}
+
+
 def health_state():
+    cleanup_snapshot_paths()
     refresh_dependency_state()
     return "ok" if all(DIRECT_DEPENDENCIES.values()) else "degraded"
 
@@ -751,6 +761,7 @@ def ready_payload():
         "loaded": LOADED,
         "networkBlocked": NETWORK_GUARDED,
         "dependencies": dict(DIRECT_DEPENDENCIES),
+        "snapshotCleanupPending": snapshot_cleanup_pending(),
         "state": "ok",
     }
 
@@ -767,7 +778,7 @@ def ensure_runtime():
             raise ResourceChanged("runtime directory escapes the allowed root")
     if not module_available("qwen_tts"):
         DIRECT_DEPENDENCIES["qwenTts"] = False
-        DEPENDENCY_FAILURES["qwenTts"] = {"kind": "missing"}
+        record_missing_dependency("qwenTts")
         raise DependencyMissing("qwen-tts dependency is not importable")
     try:
         import qwen_tts  # noqa: F401  (lazy: only a real synthesis imports the heavy package)
@@ -777,7 +788,7 @@ def ensure_runtime():
         raise DependencyMissing("qwen-tts dependency is not importable") from error
     if not module_available("soundfile"):
         DIRECT_DEPENDENCIES["soundfile"] = False
-        DEPENDENCY_FAILURES["soundfile"] = {"kind": "missing"}
+        record_missing_dependency("soundfile")
         raise DependencyMissing("soundfile dependency is not importable")
     try:
         import soundfile  # noqa: F401
@@ -1048,6 +1059,7 @@ def handle_message(message):
                 "loaded": LOADED,
                 "networkBlocked": NETWORK_GUARDED,
                 "dependencies": dict(DIRECT_DEPENDENCIES),
+                "snapshotCleanupPending": snapshot_cleanup_pending(),
             },
         })
         return
@@ -1090,6 +1102,9 @@ def handle_message(message):
         return
     if message_type == "shutdown":
         emit({"v": PROTOCOL_VERSION, "id": message_id, "type": "event", "payload": {"state": "closing", "closing": True}})
+        # os._exit skips atexit, so the worker removes its own snapshots explicitly; the supervisor
+        # remains responsible for the whole worker temporary directory if this cleanup fails.
+        cleanup_snapshot_paths(force=True)
         threading.Timer(0.05, lambda: os._exit(0)).start()
         return
     fail(message_id, ERRORS["PROTOCOL_INVALID"], "unsupported message type")
@@ -1130,6 +1145,7 @@ def main(argv):
             handle_message(message)
         except Exception as error:  # noqa: BLE001 — a bad line must never kill the worker silently
             fail("worker", ERRORS["PROTOCOL_INVALID"], "internal worker error (" + type(error).__name__ + ")")
+    cleanup_snapshot_paths(force=True)
 
 
 if __name__ == "__main__":

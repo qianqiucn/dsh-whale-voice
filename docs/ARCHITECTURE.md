@@ -178,16 +178,20 @@ audited package and local model only on a real synthesis, with `local_files_only
 offline environment variables and installs an in-process network guard before the import so the
 nested loader chain cannot download, and it re-audits the model directory, configuration digest and
 trusted clone reference immediately before each SDK call (realpath inside the allowed root,
-existence, size, dev/ino, held fd) instead of trusting a startup snapshot. Clone reference bytes are
+existence, size, dev/ino, held fd) instead of trusting a startup stat. Clone reference bytes are
 read through the audited fd, checked against a SHA256 baseline and handed to the SDK as a
-`data:audio` value. The actual model load runs against a private audited snapshot: small loader
-resources are copied with SHA256 baselines, large files are same-volume hardlinks with recorded
-identity, and the original tree/config are re-audited after loading. A model directory swapped for an
-out-of-root junction during loading therefore cannot feed the SDK an outside config. The candidate
-model is committed to the cache only after validation; load-time cancellation, audit failure or an
-exception discards it so the next request reloads, while a normally completed valid cache survives
-ordinary cancellation. Runtime dependency health distinguishes a missing module from a resolvable
-module whose import raises ImportError, which stays degraded until a successful import. Each
+`data:audio` value. The actual model load runs against a private audited snapshot: every regular file
+is copied with a SHA256 baseline (no hardlinks, 8 GiB copy budget, fail closed above it), and the
+original tree/config are re-audited after loading. A model directory swapped for an out-of-root
+junction during loading therefore cannot feed the SDK an outside config, and a same-size source
+rewrite cannot change the copied content. Snapshots live in the supervisor-owned worker temporary
+directory and are tracked from creation; the worker cleans them on shutdown/EOF, a denied cleanup
+keeps a retryable `snapshotCleanupPending` fact with host temp cleanup as the final owner. The
+candidate model is committed to the cache only after validation; load-time cancellation, audit failure
+or an exception discards it so the next request reloads, while a normally completed valid cache
+survives ordinary cancellation. Runtime dependency health distinguishes a missing module from a
+resolvable module whose import raises ImportError, which stays degraded until a successful import and
+is not downgraded by a later missing-path request. Each
 supervisor start owns one process generation with an operation table; an `error` event is not an
 exit, an unconfirmed exit is a failure, failed temp cleanup stays owned/retryable, and occupancy is
 released only by a complete terminal message correlated through its issued message id, request id and

@@ -422,13 +422,19 @@ health until recovery, only a complete terminal (state plus exact request/model/
 identity) releases an operation, invalid late messages keep the recovery correlation, and a start
 failure is scoped to its own generation.
 
-The 0123 residual repair makes the actual loader consume a stable private snapshot: small loader
-resources are copied with SHA256 baselines, large files are same-volume hardlinks with recorded
-identity, and the original tree/config are re-audited after loading. The model candidate is committed
-to the process cache only after validation; load-time cancellation, audit failure or an exception
-discards the candidate and snapshot, while a normally completed valid cache survives ordinary
-cancellation. A runtime dependency that is resolvable but raises ImportError stays degraded until a
-successful import, instead of being cleared by a mere path check.
+The 0123 residual repair makes the actual loader consume a stable private snapshot: every regular
+file is copied with a SHA256 baseline, and the original tree/config are re-audited after loading. The
+model candidate is committed to the process cache only after validation; load-time cancellation,
+audit failure or an exception discards the candidate and snapshot, while a normally completed valid
+cache survives ordinary cancellation. A runtime dependency that is resolvable but raises ImportError
+stays degraded until a successful import, instead of being cleared by a mere path check.
+
+The 0124 residual repair removes hardlinks entirely (full copy within an 8 GiB budget, fail closed
+above it), so a same-size source rewrite with restored mtime cannot alter SDK-consumed content.
+Snapshots live in the supervisor-owned worker temporary directory and are tracked from creation; the
+worker cleans them on shutdown/EOF, a denied cleanup keeps a retryable `snapshotCleanupPending` fact
+with host temp cleanup as the final owner, and only exact worker-created directories are removed. A
+later missing-package request cannot downgrade a known ImportError to `missing`.
 
 **Rejected alternatives:** Importing `qwen_tts`/torch inside Core; trusting a worker-declared model
 name without an audited model identity and a matching local `config.json`; passing reference audio

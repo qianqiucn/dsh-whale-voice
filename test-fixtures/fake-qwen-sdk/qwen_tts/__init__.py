@@ -124,6 +124,20 @@ class Qwen3TTSModel:
                     sha256=hashlib.sha256(marker_bytes).hexdigest())
         except OSError:
             _record("model_subresource_read", path=marker_path, error="missing")
+        weights_path = os.path.join(str(path), "model.safetensors")
+        try:
+            digest = hashlib.sha256()
+            total = 0
+            with open(weights_path, "rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    digest.update(chunk)
+            _record("model_weight_read", path=weights_path, bytes=total, sha256=digest.hexdigest())
+        except OSError:
+            _record("model_weight_read", path=weights_path, error="missing")
         return cls(path)
 
     def _maybe_delay(self):

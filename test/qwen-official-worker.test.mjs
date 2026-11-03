@@ -910,10 +910,23 @@ test('121-R01 a known import error stays unhealthy until a successful import', {
       const degraded = await supervisor.health({ timeoutMs: 2000 })
       assert.equal(degraded.payload.state, 'degraded')
       assert.equal(degraded.payload.dependencies.qwenTts, false)
-      fs.rmSync(marker)
+      const packageDir = path.join(workspace.runtime, 'qwen_tts')
+      const packageAway = path.join(workspace.runtime, 'qwen_tts-away')
+      fs.renameSync(packageDir, packageAway)
+      const missingAgain = await provider.synthesize(
+        { text: '缺包请求', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-import-error' },
+      )
+      assert.equal(missingAgain.ok, false)
+      assert.equal(missingAgain.qwenCode, QWEN_ERRORS.DEPENDENCY_MISSING)
+      fs.renameSync(packageAway, packageDir)
       const stillDegraded = await supervisor.health({ timeoutMs: 2000 })
       assert.equal(stillDegraded.payload.state, 'degraded')
       assert.equal(stillDegraded.payload.dependencies.qwenTts, false)
+      fs.rmSync(marker)
+      const markerRemoved = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(markerRemoved.payload.state, 'degraded')
+      assert.equal(markerRemoved.payload.dependencies.qwenTts, false)
       const recovered = await provider.synthesize(
         { text: '导入恢复', voiceId: 'vivian', language: 'zh-CN' },
         { taskId: 'task-import-error' },
@@ -922,6 +935,93 @@ test('121-R01 a known import error stays unhealthy until a successful import', {
       const healthy = await supervisor.health({ timeoutMs: 2000 })
       assert.equal(healthy.payload.state, 'ok')
       assert.equal(healthy.payload.dependencies.qwenTts, true)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a large model file is copied, not hardlinked, and a same-size source rewrite cannot change SDK content', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    const weightPath = path.join(workspace.customModel, 'model.safetensors')
+    const weightBytes = Buffer.alloc(8 * 1024 * 1024 + 1, 0x5a)
+    fs.writeFileSync(weightPath, weightBytes)
+    const originalHash = crypto.createHash('sha256').update(weightBytes).digest('hex')
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '大文件快照', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-large-snapshot' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const changedBytes = Buffer.from(weightBytes)
+      changedBytes[changedBytes.length - 1] = 0xa5
+      fs.writeFileSync(weightPath, changedBytes)
+      const result = await begun.result
+      assert.equal(result.ok, true, JSON.stringify(result.code || result.qwenCode))
+      const reads = sdkCalls(workspace).filter((call) => call.event === 'model_weight_read')
+      assert.equal(reads.length, 1)
+      assert.equal(reads[0].sha256, originalHash)
+      assert.equal(reads[0].bytes, weightBytes.length)
+      assert.equal(reads[0].path.includes('wv-qwen-snap-'), true)
+      assert.notEqual(reads[0].path, fs.realpathSync(weightPath))
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 snapshots are owned by the supervisor temporary directory and removed on stop', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      const synthesized = await provider.synthesize(
+        { text: '快照归属', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-snapshot-owner' },
+      )
+      assert.equal(synthesized.ok, true, JSON.stringify(synthesized.code || synthesized.qwenCode))
+      const workerTmp = tempDirs(workspace)[0]
+      assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 1)
+      await provider.shutdown()
+      assert.equal(tempDirs(workspace).length, 0)
+      assert.equal(fs.readdirSync(workspace.tmpRoot).length, 0)
+    })
+  } finally {
+    workspace.dispose()
+  }
+})
+
+test('121-R01 a denied snapshot cleanup stays tracked and is retried', { skip: pythonSkip, timeout: 120000 }, async () => {
+  const workspace = makeWorkspace()
+  try {
+    await withOfficialProvider(workspace, {}, async ({ provider, supervisor }) => {
+      const started = await provider.start()
+      assert.equal(started.ok, true, JSON.stringify(started))
+      setFakeMode(workspace, { loadDelayMs: 700 })
+      const begun = await provider.beginSynthesis(
+        { text: '清理拒绝', voiceId: 'vivian', language: 'zh-CN' },
+        { taskId: 'task-snapshot-deny' },
+      )
+      assert.equal(begun.ok, true)
+      await waitFor(() => sdkCalls(workspace).some((call) => call.event === 'from_pretrained'), 5000)
+      const workerTmp = tempDirs(workspace)[0]
+      const denyMarker = path.join(workerTmp, 'snapshot-cleanup-deny')
+      fs.writeFileSync(denyMarker, '1')
+      const ack = await begun.cancel()
+      assert.equal(ack.ok, true)
+      await waitFor(() => supervisor.state().lateResponses >= 1, 5000)
+      const pending = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(pending.payload.snapshotCleanupPending >= 1, true)
+      fs.rmSync(denyMarker)
+      const recovered = await supervisor.health({ timeoutMs: 2000 })
+      assert.equal(recovered.payload.snapshotCleanupPending, 0)
+      assert.equal(fs.readdirSync(workerTmp).filter((name) => name.startsWith('wv-qwen-snap-')).length, 0)
     })
   } finally {
     workspace.dispose()
