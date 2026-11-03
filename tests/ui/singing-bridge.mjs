@@ -55,9 +55,12 @@ export async function createSingingBridge() {
   let sandbox = null
   let app = null
   let sources = []
-  let lastDraft = null
+  const tasks = new Map()
   let lastTaskId = null
   let lastPreview = null
+  let holdCreate = null
+  let releaseHold = null
+  let failNextCreate = null
 
   async function reset() {
     if (sandbox) removeConfigSandbox(sandbox)
@@ -114,14 +117,28 @@ export async function createSingingBridge() {
     })
     if (!opened.ok) throw new Error('singing app open failed: ' + opened.code)
     app = opened.app
-    lastDraft = null
+    tasks.clear()
     lastTaskId = null
     lastPreview = null
+    holdCreate = null
+    releaseHold = null
+    failNextCreate = null
   }
 
   async function metrics() {
-    if (!app || !lastTaskId) return { ok: true, taskId: null, state: 'NO_ATTEMPT', masterCount: 0, preview: lastPreview }
+    if (!app || !lastTaskId) return { ok: true, taskId: null, state: 'NO_ATTEMPT', masterCount: 0, preview: lastPreview, tasks: [] }
     const status = await app.status(lastTaskId)
+    const taskViews = []
+    for (const [taskId, task] of tasks) {
+      const current = await app.status(taskId)
+      taskViews.push({
+        taskId,
+        sourceRef: task.sourceRef,
+        voiceProfileId: task.voiceProfileId,
+        state: current.ok ? current.stage.state : 'UNKNOWN',
+        master: current.ok ? current.stage.master : null,
+      })
+    }
     return {
       ok: true,
       taskId: lastTaskId,
@@ -129,8 +146,9 @@ export async function createSingingBridge() {
       masterCount: status.ok && status.stage.master ? 1 : 0,
       master: status.ok ? status.stage.master : null,
       preview: lastPreview,
-      sourceRef: lastDraft ? lastDraft.sourceRef : null,
+      sourceRef: tasks.get(lastTaskId) ? tasks.get(lastTaskId).sourceRef : null,
       catalogSources: sources.map((item) => item.sourceRef),
+      tasks: taskViews,
     }
   }
 
@@ -149,18 +167,58 @@ export async function createSingingBridge() {
         json(res, 200, app.list())
         return true
       }
+      if (pathname === '/singing-app/hold-next-create' && req.method === 'POST') {
+        await readBody(req)
+        if (holdCreate) { json(res, 409, { ok: false, code: 'SINGING_APP_BRIDGE_BUSY' }); return true }
+        holdCreate = new Promise((resolve) => { releaseHold = resolve })
+        json(res, 200, { ok: true })
+        return true
+      }
+      if (pathname === '/singing-app/release-create' && req.method === 'POST') {
+        await readBody(req)
+        if (releaseHold) releaseHold()
+        releaseHold = null
+        holdCreate = null
+        json(res, 200, { ok: true })
+        return true
+      }
+      if (pathname === '/singing-app/fail-next-create' && req.method === 'POST') {
+        const body = await readBody(req)
+        failNextCreate = typeof body.code === 'string' ? body.code : 'SINGING_APP_REJECTED'
+        json(res, 200, { ok: true })
+        return true
+      }
       if (pathname === '/singing-app/create' && req.method === 'POST') {
         const body = await readBody(req)
-        lastDraft = body
+        if (failNextCreate) {
+          const code = failNextCreate
+          failNextCreate = null
+          if (holdCreate) {
+            const waiting = holdCreate
+            holdCreate = null
+            await waiting
+          }
+          json(res, 200, { ok: false, code })
+          return true
+        }
         const result = await app.create(body)
-        if (result.ok) lastTaskId = result.taskId
+        if (result.ok) {
+          tasks.set(result.taskId, { draft: body, sourceRef: body.sourceRef, voiceProfileId: body.voiceProfileId })
+          lastTaskId = result.taskId
+        }
+        if (holdCreate) {
+          const waiting = holdCreate
+          holdCreate = null
+          await waiting
+        }
         json(res, 200, result)
         return true
       }
       if (pathname === '/singing-app/execute' && req.method === 'POST') {
         const body = await readBody(req)
-        if (!lastDraft || body.taskId !== lastTaskId) { json(res, 409, { ok: false, code: 'SINGING_APP_INVALID', detail: 'taskId' }); return true }
-        const result = await app.start(lastDraft)
+        const task = tasks.get(body.taskId)
+        if (!task) { json(res, 409, { ok: false, code: 'SINGING_APP_INVALID', detail: 'taskId' }); return true }
+        const result = await app.start(task.draft)
         json(res, 200, result)
         return true
       }
@@ -178,7 +236,13 @@ export async function createSingingBridge() {
       }
       if (pathname === '/singing-app/preview' && req.method === 'POST') {
         const body = await readBody(req)
-        const result = await app.preview({ taskId: body.taskId, draft: body.draft || lastDraft })
+        const task = tasks.get(body.taskId)
+        if (!task) { json(res, 409, { ok: false, code: 'SINGING_APP_INVALID', detail: 'taskId' }); return true }
+        if (body.draft && (body.draft.sourceRef !== task.sourceRef || body.draft.voiceProfileId !== task.voiceProfileId)) {
+          json(res, 409, { ok: false, code: 'SINGING_APP_INVALID', detail: 'draft' })
+          return true
+        }
+        const result = await app.preview({ taskId: body.taskId, draft: task.draft })
         if (result.ok) {
           lastPreview = { byteLength: result.byteLength, sha256: result.sha256, artifactRef: result.artifactRef }
           json(res, 200, { ok: true, taskId: result.taskId, byteLength: result.byteLength, sha256: result.sha256, artifactRef: result.artifactRef, fixtureOnly: true, realReady: false })

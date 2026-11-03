@@ -483,6 +483,19 @@ function Plan09SingingAppPanel({ draft, notify }) {
   const [busy, setBusy] = React.useState('')
   const [error, setError] = React.useState('')
   const taskRef = React.useRef(null)
+  const generationRef = React.useRef(0)
+  const operationRef = React.useRef(0)
+  const busyOperationRef = React.useRef(0)
+  const resetSelection = () => {
+    generationRef.current += 1
+    taskRef.current = null
+    busyOperationRef.current = 0
+    setBusy('')
+    setTaskId(null)
+    setStage(null)
+    setPreview(null)
+    setError('')
+  }
   React.useEffect(() => {
     if (!adapter) return undefined
     let live = true
@@ -498,10 +511,11 @@ function Plan09SingingAppPanel({ draft, notify }) {
   React.useEffect(() => {
     if (!adapter || !taskId || !stage || stage.state !== 'CLAIMED') return undefined
     let live = true
+    const generation = generationRef.current
     const timer = setInterval(async () => {
       try {
         const result = await adapter.status(taskId)
-        if (!live || taskRef.current !== taskId || !result || result.ok !== true) return
+        if (!live || generation !== generationRef.current || taskRef.current !== taskId || !result || result.ok !== true) return
         setStage(result.stage)
       } catch { /* the next explicit refresh reports the error */ }
     }, 300)
@@ -513,25 +527,38 @@ function Plan09SingingAppPanel({ draft, notify }) {
       h('div', { className: 'wv-notice warn' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入唱歌应用适配器：不会创建 Core 任务、不会读取或播放真实音频。')))
   }
   const call = async (label, fn, expectedTaskId = null) => {
+    const generation = generationRef.current
+    const operation = operationRef.current + 1
+    operationRef.current = operation
+    busyOperationRef.current = operation
     setBusy(label); setError('')
+    const current = () => generation === generationRef.current
     try {
       const result = await fn()
+      if (!current()) return null
+      if (expectedTaskId && result && result.taskId && result.taskId !== expectedTaskId) return null
+      if (label !== 'create' && taskRef.current !== expectedTaskId) return null
       if (!result || result.ok !== true) {
         setError((result && result.code) || 'ADAPTER_REJECTED')
         notify('唱歌演示任务未执行：' + ((result && result.code) || 'ADAPTER_REJECTED'), 'error')
         return null
       }
-      if (expectedTaskId && result.taskId && result.taskId !== expectedTaskId) return null
-      if (label !== 'create' && taskRef.current && result.taskId && result.taskId !== taskRef.current) return null
-      if (label === 'create' && result.taskId) { taskRef.current = result.taskId; setTaskId(result.taskId) }
+      if (label === 'create') {
+        if (!result.taskId) return null
+        taskRef.current = result.taskId
+        setTaskId(result.taskId)
+      }
       if (result.stage) setStage(result.stage)
       if (label === 'preview') setPreview(result)
       return result
     } catch {
+      if (!current()) return null
       setError('ADAPTER_REJECTED')
       notify('唱歌演示任务适配器异常；未自动重试。', 'error')
       return null
-    } finally { setBusy('') }
+    } finally {
+      if (current() && busyOperationRef.current === operation) setBusy('')
+    }
   }
   const selected = {
     sourceRef: sourceRef || (catalog && catalog.sources && catalog.sources[0] ? catalog.sources[0].sourceRef : ''),
@@ -555,10 +582,10 @@ function Plan09SingingAppPanel({ draft, notify }) {
     h('div', { className: 'wv-notice warn', style: { marginBottom: 10 } }, h(Icon, { name: 'alert', size: 14 }), h('span', null, 'realReady=false；不调用真实 RVC/TTS/API、不读取私人音频、不播放设备、不投递微信。')),
     h('div', { className: 'wv-grid two' },
       h(Plan09DraftField, { label: '可信演示素材' },
-        h('select', { className: 'wv-select', value: selected.sourceRef, 'data-testid': 'plan12-source', onChange: (event) => { taskRef.current = null; setSourceRef(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+        h('select', { className: 'wv-select', value: selected.sourceRef, 'data-testid': 'plan12-source', onChange: (event) => { resetSelection(); setSourceRef(event.target.value) } },
           (catalog && catalog.sources ? catalog.sources : []).map((source) => h('option', { key: source.sourceRef, value: source.sourceRef }, source.label || source.sourceRef)))),
       h(Plan09DraftField, { label: '可信演示声线' },
-        h('select', { className: 'wv-select', value: selected.voiceProfileId, 'data-testid': 'plan12-voice', onChange: (event) => { taskRef.current = null; setVoiceProfileId(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+        h('select', { className: 'wv-select', value: selected.voiceProfileId, 'data-testid': 'plan12-voice', onChange: (event) => { resetSelection(); setVoiceProfileId(event.target.value) } },
           (catalog && catalog.voices ? catalog.voices : []).map((voice) => h('option', { key: voice.voiceProfileId, value: voice.voiceProfileId }, voice.label || voice.voiceProfileId))))),
     h('p', { className: 'wv-muted', 'data-testid': 'plan12-task-id' }, taskId ? '任务：' + taskId : '尚未创建演示任务。'),
     h('div', { className: 'wv-row wv-wrap', style: { marginTop: 8 } },

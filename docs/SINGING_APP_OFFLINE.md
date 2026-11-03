@@ -10,6 +10,13 @@ the actual `openSingingApp`/Cover executor/Fixture library in a temporary sandbo
 R02 adds `start()`/slow controlled execution, real status polling and cancel while the long Promise is still
 pending, with a task-ref guard for late responses. This is still harness-only and not a production bridge.
 
+**105 update:** R01 closes the delayed-create identity hole. The page uses a monotonic selection generation plus a
+per-operation busy token; every create/execute/status/cancel/preview and poll response (success, rejection,
+exception and finally) is ignored when its generation is stale or its task id is not the current task. The bridge
+keeps an immutable `taskId → {draft, sourceRef, voiceProfileId}` map and executes/previews only from that map, never
+from a global `lastDraft`/`lastTaskId`. Selecting B after a delayed A create therefore cannot rebind A or let execute
+use A's material; A remains `NO_ATTEMPT` and only B can save a MASTER.
+
 Related: [ARCHITECTURE.md](ARCHITECTURE.md), [COVER_TASK_EXECUTION_CONTRACT.md](COVER_TASK_EXECUTION_CONTRACT.md),
 [PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md), [ADR-022](DECISIONS.md), [ADR-023](DECISIONS.md).
 
@@ -41,6 +48,8 @@ model facts, dependency facts and hashes come from Core/test-owned catalogs.
   re-executed.
 - `start(draft)` — starts the same `run` without holding the long Promise; returns after the task reaches a
   non-`NO_ATTEMPT` state. Repeated starts for one task are ignored. `waitFor(taskId)` exposes the test-only wait.
+  The bridge stores the immutable draft/source/voice per task id and executes/previews only that record; it rejects
+  a missing or mismatched task id instead of falling back to a global last draft.
 - `status(taskId)` — Chinese stage/status projection.
 - `cancel(taskId)` — existing `requestCoverCancel` with the actual `attemptId`; `ACCEPTED` is not “stopped”.
 - `preview({taskId,draft})` — only a `SAVED` MASTER is read, through the Artifact library with the same scope,
@@ -64,8 +73,11 @@ The Singing page gets a new card, only when `window.__WHALE_SINGING_APP__` exist
 - **执行/重连** → status/execute; repeated clicks cannot create a second task.
 - **刷新阶段**, **取消任务**, **读取受限预览**. Status/cancel remain enabled while the task is `CLAIMED`; the
   page polls the real status every 300 ms and can cancel the same task while the long Promise is pending.
-- A task ref/generation guard ignores late status/execute/cancel/preview results from a task the user has switched
-  away from; a switched task cannot overwrite the current task id or MASTER summary.
+- A selection generation plus per-operation busy token covers create/execute/status/cancel/preview and auto-poll
+  success, rejection, exception and finally. A late A response after selecting B cannot rebind task A, overwrite
+  B's stage/preview/error/busy state, or let execute use A's material. A->B->A ABA switches also get a new
+  generation. A task ref/generation guard additionally ignores late results from a task the user has switched away
+  from; a switched task cannot overwrite the current task id or MASTER summary.
 - Stage labels map the real checkpoints (分离/转换/混音/校验) to Chinese and display `SAVED ≠ SENT`.
 - No audio element, device playback, real import or send button is added.
 
@@ -78,20 +90,22 @@ The FIXTURE/OFFLINE card explicitly says `realReady=false`. Without the adapter 
 real Fixture Artifact library, opens `openSingingApp` with a trusted voice catalog and the test-only
 `coverDependencies` provider, and exposes `/singing-app/*` to the browser adapter. It calls the real
 `create`/`start`/`status`/`cancel`/`preview` methods, has a real `stageDelayMs` for cancel testing, and exposes
-metrics from actual status (`masterCount`, MASTER hash/length, preview bytes/hash). The browser adapter only
-fetches these endpoints; it does not synthesize fixed task ids, stages or hashes. The bridge is imported only by
-`tests/ui/run.mjs`, never by `index.js` or the production Host.
+metrics from actual status (`masterCount`, MASTER hash/length, preview bytes/hash, per-task state/source). The bridge
+keeps a per-task immutable intent map and supports test-only hold/release/fail-next-create controls for late-response
+regressions. The browser adapter only fetches these endpoints; it does not synthesize fixed task ids, stages or
+hashes. The bridge is imported only by `tests/ui/run.mjs`, never by `index.js` or the production Host.
 
 ## 4. Test evidence
 
 - `test/singing-app.test.mjs` (7 tests): trusted list/no proof leak; MIXED run → one MASTER + bounded preview;
   CLEAN_VOCAL run; controlled slow run status/cancel → `CANCELLED` with no MASTER; changed parameters conflict;
   missing dependencies/unknown source/voice; rejected rights.
-- UI harness: **67/67**, including real bridge create → execute → SAVED → preview (MASTER bytes/hash from the
-  Core library), confirmed cancel during a slow run with zero MASTER, a switched-task late-response guard and a
+- UI harness: **69/69**, including real bridge create → execute → SAVED → preview (MASTER bytes/hash from the
+  Core library), confirmed cancel during a slow run with zero MASTER, a delayed A create/rejection that cannot
+  rebind after selecting B (B saves, A stays `NO_ATTEMPT`), a switched-task late-response guard and a
   missing-adapter fail-closed check.
 - Full `node --test`: **1070 tests / 1066 pass / 4 platform skips / 0 fail**.
-- `node build.mjs`: `client.js` 307,725 chars regenerated; syntax check passes.
+- `node build.mjs`: `client.js` 308,426 chars regenerated; syntax check passes.
 - All tests use temporary Fixture sandboxes, synthetic WAVs and the isolated UI harness; no real audio,
   device playback, network, private files, WeChat or paid service.
 

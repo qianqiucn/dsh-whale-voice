@@ -614,6 +614,12 @@ the app exposes `start()` so the long Promise is not held by the page; a `CLAIME
 while running, and a task-ref guard ignores late responses from a switched-away task. Production callers omit the
 delay (0), and cancel still goes through the existing fence/requested/confirmed semantics.
 
+105 tightens the browser identity rule: a monotonic selection generation plus a per-operation busy token covers
+create/execute/status/cancel/preview and auto-poll **success, rejection, exception and finally**. A stale response
+cannot set task id, stage, preview, error or clear a newer busy state; A→B→A also gets a new generation. The bridge
+stores an immutable `taskId → {draft,sourceRef,voiceProfileId}` map and executes/previews only from that record;
+a global `lastDraft`/`lastTaskId` is never enough to grant old A execution rights under B.
+
 **Reason:** Fixed fake returns only show the UI can render; they cannot prove the page reaches the real single-claim
 executor, saves one MASTER or reads actual stored bytes. A real temporary bridge is the minimum evidence for R01,
 while keeping the production Host read-only. A controlled pause is preferable to weakening Core assertions or
