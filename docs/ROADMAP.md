@@ -572,6 +572,6 @@ The third local-provider unit starts from exact main `M=fb3a669` on `feature/pla
 
 ### Plan 11 cloud/custom offline unit (2026-11-03)
 
-Starts from exact `G=b64b0e2` on `feature/plan11-cloud-custom-providers`; independent PR pending, not merged.
+Starts from exact `G=b64b0e2` on `feature/plan11-cloud-custom-providers`; independent PR **#48**, not merged.
 
 This unit adds the first cloud/custom implementations as pure offline candidates: an application-owned Windows DPAPI CurrentUser credential namespace with atomic ciphertext files and no plaintext fallback; an integer character-price cost ledger with reserve-before-send, post-send UNKNOWN, restart recovery and duplicate rejection; a shared bounded HTTP security layer (HTTPS or numeric-loopback HTTP, public DNS pinning, no redirects, streamed body caps, timeout/abort); a narrow Azure Speech preset zh-CN/en-US adapter with escaped plain-text SSML, required key header and 24 kHz mono PCM16 validation; a fixed `whale-voice-custom-tts` v1 JSON→WAV adapter with predefined bearer/x-api-key auth and target pinning; and a neutral non-persisted pipeline/projection. No Task, Artifact, delivery, production Host route, real credential input, real vendor request or paid execution is added. Design: [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md), [ADR-021](DECISIONS.md). Evidence: 37 new offline tests, full suite 1047/1043 pass/4 platform skips/0 fail, UI 63/63, `client.js` unchanged. Still OFFLINE/FIXTURE_ONLY/NOT_INTEGRATED; real accounts/prices/retention/quality and Host/Task/Artifact integration remain OPEN.
