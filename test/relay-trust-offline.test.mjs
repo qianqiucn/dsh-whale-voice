@@ -67,6 +67,18 @@ test('TRUST-01 Voice: a real persisted SAVED task reaches the Fake chain once', 
     }))
     assert.equal(ensured.ok, true, JSON.stringify(ensured))
     assert.equal(ensured.outcome, 'CREATED')
+    // A Voice delivery keeps its persisted intent and never accepts a Cover-style permit.
+    const withPermit = await relay.ensureDelivery({
+      handoff: {
+        schemaVersion: 1, scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+        targetId: TARGET.targetId, requestKey: 'voice-request-permit',
+        rights: { state: 'GRANTED', proofRef: VOICE_PROOF }, permitId: 'permit:' + 'b'.repeat(32),
+      },
+    })
+    assert.equal(withPermit.ok, false)
+    assert.equal(withPermit.code, RELAY_ERRORS.INPUT_INVALID)
+    assert.equal(withPermit.detail, 'permitId')
+    assert.equal(backend.stats().submitted, 0)
     assert.equal(ensured.delivery.authority, 'TASK_OWNER_SAVED_V2')
     assert.equal(ensured.delivery.deliveryRequested, true)
     assert.match(ensured.delivery.intentId, /^intent:[0-9a-f]{32}$/)
