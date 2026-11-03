@@ -1,4 +1,4 @@
-# Provider-Neutral TTS / SVC Architecture (TTS-A / TTS-A-H)
+﻿# Provider-Neutral TTS / SVC Architecture (TTS-A / TTS-A-H)
 
 **Status:** design and pure contracts only. No provider adapter, Host route, credential store or
 production configuration is connected in this phase.
@@ -138,7 +138,7 @@ allowed to hand audio to the existing Voice Sender flow.
 | Piper | LOCAL | candidate only |
 | Kokoro | LOCAL | candidate only |
 | sherpa-onnx | LOCAL | candidate only |
-| IndexTTS | LOCAL | implemented OFFLINE candidate (`index-tts-*` modules + worker); independent PR pending; real weights/GPU/licence rights unverified |
+| IndexTTS | LOCAL | implemented OFFLINE candidate (`index-tts-*` modules + worker); merged into main as M `fb3a669` via PR #46; real weights/GPU/licence rights unverified |\n| Kokoro | LOCAL | implemented OFFLINE candidate (`kokoro-*` modules + worker); independent PR pending; real CPU audio/voice/G2P rights unverified |
 | Azure Speech | CLOUD | candidate only |
 | ElevenLabs | CLOUD | candidate only |
 | Google Gemini TTS | CLOUD | candidate only; API/voices/languages/retention/cost unverified |
@@ -329,7 +329,7 @@ unimplemented provider.
 
 ## 8. TTS-B / TTS-C split
 
-### TTS-B — Provider service and neutral configuration (next implementation step)
+### TTS-B —Provider service and neutral configuration (next implementation step)
 
 - Add a provider service that loads validated manifests and observations.
 - Implement provider-aware status and capability projection; remove Qwen-only TTS gating.
@@ -338,7 +338,7 @@ unimplemented provider.
 - Update coordinator sources from `qwenRuntime` to per-provider observations.
 - Keep the SVC contract/candidate registry separate; SVC inference remains unimplemented.
 
-### TTS-C — Real adapters and secure credentials
+### TTS-C —Real adapters and secure credentials
 
 - Implement one local adapter (Qwen reference or Piper/Kokoro after a separate audit).
 - Implement one cloud adapter only after credential storage, text-upload consent, cost cap and

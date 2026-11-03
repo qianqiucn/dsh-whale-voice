@@ -1,0 +1,5 @@
+Metadata-Version: 2.1
+Name: kokoro
+Version: 0.9.4
+Summary: Fake Kokoro package for offline Whale Voice tests
+Requires-Python: >=3.9
