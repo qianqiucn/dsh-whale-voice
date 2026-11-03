@@ -631,3 +631,33 @@ task-ref guard and letting a late result overwrite the current task.
 
 **Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).
+
+## ADR-024 — One persistent delivery owner in Whale Relay Core, one Fake backend for 13-A
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Decision:** `core/audio/relay-core-offline.mjs` is the only writer of delivery records. It references the Whale
+Audio Core `taskId`/SAVED artifact and mints one persistent `delivery:<32hex>` plus a separate
+`[A-Za-z0-9_-]{8,64}` backend request id; it stores `taskId → deliveryId → backendRequestId`, artifact
+hash/bytes/duration/format, rights expiry, target and fixed backend. A canonical digest returns `EXISTING` for the
+same semantic request and rejects a same-`requestKey` content/target conflict. The store is atomic
+(temp+fsync+rename) under a token-owned lock, has bounded capacity, persists `SUBMITTING` before submit, and
+recovers a real dead child-process owner to `UNKNOWN`; `UNKNOWN` is terminal and never retried. Cancel is requested
+first and only `confirmCancel` becomes `CANCELLED`.
+
+The only accepted backend for this unit is `createFakeDeliveryBackend`, which rechecks target authorization/identity
+and the Bridge/Worker two-gate and records only simulated `QUEUED` receipts. Sender is not imported, no production
+config/token/port/process/network/device/WeChat is touched. `projectUnifiedRelayComponent` is one product view with
+legacy `whale-relay`/`voice-sender` aliases and no second install store; WeChatAgent remains independent.
+
+**Reason:** ADR-001 requires `SAVED ≠ SENT` and one delivery owner; the previous Fake Relay was an in-memory Map
+without durable delivery id or restart protection. A single persistent store plus a Fake backend is the minimum
+offline proof without copying Sender or claiming real send.
+
+**Rejected alternatives:** A second global task/ID authority; using colon task ids as Sender request ids or
+truncating them; a second install/health store; retrying `UNKNOWN`, switching backend or synthesizing text; importing
+Sender's server top-level into the Fake adapter; treating `ACCEPTED`/HTTP 200 as `SENT_LOCAL`.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
