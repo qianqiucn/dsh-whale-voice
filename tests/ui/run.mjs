@@ -638,6 +638,34 @@ await check('plan09 singing validates source, consent, mode and SVC limits', asy
   })
 })
 
+await check('plan12 singing app panel uses the injected fixture adapter and keeps one task', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    assert.match(await page.locator('[data-testid="plan12-task-id"]').innerText(), /尚未创建/)
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-ui-singing'))
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已保存'))
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /MASTER/)
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /SAVED ≠ SENT/)
+    await page.locator('[data-testid="plan12-preview"]').click()
+    await page.locator('[data-testid="plan12-preview-result"]').waitFor()
+    assert.match(await page.locator('[data-testid="plan12-preview-result"]').innerText(), /4096B/)
+    const first = await page.evaluate(() => window.__WHALE_SINGING_APP__.stats())
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForTimeout(80)
+    const second = await page.evaluate(() => window.__WHALE_SINGING_APP__.stats())
+    assert.equal(second.taskId, first.taskId)
+    assert.equal(second.creates, 2)
+    await page.locator('[data-testid="plan12-cancel"]').click()
+    await page.waitForTimeout(80)
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /SAVED ≠ SENT/)
+  })
+})
+
 await check('plan09 global setup priority and narrow layout', async () => {
   await withPage('?wizard=1', async (page) => {
     const dialogs = page.getByRole('dialog')

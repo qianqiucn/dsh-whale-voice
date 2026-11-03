@@ -579,3 +579,11 @@ This unit adds the first cloud/custom implementations as pure offline candidates
 131-R01/R02/R03 close-out: same-ID concurrent/restart requests now enter transport at most once; two ledger handles on one root share the atomic authority; full dedup capacity fails closed without losing an UNKNOWN id; custom unknown cost makes zero requests while free uses the same durable call/text-limited ledger and paid requires a known price/budget; pre-cancel, credential/DNS awaits, non-2xx infinite bodies and commit-during-cancel no longer leave an unhandled connection or return success audio after cancellation.
 
 131-R01-LOCK/RECOVERY + R02-AZURE close-out: token-owned locks are not stolen by age and only the owner deletes them; slow temp I/O is outside the lock and a revision conflict retries instead of overwriting a committed record; live-owner PENDING is preserved while a dead/closed owner (including a real child-process crash) is recovered to UNKNOWN; Azure requires a paid ledger with a positive price in both health and synthesis and rejects free/unknown/zero-price ledgers with zero transport. Custom's explicit free path is unchanged.
+
+### Plan 12-A / APP-OFFLINE singing application (2026-11-03)
+
+Starts from the merged Plan11 M=`16bf263` on `feature/plan12-singing-app-offline`; independent PR pending, not merged.
+
+A thin application layer over the existing Cover executor and Fixture Artifact library: trusted source/voice catalogs, one idempotency key per source/voice, existing create/execute/status/cancel/resume, same-task reconnect, bounded MASTER preview, Chinese stage projection and `SAVED ≠ SENT`. The Singing page panel only appears with an explicitly injected `window.__WHALE_SINGING_APP__` adapter; production Host remains read-only and shows “未接入”. No real RVC/TTS/API, 13-A delivery, 12-B/C/D, device playback, private audio, network or production write route is added. Design: [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), ADR-022.
+
+Evidence: 6 new Core app tests, UI harness 64/64, full suite 1069/1065 pass/4 platform skips/0 fail, `client.js` regenerated. Status `12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; entire Plan12-A and all real dependencies remain OPEN.

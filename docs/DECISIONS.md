@@ -568,3 +568,31 @@ from the provider; claiming INTEGRATED from Fake tests.
 
 **Related:** [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
+
+## ADR-022 — Whale Singing application is a thin adapter over the existing Cover single-claim/MASTER path
+
+**Status:** accepted (`12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-017, [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Decision:** The first Singing application unit is a thin coordinator, not a second Core. It consumes the
+existing `createCoverTask` / `executeCover` / `coverStatus` / `requestCoverCancel` / `resumeCoverFinal` and the
+existing Fixture Artifact library. Source/voice rights, model facts and dependency evidence come from trusted
+injected catalogs/providers; the browser only selects a trusted source/voice and bounded pitch/layout/mix
+parameters. One idempotency key is derived from source + voice: same parameters return `EXISTING`, changed
+parameters conflict, and an existing `CLAIMED/SAVED/CANCELLED/FAILED/UNKNOWN` is never silently re-executed.
+Preview reads only a saved MASTER through the library's scope/ref/rights/expiry gate. The page panel appears only
+with an explicitly injected `window.__WHALE_SINGING_APP__`; production Host remains read-only and shows
+“未接入”. Results are Fixture-only, `persisted:false` and `realReady=false`; no Relay/WeChat send is created.
+
+**Reason:** The existing Cover executor already owns the single Task claim, dependency gate, synthetic stage
+state, unique MASTER import and terminal/cancel semantics. Rebuilding any of those in the page would create a
+second task/delivery truth and a browser-controlled rights path. The adapter/harness split lets the UI be tested
+without turning a production read-only Host into an unauthenticated write surface.
+
+**Rejected alternatives:** A second singing Task/Artifact store; page-computed rights/ready/hash; treating a
+Fixture save as a real cover or `SENT`; auto-starting or retrying when status is `UNKNOWN`; adding a production
+Host write route or real audio/device playback in this unit; implementing 13-A/12-B/C/D to make the panel appear
+complete.
+
+**Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).

@@ -529,6 +529,55 @@
     return adapter
   }
   window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
+  window.__WHALE_SINGING_APP__ = (() => {
+    let task = null
+    let creates = 0
+    let executes = 0
+    let previews = 0
+    const savedStage = {
+      state: 'SAVED', stateLabel: '已保存',
+      stages: [
+        { stage: 'SEPARATING', label: '分离', status: 'DONE' },
+        { stage: 'CONVERTING', label: '转换', status: 'DONE' },
+        { stage: 'MIXING', label: '混音', status: 'DONE' },
+        { stage: 'VERIFYING', label: '校验', status: 'DONE' },
+      ],
+      master: { artifactRef: 'artifact:fixture-bytes-' + '0'.repeat(32), byteLength: 4096, sha256: 'a'.repeat(64) },
+      fixtureOnly: true, realReady: false,
+    }
+    return {
+      async list() {
+        return {
+          ok: true, fixtureOnly: true, realReady: false,
+          sources: [{ sourceRef: 'fixture://demo-song-01', label: '演示曲' }],
+          voices: [{ voiceProfileId: 'voice:demo-hero', label: '演示声线' }],
+        }
+      },
+      async create() {
+        creates += 1
+        if (!task) task = { taskId: 'task:fixture-ui-singing', stage: { state: 'NO_ATTEMPT', stateLabel: '待开始', stages: [], fixtureOnly: true, realReady: false } }
+        return { ok: true, taskId: task.taskId, outcome: task.stage.state === 'NO_ATTEMPT' ? 'CREATED' : 'EXISTING', stage: task.stage }
+      },
+      async execute(taskId) {
+        executes += 1
+        if (!task || task.taskId !== taskId) return { ok: false, code: 'NOT_FOUND' }
+        task.stage = savedStage
+        return { ok: true, taskId, stage: task.stage }
+      },
+      async status(taskId) {
+        if (!task || task.taskId !== taskId) return { ok: false, code: 'NOT_FOUND' }
+        return { ok: true, taskId, stage: task.stage }
+      },
+      async cancel(taskId) {
+        return { ok: true, taskId, cancelState: 'TOO_LATE', stage: task ? task.stage : null }
+      },
+      async preview(taskId) {
+        previews += 1
+        return { ok: true, taskId, byteLength: 4096, sha256: 'a'.repeat(64), fixtureOnly: true, realReady: false }
+      },
+      stats() { return { creates, executes, previews, taskId: task ? task.taskId : null } },
+    }
+  })()
 
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {

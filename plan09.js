@@ -467,6 +467,102 @@ const PLAN09_LANG_LABEL = { 'zh-CN': '中文（普通话）', 'en-US': '英语',
 const PLAN09_EMOTION_LABEL = { neutral: '自然', gentle: '温柔', happy: '开心', shy: '害羞', playful: '俏皮', sad: '难过' }
 const PLAN09_VOICE_LABELS = { 'demo-voice-a': '示例女声 A', 'demo-voice-b': '示例男声 B', 'cloud-voice-a': '云端示例音色', 'custom-voice-a': '自定义示例音色' }
 
+function plan09SingingAppAdapter() {
+  const adapter = window.__WHALE_SINGING_APP__
+  return adapter && typeof adapter.list === 'function' && typeof adapter.create === 'function' && typeof adapter.execute === 'function' ? adapter : null
+}
+
+function Plan09SingingAppPanel({ draft, notify }) {
+  const adapter = plan09SingingAppAdapter()
+  const [catalog, setCatalog] = React.useState(null)
+  const [sourceRef, setSourceRef] = React.useState('')
+  const [voiceProfileId, setVoiceProfileId] = React.useState('')
+  const [taskId, setTaskId] = React.useState(null)
+  const [stage, setStage] = React.useState(null)
+  const [preview, setPreview] = React.useState(null)
+  const [busy, setBusy] = React.useState('')
+  const [error, setError] = React.useState('')
+  React.useEffect(() => {
+    if (!adapter) return undefined
+    let live = true
+    adapter.list().then((result) => {
+      if (!live) return
+      if (!result || result.ok !== true) { setError((result && result.code) || 'CATALOG_UNAVAILABLE'); return }
+      setCatalog(result)
+      if (result.sources && result.sources[0]) setSourceRef(result.sources[0].sourceRef)
+      if (result.voices && result.voices[0]) setVoiceProfileId(result.voices[0].voiceProfileId)
+    }).catch(() => { if (live) setError('CATALOG_UNAVAILABLE') })
+    return () => { live = false }
+  }, [adapter])
+  if (!adapter) {
+    return h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan12-no-adapter' },
+      h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '唱歌演示任务'), h('p', null, '当前没有注入可信唱歌应用适配器；页面只保留草稿与能力说明。'))),
+      h('div', { className: 'wv-notice warn' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入唱歌应用适配器：不会创建 Core 任务、不会读取或播放真实音频。')))
+  }
+  const call = async (label, fn) => {
+    setBusy(label); setError('')
+    try {
+      const result = await fn()
+      if (!result || result.ok !== true) {
+        setError((result && result.code) || 'ADAPTER_REJECTED')
+        notify('唱歌演示任务未执行：' + ((result && result.code) || 'ADAPTER_REJECTED'), 'error')
+        return null
+      }
+      if (result.taskId) setTaskId(result.taskId)
+      if (result.stage) setStage(result.stage)
+      if (label === 'preview') setPreview(result)
+      return result
+    } catch {
+      setError('ADAPTER_REJECTED')
+      notify('唱歌演示任务适配器异常；未自动重试。', 'error')
+      return null
+    } finally { setBusy('') }
+  }
+  const selected = {
+    sourceRef: sourceRef || (catalog && catalog.sources && catalog.sources[0] ? catalog.sources[0].sourceRef : ''),
+    voiceProfileId: voiceProfileId || (catalog && catalog.voices && catalog.voices[0] ? catalog.voices[0].voiceProfileId : ''),
+  }
+  const payload = {
+    sourceRef: selected.sourceRef, voiceProfileId: selected.voiceProfileId,
+    sourceLayout: draft.sourceLayout, mixMode: draft.mixMode, pitchShift: draft.pitch,
+    vocalGainDb: draft.vocalGainDb, instrumentalGainDb: draft.instrumentalGainDb,
+  }
+  const create = () => call('create', () => adapter.create(payload))
+  const execute = () => taskId ? call('execute', () => adapter.execute(taskId)) : notify('请先创建或选择演示任务。', 'error')
+  const status = () => taskId ? call('status', () => adapter.status(taskId)) : notify('请先创建或选择演示任务。', 'error')
+  const cancel = () => taskId ? call('cancel', () => adapter.cancel(taskId)) : notify('请先创建或选择演示任务。', 'error')
+  const previewBytes = () => taskId ? call('preview', () => adapter.preview(taskId, payload)) : notify('请先创建并保存演示任务。', 'error')
+  const stages = stage && Array.isArray(stage.stages) ? stage.stages : []
+  return h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan12-singing-app' },
+    h('div', { className: 'wv-card-title' },
+      h('div', null, h('h2', null, '唱歌演示任务 · FIXTURE/OFFLINE'), h('p', null, '受限合成素材/演示声线 → 既有 Cover 任务 → 唯一 MASTER；仅演示，不代表真实翻唱或发送。')),
+      h(Badge, { tone: 'demo' }, 'FIXTURE')),
+    h('div', { className: 'wv-notice warn', style: { marginBottom: 10 } }, h(Icon, { name: 'alert', size: 14 }), h('span', null, 'realReady=false；不调用真实 RVC/TTS/API、不读取私人音频、不播放设备、不投递微信。')),
+    h('div', { className: 'wv-grid two' },
+      h(Plan09DraftField, { label: '可信演示素材' },
+        h('select', { className: 'wv-select', value: selected.sourceRef, 'data-testid': 'plan12-source', onChange: (event) => { setSourceRef(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+          (catalog && catalog.sources ? catalog.sources : []).map((source) => h('option', { key: source.sourceRef, value: source.sourceRef }, source.label || source.sourceRef)))),
+      h(Plan09DraftField, { label: '可信演示声线' },
+        h('select', { className: 'wv-select', value: selected.voiceProfileId, 'data-testid': 'plan12-voice', onChange: (event) => { setVoiceProfileId(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+          (catalog && catalog.voices ? catalog.voices : []).map((voice) => h('option', { key: voice.voiceProfileId, value: voice.voiceProfileId }, voice.label || voice.voiceProfileId))))),
+    h('p', { className: 'wv-muted', 'data-testid': 'plan12-task-id' }, taskId ? '任务：' + taskId : '尚未创建演示任务。'),
+    h('div', { className: 'wv-row wv-wrap', style: { marginTop: 8 } },
+      h(Button, { onClick: create, disabled: Boolean(busy), 'data-testid': 'plan12-create' }, busy === 'create' ? '创建中…' : '创建演示任务'),
+      h(Button, { onClick: execute, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-execute' }, busy === 'execute' ? '执行中…' : '执行/重连'),
+      h(Button, { variant: 'ghost', onClick: status, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-status' }, '刷新阶段'),
+      h(Button, { variant: 'ghost', onClick: cancel, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-cancel' }, '取消任务'),
+      h(Button, { variant: 'ghost', onClick: previewBytes, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-preview' }, '读取受限预览')),
+    error ? h('p', { className: 'wv-plan09-errors', 'data-testid': 'plan12-error' }, '· ' + error) : null,
+    stage ? h('div', { className: 'wv-plan09-preview', 'data-testid': 'plan12-state' },
+      h('strong', null, stage.stateLabel || stage.state || '未知'),
+      h('span', null, ' · 阶段：' + (stages.length ? stages.map((item) => item.label + ':' + item.status).join(' / ') : '尚无')),
+      stage.master ? h('span', null, ' · MASTER：' + stage.master.byteLength + 'B / ' + String(stage.master.sha256).slice(0, 12) + '…') : null,
+      h('span', null, ' · SAVED ≠ SENT')) : null,
+    preview ? h('div', { className: 'wv-plan09-preview', 'data-testid': 'plan12-preview-result' },
+      h('strong', null, '受限预览已读取'),
+      h('span', null, ' · ' + preview.byteLength + 'B / ' + String(preview.sha256 || '').slice(0, 12) + '…；未播放、未发送。')) : null)
+}
+
 function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen = false, capabilityRevision = null }) {
   const adapter = plan09Adapter()
   const context = plan09Context(adapter)
@@ -666,6 +762,7 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
           h(SettingRow, { title: '真实音频', desc: '不接收、不存储、不输出真实音频或密钥。' }, h(Badge, { tone: 'demo' }, 'Fake')),
           h(SettingRow, { title: '首次说明', desc: '确认只记录读过说明，不等于 READY。' }, h('span', { className: 'wv-muted', 'data-testid': 'plan09-ack-state' }, stored.introAcknowledged ? '本版本已确认' : '未确认')))),
     h(Plan09TransactionPanel, { key: txKey, feature: feature.id, draft, validate, context, txKey, contextSerial, onNotify: notify }),
+    feature.id === 'singing' ? h(Plan09SingingAppPanel, { draft: singingDraft, notify }) : null,
     wizardOpen ? h(Plan09Wizard, {
       open: true, feature, mode, setMode: changeMode, context: { ...context, introAcknowledged: wizardContext.introAcknowledged },
       engine: draft.engine,

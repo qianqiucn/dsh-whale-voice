@@ -122,3 +122,9 @@
 - 结果：跨页迟到的成功计划显示中文过期提示，确认继续被当前授权拦住，但可直接重新准备；若在计划完成前已回到原上下文（或改回原上下文）仍可合法确认。
 - 非阻断校正：`noWriteConfirmed` 提示只在 `FAILED` 阶段显示；随后若查证丢响应转 UNKNOWN，旧“未写入/可结束关联”提示不再出现，UNKNOWN 继续锁存。
 - `FAILED` 语义按 Coordinator 契约区分：execute 的确定未写入/已回滚（`NOT_WRITTEN` + rolledBack）与服务已保存后 apply 被拒（`committed=true`）都属于确定失败、可结束关联，但只有前者会被标注“未写入”。
+
+## 13. 12-A/APP-OFFLINE 唱歌任务面板（2026-11-03）
+
+- Singing 页新增 `plan12-singing-app` 卡片，仅当测试/宿主显式注入 `window.__WHALE_SINGING_APP__` 时出现；生产只读 Host 不注入时显示 `plan12-no-adapter` “未接入唱歌应用适配器”，不创建任务。
+- 卡片使用可信 `list()` 的素材/声线选择，动作包括创建、执行/重连、刷新阶段、取消和读取受限预览；显示 FIXTURE/OFFLINE、中文阶段、`SAVED ≠ SENT` 与 `realReady=false`。
+- 该面板不直接连接真实 RVC/TTS/API、不播放设备、不投递微信；UI 测试通过注入的 Fixture adapter 验证创建后任务 id 稳定、执行到 SAVED、预览 4096B 及重复点击不另造 taskId。完整边界见 [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md)。

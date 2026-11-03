@@ -331,3 +331,19 @@ this unit. Network is disabled by default; an explicit trusted target, text-uplo
 credential and known cost bound are all required before a request. A Fake/injected success is not
 `AVAILABLE`; only a real live response can set the verified state. See
 [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md) and [ADR-021](DECISIONS.md).
+
+### Plan 12-A / APP-OFFLINE Singing application boundary
+
+```text
+Whale Singing page (plan09.js)
+  -> window.__WHALE_SINGING_APP__ (explicit injected adapter; absent in production)
+  -> core/singing-app-internal.mjs (trusted catalogs + bounded draft)
+  -> existing createCoverTask / executeCover / coverStatus / requestCoverCancel / resumeCoverFinal
+  -> existing Fixture Artifact library (SAVED MASTER readBytes only)
+```
+
+The page can create one Fixture Cover task, show its Chinese checkpoints, cancel through the existing requested/
+confirmed path, reconnect to the same task and read a bounded preview of the saved MASTER. It cannot pass rights,
+ready flags, hashes, paths or URLs from the browser; missing adapter/dependencies fail closed. No real RVC/TTS,
+Relay/WeChat delivery, 13-A, 12-B/C/D, playback device or production Host write route is added. See
+[SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md) and [ADR-022](DECISIONS.md).
