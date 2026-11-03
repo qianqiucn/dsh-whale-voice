@@ -513,3 +513,58 @@ model at health/discover; accepting a non-24 kHz or empty output.
 
 **Related:** [KOKORO_PROVIDER.md](KOKORO_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
+
+## ADR-021 — Cloud/custom TTS is gated by an application-owned credential namespace, explicit consent and a durable character-cost ledger
+
+**Status:** accepted (offline candidate, 2026-11-03). **Related:** ADR-017, [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md).
+
+**Decision:** The first cloud/custom unit uses a dedicated credential store, not provider config or
+environment variables. Only a `credentialRef` is stored in configuration; the secret is protected
+with Windows DPAPI CurrentUser in the fixed `whale-voice-credentials-v1` namespace below a trusted
+application root, written atomically, looked up by exact ref and never returned in public
+projection, logs or Git. Non-Windows or a missing protector is explicitly `UNAVAILABLE`; there is no
+plaintext fallback. DPAPI protects against other Windows users, not every same-user process.
+
+A request needs all of: a trusted configured target, explicit text-upload consent, a resolved
+credential and a known cost mode/bound. One ledger file is the atomic authority; every write uses a
+token-owned short file lock plus an optimistic revision check, and the slow temp-file write happens
+outside the lock. A lock is never removed merely because its mtime is old; release only deletes its
+own token, so two handles on the same root cannot spend the same budget, delete each other's lock or
+overwrite a committed record (a revision conflict retries). Each reservation carries an execution
+owner; a normal open of another handle protects a live owner's `PENDING`, while a closed/dead owner
+(including a real child-process crash) is recovered to `UNKNOWN`. Paid execution uses an integer
+character price and a durable reserve-before-send ledger; a same-requestId `PENDING` duplicate is
+refused before transport; success commits, pre-send failure releases, post-send timeout/unknown
+keeps the reservation as `UNKNOWN`, and completed/UNKNOWN dedup is bounded but never truncated into
+a new request (capacity fails closed). Custom HTTP must be explicit `unknown` (zero request),
+confirmed `free` (same ledger with call/text limits) or paid (known price/hard budget); the old
+`FREE_OR_UNKNOWN` behavior is removed. Azure is paid-only and must use a `paid` ledger with a
+positive integer price in both health and synthesis; free/unknown/zero-price ledgers make zero
+transport. Unknown prices, missing limits, corrupt ledgers and exhausted budgets fail closed. No
+silent free retry or paid downgrade exists.
+
+Cancellation is checked before request construction and around credential/DNS/cost awaits. The
+request error listener is installed before any destroy, non-2xx bodies are destroyed instead of
+drained, and a cancel during cost commit does not return success audio; a sent charge is committed or
+kept as UNKNOWN, never released as unsent.
+
+Azure Speech is limited to one synchronous REST shape, fixed regions and preset zh-CN/en-US neural
+voices, escaped plain text (no caller SSML), 24 kHz mono PCM16 and a required key header. Custom HTTP
+is one fixed `whale-voice-custom-tts` v1 JSON→WAV protocol with HTTPS (or explicit numeric-loopback
+HTTP), predefined bearer/x-api-key auth, public-DNS pinning, no redirects and bounded streamed
+response. Both return `persisted:false` and `PENDING_ROUTER`; no Task, Artifact, delivery or WeChat
+send is created. A Fake/injected success cannot set `AVAILABLE`; only a real live response can.
+
+**Reason:** Text upload, secret handling and per-character billing are three separate risks. Storing
+a key in config, treating localhost as trust, falling back to plaintext, or inventing a zero price
+would each be a security or cost failure. A separate adapter boundary also prevents the browser or a
+chat message from becoming an arbitrary proxy.
+
+**Rejected alternatives:** API keys in JSON/LocalStorage/logs/URL/argv; a generic secret scanner or
+DPAPI for all users; plaintext file fallback; default-on network; consent inferred from an enabled
+provider; unknown or zero price treated as free; automatic retry after timeout; following redirects;
+DNS re-resolution at connect time; arbitrary custom headers/SSML/templates; creating a Task/Artifact
+from the provider; claiming INTEGRATED from Fake tests.
+
+**Related:** [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).

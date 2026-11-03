@@ -1,7 +1,8 @@
-﻿# Provider-Neutral TTS / SVC Architecture (TTS-A / TTS-A-H)
+# Provider-Neutral TTS / SVC Architecture (TTS-A / TTS-A-H)
 
-**Status:** design and pure contracts only. No provider adapter, Host route, credential store or
-production configuration is connected in this phase.
+**Status:** the candidate registry remains design-only; Plan 11 adds separate **OFFLINE/FIXTURE_ONLY**
+cloud and custom adapters (credential storage, Azure Speech and fixed custom HTTP). No Host route,
+production credential input, real vendor request or `INTEGRATED` cloud capability exists yet.
 **Related:** [TTS Provider Audit](TTS_PROVIDER_AUDIT.md),
 [Capability API](CAPABILITY_API.md), [Architecture](ARCHITECTURE.md).
 
@@ -136,20 +137,21 @@ allowed to hand audio to the existing Voice Sender flow.
 |---|---|---|
 | Qwen3-TTS (`qwen3-tts`, legacy alias `qwen-local`) | LOCAL | implemented OFFLINE candidate (`qwen-*` modules); merged to `main` as M `fb3a669`; real model/Host unverified; not a product default |
 | Piper | LOCAL | candidate only |
-| Kokoro | LOCAL | candidate only |
 | sherpa-onnx | LOCAL | candidate only |
-| IndexTTS | LOCAL | implemented OFFLINE candidate (`index-tts-*` modules + worker); merged into main as M `fb3a669` via PR #46; real weights/GPU/licence rights unverified |\n| Kokoro | LOCAL | implemented OFFLINE candidate (`kokoro-*` modules + worker); independent PR pending; real CPU audio/voice/G2P rights unverified |
-| Azure Speech | CLOUD | candidate only |
+| IndexTTS | LOCAL | implemented OFFLINE candidate (`index-tts-*` modules + worker); merged into main as M `f34c1ab` via PR #46; real weights/GPU/licence rights unverified |
+| Kokoro | LOCAL | implemented OFFLINE candidate (`kokoro-*` modules + worker); merged into main as M `b64b0e2` via PR #47; real CPU audio/voice/G2P rights unverified |
+| Azure Speech | CLOUD | **Plan 11 OFFLINE adapter** (`azure-speech-*` modules); no real account/API call, Host route or production enablement |
 | ElevenLabs | CLOUD | candidate only |
 | Google Gemini TTS | CLOUD | candidate only; API/voices/languages/retention/cost unverified |
 | OpenAI Speech API | CLOUD | candidate only; endpoint/model/voice/format/cost unverified; no default voice |
-| Custom HTTP TTS | CUSTOM | candidate only |
+| Custom HTTP TTS | CUSTOM | **Plan 11 OFFLINE adapter** (`custom-http-*` modules + fixed protocol); no deployed service, Host route or production enablement |
 
-All entries have `integrationStatus: NOT_IMPLEMENTED`, `selectable: false`; the registry exposes no
-default provider and `selectProviderCandidate()` always returns `NOT_IMPLEMENTED` in TTS-A. A future
-adapter must add an audited manifest and explicit selection; it cannot appear merely because a
-process, model file or URL exists. The three new entries add no model name, default voice, endpoint,
-credential or claimed capability.
+The design registry still reports every candidate as `integrationStatus: NOT_IMPLEMENTED`,
+`selectable: false`; it exposes no default provider and `selectProviderCandidate()` still returns
+`NOT_IMPLEMENTED`. Plan 11 adapters are separate modules and are **not** registry-selected, Host-wired
+or enabled by the existence of a process, model file or URL. A future selection layer must add an
+audited manifest and explicit configuration. The adapters add no default endpoint, credential or
+claimed real capability.
 
 ### TTS / SVC boundary
 
@@ -358,3 +360,31 @@ unimplemented provider.
 - What OS credential store is supported across the target Windows versions?
 - How are community voice packs signed/verified and how is voice-cloning consent enforced?
 - What audio normalization is required before the existing Sender accepts provider output?
+
+## 10. Plan 11 cloud/custom offline adapters (2026-11-03)
+
+Plan 11 adds the first cloud/custom implementations as **OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED**:
+
+- `cloud-credentials.mjs` — application-owned Windows DPAPI CurrentUser namespace, atomic ciphertext
+  files, exact-ref lookup, no plaintext fallback and explicit non-Windows `UNAVAILABLE`.
+- `cloud-cost.mjs` — one atomic ledger authority per file (token-owned short lock + optimistic
+  revision; slow temp I/O outside the lock), integer character price or explicit-free mode,
+  reserve-before-send, same-ID PENDING refusal, commit on success, UNKNOWN on post-send uncertainty,
+  live-owner PENDING protection, dead-owner recovery to UNKNOWN and bounded dedup that fails closed
+  instead of truncating old UNKNOWN ids.
+- `cloud-http-security.mjs` — HTTPS or numeric-loopback HTTP target validation, public-address DNS
+  policy, pinned lookup, no redirects, bounded headers/body/time, pre-cancel before request
+  construction, error-listener-before-destroy, prompt non-2xx destruction and abort.
+- `azure-speech-contract.mjs` / `azure-speech-adapter.mjs` — fixed regions and preset zh-CN/en-US
+  neural voices, escaped plain-text SSML, required key header, paid-ledger/positive-price validation
+  in health and synthesis, 24 kHz mono PCM16 validation, `CONFIGURED_UNVERIFIED` vs `AVAILABLE`
+  separation and cancel checks around credential/reserve/commit.
+- `custom-http-contract.mjs` / `custom-http-adapter.mjs` — fixed `whale-voice-custom-tts` v1 JSON
+  request → WAV response, predefined bearer/x-api-key auth, target pinning, explicit
+  `unknown`/confirmed `free`/`paid` cost modes and `retention: unknown`.
+- `cloud-provider-pipeline.mjs` — neutral non-persisted result (`PENDING_ROUTER`), Chinese gate/status
+  projection and no Task/Artifact/delivery creation.
+
+Full design, official sources and the complete gate/error matrix are in
+[CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md). No real Azure/custom request, production Host route,
+credential input UI or paid execution is part of this phase.
