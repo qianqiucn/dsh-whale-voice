@@ -204,6 +204,25 @@ The provider result is non-persisted (`PENDING_ROUTER`) and the provider never c
 WeChat. Real model/Host/Artifact integration remains OPEN; see
 [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).
 
+**IndexTTS-2.5 local worker (10-B candidate, OFFLINE):** the IndexTTS provider mirrors the local
+worker boundary with its own `core/tts/index-tts-{contract,worker-protocol,supervisor,adapter}.mjs`
+and `workers/index_tts_worker.py`. The fixed `indextts` package is still version 2.0.0 while the
+target model/interface is IndexTTS-2.5 (`infer_v2_5.IndexTTS2`); the worker therefore checks both the
+package metadata and `config.yaml version: 2.5`, and never treats a package/name match as a 2.5 proof.
+IndexTTS is clone/emotion-only: preset voices and VoiceDesign are rejected, the eight-float emotion
+vector order and fixed modes come from the model card, and text emotion is unavailable unless the
+QwenEmotion auxiliary directory exists and the candidate is constructed with `use_qwen_emo=True`.
+The worker snapshots every model file byte-for-byte under the supervisor temp directory (no
+hardlinks, shared 8 GiB budget enforced before each chunk write), copies audited reference bytes into
+stable private files instead of passing re-openable source paths, requires already-local auxiliary
+models so the upstream `ensure_models_available` download path is never entered, and installs the
+offline environment plus in-process socket/urllib guard before importing the SDK. Output is validated
+as 22050 Hz mono PCM16 WAV, not Qwen's 24 kHz format. The provider result is non-persisted and the
+provider never creates a Task, Artifact or delivery. The fixed licence is the bilibili model-use
+agreement (with MAU/revenue commercial thresholds), **not Apache-2.0**; dependencies/tokenizer/
+private reference rights remain UNKNOWN. Real weights/GPU/Chinese quality/Host/Artifact remain OPEN;
+see [INDEX_TTS_PROVIDER.md](INDEX_TTS_PROVIDER.md) and [ADR-019](DECISIONS.md).
+
 **SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
 speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but
 is not in the TTS Provider Registry and is not implemented. See `core/svc/`.

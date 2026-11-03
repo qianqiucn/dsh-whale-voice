@@ -451,3 +451,39 @@ process really exited; using unbounded recursive validation.
 
 **Related:** [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md).
+
+## ADR-019 — IndexTTS-2.5 is a separate clone/emotion-only lazy worker with a fixed non-Apache licence
+
+**Status:** accepted (offline candidate, 2026-11-03). **Supersedes:** nothing. **Related:** ADR-017,
+ADR-018, [INDEX_TTS_PROVIDER.md](INDEX_TTS_PROVIDER.md).
+
+**Decision:** IndexTTS-2.5 is implemented as its own local provider unit
+(`core/tts/index-tts-{contract,worker-protocol,supervisor,adapter}.mjs` +
+`workers/index_tts_worker.py`), not as a Qwen variant or a shared public request extension. It fixes
+the upstream code `index-tts/index-tts@d9e41aac89fd00b3d71497fddb287b7f24613712`, model
+`IndexTeam/IndexTTS-2.5@c39ce5ba981572cb187443877ff559dfb246ce63`, package `indextts==2.0.0` and
+interface `infer_v2_5.IndexTTS2`; both the package metadata and the local `config.yaml version: 2.5`
+must agree. Only clone + emotion is exposed: preset voices and VoiceDesign are rejected, the fixed
+8-float emotion order/modes come from the model card, and text emotion requires the audited
+QwenEmotion auxiliary directory and `use_qwen_emo=True`. The worker loads the model only on a real
+synthesis, after a byte-for-byte private snapshot, offline environment and in-process network guard;
+it requires auxiliary models to already exist locally so the upstream download helper is never
+entered, copies audited reference bytes to stable files, and validates 22050 Hz mono PCM16 output.
+The result is non-persisted (`PENDING_ROUTER`), and the provider creates no Task/Artifact/delivery.
+The fixed licence is the bilibili model-use agreement (not Apache-2.0; MAU/revenue commercial
+thresholds); dependency/tokenizer/private-reference rights stay UNKNOWN.
+
+**Reason:** IndexTTS has a different SDK, model identity, output format, language set, emotion
+semantics and licence from Qwen. Reusing Qwen's public payload or model identity would blur those
+differences and could smuggle arbitrary emotion/paths into the public TTS contract. A separate,
+narrow worker keeps the official loader out of Core, makes the local-only resource boundary
+auditable, and lets the two providers have independent PRs, licences and acceptance gates.
+
+**Rejected alternatives:** Treating `indextts==2.0.0` as proof of the 2.5 interface; copying Qwen's
+24 kHz/1 MiB/voice-preset assumptions; exposing `use_emo_text` or an 8-float vector as ordinary public
+request fields; passing reference/model paths directly to the SDK; letting `ensure_models_available`
+download auxiliary models; labelling the bilibili licence as Apache-2.0 or unrestricted; merging this
+candidate without real weights/GPU/Host/Artifact acceptance.
+
+**Related:** [INDEX_TTS_PROVIDER.md](INDEX_TTS_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
