@@ -830,3 +830,36 @@ age; rebuilding a lower revision on enumeration failure; returning a fake new st
 store cannot be enumerated; repairing a corrupt highest revision by falling back.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-030 — The internal Windows Sender is an Artifact-only delivery module over reviewed resources
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04).
+**Related:** ADR-001, ADR-024–ADR-029, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md),
+[UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** Whale Relay Core owns one internal Windows delivery module
+(`core/audio/internal-sender-offline.mjs`) with the relay's backend interface. It consumes only the
+trusted SAVED Artifact fact + trusted target, rejects any path/URL/command/script/env/token-shaped
+input, resolves the target from its own directory and rechecks identity/authorization/allowlist and
+the Bridge/Worker gates, builds a fixed whitelisted invocation (script id + fixed parameter order +
+bounded single-line scalars, `shell:false`, contained script path), serializes through one in-memory
+queue and invokes an **injected Fixture transport** exactly once per delivery. It never imports the
+original HTTP server, never spawns, opens a socket/device/WeChat window or writes, and preserves
+NEVER_WRITE plus terminal `UNKNOWN` (no resend/backend switch/id change/text fallback).
+
+The original user-owned Voice Sender source closure (26 files + 2 metadata, reviewed preflight
+SHA256 `a3056dea…`) is carried as resources with a manifest of relative paths, original hashes and
+stored hashes; no developer absolute path, token, chat, binary/model/audio/cache, runtime state or
+production config is included, and no third-party license is inferred.
+
+**Reason:** ADR-001 and the Plan13 queue require the Sender to become the relay's internal module
+without copying a second window-sending implementation, and the original source is the only reviewed
+algorithm/secure-check asset. A resource-only, Artifact-only, injected-transport unit proves the
+integration boundary offline while keeping real process/device/WeChat operation out of scope.
+
+**Rejected alternatives:** a second window/recording implementation; importing the original HTTP
+server or spawning PowerShell in tests; accepting file paths/URLs/commands from the request; a second
+generation registry or queue; retrying/re-binding `UNKNOWN`; inferring a license for third-party
+components.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

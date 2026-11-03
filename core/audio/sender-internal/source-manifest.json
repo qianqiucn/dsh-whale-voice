@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "sourceRootReference": "voice-sender",
+  "serviceVersion": "0.1.0",
+  "authority": "USER_CONFIRMED_OWN_SOURCE_PUBLIC_REUSE_RIGHTS",
+  "licenseFacts": "No explicit license/copyright marker in source; not inferred. Third-party rights checked individually by the caller.",
+  "preflight": {
+    "bytes": 15572,
+    "sha256": "a3056dea8965a85a880b0fe5c9a0752e86ce8ab94947ccb3ba77a4f07a595bf4"
+  },
+  "sourceCount": 26,
+  "sourceBytes": 202655,
+  "files": [
+    {
+      "path": "desktop-guard.ps1",
+      "sourceBytes": 1113,
+      "storedBytes": 1113,
+      "sourceSha256": "754a433902b33a1fbd60be55719032933297b8ba8d8c843e28674cea78f977f5",
+      "storedSha256": "754a433902b33a1fbd60be55719032933297b8ba8d8c843e28674cea78f977f5",
+      "sourceDependencies": [
+        "lib/SessionGuard.cs"
+      ]
+    },
+    {
+      "path": "hotkey-host.ps1",
+      "sourceBytes": 5865,
+      "storedBytes": 5865,
+      "sourceSha256": "b599755588c3c96e851a609e6069b771c74899c6e397f732325eaa678a7365e1",
+      "storedSha256": "b599755588c3c96e851a609e6069b771c74899c6e397f732325eaa678a7365e1",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/AsyncPlayer.cs",
+      "sourceBytes": 10635,
+      "storedBytes": 10635,
+      "sourceSha256": "0f2c010734d141548a7f5207f7ce9ad07094218a1a418785ca6c5ecf4618ddcc",
+      "storedSha256": "0f2c010734d141548a7f5207f7ce9ad07094218a1a418785ca6c5ecf4618ddcc",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/AudioPolicy.cs",
+      "sourceBytes": 7407,
+      "storedBytes": 7407,
+      "sourceSha256": "df0d64486ce39c2fa3ec58b1a24a0cd686876fb6c4d5089c6eef6e725ed343d6",
+      "storedSha256": "df0d64486ce39c2fa3ec58b1a24a0cd686876fb6c4d5089c6eef6e725ed343d6",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/AudioTool.cs",
+      "sourceBytes": 22571,
+      "storedBytes": 22571,
+      "sourceSha256": "52e4d5d4c6433af71375837c2a035b6fddd673986f65fd26bcdf67971636d618",
+      "storedSha256": "52e4d5d4c6433af71375837c2a035b6fddd673986f65fd26bcdf67971636d618",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/CancelPolicy.ps1",
+      "sourceBytes": 855,
+      "storedBytes": 855,
+      "sourceSha256": "205e7c66847f7585f5cfeab0668ec788f65c5e9dc9796bd1988f87b2beac34ba",
+      "storedSha256": "205e7c66847f7585f5cfeab0668ec788f65c5e9dc9796bd1988f87b2beac34ba",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/FocusPolicy.ps1",
+      "sourceBytes": 1818,
+      "storedBytes": 1818,
+      "sourceSha256": "f8a50dbdc45d1dc8b17e30d4697c8c0a54714df054addacdc2fd7dc279fa9be1",
+      "storedSha256": "f8a50dbdc45d1dc8b17e30d4697c8c0a54714df054addacdc2fd7dc279fa9be1",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/SessionGuard.cs",
+      "sourceBytes": 5468,
+      "storedBytes": 5468,
+      "sourceSha256": "fd155cdfda91a1c643b903f73d7232b1a59d22d496fbe648737313a2cf0901ef",
+      "storedSha256": "fd155cdfda91a1c643b903f73d7232b1a59d22d496fbe648737313a2cf0901ef",
+      "sourceDependencies": []
+    },
+    {
+      "path": "lib/WeChatUia.ps1",
+      "sourceBytes": 20277,
+      "storedBytes": 20277,
+      "sourceSha256": "aa6b8f6a5ee1709965fa951ff37dad7fec3045b1a02755dd100477213f0c1d4e",
+      "storedSha256": "aa6b8f6a5ee1709965fa951ff37dad7fec3045b1a02755dd100477213f0c1d4e",
+      "sourceDependencies": []
+    },
+    {
+      "path": "service/src/desktop.mjs",
+      "sourceBytes": 1887,
+      "storedBytes": 1887,
+      "sourceSha256": "f7a8dfa436265fe1ccf28a2d51abaf178f7fac4572ead8e69debba19ed47d5ab",
+      "storedSha256": "f7a8dfa436265fe1ccf28a2d51abaf178f7fac4572ead8e69debba19ed47d5ab",
+      "sourceDependencies": []
+    },
+    {
+      "path": "service/src/emotion.mjs",
+      "sourceBytes": 810,
+      "storedBytes": 810,
+      "sourceSha256": "ba7b10983312f4cb00360ff63ba14de690c991365c03748469fc841e0076ecf6",
+      "storedSha256": "ba7b10983312f4cb00360ff63ba14de690c991365c03748469fc841e0076ecf6",
+      "sourceDependencies": []
+    },
+    {
+      "path": "service/src/hotkey.mjs",
+      "sourceBytes": 7867,
+      "storedBytes": 7867,
+      "sourceSha256": "c032670d9f84fdf6b17d5d66b050dab4c7a4ac3aeabd58e88953dbdd3e2d217e",
+      "storedSha256": "c032670d9f84fdf6b17d5d66b050dab4c7a4ac3aeabd58e88953dbdd3e2d217e",
+      "sourceDependencies": [
+        "hotkey-host.ps1",
+        "service/src/util.mjs"
+      ]
+    },
+    {
+      "path": "service/src/providers/deepseek-web.mjs",
+      "sourceBytes": 4317,
+      "storedBytes": 4317,
+      "sourceSha256": "c7a753b4db37875c0b4cbf0fecea4a6586d5997dc9736c8798490912e0c4cfa5",
+      "storedSha256": "c7a753b4db37875c0b4cbf0fecea4a6586d5997dc9736c8798490912e0c4cfa5",
+      "sourceDependencies": [
+        "service/src/util.mjs"
+      ]
+    },
+    {
+      "path": "service/src/providers/qwen-local.mjs",
+      "sourceBytes": 12304,
+      "storedBytes": 12304,
+      "sourceSha256": "aabcc732251f021007af401feec1f3c7ff2448bce13f19f6141bb7b2c66553ee",
+      "storedSha256": "aabcc732251f021007af401feec1f3c7ff2448bce13f19f6141bb7b2c66553ee",
+      "sourceDependencies": [
+        "service/src/emotion.mjs",
+        "service/src/wav.mjs"
+      ]
+    },
+    {
+      "path": "service/src/queue.mjs",
+      "sourceBytes": 14146,
+      "storedBytes": 14146,
+      "sourceSha256": "c794d01a7893946286f5787dbff959759a8e89642e1f835da56621035f48bf1d",
+      "storedSha256": "c794d01a7893946286f5787dbff959759a8e89642e1f835da56621035f48bf1d",
+      "sourceDependencies": [
+        "service/src/util.mjs"
+      ]
+    },
+    {
+      "path": "service/src/sender.mjs",
+      "sourceBytes": 13722,
+      "storedBytes": 13722,
+      "sourceSha256": "fcea8bffaad8a2dad0a283b04a053d81cd29807c06f220224cf1a76cc4fae31f",
+      "storedSha256": "fcea8bffaad8a2dad0a283b04a053d81cd29807c06f220224cf1a76cc4fae31f",
+      "sourceDependencies": [
+        "service/src/util.mjs",
+        "voice-sender.ps1"
+      ]
+    },
+    {
+      "path": "service/src/server.mjs",
+      "sourceBytes": 19142,
+      "storedBytes": 19142,
+      "sourceSha256": "cdd5d4920e3540ec52f14bd394d1069f5969217d562a993c5326c88561ec0bc0",
+      "storedSha256": "cdd5d4920e3540ec52f14bd394d1069f5969217d562a993c5326c88561ec0bc0",
+      "sourceDependencies": [
+        "desktop-guard.ps1",
+        "service/src/desktop.mjs",
+        "service/src/hotkey.mjs",
+        "service/src/queue.mjs",
+        "service/src/sender.mjs",
+        "service/src/store.mjs",
+        "service/src/tts.mjs",
+        "service/src/util.mjs",
+        "service/src/validate.mjs",
+        "service/src/wechat.mjs",
+        "voice-sender-recover.ps1"
+      ]
+    },
+    {
+      "path": "service/src/store.mjs",
+      "sourceBytes": 2020,
+      "storedBytes": 2020,
+      "sourceSha256": "4766af6d988a8a187055c8940bad1e96a4d3ee635d7219d4282dc5cbd22ac71f",
+      "storedSha256": "4766af6d988a8a187055c8940bad1e96a4d3ee635d7219d4282dc5cbd22ac71f",
+      "sourceDependencies": [
+        "service/src/util.mjs"
+      ]
+    },
+    {
+      "path": "service/src/tts.mjs",
+      "sourceBytes": 1556,
+      "storedBytes": 1556,
+      "sourceSha256": "aae0db0b69cf4d823777caa0d7bf5c586bb6c3536bb875842cf42676fa3e9575",
+      "storedSha256": "aae0db0b69cf4d823777caa0d7bf5c586bb6c3536bb875842cf42676fa3e9575",
+      "sourceDependencies": [
+        "service/src/providers/deepseek-web.mjs",
+        "service/src/providers/qwen-local.mjs"
+      ]
+    },
+    {
+      "path": "service/src/util.mjs",
+      "sourceBytes": 1771,
+      "storedBytes": 1771,
+      "sourceSha256": "4eba5fab7a6d904e0233966e51455ad2b7d9b7d0d894e0878fc157717b8ff095",
+      "storedSha256": "4eba5fab7a6d904e0233966e51455ad2b7d9b7d0d894e0878fc157717b8ff095",
+      "sourceDependencies": []
+    },
+    {
+      "path": "service/src/validate.mjs",
+      "sourceBytes": 5453,
+      "storedBytes": 5453,
+      "sourceSha256": "a8d11293723b9c8b89d69b80264bc6b3d9d0e3d24224b76672978aeaf4c11ca9",
+      "storedSha256": "a8d11293723b9c8b89d69b80264bc6b3d9d0e3d24224b76672978aeaf4c11ca9",
+      "sourceDependencies": [
+        "service/src/emotion.mjs",
+        "service/src/util.mjs"
+      ]
+    },
+    {
+      "path": "service/src/wav.mjs",
+      "sourceBytes": 4164,
+      "storedBytes": 4164,
+      "sourceSha256": "4777a6659ab65a8f2fcbf4844b491f11966c56a64614417ee259c2f5ae629c13",
+      "storedSha256": "4777a6659ab65a8f2fcbf4844b491f11966c56a64614417ee259c2f5ae629c13",
+      "sourceDependencies": []
+    },
+    {
+      "path": "service/src/wechat.mjs",
+      "sourceBytes": 2532,
+      "storedBytes": 2532,
+      "sourceSha256": "a81db59042c96b17cc6ab0af5dec0838a662b54b23ed2688690848e29f9f54ea",
+      "storedSha256": "a81db59042c96b17cc6ab0af5dec0838a662b54b23ed2688690848e29f9f54ea",
+      "sourceDependencies": [
+        "service/src/util.mjs",
+        "wechat-status.ps1"
+      ]
+    },
+    {
+      "path": "voice-sender-recover.ps1",
+      "sourceBytes": 3254,
+      "storedBytes": 3254,
+      "sourceSha256": "3b741ca7dd2353872362b611b9afb3d7a848ae246f14e3b97acc33e2ccdc2f0b",
+      "storedSha256": "3b741ca7dd2353872362b611b9afb3d7a848ae246f14e3b97acc33e2ccdc2f0b",
+      "sourceDependencies": [
+        "lib/AudioPolicy.cs"
+      ]
+    },
+    {
+      "path": "voice-sender.ps1",
+      "sourceBytes": 30113,
+      "storedBytes": 30113,
+      "sourceSha256": "771b79bd5258b7ca2c4426031ff8f53263ae892c4500a1f8aec7a52a53cb5f89",
+      "storedSha256": "771b79bd5258b7ca2c4426031ff8f53263ae892c4500a1f8aec7a52a53cb5f89",
+      "sourceDependencies": [
+        "lib/AsyncPlayer.cs",
+        "lib/AudioPolicy.cs",
+        "lib/AudioTool.cs",
+        "lib/CancelPolicy.ps1",
+        "lib/FocusPolicy.ps1",
+        "lib/SessionGuard.cs",
+        "lib/WeChatUia.ps1"
+      ]
+    },
+    {
+      "path": "wechat-status.ps1",
+      "sourceBytes": 1588,
+      "storedBytes": 1588,
+      "sourceSha256": "f3e83495e5a3d610ffdd5f63df4afd22b7bfbf9850c5a20e3d6a516de51421ea",
+      "storedSha256": "f3e83495e5a3d610ffdd5f63df4afd22b7bfbf9850c5a20e3d6a516de51421ea",
+      "sourceDependencies": [
+        "lib/SessionGuard.cs",
+        "lib/WeChatUia.ps1"
+      ]
+    }
+  ],
+  "metadata": [
+    {
+      "path": "service/package.json",
+      "sourceBytes": 413,
+      "storedBytes": 413,
+      "sourceSha256": "19c2d461b54b004671f658d33e18f7ed6c15f9566d31010bc4609332bdd5ad65",
+      "storedSha256": "19c2d461b54b004671f658d33e18f7ed6c15f9566d31010bc4609332bdd5ad65"
+    },
+    {
+      "path": "service/README.md",
+      "sourceBytes": 9491,
+      "storedBytes": 9491,
+      "sourceSha256": "12b4a953ea2016789c64cdeae81ff03702d76c2b9d52fc54a0530b60dfd92fd5",
+      "storedSha256": "12b4a953ea2016789c64cdeae81ff03702d76c2b9d52fc54a0530b60dfd92fd5"
+    }
+  ],
+  "exclusions": [
+    "binaries/models/audio/cache",
+    "production config/token/logs/history",
+    "runtime state",
+    "developer absolute paths",
+    "non-whitelisted files"
+  ]
+}

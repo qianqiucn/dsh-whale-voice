@@ -1,0 +1,16 @@
+{
+  "name": "voice-sender-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback-only Node service in front of the existing WeChat native voice sender (PowerShell + C#).",
+  "main": "src/server.mjs",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test",
+    "tts:smoke": "node scripts/qwen-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

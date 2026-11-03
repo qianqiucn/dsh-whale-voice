@@ -789,3 +789,43 @@ skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js` 31
 Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and unmerged; real DSH page
 visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. `RELAY-DEFER-COPY-PUBLISH-142`
 and `RELAY-DEFER-PERMIT-CROSSCHECK-140` stay booked.
+
+### Plan 13-A merge and Plan 13-B internal Sender OFFLINE (2026-11-04)
+
+**A — fixed PR #50 merge.** PR #50 (`feature/plan13-unified-relay-offline` → `main`) was merged with one
+standard Merge Commit after adjacent gate re-checks (RUNNING, 00/113, clean worktree, remote G/H,
+OPEN/non-draft/MERGEABLE/reviews empty, exact-H CI success, `allow_merge_commit=true`,
+`delete_branch_on_merge=false`, main unprotected). Actual `M=4b45ebd41df0d535c837332e940515d0569550b1`:
+exactly two parents (first `G=42b96ce`, second `H=f368855`), `tree(M)=10d3b97…=T`, content identical to
+H, first-parent diff `G..M` equals `G..H` (20 files, +4338/−77), remote `main=M`, source branch preserved
+at H. New main push CI `41738183306` success (build `126272696587`, ui `126272696192`). No squash/rebase/
+auto/admin, no branch deletion, no other PR/#17/base/protection/visibility change.
+
+**B — internal Windows Sender offline unit.** From the verified M, branch
+`feature/plan13b-internal-sender-offline` (new PR, not merged) adds:
+
+- `core/audio/internal-sender-offline.mjs`: the relay's internal delivery backend (same interface), with
+  Artifact-only input (refuses path/URL/command/script/env/token-shaped fields), its own target directory
+  plus identity/authorization/allowlist/Bridge/Worker gates, a fixed whitelisted invocation builder
+  (`voice-sender.ps1`/recover/cancel/preflight/status/hotkey/desktop-guard ids, fixed parameter order,
+  bounded scalars, `shell:false`, contained paths), one serial queue and one invocation per delivery,
+  `ACCEPTED`/`CANCELLED`/`FAILED`/`UNKNOWN` mapping, NEVER_WRITE and terminal UNKNOWN (no resend/re-bind/
+  text fallback). No process/socket/device/WeChat/write; no import of the original HTTP server.
+- `core/audio/sender-internal/source/` + `source-manifest.json`: the reviewed user-owned source closure
+  (26 files/202,655 B + `package.json`/`README.md`) carried as resources, with relative paths, original
+  and stored SHA256, Service 0.1.0, the preflight hash `a3056dea…`, the user-confirmed reuse basis and
+  the explicit “no license inferred” fact. No developer absolute path, token, chat, binary/model/audio/
+  cache, runtime state or production config is committed.
+- `test/internal-sender-offline.test.mjs` (7 tests): manifest/hash/no-leak/no-bare-import and
+  no-server-import static checks; fixed invocation whitelist; Artifact-only and target-gate refusals;
+  single queue + dedupe (one invocation per delivery); cancel/UNKNOWN no-resend; and two end-to-end
+  paths — a real persisted Voice SAVED task and a real persisted Singing Cover MASTER (with its explicit
+  permit) each reach this internal backend through the relay exactly once (`ACCEPTED`).
+- Docs: [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), ADR-030, roadmap/status/changelog/
+  AI-context updates.
+
+Evidence: full suite **1114 tests / 1110 pass / 4 platform skips / 0 fail** (was 1107/1103 before the
+new unit; +7); UI **72/72** (no product UI change; CI ui job); `client.js` 314,687 chars (unchanged).
+Status: 13-A merged; the internal Sender unit is `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, its
+new PR is **not merged**. Real process/device/WeChat/window path, real host visual, 13-B runtime,
+13-C, Plan14 and every real Plan12/13 DoD remain OPEN.
