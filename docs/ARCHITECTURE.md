@@ -171,6 +171,39 @@ provider contract, registry, v2 config proposal and migration tests are in TTS-A
 listed; none is implemented or selectable. There is no silent fallback, no credential leakage and no
 committed API key. Qwen3-TTS is the current reference implementation, not a global default.
 
+**Qwen local worker (10-A candidate, OFFLINE):** the Qwen3-TTS provider is a separate explicitly
+configured child process (`workers/qwen3_tts_worker.py`) behind a narrow versioned NDJSON protocol and
+`core/tts/qwen-supervisor.mjs`. Core never imports `qwen_tts`/torch itself. The worker loads the
+audited package and local model only on a real synthesis, with `local_files_only=True`; it sets
+offline environment variables and installs an in-process network guard before the import so the
+nested loader chain cannot download, and it re-audits the model directory, configuration digest and
+trusted clone reference immediately before each SDK call (realpath inside the allowed root,
+existence, size, dev/ino, held fd) instead of trusting a startup stat. Clone reference bytes are
+read through the audited fd, checked against a SHA256 baseline and handed to the SDK as a
+`data:audio` value. The actual model load runs against a private audited snapshot: every regular file
+is copied with a SHA256 baseline (no hardlinks; an 8 GiB copy budget is shared across files and
+deducted before each chunk write, so a cumulative overrun fails at the write boundary), and the
+original tree/config are re-audited after loading. A model directory swapped for an out-of-root
+junction during loading therefore cannot feed the SDK an outside config, and a same-size source
+rewrite cannot change the copied content. Snapshots live in the supervisor-owned worker temporary
+directory; the active parent is registered under a lock before any child mkdir/copy, and health
+cleanup skips and retains active/build-in-progress registrations. The worker cleans them on
+shutdown/EOF, a denied cleanup keeps a retryable `snapshotCleanupPending` fact with host temp cleanup
+as the final owner. The
+candidate model is committed to the cache only after validation; load-time cancellation, audit failure
+or an exception discards it so the next request reloads, while a normally completed valid cache
+survives ordinary cancellation. Runtime dependency health distinguishes a missing module from a
+resolvable module whose import raises ImportError, which stays degraded until a successful import and
+is not downgraded by a later missing-path request. Each
+supervisor start owns one process generation with an operation table; an `error` event is not an
+exit, an unconfirmed exit is a failure, failed temp cleanup stays owned/retryable, and occupancy is
+released only by a complete terminal message correlated through its issued message id, request id and
+exact model/backend/voice identity; invalid late messages keep the recovery correlation, and a start
+failure is scoped to its own generation.
+The provider result is non-persisted (`PENDING_ROUTER`) and the provider never creates a Task or sends
+WeChat. Real model/Host/Artifact integration remains OPEN; see
+[TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md) and [ADR-018](DECISIONS.md).
+
 **SVC engines:** a separate future task type (Seed-VC/RVC candidates) that converts existing
 speech/singing audio instead of text. It shares the voice library, audio pipeline and task system, but
 is not in the TTS Provider Registry and is not implemented. See `core/svc/`.

@@ -378,3 +378,76 @@ WeChat or Voice Sender; declaring candidates implemented without an adapter and 
 **Related:** [TTS_PROVIDER_AUDIT.md](TTS_PROVIDER_AUDIT.md),
 [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md),
 [ARCHITECTURE.md](ARCHITECTURE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-018 — Qwen local provider runs as a lazy official-SDK worker with generation-scoped lifecycle
+
+**Status:** `ACCEPTED`
+**Date:** 2026-11-02
+**Decision:** The Qwen3-TTS local provider is implemented as an explicitly configured child process
+(`workers/qwen3_tts_worker.py`) that speaks a narrow versioned NDJSON protocol to
+`core/tts/qwen-supervisor.mjs`. The worker imports the audited `qwen-tts` package and loads a model
+only on a real synthesis; `hello`/`health`/`discover` are static and must not load torch or weights.
+The model directory and clone references must be existing local paths inside an explicit allowed
+root, and `from_pretrained` is always called with `local_files_only=True` and
+`trust_remote_code=False`. Each supervisor start owns one generation (stdio, pending map, exit
+handle, temporary directory); an `error` event is not an exit, an unconfirmed exit is reported as a
+failure instead of a green `ok`, failed temp cleanup stays owned and retryable, and no new synthesis
+is accepted while an operation has no confirmed terminal answer or while shutting down.
+
+**Reason:** The audited upstream is a Python package whose default loading path can download weights
+and whose reference-audio helper accepts paths, URLs and base64. A separate worker keeps that code
+out of the Core host, makes local-only loading auditable, and lets a broken or hostile worker be
+terminated without crashing the host. Per-generation ownership prevents a late event from an old
+process from releasing or killing a new one. Protocol depth/node bounds are required because the
+2 MiB line cap alone did not stop a small deeply nested JSON payload from exhausting the host stack.
+
+The 095 repair tightens the same boundary at actual use: trusted local resources (model directory,
+configuration digest, clone reference) are re-audited immediately before each SDK call and the
+reference inode is held for the generation, so a post-health junction, deletion or replacement is
+refused rather than passed to the SDK. The worker sets offline environment variables and installs an
+in-process network guard before importing the official package, covering the nested
+AutoConfig/AutoModel/AutoProcessor chain; a missing directly imported dependency fails closed at
+hello/health without loading a model. Cancellation is split into request, trusted acknowledgement,
+actual stop and final result, and an operation is released only by a terminal message correlated
+through its issued message id, claimed request id and generation. A start/stop race keeps admission
+closed instead of re-opening it after the handshake.
+
+The 0122 residual repair makes the SDK consume the verified content instead of a re-openable path:
+the reference bytes are read through the audited fd, checked against a startup SHA256 and passed as a
+`data:audio` value. The model sub-resource tree is walked for junction/symlink escapes, configuration
+and tree are re-audited after loading before generation, runtime dependency loss is reflected by
+health until recovery, only a complete terminal (state plus exact request/model/backend/voice
+identity) releases an operation, invalid late messages keep the recovery correlation, and a start
+failure is scoped to its own generation.
+
+The 0123 residual repair makes the actual loader consume a stable private snapshot: every regular
+file is copied with a SHA256 baseline, and the original tree/config are re-audited after loading. The
+model candidate is committed to the process cache only after validation; load-time cancellation,
+audit failure or an exception discards the candidate and snapshot, while a normally completed valid
+cache survives ordinary cancellation. A runtime dependency that is resolvable but raises ImportError
+stays degraded until a successful import, instead of being cleared by a mere path check.
+
+The 0124 residual repair removes hardlinks entirely (full copy within an 8 GiB budget, fail closed
+above it), so a same-size source rewrite with restored mtime cannot alter SDK-consumed content.
+Snapshots live in the supervisor-owned worker temporary directory and are tracked from creation; the
+worker cleans them on shutdown/EOF, a denied cleanup keeps a retryable `snapshotCleanupPending` fact
+with host temp cleanup as the final owner, and only exact worker-created directories are removed. A
+later missing-package request cannot downgrade a known ImportError to `missing`.
+
+The 0125 residual repair shares the snapshot copy budget across files and deducts it before each
+chunk write, so a cumulative overrun fails at the write boundary instead of after an extra file. It
+registers the active snapshot parent under a lock before any child mkdir/copy, and health cleanup
+skips and retains active/build-in-progress registrations instead of clearing the ownership set, so a
+health check during loading cannot orphan a snapshot that cancel or a load failure later leaves
+behind.
+
+**Rejected alternatives:** Importing `qwen_tts`/torch inside Core; trusting a worker-declared model
+name without an audited model identity and a matching local `config.json`; passing reference audio
+paths, URLs or base64 through the protocol; accepting `ok` from any response type; treating a kill
+request, an `error` event or a delete call as proof of exit; reporting `stop()` as success before the
+process really exited; using unbounded recursive validation.
+
+**Related:** [TTS_QWEN_PROVIDER.md](TTS_QWEN_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md).

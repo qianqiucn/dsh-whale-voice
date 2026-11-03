@@ -22,6 +22,7 @@
     "setup.js",
     "core",
     "packages",
+    "workers",
     "build.mjs",
     "cordis.patch.yml",
     "locale/*.json",

@@ -45,6 +45,12 @@ jobs:
           node --check core/server.mjs
           node --check packages/adapter-wechatagent/index.mjs
 
+      - name: Python worker syntax checks
+        run: |
+          python3 -m py_compile workers/qwen3_tts_worker.py
+          python3 -m py_compile test-fixtures/fake-qwen-sdk/qwen_tts/__init__.py
+          python3 -m py_compile test-fixtures/fake-qwen-sdk/soundfile/__init__.py
+
       - name: Contract tests
         run: node --test
 
