@@ -487,3 +487,29 @@ candidate without real weights/GPU/Host/Artifact acceptance.
 
 **Related:** [INDEX_TTS_PROVIDER.md](INDEX_TTS_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
+
+## ADR-020 — Kokoro-82M is a separate preset-only CPU worker; Apache code/model does not cover voices/G2P
+
+**Status:** accepted (offline candidate, 2026-11-03). **Related:** ADR-017, ADR-019,
+[KOKORO_PROVIDER.md](KOKORO_PROVIDER.md).
+
+**Decision:** Kokoro-82M is implemented as its own preset-only local provider unit, not a Qwen/Index
+variant. It fixes `hexgrad/kokoro@dfb907a0…`, `kokoro 0.9.4`, `hexgrad/Kokoro-82M@f3ff3571…` v1.0 and
+24 kHz output. The worker loads only on synthesis, after a byte-for-byte private snapshot, stable
+copies of trusted local voice `.pt` files, local config/weights/voice/G2P preconditions, offline
+environment and the in-process network guard. Construction is `KModel(config=…, model=…,
+disable_complex=True).to("cpu")` plus `KPipeline(lang_code, model=model, device="cpu")`; no voice
+name is allowed to reach `hf_hub_download`. Only preset voices/languages from the trusted index are
+exposed; clone, voice-design and emotion are rejected. Output is 24 kHz mono PCM16, split chunks are
+joined with a bounded silence, and the result is non-persisted. The Apache-2.0 code/model statement is
+not extended to dependencies, voice tensors or Misaki/espeak G2P/dictionaries; those remain UNKNOWN.
+
+**Reason:** Kokoro has different SDK, output rate, CPU path, preset-only capability and G2P/resource
+licensing from Qwen/Index. Reusing their payloads or clone/emotion fields would blur those facts.
+
+**Rejected alternatives:** Passing a voice name to the default HF lookup; treating Apache-2.0 model
+metadata as covering voices/G2P; exposing clone/emotion because another provider has it; loading the
+model at health/discover; accepting a non-24 kHz or empty output.
+
+**Related:** [KOKORO_PROVIDER.md](KOKORO_PROVIDER.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).

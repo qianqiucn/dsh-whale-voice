@@ -297,3 +297,17 @@ No step in this migration permits bypassing the existing production safety bound
 - Maintaining an unsynchronized private full fork of WeChatAgent.
 - Providing an unaudited one-click production installer.
 - Claiming group voice support before real group identity verification exists.
+
+**Kokoro-82M local worker (10-C candidate, OFFLINE):** the preset-only Kokoro provider uses
+`core/tts/kokoro-{contract,worker-protocol,supervisor,adapter}.mjs` and
+`workers/kokoro_worker.py`. It fixes `hexgrad/kokoro@dfb907a0…`, `kokoro 0.9.4` and
+`hexgrad/Kokoro-82M@f3ff3571…` v1.0; code/model are Apache-2.0 while dependencies, voice tensors and
+Misaki/espeak G2P/dictionaries remain separately UNKNOWN. The worker is static at hello/health/
+discover and only imports `kokoro` for a real synthesis. It snapshots the small model directory
+byte-for-byte, copies trusted local voice `.pt` files to stable private paths, requires local
+config/weights/voices/G2P resources, installs offline env plus the in-process network guard, and
+uses `KModel(config=…, model=…, disable_complex=True).to("cpu")` with
+`KPipeline(lang_code, model=model, device="cpu")`. Output is validated as 24 kHz mono PCM16 and
+multiple chunks are joined with a fixed short silence. Clone/voice-design/emotion are not exposed;
+the result is non-persisted and no Task/Artifact/delivery is created. See
+[KOKORO_PROVIDER.md](KOKORO_PROVIDER.md) and [ADR-020](DECISIONS.md).
