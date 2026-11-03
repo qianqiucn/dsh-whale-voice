@@ -40,16 +40,26 @@ reference the relay re-reads the persisted SAVED relation itself:
   time must be `READABLE` with the same `artifactRef`; the persisted record must carry
   `deliveryRequested: true`. The artifact hash/byte length/duration/format still come from the actual WAV
   bytes returned by the Artifact library, never from caller metadata.
-- **Cover owner store (v3):** `coverStatus()` must be `SAVED` with a MASTER whose `artifactRef` is the
-  requested one. The frozen Cover record keeps `deliveryRequested:false` forever and is **never edited**.
+- **Cover owner store (v3):** `coverStatus()` must be `SAVED` with a MASTER whose `artifactRef` (and
+  `sha256`) is the requested one. The frozen Cover record keeps `deliveryRequested:false` forever and is
+  **never edited**; a SAVED MASTER is a save, not a delivery permission.
+
+**Cover source permit (109).** The frozen Cover record cannot carry the user's delivery intent, so a Cover
+delivery additionally requires a *separate, versioned, persisted source permit* issued through
+`issueDeliveryPermit({permit})` with `{schemaVersion, scopeId, taskId, artifactRef, targetId, rights}`. The
+permit is bound to the same scope/task/MASTER (`artifactSha256`)/target/kind/rights proof, is idempotent per
+relation (`ISSUED`/`EXISTING`, immutable afterwards), and is stored as
+`{permitId:"permit:<32hex>", permitKey, version:1, ..., authorityKind:"COVER_OWNER_SAVED_V3", issuedBy,
+issuedAt}` with a bounded permit capacity. `ensureDelivery` for a Cover task **requires** `permitId`; without
+it (or with a fabricated/mismatched/expired one) the result is `RELAY_CORE_PERMIT_REQUIRED` and no delivery
+is created. The delivery's issuance records `authorizedBy:"PERSISTED_COVER_DELIVERY_PERMIT"` and the
+`permitId`; a Voice task keeps its persisted `deliveryRequested:true` intent
+(`PERSISTED_TASK_DELIVERY_INTENT`) and must not carry a permit (`permitId` is refused).
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a
 versioned issuance: `intentId: "intent:<32hex>"` plus
-`intent { version: 1, kind, taskIdentityHash, deliveryRequested, authorizedBy, issuedAt }`, where
-`authorizedBy` is `PERSISTED_TASK_DELIVERY_INTENT` for an AudioTask record that already carries the
-persisted delivery intent, and `RELAY_ISSUED_FOR_FROZEN_COVER` for the frozen Cover record (the persisted
-issuance is the versioned authorized handoff for that case).
+`intent { version: 1, kind, taskIdentityHash, deliveryRequested, authorizedBy, permitId, issuedAt }`.
 
 The store is `unified-relay-v1.json` under the trusted Fixture sandbox. It holds the delivery record, the
 `taskId → deliveryId → backendRequestId` mapping, canonical semantic digest (authority kind + task identity
@@ -70,6 +80,11 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
   replacement is restored with a create-or-fail link/copy (never overwritten) or left in quarantine and
   reported busy. A release moves its own lease aside, verifies it, and restores a moved foreign lease
   without overwriting a third live lease.
+- The lock alone is not the write authority: before every commit the writer re-reads the canonical lease
+  and requires its own token, re-reads the store and requires the revision it started from. A writer whose
+  lease was moved aside (the reported window in which a third process legally takes the empty canonical
+  name) or whose snapshot was overtaken fails closed with `STORE_BUSY` and writes nothing, so it can never
+  overwrite a newer successful cancel/terminal write with an old snapshot.
 - `ensureDelivery` persists the record before any backend call. `submit` claims the record with an owner
   token, persists `SUBMITTING` (the live token is registered only after that commit really happened, so a
   failed claim never leaves a phantom live owner), then re-reads the artifact/target.
@@ -77,6 +92,10 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
   asked to accept, the relay re-reads all three trusted facts again: the authority identity hash, the
   artifact bytes/hash/expiry, and the Core target. A task/artifact/target revoked, deleted or expired during
   the awaited preflight therefore produces zero backend submit.
+- The accept boundary then samples the trusted clock *again* after the last awaited artifact read and
+  requires `rightsExpiresAt`/`expiresAt` to still be in the future. A clock crossing that happens inside the
+  final read (the reported residual window) therefore also produces zero backend submit; a normal,
+  unexpired chain stays usable.
 - A successful Fake acceptance becomes `ACCEPTED` (not `SENT_LOCAL`); duplicate submit returns `EXISTING`.
 - A backend throw/unknown after submit becomes `UNKNOWN`; a later submit returns `UNKNOWN_NO_RESEND`.
   No automatic retry, backend switch, id switch or text fallback.
@@ -122,9 +141,16 @@ This is a read-only projection, not a second installation/health store. The exis
 legacy IDs remain valid; the Plan09 wizard already presents one "鲸递（统一投递）" delivery item and
 `voice-sender`/`whale-relay` remain internal aliases. WeChatAgent remains an independent identity dependency.
 
-## 5. Test evidence
+## 5. Store consistency and test evidence
 
-Three offline files cover the unit (28 tests):
+The store is accepted only when its persisted records, the digest/request-key indexes and the delivery
+permits are mutually consistent (every record indexed both ways, every index entry pointing at a matching
+record, unique ids/digests/permit keys, legal terminal/owner relations, `ACCEPTED` with receipt, `SUBMITTING`
+with owner). Any missing, extra, duplicated or mismatched entry is treated as a corrupt store:
+`openUnifiedRelay` fails with `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh
+store, and no second delivery can be created for an already accepted request.
+
+Four offline relay files cover the unit (32 tests):
 
 `test/relay-core-offline.test.mjs` (12): real SAVED task + actual Fixture library bytes, stable delivery
 id/alias/intent, safe legacy request id, conflict; a caller-supplied record is never an authority; one submit
@@ -133,23 +159,37 @@ no Fake submit; `UNKNOWN` terminal/no resend/fixed backend; requested vs confirm
 eviction; concurrent handles → one submit; same-process live owner not recovered; real child-process exit →
 `SUBMITTING` recovered as `UNKNOWN` and no replay; one unified component view.
 
-`test/relay-trust-offline.test.mjs` (8, 137-TRUST-01/02): a real persisted AudioTask SAVED record and a real
-persisted Cover SAVED MASTER each reach the Fake chain exactly once (with the frozen Cover record still
-`deliveryRequested:false`); refusals for no store / non-SAVED / missing persisted intent / source
-substitution / wrong scope; artifact deletion and exact-expiry during an awaited preflight → `FAILED` with
-`submitted = 0`; the Fake Worker's own directory matrix (empty, unauthorized, unverified identity, closed
-bridge/worker, wrong kind, wrong backend binding, mismatched caller id) all reject with `targetChecks > 0`;
-a full Core chain with a revoked Worker directory and a handed-over resolver still fails closed; a fully
-trusted directory entry still accepts.
+`test/relay-trust-offline.test.mjs` (9, 137-TRUST-01/02): a real persisted AudioTask SAVED record reaches the
+Fake chain exactly once; a real persisted Cover SAVED MASTER is refused without a source permit
+(`PERMIT_REQUIRED`, fabricated permit refused), then reaches the Fake chain exactly once after
+`issueDeliveryPermit` (the frozen Cover record still says `deliveryRequested:false`; wrong target reusing a
+permit is refused); refusals for no store / non-SAVED / missing persisted intent / source substitution /
+wrong scope; artifact deletion and exact-expiry during an awaited preflight → `FAILED` with `submitted = 0`;
+a clock crossing queued inside the *final* awaited artifact read is caught by the accept-boundary re-sample →
+`FAILED`/`submitted = 0`; the Fake Worker's own directory matrix (empty, unauthorized, unverified identity,
+closed bridge/worker, wrong kind, wrong backend binding, mismatched caller id) all reject with
+`targetChecks > 0`; a full Core chain with a revoked Worker directory and a handed-over resolver still fails
+closed; a fully trusted directory entry still accepts.
 
-`test/relay-persist-offline.test.mjs` (8, 137-PERSIST-01/02): an existing digest can never hijack another
+`test/relay-persist-offline.test.mjs` (10, 137-PERSIST-01/02): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
 open at the accept boundary does not recover the live submit (no `OWNER_LOST`); stale reclaim never deletes a
 live replacement lease; a moved foreign lease is restored; a release restore never overwrites a third live
 lease; a failed claim commit leaves no phantom live owner and is retryable; an unproven terminal commit keeps
-the owner live as conservative busy rather than silently becoming `UNKNOWN`.
+the owner live as conservative busy rather than silently becoming `UNKNOWN`; a commit whose canonical lease
+was moved aside fails closed with `STORE_BUSY` without writing; corrupt/inconsistent stores (missing digest
+index, missing key index, both, dangling entry, duplicate record, illegal terminal relation) are refused with
+`STORE_INVALID` without being rewritten and without a second acceptance.
 
-Local: **1099 tests / 1095 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars.
+`test/relay-lease-race.test.mjs` (1) replays the reported real three-process interleaving: a live writer A
+reads the store and pauses before its commit, a stale reclaim moves A's live lease aside, C legally acquires
+the empty canonical name and commits a normal cancel, then A tries to commit its old snapshot. A fails closed
+with `STORE_BUSY` and writes nothing; C's successful cancellation survives (`CANCEL_REQUESTED`), so no
+successful result is lost. `test/support/relay-lease-worker.mjs` is the process worker; the interleaving is
+arranged with real child processes and file markers, never by editing a relay record.
+
+Local: **1104 tests / 1100 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
+(build unchanged by the Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.
 

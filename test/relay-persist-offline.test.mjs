@@ -345,3 +345,96 @@ test('PERSIST-02 a terminal-state write failure stays BUSY for the live owner in
     assert.equal(busy.code, RELAY_ERRORS.STORE_BUSY)
   })
 })
+
+/* ------------------------------------------------------------------ PERSIST-01/STORE */
+
+test('PERSIST-01 a corrupt or inconsistent store is refused instead of re-minting an accepted delivery', async () => {
+  const variants = ['digest-index', 'key-index', 'both-indexes', 'dangling-digest', 'duplicate-record', 'terminal-state']
+  for (const variant of variants) {
+    await withSandbox(async (sandbox) => {
+      const voice = await createVoiceSavedTask(sandbox, {
+        idempotencyKey: 'key:fixture-store-' + variant, saveRequestKey: 'save:store-' + variant,
+        now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
+      })
+      const backend = createFakeDeliveryBackend({ targets: [TARGET] })
+      const args = { sandbox, backend, targets: [TARGET], now: () => NOW }
+      const relay = await openUnifiedRelay(args)
+      const handoff = relayHandoff({
+        scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+        targetId: TARGET.targetId, requestKey: 'store-request', proofRef: PROOF,
+      })
+      const first = await relay.ensureDelivery(handoff)
+      const accepted = await relay.submit(first.delivery.deliveryId)
+      assert.equal(accepted.delivery.state, RELAY_STATES.ACCEPTED)
+      assert.equal(backend.stats().accepted, 1)
+      const storeFile = path.join(sandbox.root, STORE)
+      const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+      if (variant === 'digest-index') store.byDigest = {}
+      if (variant === 'key-index') delete store.byRequestKey
+      if (variant === 'both-indexes') { store.byDigest = {}; delete store.byRequestKey }
+      if (variant === 'dangling-digest') store.byDigest['f'.repeat(64)] = first.delivery.deliveryId
+      if (variant === 'duplicate-record') store.deliveries.push({ ...store.deliveries[0], deliveryId: 'delivery:' + 'e'.repeat(32) })
+      if (variant === 'terminal-state') store.deliveries[0].receiptId = null
+      fs.writeFileSync(storeFile, JSON.stringify(store) + '\n')
+      const before = fs.readFileSync(storeFile)
+      const reopened = await openUnifiedRelay(args)
+      assert.equal(reopened.ok, false, variant + ' reopen must fail closed')
+      assert.equal(reopened.code, RELAY_ERRORS.STORE_INVALID, variant)
+      // The corrupt file is never repaired, re-minted or treated as a fresh store.
+      assert.equal(fs.readFileSync(storeFile).equals(before), true, variant + ' store file was rewritten')
+      assert.equal(typeof reopened.ensureDelivery, 'undefined', variant + ' corrupt store produced a usable handle')
+      assert.equal(backend.stats().accepted, 1, variant + ' accepted the same request twice')
+      const onDisk = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+      assert.equal(onDisk.deliveries.length, variant === 'duplicate-record' ? 2 : 1, variant)
+    })
+  }
+})
+
+test('PERSIST-02 a commit whose canonical lease was moved aside fails closed without writing', async () => {
+  await withSandbox(async (sandbox) => {
+    const voice = await createVoiceSavedTask(sandbox, {
+      now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
+    })
+    const relay = await openRelay(sandbox)
+    const ensured = await relay.ensureDelivery(relayHandoff({
+      scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+      targetId: TARGET.targetId, requestKey: 'lease-lost', proofRef: PROOF,
+    }))
+    assert.equal(ensured.ok, true, JSON.stringify(ensured))
+    const lockFile = path.join(sandbox.root, LOCK)
+    const storeFile = path.join(sandbox.root, STORE)
+    let armed = false
+    let storeReads = 0
+    let swapped = 0
+    const originalRead = fs.readFileSync
+    fs.readFileSync = function patchedRead(file, ...args) {
+      const bytes = originalRead.call(fs, file, ...args)
+      if (armed && typeof file === 'string' && file === storeFile) {
+        storeReads += 1
+        // The second store read of this run is the commit fence: replace the canonical lease after
+        // its bytes were read, exactly like a reclaim that moved the live lease aside.
+        if (storeReads === 2 && swapped === 0) {
+          swapped += 1
+          fs.writeFileSync(lockFile, JSON.stringify({ token: 'foreign-live-token', pid: process.pid, host: 'other', createdAt: new Date().toISOString() }) + '\n')
+        }
+      }
+      return bytes
+    }
+    let result
+    try {
+      armed = true
+      result = await relay.cancel(ensured.delivery.deliveryId)
+    } finally {
+      fs.readFileSync = originalRead
+    }
+    assert.equal(swapped, 1, 'the commit-fence read was not exercised')
+    assert.equal(result.ok, false, JSON.stringify(result))
+    assert.equal(result.code, RELAY_ERRORS.STORE_BUSY)
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    assert.equal(store.deliveries[0].state, RELAY_STATES.QUEUED)
+    assert.equal(store.deliveries[0].cancel.requested, false)
+    // The foreign lease was never deleted by our release path.
+    const lease = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
+    assert.equal(lease.token, 'foreign-live-token')
+  })
+})

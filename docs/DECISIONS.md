@@ -700,3 +700,39 @@ record; a second task/id authority; treating an upstream resolver/three booleans
 opaque "session" token that is not persisted; relaxing to Best-Effort busy/unknown instead of failing closed.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-026 — A Cover delivery needs a separate persisted source permit; store and lease authority fail closed
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, ADR-025, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** A persisted SAVED Cover MASTER is a save, not a delivery permission. The frozen v3 Cover record
+keeps `deliveryRequested:false` forever and is never edited, so a Cover delivery requires a **separate,
+versioned, persisted source permit** created through `issueDeliveryPermit({permit})` with
+`{schemaVersion, scopeId, taskId, artifactRef, targetId, rights}`: the permit is checked against the persisted
+Cover authority (SAVED + MASTER ref/hash), the real artifact bytes and the trusted target directory, is bound
+to the same scope/task/MASTER/target/kind/rights proof, is idempotent per relation and immutable afterwards.
+`ensureDelivery` for a Cover task requires the `permitId` and asserts the permit key, `taskIdentityHash` and
+expiry; a missing/fabricated/mismatched/expired permit is `RELAY_CORE_PERMIT_REQUIRED` with no delivery. A
+Voice task keeps its persisted `deliveryRequested:true` intent and is refused a permit. The delivery issuance
+records `authorizedBy: PERSISTED_COVER_DELIVERY_PERMIT` plus the `permitId`.
+
+Two persistence fences are mandatory: (1) the store is accepted only when records, digest/request-key indexes
+and permits are mutually consistent, so a corrupt/partial index is `STORE_INVALID` and is never repaired,
+re-minted or treated as a fresh store; (2) a writer may commit only after re-reading the canonical lease (its
+own token) and the store revision it started from, so a writer whose live lease was moved aside — the window
+in which a third process legitimally takes the empty canonical lock name — fails closed with `STORE_BUSY`
+instead of overwriting a newer successful state with an old snapshot.
+
+**Reason:** the 0139 review proved that the relay minted its own `RELAY_ISSUED_FOR_FROZEN_COVER` authorization
+from a SAVED Cover record (no source authorization), that a clock crossing inside the final awaited artifact
+read still reached the Fake accept, that a moved live lease let a stale writer overwrite a newer cancel, and
+that a corrupt index could re-mint an already accepted delivery. Each is a permission, duplicate-acceptance or
+data-loss risk; each is now closed by an explicit persisted source authority or a fail-closed fence.
+
+**Rejected alternatives:** treating a SAVED MASTER or `deliveryRequested` as a delivery permission; a
+self-signed in-`ensureDelivery` cover flag; editing the frozen Cover record; repairing/分空 indexes or
+replaying a corrupt store; locking only by file presence without a commit-time lease/revision check; treating
+a stolen-lease write as success.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

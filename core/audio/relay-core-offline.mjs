@@ -55,6 +55,7 @@ export const RELAY_ERRORS = Object.freeze({
   TARGET_REJECTED: 'RELAY_CORE_TARGET_REJECTED',
   ARTIFACT_UNAVAILABLE: 'RELAY_CORE_ARTIFACT_UNAVAILABLE',
   TASK_NOT_SAVED: 'RELAY_CORE_TASK_NOT_SAVED',
+  PERMIT_REQUIRED: 'RELAY_CORE_PERMIT_REQUIRED',
   UNSUPPORTED_CAPABILITY: 'RELAY_CORE_UNSUPPORTED_CAPABILITY',
   UNKNOWN_NO_RESEND: 'RELAY_CORE_UNKNOWN_NO_RESEND',
   CANCELLED: 'RELAY_CORE_CANCELLED',
@@ -65,6 +66,7 @@ export const RELAY_ERRORS = Object.freeze({
 
 const DELIVERY_ID = /^delivery:[0-9a-f]{32}$/
 const INTENT_ID = /^intent:[0-9a-f]{32}$/
+const PERMIT_ID = /^permit:[0-9a-f]{32}$/
 const BACKEND_REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/
 const TASK_ID = /^task:[A-Za-z0-9_-]{1,80}$/
 const SCOPE_ID = /^[A-Za-z0-9:_-]{1,64}$/
@@ -75,8 +77,11 @@ const REQUEST_KEY = /^[A-Za-z0-9:_-]{1,128}$/
 const LIVE_SUBMITS = new Map()
 const QUEUES = new Map()
 const MAX_ATTEMPTS = 40
-const HANDOFF_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'requestKey', 'rights'])
+const HANDOFF_REQUIRED_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'requestKey', 'rights'])
+const HANDOFF_KEYS = Object.freeze([...HANDOFF_REQUIRED_KEYS, 'permitId'])
+const PERMIT_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'rights'])
 const RIGHTS_KEYS = Object.freeze(['state', 'proofRef'])
+const RELAY_STATE_VALUES = Object.freeze(new Set(Object.values(RELAY_STATES)))
 
 function fail(code, detail = null) {
   return detail ? { ok: false, code, detail } : { ok: false, code }
@@ -126,6 +131,7 @@ function publicRecord(record) {
     targetKind: record.targetKind,
     backendId: record.backendId,
     intentId: record.intentId || null,
+    permitId: record.permitId || null,
     authority: record.intent ? record.intent.kind : null,
     deliveryRequested: record.intent ? record.intent.deliveryRequested : null,
     state: record.state,
@@ -165,7 +171,150 @@ function validateRights(rights) {
 }
 
 function emptyStore() {
-  return { schemaVersion: RELAY_CORE_SCHEMA_VERSION, revision: 0, deliveries: [], byDigest: {}, byRequestKey: {} }
+  return {
+    schemaVersion: RELAY_CORE_SCHEMA_VERSION,
+    revision: 0,
+    deliveries: [],
+    byDigest: {},
+    byRequestKey: {},
+    permits: [],
+    byPermitKey: {},
+  }
+}
+
+function publicPermit(permit) {
+  if (!permit) return null
+  return {
+    permitId: permit.permitId,
+    version: permit.version,
+    scopeId: permit.scopeId,
+    taskId: permit.taskId,
+    artifactRef: permit.artifactRef,
+    artifactSha256: permit.artifactSha256,
+    targetId: permit.targetId,
+    targetKind: permit.targetKind,
+    rightsProofRef: permit.rightsProofRef,
+    rightsExpiresAt: permit.rightsExpiresAt,
+    authorityKind: permit.authorityKind,
+    issuedBy: permit.issuedBy,
+    issuedAt: permit.issuedAt,
+    mockOnly: true,
+    realOperationAllowed: false,
+  }
+}
+
+function permitKeyOf({ scopeId, taskId, artifactRef, artifactSha256, targetId, targetKind, proofRef }) {
+  return sha256(['permit-v1', scopeId, taskId, artifactRef, artifactSha256, targetId, targetKind, proofRef].join('|'))
+}
+
+function isIsoText(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
+/**
+ * Strict store gate. A store is accepted only when the persisted deliveries, the digest/request-key
+ * indexes and the delivery permits are mutually consistent: every record is indexed both ways, every
+ * index entry points at a record with the same key, there are no duplicates, and the terminal/owner
+ * relations are legal. Any missing/extra/mismatched entry is treated as a corrupt store; it is never
+ * silently repaired, re-minted or treated as a new empty store.
+ */
+function validateStoreState(store) {
+  if (!isObject(store) || store.schemaVersion !== RELAY_CORE_SCHEMA_VERSION) return false
+  if (!Number.isInteger(store.revision) || store.revision < 0) return false
+  if (!Array.isArray(store.deliveries) || !isObject(store.byDigest) || !isObject(store.byRequestKey)) return false
+  if (!Array.isArray(store.permits) || !isObject(store.byPermitKey)) return false
+  const deliveries = new Map()
+  for (const record of store.deliveries) {
+    if (!isObject(record)) return false
+    if (typeof record.deliveryId !== 'string' || !DELIVERY_ID.test(record.deliveryId)) return false
+    if (deliveries.has(record.deliveryId)) return false
+    if (typeof record.digest !== 'string' || !SHA256.test(record.digest)) return false
+    if (typeof record.requestKey !== 'string' || !REQUEST_KEY.test(record.requestKey)) return false
+    if (!Array.isArray(record.requestKeys) || record.requestKeys.length < 1) return false
+    if (record.requestKeys[0] !== record.requestKey) return false
+    for (const key of record.requestKeys) {
+      if (typeof key !== 'string' || !REQUEST_KEY.test(key)) return false
+    }
+    if (new Set(record.requestKeys).size !== record.requestKeys.length) return false
+    if (typeof record.taskId !== 'string' || !TASK_ID.test(record.taskId)) return false
+    if (typeof record.scopeId !== 'string' || !SCOPE_ID.test(record.scopeId)) return false
+    if (typeof record.artifactRef !== 'string' || !ARTIFACT_REF.test(record.artifactRef)) return false
+    if (typeof record.artifactSha256 !== 'string' || !SHA256.test(record.artifactSha256)) return false
+    if (!Number.isInteger(record.byteLength) || record.byteLength < 1) return false
+    if (!Number.isInteger(record.durationMs) || record.durationMs < 1) return false
+    if (record.format !== 'WAV') return false
+    if (typeof record.targetId !== 'string' || !TARGET_ID.test(record.targetId)) return false
+    if (record.targetKind !== 'PRIVATE' && record.targetKind !== 'GROUP') return false
+    if (typeof record.rightsProofRef !== 'string' || typeof record.rightsExpiresAt !== 'string') return false
+    if (!isIsoText(record.rightsExpiresAt)) return false
+    if (typeof record.backendId !== 'string' || typeof record.backendRequestId !== 'string') return false
+    if (!BACKEND_REQUEST_ID.test(record.backendRequestId)) return false
+    if (!isObject(record.intent) || record.intent.version !== 1) return false
+    if (typeof record.intent.kind !== 'string') return false
+    if (typeof record.intent.taskIdentityHash !== 'string' || !SHA256.test(record.intent.taskIdentityHash)) return false
+    if (typeof record.intent.authorizedBy !== 'string') return false
+    if (record.permitId !== null && record.permitId !== undefined) {
+      if (typeof record.permitId !== 'string' || !PERMIT_ID.test(record.permitId)) return false
+      if (record.intent.permitId !== record.permitId) return false
+    } else if (record.intent.permitId !== null && record.intent.permitId !== undefined) return false
+    if (typeof record.state !== 'string' || !RELAY_STATE_VALUES.has(record.state)) return false
+    if (typeof record.backendState !== 'string' && record.backendState !== null) return false
+    if (typeof record.receiptId !== 'string' && record.receiptId !== null) return false
+    if (!isObject(record.cancel) || typeof record.cancel.requested !== 'boolean' || typeof record.cancel.confirmed !== 'boolean') return false
+    if (record.state === RELAY_STATES.SUBMITTING) {
+      if (!isObject(record.owner) || typeof record.owner.token !== 'string') return false
+    } else if (record.owner !== null && record.owner !== undefined) {
+      return false
+    }
+    if (record.state === RELAY_STATES.ACCEPTED) {
+      if (typeof record.receiptId !== 'string') return false
+      if (typeof record.backendState !== 'string') return false
+    }
+    deliveries.set(record.deliveryId, record)
+  }
+  for (const [digest, deliveryId] of Object.entries(store.byDigest)) {
+    const record = deliveries.get(deliveryId)
+    if (!record || record.digest !== digest) return false
+  }
+  for (const [requestKey, deliveryId] of Object.entries(store.byRequestKey)) {
+    const record = deliveries.get(deliveryId)
+    if (!record || !record.requestKeys.includes(requestKey)) return false
+  }
+  for (const record of deliveries.values()) {
+    if (store.byDigest[record.digest] !== record.deliveryId) return false
+    for (const key of record.requestKeys) {
+      if (store.byRequestKey[key] !== record.deliveryId) return false
+    }
+  }
+  const permitIds = new Set()
+  const permitKeys = new Set()
+  for (const permit of store.permits) {
+    if (!isObject(permit)) return false
+    if (typeof permit.permitId !== 'string' || !PERMIT_ID.test(permit.permitId)) return false
+    if (permitIds.has(permit.permitId)) return false
+    permitIds.add(permit.permitId)
+    if (typeof permit.permitKey !== 'string' || !SHA256.test(permit.permitKey)) return false
+    if (permitKeys.has(permit.permitKey)) return false
+    permitKeys.add(permit.permitKey)
+    if (permit.version !== 1) return false
+    if (typeof permit.scopeId !== 'string' || !SCOPE_ID.test(permit.scopeId)) return false
+    if (typeof permit.taskId !== 'string' || !TASK_ID.test(permit.taskId)) return false
+    if (typeof permit.artifactRef !== 'string' || !ARTIFACT_REF.test(permit.artifactRef)) return false
+    if (typeof permit.artifactSha256 !== 'string' || !SHA256.test(permit.artifactSha256)) return false
+    if (typeof permit.targetId !== 'string' || !TARGET_ID.test(permit.targetId)) return false
+    if (permit.targetKind !== 'PRIVATE' && permit.targetKind !== 'GROUP') return false
+    if (typeof permit.rightsProofRef !== 'string' || typeof permit.rightsExpiresAt !== 'string') return false
+    if (!isIsoText(permit.rightsExpiresAt)) return false
+    if (permit.authorityKind !== 'COVER_OWNER_SAVED_V3') return false
+    if (typeof permit.taskIdentityHash !== 'string' || !SHA256.test(permit.taskIdentityHash)) return false
+    if (typeof permit.issuedAt !== 'string' || !isIsoText(permit.issuedAt)) return false
+    if (store.byPermitKey[permit.permitKey] !== permit.permitId) return false
+  }
+  for (const [key, permitId] of Object.entries(store.byPermitKey)) {
+    const permit = store.permits.find((item) => item.permitId === permitId)
+    if (!permit || permit.permitKey !== key) return false
+  }
+  return true
 }
 
 function readStore(file) {
@@ -178,8 +327,7 @@ function readStore(file) {
   }
   let parsed
   try { parsed = JSON.parse(text) } catch { throw new Error('corrupt') }
-  if (!isObject(parsed) || parsed.schemaVersion !== RELAY_CORE_SCHEMA_VERSION || !Array.isArray(parsed.deliveries) || !isObject(parsed.byDigest)) throw new Error('corrupt')
-  if (!isObject(parsed.byRequestKey)) parsed.byRequestKey = {}
+  if (!validateStoreState(parsed)) throw new Error('corrupt')
   return parsed
 }
 
@@ -423,8 +571,10 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
         ok: true,
         value: {
           kind: 'TASK_OWNER_SAVED_V2',
+          permitRequired: false,
           deliveryRequested: true,
           ownerState: 'SAVED',
+          masterSha256: null,
           expiresAt: status.value.expiresAt,
           taskIdentityHash: sha256([
             'TASK_OWNER_SAVED_V2', scopeId, taskId, artifactRef, status.value.expiresAt,
@@ -434,8 +584,9 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
       }
     }
   }
-  // Cover owner store (schema v3). Its SAVED record keeps `deliveryRequested:false` forever; the
-  // relay issuance persisted by ensureDelivery is the versioned authorized handoff for this case.
+  // Cover owner store (schema v3). Its SAVED record keeps `deliveryRequested:false` forever, so the
+  // save itself is not a delivery permission: a versioned persisted delivery permit issued through
+  // `issueDeliveryPermit` (same scope/task/MASTER/target/rights) is required before ensure accepts.
   let status = null
   try { status = await coverStatus({ sandbox, scopeId, taskId, now: at }) } catch { status = null }
   if (!status || status.ok !== true || !status.value) return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'task authority')
@@ -445,8 +596,10 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
     ok: true,
     value: {
       kind: 'COVER_OWNER_SAVED_V3',
+      permitRequired: true,
       deliveryRequested: false,
       ownerState: 'SAVED',
+      masterSha256: status.value.master.sha256,
       expiresAt: status.value.master.expiresAt,
       taskIdentityHash: sha256([
         'COVER_OWNER_SAVED_V3', scopeId, taskId, artifactRef,
@@ -456,9 +609,11 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
   }
 }
 
-export async function openUnifiedRelay({ sandbox, backend, targets = [], now = () => new Date().toISOString(), maxDeliveries = 256 } = {}) {
+export async function openUnifiedRelay({ sandbox, backend, targets = [], now = () => new Date().toISOString(), maxDeliveries = 256, maxPermits = 256 } = {}) {
   const root = sandbox && typeof sandbox.root === 'string' ? sandbox.root : null
-  if (!root || !isObject(backend) || typeof backend.id !== 'string' || !Number.isInteger(maxDeliveries) || maxDeliveries < 1 || maxDeliveries > 4096) {
+  if (!root || !isObject(backend) || typeof backend.id !== 'string' ||
+      !Number.isInteger(maxDeliveries) || maxDeliveries < 1 || maxDeliveries > 4096 ||
+      !Number.isInteger(maxPermits) || maxPermits < 1 || maxPermits > 4096) {
     return fail(RELAY_ERRORS.INPUT_INVALID)
   }
   const targetDirectory = new Map()
@@ -516,10 +671,19 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       try {
         let store
         try { store = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
+        const baseRevision = store.revision
         const outcome = await fn(store)
         if (outcome && outcome.persist === true) {
           if (!Number.isInteger(store.revision)) store.revision = 0
-          store.revision += 1
+          // Commit fence: the canonical lease must still be this run's lease and no other writer may
+          // have committed since this run read the store. A writer whose lease was moved aside (or
+          // whose snapshot was overtaken) fails closed instead of overwriting a newer state.
+          let current = null
+          try { current = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
+          const lease = readLease(lockPath(root))
+          if (!lease || lease.token !== owner.token) return fail(RELAY_ERRORS.STORE_BUSY, 'lease lost before commit')
+          if (current.revision !== baseRevision) return fail(RELAY_ERRORS.STORE_BUSY, 'store advanced before commit')
+          store.revision = baseRevision + 1
           atomicWrite(storeFile, store)
           // A live owner token is registered only once its claim commit really happened, so a failed
           // claim can never leave a phantom live token behind.
@@ -556,8 +720,12 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     const bytes = Buffer.from(read.value.bytes)
     let parsed
     try { parsed = samplesFromWav(bytes) } catch { return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'WAV') }
+    // The read itself is asynchronous: the clock is sampled again after it so a crossing during the
+    // last read cannot be hidden by the timestamp taken before the await.
+    const checkedAt = nowIso(now)
+    if (checkedAt === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
     const expiresAt = read.value.artifact.expiresAt
-    if (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(at)) {
+    if (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(checkedAt)) {
       return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'expired')
     }
     const artifactSha256 = crypto.createHash('sha256').update(bytes).digest('hex')
@@ -569,6 +737,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         durationMs: Math.max(1, Math.round((parsed.frameCount / parsed.sampleRate) * 1000)),
         expiresAt,
         at,
+        checkedAt,
       },
     }
   }
@@ -584,6 +753,75 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     backendId: backend.id,
     recovered: opened.recovered,
     ready: Promise.resolve({ ok: true, recovered: opened.recovered }),
+    async issueDeliveryPermit({ permit } = {}) {
+      if (!isObject(permit)) return fail(RELAY_ERRORS.INPUT_INVALID, 'permit')
+      const permitKeys = ownKeysOf(permit)
+      if (!permitKeys) return fail(RELAY_ERRORS.INPUT_INVALID, 'permit')
+      for (const key of permitKeys) {
+        if (typeof key !== 'string' || !PERMIT_KEYS.includes(key)) return fail(RELAY_ERRORS.INPUT_INVALID, 'permit')
+      }
+      for (const key of PERMIT_KEYS) if (!Object.prototype.hasOwnProperty.call(permit, key)) return fail(RELAY_ERRORS.INPUT_INVALID, key)
+      if (permit.schemaVersion !== 1) return fail(RELAY_ERRORS.INPUT_INVALID, 'schemaVersion')
+      if (typeof permit.scopeId !== 'string' || !SCOPE_ID.test(permit.scopeId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'scopeId')
+      if (typeof permit.taskId !== 'string' || !TASK_ID.test(permit.taskId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'taskId')
+      if (typeof permit.artifactRef !== 'string' || !ARTIFACT_REF.test(permit.artifactRef)) return fail(RELAY_ERRORS.INPUT_INVALID, 'artifactRef')
+      const rights = validateRights(permit.rights)
+      if (!rights) return fail(RELAY_ERRORS.INPUT_INVALID, 'rights')
+      const target = trustedTarget(permit.targetId)
+      if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
+      const at = nowIso(now)
+      if (at === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
+      const authority = await readTrustedTaskAuthority({
+        sandbox, scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef, rights, at,
+      })
+      if (!authority || authority.ok !== true) return authority
+      // Only the frozen Cover save needs a separate source permit; the Voice path keeps its persisted
+      // deliveryRequested:true intent and is deliberately not routed through this API.
+      if (authority.value.kind !== 'COVER_OWNER_SAVED_V3' || authority.value.permitRequired !== true) {
+        return fail(RELAY_ERRORS.INPUT_INVALID, 'authority')
+      }
+      const fresh = await readFreshArtifact({ scopeId: permit.scopeId, artifactRef: permit.artifactRef, proofRef: rights.proofRef })
+      if (!fresh.ok) return fresh
+      if (authority.value.masterSha256 && fresh.value.artifactSha256 !== authority.value.masterSha256) {
+        return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'MASTER changed')
+      }
+      const permitKey = permitKeyOf({
+        scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef,
+        artifactSha256: fresh.value.artifactSha256, targetId: target.targetId, targetKind: target.kind,
+        proofRef: rights.proofRef,
+      })
+      return run((store) => {
+        const existingId = store.byPermitKey[permitKey]
+        if (existingId) {
+          const existing = store.permits.find((item) => item.permitId === existingId)
+          if (!existing) return { value: fail(RELAY_ERRORS.STORE_INVALID) }
+          return { value: { ok: true, outcome: 'EXISTING', permit: publicPermit(existing) } }
+        }
+        if (store.permits.length >= maxPermits) return { value: fail(RELAY_ERRORS.CAPACITY, 'permits') }
+        const permitId = 'permit:' + crypto.randomBytes(16).toString('hex')
+        if (!PERMIT_ID.test(permitId)) return { value: fail(RELAY_ERRORS.INPUT_INVALID) }
+        const record = {
+          permitId,
+          permitKey,
+          version: 1,
+          scopeId: permit.scopeId,
+          taskId: permit.taskId,
+          artifactRef: permit.artifactRef,
+          artifactSha256: fresh.value.artifactSha256,
+          targetId: target.targetId,
+          targetKind: target.kind,
+          rightsProofRef: rights.proofRef,
+          rightsExpiresAt: fresh.value.expiresAt,
+          taskIdentityHash: authority.value.taskIdentityHash,
+          authorityKind: authority.value.kind,
+          issuedBy: 'WHALE_RELAY_DELIVERY_PERMIT_V1',
+          issuedAt: at,
+        }
+        store.permits.push(record)
+        store.byPermitKey[permitKey] = permitId
+        return { persist: true, value: { ok: true, outcome: 'ISSUED', permit: publicPermit(record) } }
+      })
+    },
     async ensureDelivery({ handoff } = {}) {
       if (!isObject(handoff)) return fail(RELAY_ERRORS.INPUT_INVALID, 'handoff')
       const handoffKeys = ownKeysOf(handoff)
@@ -592,7 +830,10 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         // A caller-supplied task record is not an authority; only the persisted store is.
         if (typeof key !== 'string' || !HANDOFF_KEYS.includes(key)) return fail(RELAY_ERRORS.INPUT_INVALID, key === 'taskRecord' ? 'taskRecord' : 'handoff')
       }
-      for (const key of HANDOFF_KEYS) if (!Object.prototype.hasOwnProperty.call(handoff, key)) return fail(RELAY_ERRORS.INPUT_INVALID, key)
+      for (const key of HANDOFF_REQUIRED_KEYS) if (!Object.prototype.hasOwnProperty.call(handoff, key)) return fail(RELAY_ERRORS.INPUT_INVALID, key)
+      if (Object.prototype.hasOwnProperty.call(handoff, 'permitId')) {
+        if (typeof handoff.permitId !== 'string' || !PERMIT_ID.test(handoff.permitId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'permitId')
+      }
       if (handoff.schemaVersion !== 1) return fail(RELAY_ERRORS.INPUT_INVALID, 'schemaVersion')
       if (typeof handoff.scopeId !== 'string' || !SCOPE_ID.test(handoff.scopeId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'scopeId')
       if (typeof handoff.taskId !== 'string' || !TASK_ID.test(handoff.taskId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'taskId')
@@ -610,6 +851,13 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         rights, at,
       })
       if (!authority || authority.ok !== true) return authority
+      const permitRequired = authority.value.permitRequired === true
+      if (!permitRequired && Object.prototype.hasOwnProperty.call(handoff, 'permitId')) {
+        return fail(RELAY_ERRORS.INPUT_INVALID, 'permitId')
+      }
+      if (permitRequired && !Object.prototype.hasOwnProperty.call(handoff, 'permitId')) {
+        return fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit missing')
+      }
       const fresh = await readFreshArtifact({ scopeId: handoff.scopeId, artifactRef: handoff.artifactRef, proofRef: rights.proofRef })
       if (!fresh.ok) return fresh
       const artifact = {
@@ -623,16 +871,36 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (!Number.isInteger(artifact.byteLength) || artifact.byteLength < 1 || artifact.byteLength > 8 * 1024 * 1024) {
         return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
       }
+      if (authority.value.masterSha256 && artifact.sha256 !== authority.value.masterSha256) {
+        return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact is not the SAVED MASTER')
+      }
       if (!Number.isInteger(artifact.durationMs) || artifact.durationMs < 1 || artifact.durationMs > 15 * 60 * 1000) {
         return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
       }
       const expiresAt = fresh.value.expiresAt
+      const permitKey = permitRequired
+        ? permitKeyOf({
+            scopeId: handoff.scopeId, taskId: handoff.taskId, artifactRef: artifact.artifactRef,
+            artifactSha256: artifact.sha256, targetId: target.targetId, targetKind: target.kind, proofRef: rights.proofRef,
+          })
+        : null
       const digest = sha256([
         'relay-v2', authority.value.kind, authority.value.taskIdentityHash,
         handoff.taskId, artifact.artifactRef, artifact.sha256, target.targetId, target.kind,
-        rights.proofRef, expiresAt,
+        rights.proofRef, expiresAt, permitRequired ? handoff.permitId : '',
       ].join('|'))
       return run((store) => {
+        if (permitRequired) {
+          const permitRecord = store.permits.find((item) => item.permitId === handoff.permitId)
+          if (!permitRecord) return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit missing') }
+          if (permitRecord.permitKey !== permitKey) return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit mismatch') }
+          if (permitRecord.taskIdentityHash !== authority.value.taskIdentityHash) {
+            return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit authority changed') }
+          }
+          if (!(Date.parse(permitRecord.rightsExpiresAt) > Date.parse(at))) {
+            return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit expired') }
+          }
+        }
         const existing = store.byDigest[digest]
         const bound = store.byRequestKey[handoff.requestKey]
         if (bound) {
@@ -649,7 +917,9 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
           const record = store.deliveries.find((item) => item.deliveryId === existing)
           if (!record) return { value: fail(RELAY_ERRORS.STORE_INVALID) }
           // A new alias for an already-issued semantic digest is allowed only while the key is
-          // unbound; the binding is then immutable from here on.
+          // unbound; the binding is then immutable from here on. The alias is recorded on the
+          // delivery itself so the strict store gate can prove every index entry.
+          record.requestKeys.push(handoff.requestKey)
           store.byRequestKey[handoff.requestKey] = existing
           return { persist: true, value: { ok: true, outcome: 'EXISTING', delivery: publicRecord(record) } }
         }
@@ -667,15 +937,16 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
           rightsProofRef: rights.proofRef, rightsExpiresAt: expiresAt,
           targetId: target.targetId, targetKind: target.kind,
           backendId: backend.id, backendRequestId, digest, requestKey: handoff.requestKey,
+          requestKeys: [handoff.requestKey],
           intentId,
+          permitId: permitRequired ? handoff.permitId : null,
           intent: {
             version: 1,
             kind: authority.value.kind,
             taskIdentityHash: authority.value.taskIdentityHash,
             deliveryRequested: authority.value.deliveryRequested,
-            authorizedBy: authority.value.kind === 'COVER_OWNER_SAVED_V3'
-              ? 'RELAY_ISSUED_FOR_FROZEN_COVER'
-              : 'PERSISTED_TASK_DELIVERY_INTENT',
+            authorizedBy: permitRequired ? 'PERSISTED_COVER_DELIVERY_PERMIT' : 'PERSISTED_TASK_DELIVERY_INTENT',
+            permitId: permitRequired ? handoff.permitId : null,
             issuedAt: at,
           },
           state: RELAY_STATES.QUEUED, backendState: null, receiptId: null, error: null,
@@ -756,6 +1027,21 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         const targetNow = trustedTarget(record.targetId)
         if (!targetNow || targetNow.kind !== record.targetKind) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.TARGET_REJECTED, detail: 'core target revoked during preflight' })
+        }
+        // The accept-time clock is sampled after every await (including the last artifact read), so a
+        // crossing that happened during that final read cannot be hidden by an earlier timestamp.
+        const acceptAt = nowIso(now)
+        if (acceptAt === null) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.INPUT_INVALID, detail: 'accept clock unavailable' })
+        }
+        if (!(Date.parse(record.rightsExpiresAt) > Date.parse(acceptAt))) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'rights/artifact expired at accept' })
+        }
+        if (!(Date.parse(artifactNow.value.expiresAt) > Date.parse(acceptAt))) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact expired at accept' })
+        }
+        if (record.permitId && (!record.intent || record.intent.permitId !== record.permitId)) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.PERMIT_REQUIRED, detail: 'permit binding lost' })
         }
         const submitted = await backend.submit({
           delivery: publicRecord(record),

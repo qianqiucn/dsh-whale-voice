@@ -654,3 +654,45 @@ concurrent-open-at-accept-boundary, stale-reclaim and release-restore interleavi
 reduced motion, narrow simulated host panel, missing host token); `client.js` 314,687 chars. Status remains
 `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged, 13-B/C, real WeChat/Sender,
 Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 109 revision — Cover source permit, accept-boundary expiry, lease/revision fence and store gate (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes exactly the four items confirmed by the 0139
+review (`4ef791b`); the accepted 108 work (dependency-wizard UI, Fake Worker gate, Voice persisted relation,
+normal requestKey/finalize behavior) is not redone.
+
+1. **Cover source permit (137-TRUST-01).** A SAVED Cover MASTER is no longer a delivery permission. The relay
+   exposes `issueDeliveryPermit({permit})` (`{schemaVersion, scopeId, taskId, artifactRef, targetId, rights}`):
+   it re-reads the persisted Cover authority, requires the same MASTER ref/hash and the real artifact bytes,
+   resolves the target from the trusted directory, and persists an immutable, versioned, idempotent permit
+   (`permitId:"permit:<32hex>"`, `permitKey`, `authorityKind:COVER_OWNER_SAVED_V3`, bounded capacity) bound to
+   scope/task/MASTER/target/kind/rights. `ensureDelivery` for a Cover task requires `permitId` and checks key,
+   `taskIdentityHash` and expiry; missing/fabricated/mismatched/expired → `RELAY_CORE_PERMIT_REQUIRED` with no
+   delivery. The frozen v3 record is never edited; the delivery issuance records
+   `authorizedBy:PERSISTED_COVER_DELIVERY_PERMIT` + `permitId`. The Voice path keeps its persisted
+   `deliveryRequested:true` intent and refuses a permit (`permitId` refused for Voice). ADR-026.
+2. **Last awaited read (137-TRUST-01).** `readFreshArtifact` now samples the trusted clock again after its
+   asynchronous read, and `submit` samples the accept-time clock once more after every await (authority,
+   artifact, target) immediately before the Fake accept, requiring `rightsExpiresAt`/`expiresAt` to still be
+   in the future. A crossing that happens inside the final read is refused with zero backend submit; an
+   unexpired chain still accepts.
+3. **Lease/transaction authority (137-PERSIST-02).** The relay store commit re-reads the canonical lease and
+   requires its own token, then re-reads the store and requires the revision this run started from. A writer
+   whose live lease was moved aside (the empty-canonical window in which a third process legally takes the
+   lock) or whose snapshot was overtaken fails closed with `STORE_BUSY` and writes nothing. Replayed as a real
+   three-process test: A pauses before commit after reading the store, a stale reclaim moves A's live lease
+   aside, C legally acquires the lock and commits a normal cancel, A then tries to commit its old snapshot — A
+   fails closed and C's `CANCEL_REQUESTED` survives, so no successful result is lost.
+4. **Store consistency (137-PERSIST-01).** The store is accepted only when persisted deliveries, the
+   digest/request-key indexes (including request-key aliases recorded on the delivery) and the permits are
+   mutually consistent: unique ids/digests/permit keys, every record indexed both ways, every index entry
+   pointing at a matching record, legal terminal/owner relations, `ACCEPTED` with receipt, `SUBMITTING` with
+   owner. Any missing/extra/duplicated/mismatched entry → `STORE_INVALID` on open; the file is not repaired,
+   re-minted or treated as a fresh store, so an already accepted request cannot be re-accepted.
+
+Evidence: 4 relay test files / 32 tests (12 core + 9 TRUST + 10 PERSIST + 1 real three-process lease race),
+including the exact 0139 counterexamples replayed against the fix; full suite **1104 / 1100 pass / 4 platform
+skips / 0 fail**; UI **72/72** (unchanged product UI; the narrow-host fixture now also clears the harness
+`min-height` bookkeeping item `RELAY-DEFER-UI-FIXTURE-139`); `client.js` 314,687 chars (build unchanged by the
+Core-only revision). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and
+unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.

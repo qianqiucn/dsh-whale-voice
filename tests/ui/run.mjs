@@ -1018,7 +1018,9 @@ await check('dependency wizard fits a narrow simulated host panel and keeps ever
   await withPage(normal, async (page) => {
     await page.setViewportSize({ width: 780, height: 620 })
     // A simulated (non-real) host panel: offset, overflow clip, transform and filter ancestors.
-    await page.addStyleTag({ content: '#wv-harness-root{position:absolute;left:280px;top:40px;width:500px;height:560px;overflow:hidden;transform:translateZ(0);filter:brightness(1);}' })
+    // `min-height:0` also clears the harness' own `min-height:100vh` so the fixture's bottom edge is a
+    // real panel edge (RELAY-DEFER-UI-FIXTURE-139) instead of a viewport-height screenshot clip.
+    await page.addStyleTag({ content: '#wv-harness-root{position:absolute;left:280px;top:40px;width:500px;height:560px;min-height:0;overflow:hidden;transform:translateZ(0);filter:brightness(1);}' })
     await page.waitForTimeout(300)
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
     await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })

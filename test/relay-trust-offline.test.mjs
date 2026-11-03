@@ -85,7 +85,7 @@ test('TRUST-01 Voice: a real persisted SAVED task reaches the Fake chain once', 
   })
 })
 
-test('TRUST-01 Singing: a frozen Cover SAVED record reaches the Fake chain through the persisted issuance', async () => {
+test('TRUST-01 Singing: a frozen Cover record needs a persisted source permit, then reaches the Fake chain', async () => {
   await withSandbox(async (sandbox) => {
     const singing = await createSingingSavedTask(sandbox, {
       now: '2026-11-01T00:00:00.000Z', expiresAt: SINGING_EXPIRES, proofRef: SINGING_PROOF,
@@ -97,24 +97,74 @@ test('TRUST-01 Singing: a frozen Cover SAVED record reaches the Fake chain throu
     assert.ok(ownerFile, 'cover owner store missing')
     assert.match(fs.readFileSync(ownerFile, 'utf8'), /"deliveryRequested":false/)
     const clock = mutableClock(SINGING_NOW)
-    const backend = createFakeDeliveryBackend({ targets: [TARGET] })
-    const relay = await openUnifiedRelay({ sandbox, backend, targets: [TARGET], now: clock.now })
+    const backend = createFakeDeliveryBackend({ targets: [TARGET, TARGET_B] })
+    const relay = await openUnifiedRelay({ sandbox, backend, targets: [TARGET, TARGET_B], now: clock.now })
+    const reference = {
+      scopeId: singing.scopeId, taskId: singing.taskId, artifactRef: singing.artifactRef, proofRef: SINGING_PROOF,
+    }
+    // A SAVED MASTER is not a delivery permission: without a persisted source permit nothing is issued.
+    const withoutPermit = await relay.ensureDelivery(relayHandoff({
+      ...reference, targetId: TARGET.targetId, requestKey: 'singing-request-1',
+    }))
+    assert.equal(withoutPermit.ok, false)
+    assert.equal(withoutPermit.code, RELAY_ERRORS.PERMIT_REQUIRED)
+    const fabricated = await relay.ensureDelivery({
+      handoff: {
+        schemaVersion: 1, scopeId: singing.scopeId, taskId: singing.taskId, artifactRef: singing.artifactRef,
+        targetId: TARGET.targetId, requestKey: 'singing-request-1',
+        rights: { state: 'GRANTED', proofRef: SINGING_PROOF },
+        permitId: 'permit:' + 'a'.repeat(32),
+      },
+    })
+    assert.equal(fabricated.ok, false)
+    assert.equal(fabricated.code, RELAY_ERRORS.PERMIT_REQUIRED)
+    assert.equal(backend.stats().submitted, 0)
+    // The explicit, versioned source permit (same scope/task/MASTER/target/rights) authorizes it.
+    const permitEnvelope = {
+      schemaVersion: 1, scopeId: singing.scopeId, taskId: singing.taskId,
+      artifactRef: singing.artifactRef, targetId: TARGET.targetId,
+      rights: { state: 'GRANTED', proofRef: SINGING_PROOF },
+    }
+    const issued = await relay.issueDeliveryPermit({ permit: permitEnvelope })
+    assert.equal(issued.ok, true, JSON.stringify(issued))
+    assert.equal(issued.outcome, 'ISSUED')
+    assert.match(issued.permit.permitId, /^permit:[0-9a-f]{32}$/)
+    assert.equal(issued.permit.authorityKind, 'COVER_OWNER_SAVED_V3')
+    const again = await relay.issueDeliveryPermit({ permit: permitEnvelope })
+    assert.equal(again.outcome, 'EXISTING')
+    assert.equal(again.permit.permitId, issued.permit.permitId)
     const ensured = await relay.ensureDelivery(relayHandoff({
-      scopeId: singing.scopeId, taskId: singing.taskId, artifactRef: singing.artifactRef,
-      targetId: TARGET.targetId, requestKey: 'singing-request-1', proofRef: SINGING_PROOF,
+      ...reference, targetId: TARGET.targetId, requestKey: 'singing-request-1',
+      overrides: { permitId: issued.permit.permitId },
     }))
     assert.equal(ensured.ok, true, JSON.stringify(ensured))
     assert.equal(ensured.delivery.authority, 'COVER_OWNER_SAVED_V3')
     assert.equal(ensured.delivery.deliveryRequested, false)
+    assert.equal(ensured.delivery.permitId, issued.permit.permitId)
     const submitted = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(submitted.ok, true, JSON.stringify(submitted))
     assert.equal(submitted.delivery.state, RELAY_STATES.ACCEPTED)
     assert.equal(backend.stats().accepted, 1)
     const store = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'unified-relay-v1.json'), 'utf8'))
-    assert.equal(store.deliveries[0].intent.authorizedBy, 'RELAY_ISSUED_FOR_FROZEN_COVER')
+    assert.equal(store.deliveries[0].intent.authorizedBy, 'PERSISTED_COVER_DELIVERY_PERMIT')
+    assert.equal(store.deliveries[0].intent.permitId, issued.permit.permitId)
+    assert.equal(store.permits.length, 1)
     // The MASTER is the delivery artifact; the source input can never be substituted for it.
     assert.equal(store.deliveries[0].artifactRef, singing.artifactRef)
     assert.notEqual(singing.sourceRef, singing.artifactRef)
+    // A permit is bound to its own target relation; another target cannot reuse it.
+    const permitB = await relay.issueDeliveryPermit({
+      permit: { ...permitEnvelope, targetId: TARGET_B.targetId },
+    })
+    assert.equal(permitB.ok, true, JSON.stringify(permitB))
+    assert.notEqual(permitB.permit.permitId, issued.permit.permitId)
+    const wrongTarget = await relay.ensureDelivery(relayHandoff({
+      ...reference, targetId: TARGET_B.targetId, requestKey: 'singing-request-1-b',
+      overrides: { permitId: issued.permit.permitId },
+    }))
+    assert.equal(wrongTarget.ok, false)
+    assert.equal(wrongTarget.code, RELAY_ERRORS.PERMIT_REQUIRED)
+    assert.equal(backend.stats().accepted, 1)
   })
 })
 
@@ -247,6 +297,45 @@ test('TRUST-01 freshness: expiry reached during an awaited preflight is never ac
     const submitted = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(submitted.ok, true, JSON.stringify(submitted))
     assert.equal(submitted.delivery.state, RELAY_STATES.FAILED)
+    assert.equal(base.stats().submitted, 0)
+    assert.equal(base.stats().accepted, 0)
+  })
+})
+
+test('TRUST-01 freshness: the accept boundary re-samples the clock after the last awaited read', async () => {
+  await withSandbox(async (sandbox) => {
+    const expiresAt = '2026-10-28T00:00:00.000Z'
+    const before = '2026-10-27T23:59:59.999Z'
+    let clock = before
+    let armed = false
+    let reads = 0
+    let crossed = false
+    const voice = await createVoiceSavedTask(sandbox, { expiresAt, proofRef: VOICE_PROOF })
+    const base = createFakeDeliveryBackend({ targets: [TARGET] })
+    // The exact reported interleaving: the trusted clock crosses to expiresAt during the last
+    // readFreshArtifact of submit (a microtask queued from inside that read).
+    const now = () => {
+      if (armed && new Error().stack.includes('readFreshArtifact')) {
+        reads += 1
+        // readFreshArtifact samples the clock once before and once after each read, so the fourth
+        // sampled call belongs to the second (final) invocation in submit: the crossing is queued
+        // exactly between that read's last sample and the accept boundary.
+        if (reads === 4) queueMicrotask(() => { clock = expiresAt; crossed = true })
+      }
+      return clock
+    }
+    const relay = await openUnifiedRelay({ sandbox, backend: base, targets: [TARGET], now })
+    const ensured = await relay.ensureDelivery(relayHandoff({
+      scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+      targetId: TARGET.targetId, requestKey: 'fresh-final-await', proofRef: VOICE_PROOF,
+    }))
+    assert.equal(ensured.ok, true, JSON.stringify(ensured))
+    armed = true
+    const submitted = await relay.submit(ensured.delivery.deliveryId)
+    assert.equal(crossed, true, 'the final-read clock crossing was not exercised')
+    assert.equal(submitted.ok, true, JSON.stringify(submitted))
+    assert.equal(submitted.delivery.state, RELAY_STATES.FAILED)
+    assert.equal(submitted.delivery.error.code, RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
     assert.equal(base.stats().submitted, 0)
     assert.equal(base.stats().accepted, 0)
   })
