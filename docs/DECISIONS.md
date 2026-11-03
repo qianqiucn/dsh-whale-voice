@@ -666,3 +666,37 @@ Sender's server top-level into the Fake adapter; treating `ACCEPTED`/HTTP 200 as
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
+
+## ADR-025 — Relay delivery authority is a persisted SAVED relation plus a versioned issuance, not caller JSON
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-001, ADR-024, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** `ensureDelivery` accepts only a *reference* handoff
+(`{schemaVersion, scopeId, taskId, artifactRef, targetId, requestKey, rights}`); any unknown key — most importantly a
+caller-supplied `taskRecord` — is refused. For that reference the relay re-reads the persisted authority itself: the
+AudioTask owner store (v2 `get` + `artifactStatus` at the current time, requiring `SAVED`, `READABLE`, the same
+`outputArtifactRef` and the persisted `deliveryRequested === true`) or, when the Cover v3 owner store is present, the
+Cover status (`SAVED` + MASTER `artifactRef`). A successful delivery persists a versioned issuance (`intentId:
+intent:<32hex>` plus `intent{version, kind, taskIdentityHash, deliveryRequested, authorizedBy, issuedAt}`). The frozen
+Cover record keeps `deliveryRequested:false` and is never edited: for it the persisted issuance
+(`RELAY_ISSUED_FOR_FROZEN_COVER`) is the authorized handoff, while a legacy Task record must already carry the
+persisted delivery intent (`PERSISTED_TASK_DELIVERY_INTENT`). A `requestKey` is an immutable binding checked before
+any digest reuse: a bound key can never be re-pointed at another content/target digest, and an unbound key may only
+register an alias for the digest it first resolves to. Right before the Fake Worker is asked to accept (after the
+health/capabilities/resolve awaits), the relay re-reads the authority identity hash, the artifact bytes/hash/expiry and
+the Core target, so a revocation/expiry during preflight produces zero backend submit. The Fake Worker's own `submit`
+resolves the target from its own directory by the *persisted* delivery target id/kind and backend id and never treats
+the upstream booleans or a handed-over resolver result as authorization.
+
+**Reason:** the 0138 review proved that a JSON `SAVED` record (or a flipped copy of a real one) was accepted as the
+task authority, that expiry/deletion during an awaited preflight still reached the Fake Worker, and that the Fake
+Worker only checked the three upstream booleans. Keeping the persisted relation as the single authority (with the
+issuance as the only way to bind a frozen Cover record) closes those paths without rewriting the frozen AudioTask or
+Cover schemas.
+
+**Rejected alternatives:** trusting a caller-provided record or `deliveryRequested` copy; editing the frozen Cover
+record; a second task/id authority; treating an upstream resolver/three booleans as the Worker's authorization; an
+opaque "session" token that is not persisted; relaxing to Best-Effort busy/unknown instead of failing closed.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

@@ -4,8 +4,6 @@ import { spawn } from 'node:child_process'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
-import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
-import { createAudioTaskRecord, transitionAudioTask } from '../core/audio/task-contract.mjs'
 import {
   RELAY_ERRORS,
   RELAY_STATES,
@@ -13,12 +11,13 @@ import {
   openUnifiedRelay,
   projectUnifiedRelayComponent,
 } from '../core/audio/relay-core-offline.mjs'
+import { createVoiceSavedTask, mutableClock, relayHandoff } from './support/relay-authority.mjs'
 
-const NOW = '2026-11-01T00:00:00.000Z'
-const EXPIRES = '2027-01-01T00:00:00.000Z'
-const SCOPE = 'scope:fixture-relay'
-const PROOF = 'fixture-rights:relay'
-const TASK = 'task:fixture-relay-a'
+const SAVE_NOW = '2026-10-27T00:00:01.000Z'
+const RELAY_NOW = '2026-10-27T00:00:02.000Z'
+const EXPIRES = '2026-10-28T00:00:00.000Z'
+const SCOPE = 'scope:fixture-demo'
+const PROOF = 'fixture-rights:relay-demo'
 const TARGET = {
   targetId: 'fixture-private-a',
   kind: 'PRIVATE',
@@ -30,79 +29,39 @@ const TARGET = {
 }
 const TARGET_B = { ...TARGET, targetId: 'fixture-private-b' }
 
-function savedRecord(taskId, artifactRef) {
-  const draft = {
-    schemaVersion: 1,
-    taskId,
-    feature: 'singing',
-    taskType: 'SVC',
-    source: { kind: 'AUDIO_REF', ref: artifactRef },
-    voiceProfileId: 'voice:demo-hero',
-    deliveryRequested: true,
-    rights: { state: 'CONFIRMED_FIXTURE' },
-  }
-  const created = createAudioTaskRecord(draft, { observedAt: NOW })
-  assert.equal(created.ok, true)
-  const processing = transitionAudioTask(created.value, { type: 'BEGIN_PROCESS' })
-  assert.equal(processing.ok, true)
-  const attached = transitionAudioTask(processing.value, { type: 'ATTACH_FAKE_ARTIFACT', artifactRef })
-  assert.equal(attached.ok, true)
-  const saved = transitionAudioTask(attached.value, { type: 'MARK_SAVED' })
-  assert.equal(saved.ok, true)
-  return saved.value
-}
-
 async function setup({ backendOptions = {}, backendTargets = [TARGET, TARGET_B], relayTargets = [TARGET, TARGET_B], maxDeliveries } = {}) {
   const sandbox = createConfigSandbox()
-  const library = await openFixtureArtifactLibrary({ sandbox })
-  const bytes = wavFromSamples([1200, -2200, 32767, -32768], 44100)
-  const imported = await library.value.import({
-    schemaVersion: 1,
-    scopeId: SCOPE,
-    requestKey: 'import:relay-source',
-    bytes,
-    now: NOW,
-    expiresAt: EXPIRES,
-    rights: { state: 'GRANTED', proofRef: PROOF },
-  })
-  assert.equal(imported.ok, true)
-  const artifactRef = imported.value.artifact.artifactRef
-  const taskRecord = savedRecord(TASK, artifactRef)
+  const voice = await createVoiceSavedTask(sandbox, { now: '2026-10-27T00:00:00.000Z', saveNow: SAVE_NOW, expiresAt: EXPIRES, proofRef: PROOF })
+  const clock = mutableClock(RELAY_NOW)
   const backend = createFakeDeliveryBackend({ targets: backendTargets, ...backendOptions })
-  const relay = await openUnifiedRelay({ sandbox, backend, targets: relayTargets, now: () => NOW, maxDeliveries })
-  return { sandbox, backend, relay, taskRecord, artifactRef }
-}
-
-function handoff(taskRecord, artifactRef, overrides = {}) {
-  return {
-    handoff: {
-      taskRecord,
-      scopeId: SCOPE,
-      artifactRef,
-      targetId: TARGET.targetId,
-      requestKey: 'relay-request-a',
-      rights: { state: 'GRANTED', proofRef: PROOF },
-      ...overrides,
-    },
-  }
+  const relay = await openUnifiedRelay({ sandbox, backend, targets: relayTargets, now: clock.now, maxDeliveries })
+  const handoff = (overrides = {}) => relayHandoff({
+    scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
+    targetId: TARGET.targetId, requestKey: 'relay-request-a', proofRef: PROOF, overrides,
+  })
+  return { sandbox, backend, relay, voice, clock, handoff }
 }
 
 test('delivery ids are persistent, stable across request-key aliases and conflicts', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, relay, handoff } = await setup()
   try {
-    const first = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
-    assert.equal(first.ok, true)
+    const first = await relay.ensureDelivery(handoff())
+    assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(first.outcome, 'CREATED')
     assert.match(first.delivery.deliveryId, /^delivery:[0-9a-f]{32}$/)
+    assert.match(first.delivery.intentId, /^intent:[0-9a-f]{32}$/)
+    assert.equal(first.delivery.authority, 'TASK_OWNER_SAVED_V2')
+    assert.equal(first.delivery.deliveryRequested, true)
     const mappings = await relay.mappings()
     assert.equal(mappings.ok, true)
     assert.match(mappings.deliveries[0].backendRequestId, /^[A-Za-z0-9_-]{8,64}$/)
     assert.equal(mappings.deliveries[0].backendRequestId.includes(':'), false)
-    const alias = await relay.ensureDelivery(handoff(taskRecord, artifactRef, { requestKey: 'relay-request-a2' }))
+    assert.match(mappings.deliveries[0].intentId, /^intent:[0-9a-f]{32}$/)
+    const alias = await relay.ensureDelivery(handoff({ requestKey: 'relay-request-a2' }))
     assert.equal(alias.ok, true)
     assert.equal(alias.outcome, 'EXISTING')
     assert.equal(alias.delivery.deliveryId, first.delivery.deliveryId)
-    const conflict = await relay.ensureDelivery(handoff(taskRecord, artifactRef, { targetId: TARGET_B.targetId }))
+    const conflict = await relay.ensureDelivery(handoff({ targetId: TARGET_B.targetId }))
     assert.equal(conflict.ok, false)
     assert.equal(conflict.code, RELAY_ERRORS.CONFLICT)
   } finally {
@@ -111,11 +70,12 @@ test('delivery ids are persistent, stable across request-key aliases and conflic
 })
 
 test('a real SAVED fixture artifact is submitted once; duplicate returns EXISTING', async () => {
-  const { sandbox, backend, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, backend, relay, handoff } = await setup()
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
+    assert.equal(ensured.ok, true, JSON.stringify(ensured))
     const first = await relay.submit(ensured.delivery.deliveryId)
-    assert.equal(first.ok, true)
+    assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(first.delivery.state, RELAY_STATES.ACCEPTED)
     assert.match(first.delivery.receiptId, /^fixture-receipt-/)
     const second = await relay.submit(ensured.delivery.deliveryId)
@@ -129,42 +89,59 @@ test('a real SAVED fixture artifact is submitted once; duplicate returns EXISTIN
 })
 
 test('the reader refuses an unknown target and the Fake Worker independently rechecks its own gate', async () => {
-  const { sandbox, backend, relay, taskRecord, artifactRef } = await setup({ backendTargets: [{ ...TARGET, bridgeAllowed: false }] })
+  const { sandbox, backend, relay, handoff } = await setup({ backendTargets: [{ ...TARGET, bridgeAllowed: false }] })
   try {
-    const unknown = await relay.ensureDelivery(handoff(taskRecord, artifactRef, { targetId: 'fixture-private-missing' }))
+    const unknown = await relay.ensureDelivery(handoff({ targetId: 'fixture-private-missing' }))
     assert.equal(unknown.ok, false)
     assert.equal(unknown.code, RELAY_ERRORS.TARGET_REJECTED)
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     assert.equal(ensured.ok, true)
     const blocked = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(blocked.ok, true)
     assert.equal(blocked.delivery.state, RELAY_STATES.FAILED)
     assert.equal(backend.stats().accepted, 0)
+    assert.ok(backend.stats().targetChecks > 0)
   } finally {
     removeConfigSandbox(sandbox)
   }
 })
 
-test('a forged task/artifact relation is refused before any delivery id', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup()
+test('a caller-supplied task record is never an authority for a delivery', async () => {
+  const { sandbox, relay, voice, handoff } = await setup()
   try {
+    const forgedRecord = {
+      schemaVersion: 1, taskId: voice.taskId, feature: 'singing', taskType: 'SVC',
+      source: { kind: 'AUDIO_REF', ref: voice.sourceRef || voice.artifactRef },
+      voiceProfileId: 'voice:demo-hero', deliveryRequested: true,
+      rights: { state: 'CONFIRMED_FIXTURE' }, state: 'SAVED',
+      outputArtifactRef: voice.artifactRef, cancel: { requested: false, confirmed: false },
+      delivery: { state: 'NOT_REQUESTED', deliveryId: null }, lastError: null,
+      observedAt: SAVE_NOW, mockOnly: true, realOperationAllowed: false,
+    }
+    const withRecord = await relay.ensureDelivery(handoff({ taskRecord: forgedRecord }))
+    assert.equal(withRecord.ok, false)
+    assert.equal(withRecord.code, RELAY_ERRORS.INPUT_INVALID)
+    assert.equal(withRecord.detail, 'taskRecord')
     const wrongRef = 'artifact:fixture-bytes-' + 'c'.repeat(32)
-    const bad = await relay.ensureDelivery(handoff({ ...taskRecord, outputArtifactRef: wrongRef }, artifactRef))
-    assert.equal(bad.ok, false)
-    assert.equal(bad.code, RELAY_ERRORS.INPUT_INVALID)
-    const fakeHash = await relay.ensureDelivery(handoff(taskRecord, artifactRef, { artifactRef: wrongRef }))
-    assert.equal(fakeHash.ok, false)
+    const unknownRef = await relay.ensureDelivery(handoff({ artifactRef: wrongRef }))
+    assert.equal(unknownRef.ok, false)
+    assert.equal(unknownRef.code, RELAY_ERRORS.TASK_NOT_SAVED)
+    const unknownTask = await relay.ensureDelivery(handoff({ taskId: 'task:fixture-unborn' }))
+    assert.equal(unknownTask.ok, false)
+    assert.equal(unknownTask.code, RELAY_ERRORS.TASK_NOT_SAVED)
+    const revokedRights = await relay.ensureDelivery(handoff({ rights: { state: 'GRANTED', proofRef: 'fixture-rights:other' } }))
+    assert.equal(revokedRights.ok, false)
   } finally {
     removeConfigSandbox(sandbox)
   }
 })
 
 test('an artifact deleted/changed between ensure and submit never reaches Fake submit', async () => {
-  const { sandbox, backend, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, backend, relay, voice, handoff } = await setup()
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     const library = await openFixtureArtifactLibrary({ sandbox })
-    const deleted = await library.value.delete({ schemaVersion: 1, scopeId: SCOPE, artifactRef, now: NOW })
+    const deleted = await library.value.delete({ schemaVersion: 1, scopeId: SCOPE, artifactRef: voice.artifactRef, now: RELAY_NOW })
     assert.equal(deleted.ok, true)
     const blocked = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(blocked.ok, true)
@@ -177,16 +154,16 @@ test('an artifact deleted/changed between ensure and submit never reaches Fake s
 })
 
 test('UNKNOWN is terminal and never resent or moved to another backend', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup({ backendOptions: { failMode: 'unknown' } })
+  const { sandbox, relay, handoff } = await setup({ backendOptions: { failMode: 'unknown' } })
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     const first = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(first.ok, true)
     assert.equal(first.delivery.state, RELAY_STATES.UNKNOWN)
     const second = await relay.submit(ensured.delivery.deliveryId)
     assert.equal(second.ok, false)
     assert.equal(second.code, RELAY_ERRORS.UNKNOWN_NO_RESEND)
-    const alias = await relay.ensureDelivery(handoff(taskRecord, artifactRef, { requestKey: 'relay-request-new' }))
+    const alias = await relay.ensureDelivery(handoff({ requestKey: 'relay-request-new' }))
     assert.equal(alias.ok, true)
     assert.equal(alias.outcome, 'EXISTING')
     assert.equal(alias.delivery.state, RELAY_STATES.UNKNOWN)
@@ -196,9 +173,9 @@ test('UNKNOWN is terminal and never resent or moved to another backend', async (
 })
 
 test('cancel is requested first and confirmed only by the explicit confirmation path', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, relay, handoff } = await setup()
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     const requested = await relay.cancel(ensured.delivery.deliveryId)
     assert.equal(requested.ok, true)
     assert.equal(requested.cancelState, 'REQUESTED')
@@ -215,25 +192,32 @@ test('cancel is requested first and confirmed only by the explicit confirmation 
 })
 
 test('bounded capacity fails closed without evicting an existing delivery', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup({ maxDeliveries: 1 })
+  const { sandbox, relay, voice, handoff } = await setup({ maxDeliveries: 1 })
   try {
-    const first = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const first = await relay.ensureDelivery(handoff())
     assert.equal(first.ok, true)
-    const taskB = savedRecord('task:fixture-relay-b', artifactRef)
-    const second = await relay.ensureDelivery(handoff(taskB, artifactRef, { requestKey: 'relay-request-b' }))
-    assert.equal(second.ok, false)
-    assert.equal(second.code, RELAY_ERRORS.CAPACITY)
+    const second = await createVoiceSavedTask(sandbox, {
+      idempotencyKey: 'key:fixture-relay-voice-b', saveRequestKey: 'save:relay-voice-b',
+      now: '2026-10-27T00:00:00.000Z', saveNow: SAVE_NOW, expiresAt: EXPIRES, proofRef: PROOF,
+    })
+    const capacity = await relay.ensureDelivery(relayHandoff({
+      scopeId: second.scopeId, taskId: second.taskId, artifactRef: second.artifactRef,
+      targetId: TARGET.targetId, requestKey: 'relay-request-b', proofRef: PROOF,
+    }))
+    assert.equal(capacity.ok, false)
+    assert.equal(capacity.code, RELAY_ERRORS.CAPACITY)
     assert.equal((await relay.status(first.delivery.deliveryId)).ok, true)
+    assert.notEqual(second.taskId, voice.taskId)
   } finally {
     removeConfigSandbox(sandbox)
   }
 })
 
 test('a concurrent second handle cannot duplicate the single submit', async () => {
-  const { sandbox, backend, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, backend, relay, handoff } = await setup()
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
-    const other = await openUnifiedRelay({ sandbox, backend, targets: [TARGET, TARGET_B], now: () => NOW })
+    const ensured = await relay.ensureDelivery(handoff())
+    const other = await openUnifiedRelay({ sandbox, backend, targets: [TARGET, TARGET_B], now: () => RELAY_NOW })
     const results = await Promise.all([relay.submit(ensured.delivery.deliveryId), other.submit(ensured.delivery.deliveryId)])
     assert.ok(results.some((item) => item.ok === true))
     assert.equal(backend.stats().accepted, 1)
@@ -244,19 +228,22 @@ test('a concurrent second handle cannot duplicate the single submit', async () =
 })
 
 test('a live same-process submit owner is not recovered by another open', async () => {
-  const { sandbox, backend, relay, taskRecord, artifactRef } = await setup({ backendOptions: { failMode: 'defer' } })
+  const { sandbox, backend, relay, handoff } = await setup({ backendOptions: { failMode: 'defer' } })
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     const running = relay.submit(ensured.delivery.deliveryId)
     let state = null
-    for (let attempt = 0; attempt < 80; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const probe = await relay.status(ensured.delivery.deliveryId)
       state = probe.ok ? probe.delivery.state : null
-      if (state === RELAY_STATES.SUBMITTING) break
+      // Only release once the Fake backend is really inside its deferred call (a release before the
+      // call would be a test-side lost wake-up, not an owner-liveness observation).
+      if (state === RELAY_STATES.SUBMITTING && backend.stats().submitted === 1 && backend.stats().deliveries === 0) break
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     assert.equal(state, RELAY_STATES.SUBMITTING)
-    const other = await openUnifiedRelay({ sandbox, backend, targets: [TARGET, TARGET_B], now: () => NOW })
+    assert.equal(backend.stats().submitted, 1)
+    const other = await openUnifiedRelay({ sandbox, backend, targets: [TARGET, TARGET_B], now: () => RELAY_NOW })
     assert.equal(other.ok, true)
     assert.equal(other.recovered.includes(ensured.delivery.deliveryId), false)
     const live = await other.status(ensured.delivery.deliveryId)
@@ -274,9 +261,9 @@ test('a live same-process submit owner is not recovered by another open', async 
 })
 
 test('a real child-process exit leaves SUBMITTING as UNKNOWN, no replay', async () => {
-  const { sandbox, relay, taskRecord, artifactRef } = await setup()
+  const { sandbox, relay, handoff } = await setup()
   try {
-    const ensured = await relay.ensureDelivery(handoff(taskRecord, artifactRef))
+    const ensured = await relay.ensureDelivery(handoff())
     const deliveryId = ensured.delivery.deliveryId
     const storePath = JSON.stringify(sandbox.root + '/unified-relay-v1.json')
     const code = `
@@ -291,7 +278,7 @@ test('a real child-process exit leaves SUBMITTING as UNKNOWN, no replay', async 
     const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: 'ignore', windowsHide: true })
     const exited = new Promise((resolve) => child.once('exit', resolve))
     await exited
-    const reopened = await openUnifiedRelay({ sandbox, targets: [TARGET, TARGET_B], backend: createFakeDeliveryBackend({ targets: [TARGET] }), now: () => NOW })
+    const reopened = await openUnifiedRelay({ sandbox, targets: [TARGET, TARGET_B], backend: createFakeDeliveryBackend({ targets: [TARGET] }), now: () => RELAY_NOW })
     assert.equal(reopened.ok, true)
     assert.ok(reopened.recovered.includes(deliveryId))
     const status = await reopened.status(deliveryId)

@@ -1,22 +1,27 @@
 .wv-root {
-  --wv-bg: var(--dsw-alias-bg-base);
+  --wv-bg: var(--dsw-alias-bg-base, #0e1624);
   --wv-base: #0e1624;
   --wv-card-base: rgba(22, 31, 48, .78);
   --wv-card-solid: #172133;
-  --wv-layer1: var(--dsw-alias-bg-layer-1);
-  --wv-layer2: var(--dsw-alias-bg-layer-2);
-  --wv-overlay: var(--dsw-alias-bg-overlay);
-  --wv-text: var(--dsw-alias-label-primary);
-  --wv-muted: color-mix(in srgb, var(--dsw-alias-label-secondary) 82%, var(--dsw-alias-label-primary));
-  --wv-muted-soft: color-mix(in srgb, var(--dsw-alias-label-secondary) 92%, var(--dsw-alias-label-primary));
-  --wv-border: var(--dsw-alias-border-l1);
-  --wv-border-strong: var(--dsw-alias-border-l2);
-  --wv-accent: var(--dsw-alias-brand-primary);
+  --wv-layer1: var(--dsw-alias-bg-layer-1, #172133);
+  --wv-layer2: var(--dsw-alias-bg-layer-2, #1d2940);
+  --wv-overlay: var(--dsw-alias-bg-overlay, #101a2b);
+  --wv-text: var(--dsw-alias-label-primary, #e8ecff);
+  --wv-muted: color-mix(in srgb, var(--dsw-alias-label-secondary, #aab5d6) 82%, var(--dsw-alias-label-primary, #e8ecff));
+  --wv-muted-soft: color-mix(in srgb, var(--dsw-alias-label-secondary, #aab5d6) 92%, var(--dsw-alias-label-primary, #e8ecff));
+  --wv-border: var(--dsw-alias-border-l1, rgba(255, 255, 255, .10));
+  --wv-border-strong: var(--dsw-alias-border-l2, rgba(255, 255, 255, .18));
+  --wv-accent: var(--dsw-alias-brand-primary, #7c9cff);
   --wv-accent2: color-mix(in srgb, #a99bf5 58%, var(--dsw-alias-brand-primary));
   --wv-success: var(--dsw-alias-state-success-primary);
   --wv-warn: var(--dsw-alias-state-warn-primary);
   --wv-error: var(--dsw-alias-state-error-primary);
   --wv-idle: var(--dsw-alias-state-idle-primary);
+  /* Local aliases: legacy surfaces referenced these names without a definition, which made the
+   * declaration invalid and let underlying text show through. They now resolve to real surfaces. */
+  --wv-danger: var(--wv-error);
+  --wv-panel: var(--wv-layer1);
+  --wv-ink: var(--wv-text);
   --wv-glass: color-mix(in srgb, var(--wv-layer1) 58%, transparent);
   --wv-card-fill: color-mix(in srgb, var(--wv-layer1) 64%, transparent);
   --wv-card-fill-strong: color-mix(in srgb, var(--wv-layer1) 72%, transparent);
@@ -412,9 +417,45 @@ body:not([data-ds-dark-theme]) .wv-root {
 .wv-empty strong { color: color-mix(in srgb, var(--wv-text) 82%, var(--wv-muted)); font-size: 13px; }
 .wv-empty p { margin: 0; max-width: 380px; font-size: 11.5px; line-height: 1.5; }
 
-.wv-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 22px; background: color-mix(in srgb, var(--wv-bg) 42%, transparent); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); }
-.wv-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column; border-radius: var(--wv-r-xl); border: 1px solid color-mix(in srgb, var(--wv-border-strong) 72%, var(--wv-hairline)); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(26px) saturate(1.12); backdrop-filter: blur(26px) saturate(1.12); box-shadow: 0 28px 80px color-mix(in srgb, var(--wv-text) 22%, transparent); overflow: hidden; }
-.wv-dialog.lg { width: min(900px, calc(100vw - 32px)); max-height: min(90vh, 860px); }
+/* Controlled plugin root layer for every dialog. It is a sibling of .wv-shell inside .wv-root, so
+ * neither the .wv-scroll clip nor the .wv-page animation transform can capture a dialog. Sizing is
+ * container-based (no 100vw/100vh), the body scrolls on its own, head/footer stay reachable, and
+ * the surface keeps an opaque local fallback when a host theme token is missing. */
+.wv-overlay-layer { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.wv-overlay-layer > .wv-overlay { pointer-events: auto; }
+.wv-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--wv-bg) 46%, transparent); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); min-width: 0; min-height: 0; }
+.wv-dialog {
+  position: relative; width: min(560px, 100%); max-width: 100%; max-height: 100%; min-height: 0;
+  display: flex; flex-direction: column; border-radius: var(--wv-r-xl);
+  border: 1px solid color-mix(in srgb, var(--wv-border-strong) 72%, var(--wv-hairline));
+  background-color: var(--wv-card-solid, #172133);
+  background-image: linear-gradient(165deg, color-mix(in srgb, var(--wv-overlay) 96%, transparent), color-mix(in srgb, var(--wv-base) 94%, transparent));
+  box-shadow: 0 28px 80px color-mix(in srgb, var(--wv-text) 22%, transparent); overflow: hidden;
+}
+.wv-dialog.lg { width: min(900px, 100%); }
+.wv-dialog-head { flex: 0 0 auto; min-width: 0; }
+.wv-dialog-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.wv-dialog-foot { flex: 0 0 auto; flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+.wv-root[data-layout="narrow"] .wv-overlay, .wv-root[data-layout="compact"] .wv-overlay { padding: 12px; }
+.wv-root[data-layout="narrow"] .wv-dialog { border-radius: var(--wv-r-lg); }
+.wv-root[data-layout="narrow"] .wv-dialog-head { padding: 12px 14px 10px; }
+.wv-root[data-layout="narrow"] .wv-dialog-body { padding: 12px 14px; }
+.wv-root[data-layout="narrow"] .wv-dialog-foot { padding: 10px 14px; justify-content: flex-start; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-dep { flex-direction: column; align-items: stretch; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-dep .wv-row { flex-wrap: wrap; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-modes { grid-template-columns: 1fr; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-intro { flex-direction: column; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-failure { flex-wrap: wrap; }
+.wv-root[data-layout="narrow"] .wv-overlay .wv-plan09-failure .wv-select { max-width: 100%; }
+.wv-overlay .wv-plan09-dep > div { min-width: 0; }
+.wv-overlay .wv-plan09-dep strong, .wv-overlay .wv-plan09-dep p { overflow-wrap: anywhere; }
+.wv-overlay .wv-plan09-modes { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
+.wv-overlay .wv-plan09-mode { min-width: 0; }
+.wv-overlay .wv-plan09-mode strong, .wv-overlay .wv-plan09-mode span { overflow-wrap: anywhere; }
+.wv-overlay .wv-plan09-groups, .wv-overlay .wv-plan09-group { min-width: 0; }
+.wv-overlay .wv-plan09-failure { min-width: 0; }
+.wv-overlay .wv-plan09-check, .wv-overlay .wv-setup-footnote { min-width: 0; overflow-wrap: anywhere; }
+.wv-dialog-body > * { min-width: 0; max-width: 100%; }
 
 /* First-run setup wizard and component manager */
 .wv-setup-banner { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--wv-accent) 20%, var(--wv-hairline)); border-radius: var(--wv-r-md); background: linear-gradient(120deg, color-mix(in srgb, var(--wv-accent) 8%, var(--wv-card-base)), color-mix(in srgb, var(--wv-accent2) 5%, var(--wv-card-base))); }
@@ -518,7 +559,7 @@ body:not([data-ds-dark-theme]) .wv-root {
   .wv-component-detail { display: none; }
 }
 
-.wv-dialog.sm { width: min(410px, calc(100vw - 32px)); }
+.wv-dialog.sm { width: min(410px, 100%); }
 .wv-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--wv-hairline); }
 .wv-dialog-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
 .wv-dialog-head p { margin: 3px 0 0; color: var(--wv-muted); font-size: 11.5px; }
@@ -527,7 +568,7 @@ body:not([data-ds-dark-theme]) .wv-root {
 .wv-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .wv-form-grid .full { grid-column: 1 / -1; }
 
-.wv-toast { position: fixed; z-index: 1100; right: 24px; bottom: 24px; display: flex; align-items: flex-start; gap: 9px; max-width: min(390px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 12px; line-height: 1.45; animation: wv-toastin .18s ease both; }
+.wv-toast { position: absolute; z-index: 60; right: 24px; bottom: 24px; display: flex; align-items: flex-start; gap: 9px; max-width: min(390px, calc(100% - 48px)); padding: 10px 12px; border-radius: 11px; border: 1px solid var(--wv-hairline); background: var(--wv-glass-strong); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); box-shadow: var(--wv-shadow); color: var(--wv-text); font-size: 12px; line-height: 1.45; animation: wv-toastin .18s ease both; }
 .wv-toast.success { border-color: color-mix(in srgb, var(--wv-success) 25%, var(--wv-hairline)); }
 .wv-toast.success svg { color: var(--wv-success); }
 .wv-toast.error { border-color: color-mix(in srgb, var(--wv-error) 25%, var(--wv-hairline)); }

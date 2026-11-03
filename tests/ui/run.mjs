@@ -109,6 +109,90 @@ async function check(name, fn) {
   }
 }
 
+/* The dependency wizard is now a modal root-layer dialog: its overlay really covers the navigation,
+ * so a page switch is only possible after the dialog is dismissed (Escape/browse/acknowledge).
+ * This helper performs that user step; it never hides a UI failure. */
+async function closePlan09Wizard(page, { settle = 250 } = {}) {
+  const wizard = page.locator('[data-testid="plan09-wizard"]')
+  await page.waitForTimeout(settle)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await wizard.count() === 0) {
+      // A capability/manifest change can open the wizard one render later; double-check before
+      // handing the page back to the test.
+      await page.waitForTimeout(120)
+      if (await wizard.count() === 0) return
+      continue
+    }
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await wizard.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
+  }
+}
+
+/** Geometry/containment/hit-test evidence for the dependency wizard dialog. */
+async function measureWizard(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector('.wv-root')
+    const layer = document.querySelector('[data-wv-overlay-layer]')
+    const overlay = document.querySelector('.wv-overlay')
+    const dialog = document.querySelector('.wv-dialog')
+    const pageEl = document.querySelector('.wv-page')
+    const rect = (el) => {
+      const r = el.getBoundingClientRect()
+      return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }
+    }
+    const hitOf = (el) => {
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)))
+    }
+    const nav = document.querySelector('.wv-navitem')
+    const navRect = nav.getBoundingClientRect()
+    const navHit = document.elementFromPoint(navRect.left + navRect.width / 2, navRect.top + navRect.height / 2)
+    const body = dialog.querySelector('.wv-dialog-body')
+    const modeCards = Array.from(dialog.querySelectorAll('.wv-plan09-mode'))
+    const modeColumns = modeCards.length >= 2
+      ? new Set(modeCards.slice(0, 4).map((el) => Math.round(el.getBoundingClientRect().x))).size
+      : modeCards.length
+    const deps = Array.from(dialog.querySelectorAll('.wv-plan09-dep')).slice(0, 3)
+    const depStacked = deps.length >= 2
+      ? deps[0].getBoundingClientRect().bottom <= deps[1].getBoundingClientRect().top + 2
+      : true
+    return {
+      layout: root.getAttribute('data-layout'),
+      layerParentClass: layer ? layer.parentElement.className : null,
+      overlayParentIsLayer: overlay ? overlay.parentElement === layer : false,
+      dialogInPage: pageEl.contains(dialog),
+      dialogInLayer: layer.contains(dialog),
+      overlayPosition: getComputedStyle(overlay).position,
+      layerZIndex: getComputedStyle(layer).zIndex,
+      root: rect(root), overlay: rect(overlay), dialog: rect(dialog),
+      footer: rect(dialog.querySelector('.wv-dialog-foot')),
+      navBlocked: Boolean(navHit && navHit.classList.contains('wv-overlay')),
+      navHitClass: navHit ? navHit.className : null,
+      bodyScrollWidth: body.scrollWidth, bodyClientWidth: body.clientWidth,
+      docScrollWidth: document.documentElement.scrollWidth, docClientWidth: document.documentElement.clientWidth,
+      headVisible: dialog.querySelector('.wv-dialog-head').getBoundingClientRect().height > 0,
+      footerHit: hitOf(dialog.querySelector('.wv-dialog-foot')),
+      ackHit: hitOf(dialog.querySelector('[data-testid="plan09-wizard-acknowledge"]')),
+      modeColumns,
+      depStacked,
+    }
+  })
+}
+
+async function hitTestSelector(page, selector) {
+  const locator = page.locator(selector)
+  if (await locator.count() === 0) return false
+  await locator.first().scrollIntoViewIfNeeded()
+  const handle = await locator.first().elementHandle()
+  return page.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)))
+  }, handle)
+}
+
 const normal = '?bridge=normal'
 await check('normal page renders the real-config readout', async () => {
   await withPage(normal, async (page) => {
@@ -562,6 +646,7 @@ await check('plan09 dependencies follow mode and install/verify lifecycle is sha
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-rvc"]')?.getAttribute('data-state') === 'ready')
     await page.locator('[data-testid="plan09-wizard-browse"]').click()
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
     await page.locator('[data-testid="plan09-reopen"]').click()
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-rvc"]')?.getAttribute('data-state') === 'ready')
@@ -839,6 +924,176 @@ await check('plan09 global setup priority and narrow layout', async () => {
   })
 })
 
+await check('dependency wizard is a plugin root-layer dialog: inside root, footer reachable, nav blocked', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    // The in-page entry animation (wv-pagein, `both`) must no longer capture the overlay.
+    await page.waitForTimeout(320)
+    const metrics = await measureWizard(page)
+    const context = JSON.stringify({ root: metrics.root, overlay: metrics.overlay, dialog: metrics.dialog })
+    assert.equal(metrics.layerParentClass, 'wv-root')
+    assert.equal(metrics.overlayParentIsLayer, true)
+    assert.equal(metrics.dialogInPage, false, context)
+    assert.equal(metrics.dialogInLayer, true)
+    assert.equal(metrics.overlayPosition, 'absolute')
+    assert.ok(metrics.layerZIndex !== 'auto' && Number(metrics.layerZIndex) > 3, 'layer z-index ' + metrics.layerZIndex)
+    assert.ok(metrics.overlay.w <= metrics.root.w + 1, context)
+    assert.ok(metrics.overlay.h <= metrics.root.h + 1, context)
+    assert.ok(metrics.dialog.x >= metrics.overlay.x - 1, context)
+    assert.ok(metrics.dialog.y >= metrics.overlay.y - 1, context)
+    assert.ok(metrics.dialog.right <= metrics.overlay.right + 1, context)
+    assert.ok(metrics.dialog.bottom <= metrics.overlay.bottom + 1, context)
+    assert.ok(metrics.footer.bottom <= metrics.overlay.bottom + 1, context)
+    assert.equal(metrics.navBlocked, true, 'nav hit: ' + metrics.navHitClass)
+    assert.ok(metrics.bodyScrollWidth <= metrics.bodyClientWidth + 1, 'body overflow x: ' + metrics.bodyScrollWidth + ' > ' + metrics.bodyClientWidth)
+    assert.ok(metrics.docScrollWidth <= metrics.docClientWidth + 1, 'document overflow x')
+    assert.equal(metrics.headVisible, true)
+    assert.equal(metrics.footerHit, true)
+    assert.equal(metrics.ackHit, true)
+
+    // Low height: the dependency list scrolls on its own body and the footer stays reachable.
+    await page.setViewportSize({ width: 1440, height: 560 })
+    await page.waitForTimeout(250)
+    const low = await measureWizard(page)
+    assert.ok(low.dialog.bottom <= low.overlay.bottom + 1, JSON.stringify({ dialog: low.dialog, overlay: low.overlay }))
+    assert.ok(low.footer.bottom <= low.overlay.bottom + 1)
+    const scrolled = await page.evaluate(() => {
+      const body = document.querySelector('.wv-dialog-body')
+      body.scrollTop = body.scrollHeight
+      return { scrollTop: body.scrollTop, max: body.scrollHeight - body.clientHeight }
+    })
+    assert.ok(scrolled.max > 0, 'the low-height dialog body must scroll: ' + JSON.stringify(scrolled))
+    assert.ok(scrolled.scrollTop > 0, 'dialog body did not scroll: ' + JSON.stringify(scrolled))
+    assert.equal(await hitTestSelector(page, '[data-testid="plan09-wizard-browse"]'), true)
+    assert.equal(await hitTestSelector(page, '[data-testid="plan09-wizard-acknowledge"]'), true)
+    const lastInstall = page.locator('[data-testid^="plan09-install-"]').last()
+    if (await lastInstall.count()) {
+      await lastInstall.scrollIntoViewIfNeeded()
+      const handle = await lastInstall.elementHandle()
+      const hittable = await page.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+        return Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)))
+      }, handle)
+      assert.equal(hittable, true, 'dependent install button not hittable after scrollIntoView')
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.waitForTimeout(250)
+
+    // Close, scroll the page, reopen: the dialog is still a root-layer dialog.
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'hidden' })
+    await page.evaluate(() => { const s = document.querySelector('.wv-scroll'); if (s) s.scrollTop = 420 })
+    await page.locator('[data-testid="plan09-reopen"]').click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    const reopened = await measureWizard(page)
+    assert.equal(reopened.dialogInLayer, true)
+    assert.ok(reopened.dialog.bottom <= reopened.overlay.bottom + 1)
+    assert.equal(reopened.navBlocked, true)
+
+    // Escape closes and the focus returns to the opener (the dialog never stole it permanently).
+    await page.keyboard.press('Escape')
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'hidden' })
+    const focusAfter = await page.evaluate(() => {
+      const el = document.activeElement
+      return el ? { tag: el.tagName, testid: el.getAttribute('data-testid') } : null
+    })
+    assert.equal(focusAfter.testid, 'plan09-reopen', JSON.stringify(focusAfter))
+
+    // Reduced-motion must not change the containing block of the root layer.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(120)
+    const reduced = await measureWizard(page)
+    assert.equal(reduced.dialogInPage, false)
+    assert.equal(reduced.dialogInLayer, true)
+    assert.ok(reduced.dialog.bottom <= reduced.overlay.bottom + 1)
+    await page.screenshot({ path: path.join(artifactDir, 'wizard-root-layer-1440.png') })
+  })
+})
+
+await check('dependency wizard fits a narrow simulated host panel and keeps every control reachable', async () => {
+  await withPage(normal, async (page) => {
+    await page.setViewportSize({ width: 780, height: 620 })
+    // A simulated (non-real) host panel: offset, overflow clip, transform and filter ancestors.
+    await page.addStyleTag({ content: '#wv-harness-root{position:absolute;left:280px;top:40px;width:500px;height:560px;overflow:hidden;transform:translateZ(0);filter:brightness(1);}' })
+    await page.waitForTimeout(300)
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(320)
+    const metrics = await measureWizard(page)
+    const context = JSON.stringify({ layout: metrics.layout, root: metrics.root, overlay: metrics.overlay, dialog: metrics.dialog })
+    assert.equal(metrics.layout, 'narrow', 'root width ' + metrics.root.w)
+    assert.equal(metrics.dialogInPage, false, context)
+    assert.equal(metrics.dialogInLayer, true)
+    assert.ok(metrics.overlay.x >= metrics.root.x - 1 && metrics.overlay.right <= metrics.root.right + 1, context)
+    assert.ok(metrics.dialog.x >= metrics.overlay.x - 1 && metrics.dialog.right <= metrics.overlay.right + 1, context)
+    assert.ok(metrics.dialog.bottom <= metrics.overlay.bottom + 1, context)
+    assert.ok(metrics.footer.bottom <= metrics.overlay.bottom + 1, context)
+    assert.ok(metrics.bodyScrollWidth <= metrics.bodyClientWidth + 1, 'narrow body overflow x: ' + metrics.bodyScrollWidth + ' > ' + metrics.bodyClientWidth)
+    assert.equal(metrics.modeColumns, 1, 'mode cards should stack in the narrow panel, got ' + metrics.modeColumns)
+    assert.equal(metrics.depStacked, true, 'dependency rows should stack in the narrow panel')
+    assert.equal(metrics.footerHit, true)
+    assert.equal(metrics.ackHit, true)
+    assert.equal(await hitTestSelector(page, '[data-testid="plan09-wizard-browse"]'), true)
+    const lastInstall = page.locator('[data-testid^="plan09-install-"]').last()
+    await lastInstall.scrollIntoViewIfNeeded()
+    const handle = await lastInstall.elementHandle()
+    const hittable = await page.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)))
+    }, handle)
+    assert.equal(hittable, true, 'install button not hittable in narrow panel')
+    await page.screenshot({ path: path.join(artifactDir, 'wizard-narrow-host-780.png') })
+  })
+})
+
+await check('dependency wizard keeps an opaque surface when a host theme token is missing', async () => {
+  await withPage(normal, async (page) => {
+    await page.addStyleTag({ content: ':root{--dsw-alias-bg-overlay:initial;}' })
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(200)
+    const styles = await page.evaluate(() => {
+      const root = document.querySelector('.wv-root')
+      const dialog = document.querySelector('.wv-dialog')
+      const overlay = document.querySelector('.wv-overlay')
+      // Chromium may serialize a color-mix() result as `color(srgb ...)`, so the alpha is read from
+      // either the legacy rgb()/rgba() form or the modern color() form.
+      const alphaOf = (value) => {
+        const rgba = /rgba?\(([^)]+)\)/.exec(value)
+        if (rgba) {
+          const parts = rgba[1].split(/[,/ ]+/).filter(Boolean).map(Number)
+          return parts.length === 4 ? parts[3] : 1
+        }
+        const modern = /color\([^)]*\/\s*([0-9.]+)\s*\)/.exec(value)
+        if (modern) return Number(modern[1])
+        if (value === 'transparent') return 0
+        return 1
+      }
+      const cs = getComputedStyle(dialog)
+      const overlayCs = getComputedStyle(overlay)
+      return {
+        overlayToken: getComputedStyle(root).getPropertyValue('--wv-overlay').trim(),
+        backgroundColor: cs.backgroundColor,
+        backgroundImage: cs.backgroundImage,
+        dialogAlpha: alphaOf(cs.backgroundColor),
+        overlayBackground: overlayCs.backgroundColor,
+        overlayAlpha: alphaOf(overlayCs.backgroundColor),
+      }
+    })
+    assert.ok(styles.overlayToken.length > 0, 'local overlay fallback missing: ' + JSON.stringify(styles))
+    assert.ok(styles.backgroundColor !== '' && styles.backgroundColor !== 'transparent', 'dialog background is not resolved: ' + styles.backgroundColor)
+    assert.equal(styles.dialogAlpha, 1, 'dialog surface must stay opaque: ' + styles.backgroundColor)
+    assert.ok(styles.backgroundImage.includes('gradient'), 'expected the themed gradient layer')
+    assert.ok(styles.overlayBackground !== '' && styles.overlayBackground !== 'transparent', 'overlay scrim is not resolved: ' + styles.overlayBackground)
+    assert.ok(styles.overlayAlpha > 0, 'overlay scrim disappeared: ' + styles.overlayBackground)
+  })
+})
+
 await check('plan09 scoped dependency evidence resets on context change and uses actual source layout', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
@@ -847,8 +1102,11 @@ await check('plan09 scoped dependency evidence resets on context change and uses
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-gpu"]')?.getAttribute('data-state') === 'ready')
     await page.locator('[data-testid="plan09-wizard-browse"]').click()
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ profile: 'second-profile', capabilityRevision: 9, gpuAvailable: false }))
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-reopen"]').click()
     await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
     assert.notEqual(await page.locator('[data-testid="plan09-dep-gpu"]').getAttribute('data-state'), 'ready')
     await page.locator('[data-testid="plan09-check-gpu"]').click()
@@ -1178,10 +1436,13 @@ await check('plan09 recovers a late prepare after returning from another page', 
     await page.locator('[data-testid="plan09-prepare"]').click()
     await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(250)
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 11 }))
     await page.waitForTimeout(350)
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(400)
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
@@ -1206,9 +1467,11 @@ await check('plan09 marks a late prepare stale for manifest and delivery variant
       await page.locator('[data-testid="plan09-prepare"]').click()
       await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
       await page.getByRole('button', { name: '唱歌', exact: true }).click()
+      await closePlan09Wizard(page)
       await page.waitForTimeout(250)
       await page.evaluate((value) => window.__WHALE_PLAN09_CONFIG__.setContext(value), patch)
       await page.waitForTimeout(350)
+      await closePlan09Wizard(page)
       await page.getByRole('button', { name: '语音气泡', exact: true }).click()
       await page.waitForTimeout(400)
       if (await page.locator('[data-testid="plan09-wizard"]').count()) await page.locator('[data-testid="plan09-wizard-browse"]').click()
@@ -1229,11 +1492,14 @@ await check('plan09 keeps a valid confirmation when the context completes before
     await page.locator('[data-testid="plan09-prepare"]').click()
     await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(250)
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 12 }))
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
     await page.waitForTimeout(450)
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(400)
     assert.equal(await page.locator('[data-testid="plan09-tx-panel"]').getAttribute('data-phase'), 'PREPARED')
     assert.equal(await page.locator('[data-testid="plan09-tx-stale"]').count(), 1)
@@ -1247,10 +1513,13 @@ await check('plan09 keeps a valid confirmation when the context completes before
     await page.locator('[data-testid="plan09-prepare"]').click()
     await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(250)
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 13 }))
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 1 }))
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await closePlan09Wizard(page)
     await page.waitForTimeout(400)
     await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.releasePrepare())
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'PREPARED')
@@ -1271,9 +1540,12 @@ await check('plan09 recovers a late prepare failure or empty answer after unmoun
       await page.locator('[data-testid="plan09-prepare"]').click()
       await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('prepareChange'), null, { timeout: 8000 })
       await page.getByRole('button', { name: '唱歌', exact: true }).click()
+      await closePlan09Wizard(page)
       await page.waitForTimeout(250)
       await page.evaluate(() => window.__WHALE_PLAN09_CONFIG__.setContext({ capabilityRevision: 14 }))
+      await closePlan09Wizard(page)
       await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+      await closePlan09Wizard(page)
       await page.waitForTimeout(400)
       await page.evaluate((mode) => window.__WHALE_PLAN09_CONFIG__.releasePrepare(mode), kind)
       await page.waitForFunction(() => document.querySelector('[data-testid="plan09-tx-panel"]')?.getAttribute('data-phase') === 'FAILED', null, { timeout: 8000 })
@@ -1330,6 +1602,7 @@ await check('plan09 shared pending evidence is not stuck after another page open
     await page.locator('[data-testid="plan09-check-core"]').click()
     await page.waitForFunction(() => document.querySelector('[data-testid="plan09-dep-core"]')?.getAttribute('data-state') === 'checking')
     await page.waitForFunction(() => (window.__WHALE_PLAN09_ADAPTER_CALLS__ || []).includes('check:core'), null, { timeout: 8000 })
+    await closePlan09Wizard(page)
     await page.getByRole('button', { name: '唱歌', exact: true }).click()
     await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
     assert.notEqual(await page.locator('[data-testid="plan09-dep-core"]').getAttribute('data-state'), 'checking')

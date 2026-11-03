@@ -610,3 +610,47 @@ The first offline delivery-persistence owner after ADR-001: `core/audio/relay-co
 `createFakeDeliveryBackend` has its own trusted target directory and rechecks target id/kind/authorization plus `bridgeAllowed && workerAllowed && identityVerified`; the Core side separately re-resolves the stored target before submit. WAV/8MiB/15min gates, a simulated `QUEUED` receipt and zero real Sender/network/device/WeChat action. Submit re-reads the Artifact before any Fake call: deleted/changed/expired bytes fail closed with zero Fake submit. `projectUnifiedRelayComponent` projects one user-facing 鲸递 item (`legacyAliases: whale-relay, voice-sender`, internal modules, one install unit, no second store, realReady=false); the Plan09 wizard already presents one 鲸递 delivery item and WeChatAgent remains independent. No real Sender import, port, token, production config or send.
 
 Tests: 12 new relay tests (real SAVED + actual library bytes, stable IDs/alias/conflict, one submit + duplicate, target directory + Fake Worker gate, forged task/artifact, deleted artifact zero submit, UNKNOWN no re-sign, cancel requested/confirmed, capacity, concurrent one submit, live same-process owner protection, real child-process restart UNKNOWN, unified component view); full suite **1082 / 1078 pass / 4 platform skips / 0 fail**, UI 69/69, `client.js` 308,455 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and the entire Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 108 revision — persisted authority, immutable request-key binding and lock fencing (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision is the集中修复 required by the 0138 review
+(`REVIEWED` / `CHANGES_REQUIRED`) plus the user's dependency-wizard layout screenshots.
+
+**A · dependency wizard (frontend).** The wizard is no longer a page-local child. `client.template.js` adds a
+plugin-owned controlled root overlay (`createRootOverlay()`, `OverlayHostContext`, `RootOverlayLayer`); the shared
+`Modal` publishes its surface into that layer and `ModalSurface` keeps the whole focus trap/Escape/focus-return
+logic. `.wv-overlay-layer` is a direct child of `.wv-root` next to `.wv-shell` (inside the plugin theme scope, no
+portal/`react-dom` dependency), so neither the `.wv-scroll` clip nor the `wv-pagein` transform can become the
+containing block. `client.css` makes the overlay absolute inside that layer, sizes the dialog from the container
+(`min(560px,100%)`, `max-height:100%`, no `100vw`/`vh`), keeps head/footer non-shrinking with an independently
+scrolling body, reflows dependency rows/mode cards/footer from the actual plugin width (`.wv-root[data-layout="narrow"]`
+plus `minmax(min(190px,100%),1fr)`, `min-width:0`, `overflow-wrap:anywhere`), and gives the dialog an opaque local
+fallback surface (`--wv-overlay`/palette fallbacks, `--wv-danger`/`--wv-panel`/`--wv-ink` aliases, `var(--wv-card-solid)`
+background under the themed gradient) so a missing host token cannot make it transparent. The toast is positioned
+inside the root as well. Existing demo/installation/no-write boundaries are unchanged.
+
+**B · Core/relay.** `ensureDelivery({handoff})` now accepts only a reference envelope (schemaVersion/scopeId/taskId/
+artifactRef/targetId/requestKey/rights); unknown keys — including a caller-supplied `taskRecord` — are refused. The
+relay re-reads the persisted SAVED authority itself: AudioTask owner v2 (`get` SAVED + `artifactStatus` READABLE with
+the same ref + persisted `deliveryRequested:true`) or Cover owner v3 (`coverStatus` SAVED + MASTER ref). A delivery
+persists a versioned issuance (`intentId` + `intent{version,kind,taskIdentityHash,deliveryRequested,authorizedBy,issuedAt}`);
+the frozen Cover record keeps `deliveryRequested:false` and is never edited (`RELAY_ISSUED_FOR_FROZEN_COVER`), while a
+legacy Task record must already carry the persisted delivery intent (`PERSISTED_TASK_DELIVERY_INTENT`). A `requestKey`
+is an immutable binding checked before digest reuse (a bound key can never be re-pointed; an unbound key may only
+register the digest it first resolves to). After `health`/`capabilities`/`resolveTarget` awaits, the relay re-reads the
+authority identity hash, the artifact bytes/hash/expiry and the Core target immediately before the Fake Worker accepts,
+so revocation/deletion/expiry during preflight produces zero submit. The live owner token is retired only after the
+terminal state was durably committed (bounded retry on lock contention; an unproven commit stays conservative busy
+instead of silently becoming UNKNOWN), and the claim token is registered only after its commit. All lock paths are
+fenced by “move aside, then verify the moved bytes”: stale reclaim deletes only the exact lease it proved dead, a live
+replacement is restored with create-or-fail semantics, and a release restore can never overwrite a third live lease.
+The Fake Worker's `submit` resolves the target from its own directory by the persisted delivery target id/kind/backend
+id and its own identity/authorization/allowlist/Bridge/Worker gates; the upstream booleans or a handed-over resolver
+result cannot grant anything. One new fixed code (`RELAY_CORE_TASK_NOT_SAVED`) documents the persisted-authority refusal.
+
+Evidence: 3 relay test files / 28 tests (12 reworked core + 8 TRUST + 8 PERSIST, including the exact
+concurrent-open-at-accept-boundary, stale-reclaim and release-restore interleavings); full suite **1099 / 1095 pass /
+4 platform skips / 0 fail**; UI **72/72** with three new dialog-layout checks (root-layer containment/nav block/focus/
+reduced motion, narrow simulated host panel, missing host token); `client.js` 314,687 chars. Status remains
+`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged, 13-B/C, real WeChat/Sender,
+Plan14 and every real Plan12/13 DoD remain OPEN.

@@ -23,7 +23,7 @@ Windows PowerShell may block `npm.ps1`; use `npm.cmd`:
 ```powershell
 cd <repo-root>
 npm.cmd run test:ui:setup   # installs pinned test deps + matching Chromium
-npm.cmd run test:ui         # builds client.js, runs 10 browser checks
+npm.cmd run test:ui         # builds client.js, runs the full browser check suite
 ```
 
 Other shells may use `npm run test:ui`. The root unit suite remains:
@@ -53,7 +53,7 @@ The job does not connect to DSH, WeChatAgent, Voice Sender or Qwen and requires 
 
 - Actual generated client bundle is loaded; no source-string assertions.
 - Overview and primary navigation: voice settings, permissions, send & safety, studio, emotions, activity, advanced.
-- 12 checks total; every check has a clear PASS/FAIL name.
+- 72 checks total; every check has a clear PASS/FAIL name.
 - Send & Safety page: emergency-stop/window/game capability states, disabled unsupported controls,
   moved failure fallback, Qwen auto-start in Components, Core-unavailable state, narrow layout.
 - Real-config readout: Bridge saved value, Worker safety permit, Provider/voice/model, permission
@@ -63,6 +63,7 @@ The job does not connect to DSH, WeChatAgent, Voice Sender or Qwen and requires 
 - No-Core, invalid Schema and timeout fixtures degrade without Mock success.
 - Rounded/glass structure (`border-radius`, `backdrop-filter`), no horizontal overflow, logo/SVG.
 - Narrow 780px viewport.
+- Dependency wizard dialog layout: it is mounted in the plugin's own root overlay layer (a sibling of `.wv-shell`, never inside `.wv-scroll`/`.wv-page`), the nav is really covered, root/overlay/dialog/footer rects stay inside the plugin root, the body scrolls on its own at low height, a narrow simulated host panel (offset + overflow + transform + filter) stacks the mode cards/dependency rows with no horizontal overflow, every control stays hit-testable, Escape returns focus to the opener, reduced-motion changes nothing, and a missing `--dsw-alias-bg-overlay` host token keeps an opaque dialog surface.
 - Console errors/page errors and failed local resource requests.
 - Screenshots and `report.json` under `tests/ui/.artifacts/` (gitignored).
 
