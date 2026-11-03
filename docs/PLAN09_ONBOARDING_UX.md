@@ -127,4 +127,5 @@
 
 - Singing 页新增 `plan12-singing-app` 卡片，仅当测试/宿主显式注入 `window.__WHALE_SINGING_APP__` 时出现；生产只读 Host 不注入时显示 `plan12-no-adapter` “未接入唱歌应用适配器”，不创建任务。
 - 卡片使用可信 `list()` 的素材/声线选择，动作包括创建、执行/重连、刷新阶段、取消和读取受限预览；显示 FIXTURE/OFFLINE、中文阶段、`SAVED ≠ SENT` 与 `realReady=false`。
-- 该面板不直接连接真实 RVC/TTS/API、不播放设备、不投递微信；UI 测试通过注入的 Fixture adapter 验证创建后任务 id 稳定、执行到 SAVED、预览 4096B 及重复点击不另造 taskId。完整边界见 [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md)。
+- 该面板不直接连接真实 RVC/TTS/API、不播放设备、不投递微信；UI 测试通过 test-only HTTP bridge 调用真实 `openSingingApp`/Cover/Artifact 库，验证创建→执行→SAVED→受限预览的真实 MASTER 字节/hash、重复点击不另造 taskId，以及慢执行中状态/取消可用、取消后无 MASTER。
+- 任务进入 `CLAIMED` 后每 300 ms 查询真实状态；状态/取消按钮不再因执行中而禁用。切换素材/声线时清空当前 task，并用 task-ref 保护忽略旧任务的晚响应，避免覆盖当前 task 或重复写 MASTER。完整边界见 [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md)。

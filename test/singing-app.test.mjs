@@ -142,6 +142,40 @@ test('a CLEAN_VOCAL layout runs through the same task/Artifact boundary', async 
   }
 })
 
+test('a controlled slow run is queryable and cancel reaches CANCELLED with no MASTER', async () => {
+  const { sandbox, sourceRef, source } = await setup()
+  try {
+    const app = appFor(sandbox, source, { stageDelayMs: 150 }).app
+    const started = await app.start(draft(sourceRef))
+    assert.equal(started.ok, true)
+    assert.ok(started.taskId)
+    let mid = await app.status(started.taskId)
+    for (let attempt = 0; attempt < 40 && (!mid.ok || mid.stage.state !== 'CLAIMED'); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      mid = await app.status(started.taskId)
+    }
+    assert.equal(mid.ok, true)
+    assert.equal(mid.stage.state, 'CLAIMED')
+    const cancel = await app.cancel(started.taskId)
+    assert.equal(cancel.ok, true)
+    assert.equal(cancel.cancelState, 'ACCEPTED')
+    await app.waitFor(started.taskId)
+    let final = await app.status(started.taskId)
+    for (let attempt = 0; attempt < 60 && final.stage.state === 'CLAIMED'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      final = await app.status(started.taskId)
+    }
+    assert.equal(final.ok, true)
+    assert.equal(final.stage.state, 'CANCELLED')
+    assert.equal(final.stage.master, null)
+    const preview = await app.preview({ taskId: started.taskId, draft: draft(sourceRef) })
+    assert.equal(preview.ok, false)
+    assert.equal(preview.code, SINGING_APP_ERRORS.NOT_SAVED)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
 test('changed parameters on the same source/voice are a parameter conflict, not a second task', async () => {
   const { sandbox, sourceRef, source } = await setup()
   try {

@@ -3300,6 +3300,7 @@ function Plan09SingingAppPanel({ draft, notify }) {
   const [preview, setPreview] = React.useState(null)
   const [busy, setBusy] = React.useState('')
   const [error, setError] = React.useState('')
+  const taskRef = React.useRef(null)
   React.useEffect(() => {
     if (!adapter) return undefined
     let live = true
@@ -3312,12 +3313,24 @@ function Plan09SingingAppPanel({ draft, notify }) {
     }).catch(() => { if (live) setError('CATALOG_UNAVAILABLE') })
     return () => { live = false }
   }, [adapter])
+  React.useEffect(() => {
+    if (!adapter || !taskId || !stage || stage.state !== 'CLAIMED') return undefined
+    let live = true
+    const timer = setInterval(async () => {
+      try {
+        const result = await adapter.status(taskId)
+        if (!live || taskRef.current !== taskId || !result || result.ok !== true) return
+        setStage(result.stage)
+      } catch { /* the next explicit refresh reports the error */ }
+    }, 300)
+    return () => { live = false; clearInterval(timer) }
+  }, [adapter, taskId, stage && stage.state])
   if (!adapter) {
     return h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan12-no-adapter' },
       h('div', { className: 'wv-card-title' }, h('div', null, h('h2', null, '唱歌演示任务'), h('p', null, '当前没有注入可信唱歌应用适配器；页面只保留草稿与能力说明。'))),
       h('div', { className: 'wv-notice warn' }, h(Icon, { name: 'lock', size: 14 }), h('span', null, '未接入唱歌应用适配器：不会创建 Core 任务、不会读取或播放真实音频。')))
   }
-  const call = async (label, fn) => {
+  const call = async (label, fn, expectedTaskId = null) => {
     setBusy(label); setError('')
     try {
       const result = await fn()
@@ -3326,7 +3339,9 @@ function Plan09SingingAppPanel({ draft, notify }) {
         notify('唱歌演示任务未执行：' + ((result && result.code) || 'ADAPTER_REJECTED'), 'error')
         return null
       }
-      if (result.taskId) setTaskId(result.taskId)
+      if (expectedTaskId && result.taskId && result.taskId !== expectedTaskId) return null
+      if (label !== 'create' && taskRef.current && result.taskId && result.taskId !== taskRef.current) return null
+      if (label === 'create' && result.taskId) { taskRef.current = result.taskId; setTaskId(result.taskId) }
       if (result.stage) setStage(result.stage)
       if (label === 'preview') setPreview(result)
       return result
@@ -3346,10 +3361,10 @@ function Plan09SingingAppPanel({ draft, notify }) {
     vocalGainDb: draft.vocalGainDb, instrumentalGainDb: draft.instrumentalGainDb,
   }
   const create = () => call('create', () => adapter.create(payload))
-  const execute = () => taskId ? call('execute', () => adapter.execute(taskId)) : notify('请先创建或选择演示任务。', 'error')
-  const status = () => taskId ? call('status', () => adapter.status(taskId)) : notify('请先创建或选择演示任务。', 'error')
-  const cancel = () => taskId ? call('cancel', () => adapter.cancel(taskId)) : notify('请先创建或选择演示任务。', 'error')
-  const previewBytes = () => taskId ? call('preview', () => adapter.preview(taskId, payload)) : notify('请先创建并保存演示任务。', 'error')
+  const execute = () => taskId ? call('execute', () => adapter.execute(taskId), taskId) : notify('请先创建或选择演示任务。', 'error')
+  const status = () => taskId ? call('status', () => adapter.status(taskId), taskId) : notify('请先创建或选择演示任务。', 'error')
+  const cancel = () => taskId ? call('cancel', () => adapter.cancel(taskId), taskId) : notify('请先创建或选择演示任务。', 'error')
+  const previewBytes = () => taskId ? call('preview', () => adapter.preview(taskId, payload), taskId) : notify('请先创建并保存演示任务。', 'error')
   const stages = stage && Array.isArray(stage.stages) ? stage.stages : []
   return h('section', { className: 'wv-card pad', style: { marginBottom: 14 }, 'data-testid': 'plan12-singing-app' },
     h('div', { className: 'wv-card-title' },
@@ -3358,17 +3373,17 @@ function Plan09SingingAppPanel({ draft, notify }) {
     h('div', { className: 'wv-notice warn', style: { marginBottom: 10 } }, h(Icon, { name: 'alert', size: 14 }), h('span', null, 'realReady=false；不调用真实 RVC/TTS/API、不读取私人音频、不播放设备、不投递微信。')),
     h('div', { className: 'wv-grid two' },
       h(Plan09DraftField, { label: '可信演示素材' },
-        h('select', { className: 'wv-select', value: selected.sourceRef, 'data-testid': 'plan12-source', onChange: (event) => { setSourceRef(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+        h('select', { className: 'wv-select', value: selected.sourceRef, 'data-testid': 'plan12-source', onChange: (event) => { taskRef.current = null; setSourceRef(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
           (catalog && catalog.sources ? catalog.sources : []).map((source) => h('option', { key: source.sourceRef, value: source.sourceRef }, source.label || source.sourceRef)))),
       h(Plan09DraftField, { label: '可信演示声线' },
-        h('select', { className: 'wv-select', value: selected.voiceProfileId, 'data-testid': 'plan12-voice', onChange: (event) => { setVoiceProfileId(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
+        h('select', { className: 'wv-select', value: selected.voiceProfileId, 'data-testid': 'plan12-voice', onChange: (event) => { taskRef.current = null; setVoiceProfileId(event.target.value); setTaskId(null); setStage(null); setPreview(null) } },
           (catalog && catalog.voices ? catalog.voices : []).map((voice) => h('option', { key: voice.voiceProfileId, value: voice.voiceProfileId }, voice.label || voice.voiceProfileId))))),
     h('p', { className: 'wv-muted', 'data-testid': 'plan12-task-id' }, taskId ? '任务：' + taskId : '尚未创建演示任务。'),
     h('div', { className: 'wv-row wv-wrap', style: { marginTop: 8 } },
       h(Button, { onClick: create, disabled: Boolean(busy), 'data-testid': 'plan12-create' }, busy === 'create' ? '创建中…' : '创建演示任务'),
       h(Button, { onClick: execute, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-execute' }, busy === 'execute' ? '执行中…' : '执行/重连'),
-      h(Button, { variant: 'ghost', onClick: status, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-status' }, '刷新阶段'),
-      h(Button, { variant: 'ghost', onClick: cancel, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-cancel' }, '取消任务'),
+      h(Button, { variant: 'ghost', onClick: status, disabled: !taskId, 'data-testid': 'plan12-status' }, '刷新阶段'),
+      h(Button, { variant: 'ghost', onClick: cancel, disabled: !taskId, 'data-testid': 'plan12-cancel' }, '取消任务'),
       h(Button, { variant: 'ghost', onClick: previewBytes, disabled: Boolean(busy) || !taskId, 'data-testid': 'plan12-preview' }, '读取受限预览')),
     error ? h('p', { className: 'wv-plan09-errors', 'data-testid': 'plan12-error' }, '· ' + error) : null,
     stage ? h('div', { className: 'wv-plan09-preview', 'data-testid': 'plan12-state' },

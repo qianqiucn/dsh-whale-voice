@@ -596,3 +596,32 @@ complete.
 
 **Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).
+
+## ADR-023 — The Singing page is proven through a test-only HTTP bridge to real Core, not a fixed fake adapter
+
+**Status:** accepted (`12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-022, [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md).
+
+**Decision:** The isolated UI harness injects a browser fetch adapter (`window.__WHALE_SINGING_APP__`) whose
+endpoints are served by `tests/ui/singing-bridge.mjs`. The bridge owns a temporary sandbox, imports real synthetic
+WAVs into the Fixture Artifact library, and calls the actual `openSingingApp`/`createCoverTask`/`executeCover`/
+`coverStatus`/`requestCoverCancel`/`preview` path. It exposes only metadata derived from actual Core results
+(state, MASTER count/hash/length, preview bytes/hash); there are no fixed task ids, stage labels or hashes in the
+browser adapter. The bridge is test-only and never registered by `index.js`.
+
+To make cancel observable, `executeCover` accepts an optional test/harness `stageDelayMs` (0–2000, default 0) and
+the app exposes `start()` so the long Promise is not held by the page; a `CLAIMED` task can be queried/canceled
+while running, and a task-ref guard ignores late responses from a switched-away task. Production callers omit the
+delay (0), and cancel still goes through the existing fence/requested/confirmed semantics.
+
+**Reason:** Fixed fake returns only show the UI can render; they cannot prove the page reaches the real single-claim
+executor, saves one MASTER or reads actual stored bytes. A real temporary bridge is the minimum evidence for R01,
+while keeping the production Host read-only. A controlled pause is preferable to weakening Core assertions or
+sleeping for an arbitrary duration.
+
+**Rejected alternatives:** Fixed task/stage/hash stubs in `harness.js`; a production HTTP write route; mocking
+`coverStatus`/`requestCoverCancel`; removing cancellation assertions to avoid timing flakiness; disabling the
+task-ref guard and letting a late result overwrite the current task.
+
+**Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).

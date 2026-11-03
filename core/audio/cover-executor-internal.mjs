@@ -738,11 +738,12 @@ async function persistCoverEntry({ state, scopeId, taskId, attemptId, entry }) {
   return written.ok ? null : written.result
 }
 
-export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies, compute = 'LOCAL_GPU' }) {
+export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, expiresAt, rights, intent, dependencies, compute = 'LOCAL_GPU', stageDelayMs = 0 }) {
   if (!sandbox || typeof scopeId !== 'string' || typeof taskId !== 'string' || typeof requestKey !== 'string') {
     return failure('INPUT_INVALID')
   }
   if (compute !== 'LOCAL_GPU' && compute !== 'CPU_CLOUD') return failure('INPUT_INVALID', 'compute')
+  if (!Number.isInteger(stageDelayMs) || stageDelayMs < 0 || stageDelayMs > 2000) return failure('INPUT_INVALID', 'stageDelayMs')
   const requestNow = canonicalIso(now)
   if (requestNow === null) return failure('INPUT_INVALID', 'now')
   if (!intent || typeof intent !== 'object') return failure('INPUT_INVALID', 'intent')
@@ -950,6 +951,15 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     const initialStop = await stopIfCancelled()
     if (initialStop) return initialStop
     await yieldMacrotask()
+    // Test/harness-only controlled pause. Production callers omit it (0); a cancel delivered during
+    // the pause is observed by the same fence before any next stage.
+    const pauseBeforeNextStage = async () => {
+      if (stageDelayMs <= 0) return null
+      await new Promise((resolve) => setTimeout(resolve, stageDelayMs))
+      return stopIfCancelled()
+    }
+    const initialPause = await pauseBeforeNextStage()
+    if (initialPause) return initialPause
 
     const guardedStage = async (run) => {
       try {
@@ -977,6 +987,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
       const lostSeparated = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
       if (lostSeparated) return lostSeparated
       await yieldMacrotask()
+      const pausedAfterSeparated = await pauseBeforeNextStage()
+      if (pausedAfterSeparated) return pausedAfterSeparated
     }
 
     const convertResult = await guardedStage(() => convertVocalCooperative(conversionInput, entry.intent.pitchShift, hooks))
@@ -991,6 +1003,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     const lostConverted = await persistCoverEntry({ state, scopeId, taskId, attemptId, entry })
     if (lostConverted) return lostConverted
     await yieldMacrotask()
+    const pausedAfterConverted = await pauseBeforeNextStage()
+    if (pausedAfterConverted) return pausedAfterConverted
 
     const mixResult = await guardedStage(() =>
       mixStemsCooperative(
@@ -1010,6 +1024,8 @@ export async function executeCover({ sandbox, scopeId, taskId, requestKey, now, 
     entry.checkpoints.push({ index: 3, stage: 'MIXED', at: requestNow, status: 'DONE', tempSummary: { role: 'MASTER', byteSha256: graph.master.byteSha256, byteLength: graph.master.byteLength }, importReceipt: null })
     const stopBeforeMix = await stopIfCancelled()
     if (stopBeforeMix) return stopBeforeMix
+    const pausedBeforeImport = await pauseBeforeNextStage()
+    if (pausedBeforeImport) return pausedBeforeImport
 
     const artifactState = getArtifactState(sandbox)
     if (isArtifactLocked(artifactState)) {

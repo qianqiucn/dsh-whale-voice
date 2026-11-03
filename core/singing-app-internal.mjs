@@ -169,13 +169,15 @@ export function singingStageView(status) {
  * `dependenciesProvider` are Core/test-owned facts, never browser input. `realReady` is always
  * false in this unit.
  */
-export function openSingingApp({ sandbox, scopeId, sources, voices, dependenciesProvider = null, now = () => new Date().toISOString() } = {}) {
+export function openSingingApp({ sandbox, scopeId, sources, voices, dependenciesProvider = null, stageDelayMs = 0, now = () => new Date().toISOString() } = {}) {
   if (!sandbox || typeof scopeId !== 'string' || scopeId.length === 0) return fail(SINGING_APP_ERRORS.NO_ADAPTER)
+  if (!Number.isInteger(stageDelayMs) || stageDelayMs < 0 || stageDelayMs > 2000) return fail(SINGING_APP_ERRORS.INVALID, 'stageDelayMs')
   const sourceList = (Array.isArray(sources) ? sources : []).map(normalizeSource).filter(Boolean).slice(0, SINGING_APP_LIMITS.maxSources)
   const voiceList = (Array.isArray(voices) ? voices : []).map(normalizeVoice).filter(Boolean).slice(0, SINGING_APP_LIMITS.maxVoices)
   if (sourceList.length === 0 || voiceList.length === 0) return fail(SINGING_APP_ERRORS.NO_ADAPTER)
 
   const intents = new Map()
+  const executions = new Map()
   const app = {
     schemaVersion: SINGING_APP_SCHEMA_VERSION,
     scopeId,
@@ -257,10 +259,31 @@ export function openSingingApp({ sandbox, scopeId, sources, voices, dependencies
         requestKey: 'singing-exec:' + created.taskId,
         now: now(), expiresAt: intent.rightsExpiresAt,
         rights: { state: 'GRANTED', proofRef: intent.rightsProofRef },
-        intent, dependencies, compute: 'LOCAL_GPU',
+        intent, dependencies, compute: 'LOCAL_GPU', stageDelayMs,
       })
       if (!executed || executed.ok !== true) return mapCoreFailure(executed)
       return { ok: true, taskId: created.taskId, stage: publicStatus(await coverStatus({ sandbox, scopeId, taskId: created.taskId, now: now() })), result: clone(executed.value) }
+    },
+    /* Start the same run without making the caller hold the long Promise; the caller can poll
+     * status/cancel while the real executor continues. Repeated starts for one task are ignored. */
+    async start(draftInput) {
+      const created = await app.create(draftInput)
+      if (!created.ok) return created
+      if (executions.has(created.taskId)) {
+        return { ok: true, taskId: created.taskId, stage: publicStatus(await coverStatus({ sandbox, scopeId, taskId: created.taskId, now: now() })), started: false }
+      }
+      const running = app.run(draftInput).catch(() => null).finally(() => executions.delete(created.taskId))
+      executions.set(created.taskId, running)
+      let stage = publicStatus(await coverStatus({ sandbox, scopeId, taskId: created.taskId, now: now() }))
+      for (let attempt = 0; attempt < 40 && stage.state === 'NO_ATTEMPT'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        stage = publicStatus(await coverStatus({ sandbox, scopeId, taskId: created.taskId, now: now() }))
+      }
+      return { ok: true, taskId: created.taskId, stage, started: true }
+    },
+    async waitFor(taskId) {
+      const running = executions.get(taskId)
+      return running ? running : null
     },
     async status(taskId) {
       if (typeof taskId !== 'string') return fail(SINGING_APP_ERRORS.INVALID, 'taskId')

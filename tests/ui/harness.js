@@ -529,53 +529,24 @@
     return adapter
   }
   window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
-  window.__WHALE_SINGING_APP__ = (() => {
-    let task = null
-    let creates = 0
-    let executes = 0
-    let previews = 0
-    const savedStage = {
-      state: 'SAVED', stateLabel: '已保存',
-      stages: [
-        { stage: 'SEPARATING', label: '分离', status: 'DONE' },
-        { stage: 'CONVERTING', label: '转换', status: 'DONE' },
-        { stage: 'MIXING', label: '混音', status: 'DONE' },
-        { stage: 'VERIFYING', label: '校验', status: 'DONE' },
-      ],
-      master: { artifactRef: 'artifact:fixture-bytes-' + '0'.repeat(32), byteLength: 4096, sha256: 'a'.repeat(64) },
-      fixtureOnly: true, realReady: false,
+  window.__WHALE_SINGING_APP__ = new URLSearchParams(window.location.search).get('singing') === 'none' ? null : (() => {
+    const request = async (path, options) => {
+      const response = await fetch(path, { cache: 'no-store', ...options })
+      return response.json()
     }
+    const post = (path, body) => request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
     return {
-      async list() {
-        return {
-          ok: true, fixtureOnly: true, realReady: false,
-          sources: [{ sourceRef: 'fixture://demo-song-01', label: '演示曲' }],
-          voices: [{ voiceProfileId: 'voice:demo-hero', label: '演示声线' }],
-        }
-      },
-      async create() {
-        creates += 1
-        if (!task) task = { taskId: 'task:fixture-ui-singing', stage: { state: 'NO_ATTEMPT', stateLabel: '待开始', stages: [], fixtureOnly: true, realReady: false } }
-        return { ok: true, taskId: task.taskId, outcome: task.stage.state === 'NO_ATTEMPT' ? 'CREATED' : 'EXISTING', stage: task.stage }
-      },
-      async execute(taskId) {
-        executes += 1
-        if (!task || task.taskId !== taskId) return { ok: false, code: 'NOT_FOUND' }
-        task.stage = savedStage
-        return { ok: true, taskId, stage: task.stage }
-      },
-      async status(taskId) {
-        if (!task || task.taskId !== taskId) return { ok: false, code: 'NOT_FOUND' }
-        return { ok: true, taskId, stage: task.stage }
-      },
-      async cancel(taskId) {
-        return { ok: true, taskId, cancelState: 'TOO_LATE', stage: task ? task.stage : null }
-      },
-      async preview(taskId) {
-        previews += 1
-        return { ok: true, taskId, byteLength: 4096, sha256: 'a'.repeat(64), fixtureOnly: true, realReady: false }
-      },
-      stats() { return { creates, executes, previews, taskId: task ? task.taskId : null } },
+      list: () => request('/singing-app/catalog'),
+      create: (draft) => post('/singing-app/create', draft),
+      execute: (taskId) => post('/singing-app/execute', { taskId }),
+      status: (taskId) => request('/singing-app/status?taskId=' + encodeURIComponent(taskId)),
+      cancel: (taskId) => post('/singing-app/cancel', { taskId }),
+      preview: (taskId, draft) => post('/singing-app/preview', { taskId, draft }),
+      reset: () => post('/singing-app/reset', {}),
     }
   })()
 
