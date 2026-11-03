@@ -47,6 +47,7 @@ const LOCK_TIMEOUT_MS = 5000
 const MAX_WRITE_ATTEMPTS = 4
 const MODES = new Set(['paid', 'free'])
 const PATH_QUEUES = new Map()
+const RUN_QUEUES = new Map()
 const LIVE_OWNERS = new Set()
 
 function fail(code, detail = null) {
@@ -361,7 +362,7 @@ export async function openCostLedger({
     }
   }
 
-  async function run(fn) {
+  async function runOnce(fn) {
     let lastError = null
     for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
       let base
@@ -408,6 +409,16 @@ export async function openCostLedger({
       }
     }
     return fail(lastError || CLOUD_COST_ERRORS.LEDGER_BUSY)
+  }
+
+  /* Same-process callers are serialized before they contend for the file lock. Cross-process
+   * writers still use the token lock/revision path; this queue only removes avoidable self-
+   * contention and makes a concurrent in-process burst deterministic. */
+  function run(fn) {
+    const previous = RUN_QUEUES.get(target) || Promise.resolve()
+    const next = previous.then(() => runOnce(fn))
+    RUN_QUEUES.set(target, next.then(() => {}, () => {}))
+    return next
   }
 
   function reserve({ requestId, charCount } = {}) {
