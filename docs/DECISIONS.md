@@ -800,3 +800,33 @@ the rename (still a window); pid/mtime-based guard stealing; repairing or fallin
 revision; migrating the unmerged previous store format.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-029 — Pruned revision numbers stay occupied; a failed enumeration is never an empty store
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03). Extends ADR-028.
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, ADR-028, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** Retention never frees a revision number. The newest four payloads are kept; older revision
+files are replaced in place by a small immutable tombstone (`{pruned:true,revision:N}`) with the same name,
+so a late writer whose base is older can never re-create an already published revision and report a success
+that readers would ignore. The payload stays bounded (one tiny tombstone per revision) and no stale snapshot
+is re-authorised. Retention failures are best-effort and never touch the highest revision.
+
+Directory enumeration is a three-way fact, not a boolean: *confirmed empty* (successful enumeration, no
+revision files), *has revisions*, or *cannot enumerate*. `readdir` errors are propagated; the read, the
+commit-time version check and any cleanup that needs the list fail closed with `STORE_INVALID` instead of
+treating the store as new (which previously allowed a low revision to be rebuilt and a `CREATED` success to be
+returned for a record that was not in the highest authority). A highest revision that is a tombstone is
+refused as corrupt.
+
+**Reason:** the 0142 review proved two success-consistency failures of the new revision store: pruning r3
+freed the name so a paused writer's stale snapshot could be re-published as r3 and return success while
+readers stayed at r9 (lost successful cancel); and two `readdir` EIO made an existing store look empty, so a
+`CREATED` r1 was returned for a record absent from r6. Both are repaired by making revision numbers
+non-reusable and by treating enumeration failure as an unknown store.
+
+**Rejected alternatives:** another pre-link read sample (moves the window); deleting tombstones or pruning by
+age; rebuilding a lower revision on enumeration failure; returning a fake new store or `CREATED` when the
+store cannot be enumerated; repairing a corrupt highest revision by falling back.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

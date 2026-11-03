@@ -613,4 +613,11 @@ advisory lease was moved aside can never overwrite a newer commit (it fails clos
 validated revision; pruning is bounded to the newest four and can never be a writer's base; dead-owner delivery
 recovery is unchanged. The two real three-process interleavings now run against the immutable publish.
 
-Evidence: 33 relay tests in 4 files (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races), full suite 1105/1101 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
+112 revision (0142 review): retention keeps revision numbers occupied with immutable tombstones (a late
+writer's stale snapshot can no longer be re-published as an old number and return a success readers would
+ignore) and directory enumeration failures are propagated as `STORE_INVALID` instead of masquerading as an
+empty store (no low-revision rebuild, no fake `CREATED`). The 0142 counterexamples are replayed at their
+native boundaries and fail closed; healthy new stores, corrupt-highest refusal, no-overwrite, UNKNOWN/no-resend
+and recovery stay green.
+
+Evidence: 35 relay tests in 4 files (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), full suite 1107/1103 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.

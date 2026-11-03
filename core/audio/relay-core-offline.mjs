@@ -365,8 +365,9 @@ function revisionStoreFile(root, revision) {
 }
 
 function listRevisionFiles(root) {
-  let names = []
-  try { names = fs.readdirSync(root) } catch { return [] }
+  // Confirmed-empty and cannot-enumerate are different facts: an enumeration error is propagated so
+  // every caller fails closed instead of treating an existing store as a brand-new one.
+  const names = fs.readdirSync(root)
   const files = []
   for (const name of names) {
     if (typeof name !== 'string') continue
@@ -407,6 +408,7 @@ function readStore(root) {
     }
     let parsed
     try { parsed = JSON.parse(text) } catch { throw new Error('corrupt') }
+    if (isObject(parsed) && parsed.pruned === true) throw new Error('corrupt')
     if (!validateStoreState(parsed) || parsed.revision !== files[0].revision) throw new Error('corrupt')
     return parsed
   }
@@ -427,11 +429,30 @@ function removeStaleStoreTemps(root) {
   }
 }
 
-/** Old immutable revisions can never be a writer's base again; keeping a few bounds the directory. */
+/**
+ * Bound the payload of old revisions without ever freeing their numbers. The pruned revision file is
+ * replaced by a small immutable tombstone at the same name, so a late writer whose base is older can
+ * never re-create an already published revision and return success for a state readers would ignore.
+ * The tombstone is written to a private temp and renamed over the old payload; old revisions are not
+ * read by any path, so the replacement cannot race a reader.
+ */
 function pruneOldRevisions(root, revision) {
   for (const item of listRevisionFiles(root)) {
     if (item.revision > revision - KEEP_REVISIONS) continue
-    try { fs.rmSync(item.file, { force: true }) } catch {}
+    const tombstone = JSON.stringify({ schemaVersion: RELAY_CORE_SCHEMA_VERSION, pruned: true, revision: item.revision }) + '\n'
+    const temp = item.file + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp'
+    try {
+      const handle = fs.openSync(temp, 'wx', 0o600)
+      try {
+        fs.writeFileSync(handle, tombstone, 'utf8')
+        fs.fsyncSync(handle)
+      } finally {
+        fs.closeSync(handle)
+      }
+      fs.renameSync(temp, item.file)
+    } catch {
+      try { fs.rmSync(temp, { force: true }) } catch {}
+    }
   }
 }
 

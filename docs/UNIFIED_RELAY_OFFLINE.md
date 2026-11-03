@@ -1,6 +1,6 @@
 # Whale Relay Core · Plan 13-A / OFFLINE
 
-**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-03, 111 revision).
+**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-03, 112 revision).
 This is the first offline owner of delivery persistence for the ADR-001 unified
 `Whale Audio Core → Whale Relay Core → supported target` boundary. It consumes a *persisted* SAVED Audio
 Task (or a persisted SAVED Cover MASTER), reads the real Fixture Artifact bytes through the existing
@@ -90,10 +90,16 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
   lease was moved aside by a stale reclaim can therefore never overwrite a newer commit: it either creates a
   revision nobody else took, or the create fails and it reports `STORE_BUSY` (both writers can never publish
   the same revision). The advisory lease and a latest-revision re-check are kept only as contention hints.
-  Old revisions are pruned best-effort (the newest four are kept) — they can never be a writer's base again,
-  so pruning cannot create an empty-current window. Private temp files are never authoritative and only a
-  provably dead owner's temp is removed. Crash/dead-owner recovery of in-flight deliveries (`SUBMITTING` →
-  `UNKNOWN` on reopen) is unchanged and independent of the commit path.
+  Old revisions are pruned without freeing their numbers: the newest four payloads are kept and older files
+  are replaced by a small immutable tombstone at the same name, so a late writer whose base is older can
+  never re-create an already published revision and report a success readers would ignore (the name stays
+  occupied) while the payload stays bounded. Directory enumeration cannot masquerade as "no store": a
+  successful enumeration with no revision files is confirmed-empty, whereas a `readdir` error is propagated
+  and every read/commit/cleanup path fails closed with `STORE_INVALID` instead of rebuilding a low revision
+  or returning a fake new store/record success; a highest revision that is a tombstone is refused too.
+  Private temp files are never authoritative and only a provably dead owner's temp is removed. Crash/dead-owner
+  recovery of in-flight deliveries (`SUBMITTING` → `UNKNOWN` on reopen) is unchanged and independent of the
+  commit path.
 - `ensureDelivery` persists the record before any backend call. `submit` claims the record with an owner
   token, persists `SUBMITTING` (the live token is registered only after that commit really happened, so a
   failed claim never leaves a phantom live owner), then re-reads the artifact/target.
@@ -163,7 +169,7 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Four offline relay files cover the unit (33 tests):
+Four offline relay files cover the unit (35 tests):
 
 `test/relay-core-offline.test.mjs` (12): real SAVED task + actual Fixture library bytes, stable delivery
 id/alias/intent, safe legacy request id, conflict; a caller-supplied record is never an authority; one submit
@@ -184,13 +190,17 @@ closed bridge/worker, wrong kind, wrong backend binding, mismatched caller id) a
 `targetChecks > 0`; a full Core chain with a revoked Worker directory and a handed-over resolver still fails
 closed; a fully trusted directory entry still accepts.
 
-`test/relay-persist-offline.test.mjs` (10, 137-PERSIST-01/02): an existing digest can never hijack another
+`test/relay-persist-offline.test.mjs` (12, 137-PERSIST-01/02 plus the retention/enumeration close-out): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
 open at the accept boundary does not recover the live submit (no `OWNER_LOST`); stale reclaim never deletes a
 live replacement lease; a moved foreign lease is restored; a release restore never overwrites a third live
 lease; a failed claim commit leaves no phantom live owner and is retryable; an unproven terminal commit keeps
-the owner live as conservative busy rather than silently becoming `UNKNOWN`; a commit whose canonical lease
-was moved aside fails closed with `STORE_BUSY` without writing; corrupt/inconsistent stores (missing digest
+the owner live as conservative busy rather than silently becoming `UNKNOWN`; a commit can never overwrite an
+already published revision (create-or-fail collision with a competing valid snapshot → `STORE_BUSY`, the
+competitor's state survives); a pruned revision number stays occupied by an immutable tombstone and a replayed
+historical snapshot cannot recreate it; injected `readdir` EIO on the read or on the commit-time version check
+is `STORE_INVALID` with no new revision and no fake empty store, and a later normal request still works;
+corrupt/inconsistent stores (missing digest
 index, missing key index, both, dangling entry, duplicate record, illegal terminal relation) are refused with
 `STORE_INVALID` without being rewritten and without a second acceptance.
 
@@ -204,7 +214,7 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1105 tests / 1101 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
+Local: **1107 tests / 1103 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
 (build unchanged by the Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

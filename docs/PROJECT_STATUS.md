@@ -762,3 +762,30 @@ Evidence: 4 relay files / 33 tests (12 core + 9 TRUST + 10 PERSIST + 2 real thre
 314,687 chars (unchanged). Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and
 unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.
 The permit cross-record redundancy limitation stays booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.
+
+### Plan 13-A 112 revision — retention tombstones and enumeration fail-closed (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes the two success-consistency items confirmed
+by the 0142 review (`64ee5ba`); the accepted guard removal/immutable log, canonical digest, Cover permit,
+accept-boundary expiry and UI are not redone.
+
+1. **REVISION_RETENTION.** Pruning no longer frees a revision number: the newest four payloads are kept and
+   older revision files are replaced in place by a small immutable tombstone (`{pruned:true,revision:N}`) at
+   the same name. A late writer whose base is older can never re-create an already published revision and
+   return a success readers would ignore; the payload stays bounded and no stale snapshot is re-authorised.
+   Retention failures are best-effort and never touch the highest revision.
+2. **ENUMERATION_FAIL_CLOSED.** Confirmed-empty (successful `readdir`, no revision files) is now distinct from
+   cannot-enumerate: `readdir` errors are propagated and the read, commit-time version check and cleanup fail
+   closed with `STORE_INVALID` instead of treating an existing store as new. A highest revision that is a
+   tombstone is refused. The previously observed `CREATED` r1 for a record absent from r6 is impossible.
+
+Evidence: 4 relay files / 35 tests (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), including
+the exact 0142 counterexamples replayed at their native boundaries: (a) a store advanced to r9 with r3 pruned
+keeps r3 occupied by a tombstone so replaying the captured historical r3 snapshot at the link boundary is
+`EEXIST` and the highest authority/cancel state is unchanged; (b) injected `readdir` EIO on the read and on
+the commit-time check both fail `STORE_INVALID` with no new revision and no fake empty store, and a later
+normal request creates the next revision against the real store. Full suite **1107 / 1103 pass / 4 platform
+skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js` 314,687 chars (unchanged).
+Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and unmerged; real DSH page
+visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. `RELAY-DEFER-COPY-PUBLISH-142`
+and `RELAY-DEFER-PERMIT-CROSSCHECK-140` stay booked.

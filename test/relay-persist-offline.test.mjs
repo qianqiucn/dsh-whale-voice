@@ -447,3 +447,96 @@ test('PERSIST-02 a commit can never overwrite an already published revision', as
     assert.equal(store.deliveries[0].cancel.requested, true)
   })
 })
+/* ------------------------------------------------------------------ 112 retention / enumeration */
+
+test('PERSIST-02 a pruned revision number is never re-authorised for a late writer', async () => {
+  await withSandbox(async (sandbox) => {
+    const voice = await createVoiceSavedTask(sandbox, {
+      now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
+    })
+    const relay = await openRelay(sandbox)
+    const first = await relay.ensureDelivery(handoffOf(voice, 'ret-a', TARGET.targetId))
+    const second = await relay.ensureDelivery(handoffOf(voice, 'ret-b', TARGET_B.targetId))
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(second.ok, true, JSON.stringify(second))
+    // r3: a legitimate cancel of B. Capture the exact historical bytes a paused writer would hold.
+    const canceled = await relay.cancel(second.delivery.deliveryId)
+    assert.equal(canceled.ok, true, JSON.stringify(canceled))
+    const r3file = path.join(sandbox.root, 'unified-relay-v1.r3.json')
+    const historical = fs.readFileSync(r3file)
+    // Advance the store to r9 through normal API writes; retention prunes r2..r5.
+    for (let index = 0; index < 6; index += 1) {
+      const alias = await relay.ensureDelivery(handoffOf(voice, 'ret-alias-' + index, TARGET.targetId))
+      assert.equal(alias.ok, true, JSON.stringify(alias))
+      assert.equal(alias.outcome, 'EXISTING')
+    }
+    assert.equal(path.basename(latestRelayStoreFile(sandbox.root)), 'unified-relay-v1.r9.json')
+    // The pruned revision keeps its number occupied by an immutable tombstone.
+    const tomb = JSON.parse(fs.readFileSync(r3file, 'utf8'))
+    assert.equal(tomb.pruned, true)
+    assert.equal(tomb.revision, 3)
+    // Replaying the historical r3 snapshot at the native link boundary cannot recreate the number.
+    const temp = path.join(sandbox.root, 'late-writer.tmp')
+    fs.writeFileSync(temp, historical)
+    let recreated = false
+    try { fs.linkSync(temp, r3file); recreated = true } catch (error) { assert.equal(error.code, 'EEXIST') }
+    fs.rmSync(temp, { force: true })
+    assert.equal(recreated, false, 'a pruned revision number was re-created')
+    // The highest authority is unchanged and the legitimate cancel is still there.
+    const store = readRelayStore(sandbox.root)
+    assert.equal(store.revision, 9)
+    assert.equal(store.deliveries.find((item) => item.deliveryId === second.delivery.deliveryId).state, RELAY_STATES.CANCEL_REQUESTED)
+  })
+})
+
+test('PERSIST-01 an enumeration failure is not treated as an empty store', async () => {
+  for (const failAt of [1, 2]) {
+    await withSandbox(async (sandbox) => {
+      const voice = await createVoiceSavedTask(sandbox, {
+        idempotencyKey: 'key:fixture-enum-' + failAt, saveRequestKey: 'save:enum-' + failAt,
+        now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
+      })
+      const relay = await openRelay(sandbox)
+      const first = await relay.ensureDelivery(handoffOf(voice, 'enum-first', TARGET.targetId))
+      assert.equal(first.ok, true, JSON.stringify(first))
+      for (let index = 0; index < 3; index += 1) {
+        const alias = await relay.ensureDelivery(handoffOf(voice, 'enum-alias-' + index, TARGET.targetId))
+        assert.equal(alias.ok, true, JSON.stringify(alias))
+      }
+      const before = latestRelayStoreFile(sandbox.root)
+      const beforeRevision = readRelayStore(sandbox.root).revision
+      let armed = false
+      let reads = 0
+      const originalReaddir = fs.readdirSync
+      fs.readdirSync = function patchedReaddir(file, ...args) {
+        if (armed && typeof file === 'string' && path.resolve(file) === path.resolve(sandbox.root)) {
+          reads += 1
+          if (reads === failAt) throw Object.assign(new Error('injected readdir EIO'), { code: 'EIO' })
+        }
+        return originalReaddir.call(fs, file, ...args)
+      }
+      let result
+      try {
+        armed = true
+        result = await relay.ensureDelivery(handoffOf(voice, 'enum-second', TARGET.targetId))
+      } finally {
+        fs.readdirSync = originalReaddir
+      }
+      assert.equal(reads >= failAt, true, 'the injected enumeration failure was not exercised')
+      assert.equal(result.ok, false, JSON.stringify(result))
+      assert.equal(result.code, RELAY_ERRORS.STORE_INVALID)
+      // No revision was created and the real store was not replaced by a "new empty" one.
+      assert.equal(latestRelayStoreFile(sandbox.root), before)
+      assert.equal(readRelayStore(sandbox.root).revision, beforeRevision)
+      const store = readRelayStore(sandbox.root)
+      assert.equal(store.deliveries.length, 1)
+      // A later normal request works against the actual latest revision.
+      const after = await relay.ensureDelivery(handoffOf(voice, 'enum-second', TARGET_B.targetId))
+      assert.equal(after.ok, true, JSON.stringify(after))
+      assert.equal(after.outcome, 'CREATED')
+      const next = readRelayStore(sandbox.root)
+      assert.equal(next.revision, beforeRevision + 1)
+      assert.equal(next.deliveries.length, 2)
+    })
+  }
+})
