@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import {
   CLOUD_COST_ERRORS,
@@ -66,18 +68,28 @@ test('concurrent reservations never overspend the hard limit', async (t) => {
   assert.equal(ledger.snapshot().spentMicros, 1000)
 })
 
-test('a PENDING reservation recovered after restart becomes UNKNOWN and is not a free retry', async (t) => {
+test('a live PENDING is protected; an owner that loses its claim is recovered as UNKNOWN', async (t) => {
   const root = await tempRoot(t)
   const first = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
   const reservation = await first.reserve({ requestId: 'restart-001', charCount: 10 })
   assert.equal(reservation.ok, true)
-  const second = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
-  assert.equal(second.ok, true)
-  assert.equal(second.recoveredUnknown, 1)
-  const snapshot = second.snapshot()
+
+  const live = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(live.ok, true)
+  assert.equal(live.recoveredUnknown, 0)
+  assert.equal(live.snapshot().pendingMicros, 100)
+  assert.equal((await first.commit({ reservationId: reservation.reservationId, actualMicros: 100 })).ok, true)
+
+  const abandonedReservation = await first.reserve({ requestId: 'restart-002', charCount: 10 })
+  assert.equal(abandonedReservation.ok, true)
+  first.close()
+  const recovered = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.recoveredUnknown, 1)
+  const snapshot = recovered.snapshot()
   assert.equal(snapshot.unknownMicros, 100)
-  assert.equal(snapshot.remainingMicros, 900)
-  const replay = await second.reserve({ requestId: 'restart-001', charCount: 10 })
+  assert.equal(snapshot.remainingMicros, 800)
+  const replay = await recovered.reserve({ requestId: 'restart-002', charCount: 10 })
   assert.equal(replay.code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
 })
 
@@ -141,6 +153,80 @@ test('two handles on the same root share one atomic authority and cannot overspe
   assert.equal(over.code, CLOUD_COST_ERRORS.QUOTA_EXCEEDED)
 })
 
+test('a live/foreign lock is not stolen by age and is not deleted by another handle', async (t) => {
+  const root = await tempRoot(t)
+  const ledger = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10, lockTimeoutMs: 100 })
+  assert.equal(ledger.ok, true)
+  const lockPath = path.join(root, CLOUD_COST_NAMESPACE, 'cost-ledger-v1.json.lock')
+  await fs.writeFile(lockPath, JSON.stringify({ schemaVersion: 1, token: 'someone-else', pid: 999999, host: 'test', createdAt: '2000-01-01T00:00:00.000Z' }), 'utf8')
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+  await fs.utimes(lockPath, old, old)
+  const blocked = await ledger.reserve({ requestId: 'foreign-lock', charCount: 10 })
+  assert.equal(blocked.code, CLOUD_COST_ERRORS.LEDGER_BUSY)
+  const still = JSON.parse(await fs.readFile(lockPath, 'utf8'))
+  assert.equal(still.token, 'someone-else')
+  await fs.unlink(lockPath)
+  assert.equal((await ledger.reserve({ requestId: 'after-lock', charCount: 10 })).ok, true)
+})
+
+test('slow temp I/O cannot overwrite a concurrently committed record', async (t) => {
+  const root = await tempRoot(t)
+  let delayNext = true
+  const slow = await openCostLedger({
+    rootDir: root,
+    limitMicros: 1000,
+    unitPriceMicrosPerCharacter: 10,
+    hooks: {
+      async beforeRename() {
+        if (!delayNext) return
+        delayNext = false
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      },
+    },
+  })
+  const fast = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  const slowReservationPromise = slow.reserve({ requestId: 'slow-a', charCount: 10 })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const fastReservation = await fast.reserve({ requestId: 'fast-b', charCount: 10 })
+  assert.equal(fastReservation.ok, true)
+  assert.equal((await fast.commit({ reservationId: fastReservation.reservationId, actualMicros: 100 })).ok, true)
+  const slowReservation = await slowReservationPromise
+  assert.equal(slowReservation.ok, true)
+  assert.equal((await slow.commit({ reservationId: slowReservation.reservationId, actualMicros: 100 })).ok, true)
+  const reopened = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(reopened.snapshot().spentMicros, 200)
+  assert.equal(reopened.snapshot().completedCount, 2)
+  assert.equal((await reopened.reserve({ requestId: 'fast-b', charCount: 10 })).code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+  assert.equal((await reopened.reserve({ requestId: 'slow-a', charCount: 10 })).code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+})
+
+test('a crashed child process leaves PENDING as UNKNOWN and the same id cannot replay', async (t) => {
+  const root = await tempRoot(t)
+  const moduleUrl = pathToFileURL(path.resolve('core/tts/cloud-cost.mjs')).href
+  const code = `
+import { openCostLedger } from ${JSON.stringify(moduleUrl)}
+const ledger = await openCostLedger({ rootDir: process.env.WV_COST_ROOT, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+const reservation = await ledger.reserve({ requestId: 'crash-child', charCount: 10 })
+if (!reservation.ok) process.exit(3)
+process.exit(0)
+`
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+    cwd: process.cwd(),
+    env: { ...process.env, WV_COST_ROOT: root },
+    stdio: 'ignore',
+  })
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on('error', reject)
+    child.on('exit', (codeValue) => resolve(codeValue))
+  })
+  assert.equal(exitCode, 0)
+  const reopened = await openCostLedger({ rootDir: root, limitMicros: 1000, unitPriceMicrosPerCharacter: 10 })
+  assert.equal(reopened.ok, true)
+  assert.equal(reopened.recoveredUnknown, 1)
+  assert.equal(reopened.snapshot().unknownMicros, 100)
+  assert.equal((await reopened.reserve({ requestId: 'crash-child', charCount: 10 })).code, CLOUD_COST_ERRORS.DUPLICATE_REQUEST)
+})
+
 test('a full dedup history fails closed without losing an old UNKNOWN request', async (t) => {
   const root = await tempRoot(t)
   const dir = path.join(root, CLOUD_COST_NAMESPACE)
@@ -155,6 +241,7 @@ test('a full dedup history fails closed without losing an old UNKNOWN request', 
     schemaVersion: 1,
     currency: 'USD',
     mode: 'paid',
+    revision: 0,
     maxCalls: 512,
     limitMicros: 1000000,
     unitPriceMicrosPerCharacter: 10,

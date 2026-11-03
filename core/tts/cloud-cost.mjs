@@ -1,18 +1,22 @@
 /* Whale Voice — conservative cloud cost and request ledger (Plan11, offline unit).
  *
- * One durable authority per ledger file. Every reserve/commit/unknown/release re-reads the file
- * under an in-process queue plus a bounded file lock, so two handles on the same root cannot spend
- * the same budget or overwrite each other. A paid request reserves a conservative character-based
- * upper bound before it is sent; a success commits the actual amount; a timeout/unknown keeps the
- * reservation as UNKNOWN and never turns it into a free retry. A PENDING reservation found after a
- * restart becomes UNKNOWN. A same-requestId PENDING duplicate is refused, not silently allowed to
- * enter transport a second time. The completed/deduplication history is bounded by `maxCalls` and
- * fails closed at capacity instead of truncating old UNKNOWN records. A free ledger mode shares the
- * same authority for explicit-free custom services (zero price, call/character limits, dedup).
+ * One durable authority per ledger file. Every write uses an optimistic revision check plus a
+ * token-owned short file lock; the slow temp-file write (and test hook) happens outside the lock,
+ * and a lock is never removed just because its mtime is old. A release only deletes a lock whose
+ * token still matches. A paid request reserves a conservative character-based upper bound before
+ * it is sent; a success commits the actual amount; a timeout/unknown keeps the reservation as
+ * UNKNOWN and never turns it into a free retry. A same-requestId PENDING duplicate is refused.
+ *
+ * Reservations carry an execution owner (ownerId/pid/host). A normal open by another live handle
+ * does not convert those PENDING entries; only a PENDING whose owner is no longer alive (or is
+ * absent from an older record) becomes UNKNOWN. A full dedup history fails closed instead of
+ * truncating old UNKNOWN ids. A `free` mode shares the same authority (zero price, call/character
+ * limits, dedup) for explicitly confirmed free custom services.
  */
 
 import crypto from 'node:crypto'
 import fsp from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 
 export const CLOUD_COST_SCHEMA_VERSION = 1
@@ -27,6 +31,7 @@ export const CLOUD_COST_ERRORS = Object.freeze({
   CALL_LIMIT_EXCEEDED: 'COST_CALL_LIMIT_EXCEEDED',
   DEDUP_CAPACITY: 'COST_DEDUP_CAPACITY',
   RESERVATION_NOT_FOUND: 'COST_RESERVATION_NOT_FOUND',
+  OWNERSHIP_MISMATCH: 'COST_OWNERSHIP_MISMATCH',
   OVER_RESERVED: 'COST_OVER_RESERVED',
   OVERFLOW: 'COST_OVERFLOW',
   LEDGER_CORRUPT: 'COST_LEDGER_CORRUPT',
@@ -39,9 +44,10 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{1,127}$/
 const MAX_COMPLETED = 512
 const MAX_CHARS = 1000000
 const LOCK_TIMEOUT_MS = 5000
-const LOCK_STALE_MS = 30000
+const MAX_WRITE_ATTEMPTS = 4
 const MODES = new Set(['paid', 'free'])
 const PATH_QUEUES = new Map()
+const LIVE_OWNERS = new Set()
 
 function fail(code, detail = null) {
   return detail ? { ok: false, code, detail } : { ok: false, code }
@@ -67,6 +73,7 @@ function validState(value) {
   if (value.schemaVersion !== CLOUD_COST_SCHEMA_VERSION) return false
   if (typeof value.currency !== 'string' || !/^[A-Z]{3}$/.test(value.currency)) return false
   if (!MODES.has(value.mode)) return false
+  if (!isInteger(value.revision) || value.revision < 0) return false
   if (!isInteger(value.maxCalls) || value.maxCalls < 1 || value.maxCalls > MAX_COMPLETED) return false
   if (!isInteger(value.limitMicros) || value.limitMicros < 0) return false
   if (!isInteger(value.unitPriceMicrosPerCharacter) || value.unitPriceMicrosPerCharacter < 0) return false
@@ -92,7 +99,26 @@ function validState(value) {
   return true
 }
 
-async function atomicWriteJson(target, value, hooks) {
+function clone(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function ownerIsLive(item) {
+  if (item && typeof item.ownerId === 'string' && LIVE_OWNERS.has(item.ownerId)) return true
+  if (!item || item.ownerHost !== os.hostname() || !isInteger(item.ownerPid) || item.ownerPid < 1) return false
+  /* A same-process reservation that is not in LIVE_OWNERS belongs to a handle that was closed or
+   * lost its execution owner; a live handle always registers its ownerId at open. A different
+   * process is still checked by liveness. */
+  if (item.ownerPid === process.pid) return false
+  try {
+    process.kill(item.ownerPid, 0)
+    return true
+  } catch (error) {
+    return Boolean(error && error.code === 'EPERM')
+  }
+}
+
+async function prepareTemp(target, value, hooks) {
   const directory = path.dirname(target)
   await fsp.mkdir(directory, { recursive: true, mode: 0o700 })
   const temp = path.join(directory, `.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`)
@@ -104,9 +130,10 @@ async function atomicWriteJson(target, value, hooks) {
     await handle.sync()
     await handle.close()
     closed = true
+    /* The slow test hook deliberately runs outside the file lock, so a live holder cannot be
+     * mistaken for a crashed owner merely because it is taking a long time to write. */
     if (hooks && typeof hooks.beforeRename === 'function') await hooks.beforeRename(temp, target)
-    await fsp.rename(temp, target)
-    try { await fsp.chmod(target, 0o600) } catch {}
+    return temp
   } catch (error) {
     if (handle && !closed) { try { await handle.close() } catch {} }
     try { await fsp.unlink(temp) } catch {}
@@ -114,38 +141,71 @@ async function atomicWriteJson(target, value, hooks) {
   }
 }
 
-async function acquireFileLock(lockPath) {
+async function commitTemp(temp, target) {
+  await fsp.rename(temp, target)
+  try { await fsp.chmod(target, 0o600) } catch {}
+}
+
+async function discardTemp(temp) {
+  try { await fsp.unlink(temp) } catch {}
+}
+
+async function readDisk(target) {
+  let text
+  try {
+    text = await fsp.readFile(target, 'utf8')
+  } catch {
+    throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
+  }
+  let parsed
+  try { parsed = JSON.parse(text) } catch { throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT) }
+  if (!validState(parsed)) throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
+  return parsed
+}
+
+async function acquireLock(target, timeoutMs) {
+  const lockPath = target + '.lock'
+  const token = crypto.randomBytes(24).toString('hex')
   const started = Date.now()
   for (;;) {
     try {
       const handle = await fsp.open(lockPath, 'wx', 0o600)
-      try { await handle.writeFile(String(process.pid), 'utf8') } catch {}
+      await handle.writeFile(JSON.stringify({
+        schemaVersion: 1,
+        token,
+        pid: process.pid,
+        host: os.hostname(),
+        createdAt: new Date().toISOString(),
+      }), 'utf8')
       await handle.close()
-      return
+      return { lockPath, token }
     } catch (error) {
       if (!error || error.code !== 'EEXIST') throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_BUSY)
-      try {
-        const stat = await fsp.stat(lockPath)
-        if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
-          await fsp.unlink(lockPath)
-          continue
-        }
-      } catch {}
-      if (Date.now() - started > LOCK_TIMEOUT_MS) throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_BUSY)
+      /* No mtime-based stealing and no PID guess: a lock is either released by its owner or the
+       * operation fails closed as BUSY. */
+      if (Date.now() - started > timeoutMs) throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_BUSY)
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
   }
 }
 
-function withFileLock(target, fn) {
+async function releaseLock(lock) {
+  try {
+    const text = await fsp.readFile(lock.lockPath, 'utf8')
+    let parsed
+    try { parsed = JSON.parse(text) } catch { return }
+    if (parsed && parsed.token === lock.token) await fsp.unlink(lock.lockPath)
+  } catch {}
+}
+
+async function withLock(target, fn, timeoutMs) {
   const previous = PATH_QUEUES.get(target) || Promise.resolve()
   const run = previous.then(async () => {
-    const lockPath = target + '.lock'
-    await acquireFileLock(lockPath)
+    const lock = await acquireLock(target, timeoutMs)
     try {
       return await fn()
     } finally {
-      try { await fsp.unlink(lockPath) } catch {}
+      await releaseLock(lock)
     }
   })
   PATH_QUEUES.set(target, run.then(() => {}, () => {}))
@@ -178,8 +238,9 @@ function normalizeOpenOptions({ rootDir, currency, limitMicros, unitPriceMicrosP
 
 /**
  * Open one application-owned budget/request ledger. `mode` is `paid` (character price) or `free`
- * (explicit zero price, still call/character bounded and deduplicated). A PENDING reservation
- * recovered after a restart is counted as UNKNOWN, never silently released.
+ * (explicit zero price, still call/character bounded and deduplicated). A PENDING reservation whose
+ * execution owner is no longer live becomes UNKNOWN; a PENDING owned by a live handle/process is
+ * left alone.
  */
 export async function openCostLedger({
   rootDir,
@@ -188,20 +249,24 @@ export async function openCostLedger({
   unitPriceMicrosPerCharacter = null,
   mode = 'paid',
   maxCalls = MAX_COMPLETED,
+  lockTimeoutMs = LOCK_TIMEOUT_MS,
   now = () => new Date(),
   hooks = {},
 } = {}) {
   const checked = normalizeOpenOptions({ rootDir, currency, limitMicros, unitPriceMicrosPerCharacter, mode, maxCalls })
   if (!checked.ok) return checked
+  if (!isInteger(lockTimeoutMs) || lockTimeoutMs < 50 || lockTimeoutMs > 60000) return fail(CLOUD_COST_ERRORS.INVALID)
   const namespaceDir = path.join(rootDir, CLOUD_COST_NAMESPACE)
   const target = path.join(namespaceDir, 'cost-ledger-v1.json')
   await fsp.mkdir(namespaceDir, { recursive: true, mode: 0o700 })
+  const ownerId = `owner-${crypto.randomUUID()}`
 
   function initialState() {
     return {
       schemaVersion: CLOUD_COST_SCHEMA_VERSION,
       currency,
       mode,
+      revision: 0,
       maxCalls,
       limitMicros: mode === 'paid' ? limitMicros : 0,
       unitPriceMicrosPerCharacter: mode === 'paid' ? unitPriceMicrosPerCharacter : 0,
@@ -221,60 +286,55 @@ export async function openCostLedger({
     }
   }
 
-  async function readDisk() {
-    let text
-    try {
-      text = await fsp.readFile(target, 'utf8')
-    } catch (error) {
-      if (error && error.code === 'ENOENT') throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
-      throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
-    }
-    let parsed
-    try { parsed = JSON.parse(text) } catch { throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT) }
-    if (!validState(parsed)) throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
-    assertConfig(parsed)
-    return parsed
-  }
-
   let state
   let recoveredUnknown = 0
   try {
-    const opened = await withFileLock(target, async () => {
+    const opened = await withLock(target, async () => {
       let loaded
+      let exists = true
       try {
-        loaded = await readDisk()
+        loaded = await readDisk(target)
       } catch (error) {
         if (!(error instanceof CostFailure) || error.code !== CLOUD_COST_ERRORS.LEDGER_CORRUPT) throw error
         try {
-          const stat = await fsp.stat(target)
-          if (stat.isFile()) throw error
+          await fsp.stat(target)
         } catch (statError) {
-          if (statError instanceof CostFailure) throw statError
           if (!statError || statError.code !== 'ENOENT') throw new CostFailure(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
+          exists = false
+          loaded = initialState()
         }
-        loaded = initialState()
-        await atomicWriteJson(target, loaded, hooks)
-        return { state: loaded, recovered: 0 }
+        if (exists) throw error
       }
-      if (loaded.reservations.length > 0) {
+      assertConfig(loaded)
+      let recovered = 0
+      let changed = !exists
+      const liveReservations = []
+      for (const item of loaded.reservations) {
+        if (ownerIsLive(item)) {
+          liveReservations.push(item)
+          continue
+        }
         const at = now().toISOString()
-        const recovered = loaded.reservations.length
-        for (const item of loaded.reservations) {
-          loaded.unknownMicros += item.micros
-          loaded.completed.push({ requestId: item.requestId, state: 'UNKNOWN', micros: item.micros, at })
-        }
-        loaded.reservations = []
-        if (loaded.completed.length > loaded.maxCalls) {
-          throw new CostFailure(CLOUD_COST_ERRORS.DEDUP_CAPACITY)
-        }
-        loaded.updatedAt = at
-        await atomicWriteJson(target, loaded, hooks)
-        return { state: loaded, recovered }
+        loaded.unknownMicros += item.micros
+        loaded.completed.push({ requestId: item.requestId, state: 'UNKNOWN', micros: item.micros, at })
+        recovered += 1
+        changed = true
       }
-      return { state: loaded, recovered: 0 }
-    })
+      loaded.reservations = liveReservations
+      if (loaded.completed.length + loaded.reservations.length > loaded.maxCalls) {
+        throw new CostFailure(CLOUD_COST_ERRORS.DEDUP_CAPACITY)
+      }
+      if (changed) {
+        loaded.revision += 1
+        loaded.updatedAt = now().toISOString()
+        const temp = await prepareTemp(target, loaded, hooks)
+        try { await commitTemp(temp, target) } catch (error) { await discardTemp(temp); throw error }
+      }
+      return { state: loaded, recovered }
+    }, lockTimeoutMs)
     state = opened.state
     recoveredUnknown = opened.recovered
+    LIVE_OWNERS.add(ownerId)
   } catch (error) {
     if (error instanceof CostFailure) return fail(error.code)
     return fail(CLOUD_COST_ERRORS.LEDGER_CORRUPT)
@@ -287,6 +347,7 @@ export async function openCostLedger({
       schemaVersion: state.schemaVersion,
       currency: state.currency,
       mode: state.mode,
+      revision: state.revision,
       maxCalls: state.maxCalls,
       limitMicros: state.limitMicros,
       unitPriceMicrosPerCharacter: state.unitPriceMicrosPerCharacter,
@@ -301,21 +362,52 @@ export async function openCostLedger({
   }
 
   async function run(fn) {
-    try {
-      const next = await withFileLock(target, async () => {
-        const current = await readDisk()
+    let lastError = null
+    for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+      let base
+      try {
+        base = await readDisk(target)
+        assertConfig(base)
+      } catch (error) {
+        return fail(error instanceof CostFailure ? error.code : CLOUD_COST_ERRORS.LEDGER_CORRUPT)
+      }
+      const next = clone(base)
+      let result
+      try {
+        result = await fn(next)
+      } catch {
+        return fail(CLOUD_COST_ERRORS.LEDGER_WRITE_FAILED)
+      }
+      if (result && result.ok === false) return result
+      next.revision = base.revision + 1
+      next.updatedAt = now().toISOString()
+      let temp
+      try {
+        temp = await prepareTemp(target, next, hooks)
+      } catch {
+        return fail(CLOUD_COST_ERRORS.LEDGER_WRITE_FAILED)
+      }
+      let lock = null
+      try {
+        lock = await acquireLock(target, lockTimeoutMs)
+        const current = await readDisk(target)
         assertConfig(current)
-        const result = await fn(current)
-        current.updatedAt = now().toISOString()
-        await atomicWriteJson(target, current, hooks)
-        return { state: current, result }
-      })
-      state = next.state
-      return next.result
-    } catch (error) {
-      if (error instanceof CostFailure) return fail(error.code)
-      return fail(CLOUD_COST_ERRORS.LEDGER_WRITE_FAILED)
+        if (current.revision !== base.revision) {
+          await discardTemp(temp)
+          continue
+        }
+        await commitTemp(temp, target)
+        state = next
+        return result
+      } catch (error) {
+        await discardTemp(temp)
+        lastError = error instanceof CostFailure ? error.code : CLOUD_COST_ERRORS.LEDGER_WRITE_FAILED
+        if (lastError === CLOUD_COST_ERRORS.LEDGER_BUSY) break
+      } finally {
+        if (lock) await releaseLock(lock)
+      }
     }
+    return fail(lastError || CLOUD_COST_ERRORS.LEDGER_BUSY)
   }
 
   function reserve({ requestId, charCount } = {}) {
@@ -341,7 +433,15 @@ export async function openCostLedger({
         }
       }
       const reservationId = `resv-${crypto.randomUUID()}`
-      current.reservations.push({ reservationId, requestId, micros, createdAt: now().toISOString() })
+      current.reservations.push({
+        reservationId,
+        requestId,
+        micros,
+        createdAt: now().toISOString(),
+        ownerId,
+        ownerPid: process.pid,
+        ownerHost: os.hostname(),
+      })
       return { ok: true, duplicate: false, reservationId, micros }
     })
   }
@@ -350,6 +450,7 @@ export async function openCostLedger({
     return run((current) => {
       const item = current.reservations.find((entry) => entry.reservationId === reservationId)
       if (!item) return fail(CLOUD_COST_ERRORS.RESERVATION_NOT_FOUND)
+      if (item.ownerId !== ownerId) return fail(CLOUD_COST_ERRORS.OWNERSHIP_MISMATCH)
       if (!isInteger(actualMicros) || actualMicros < 0 || actualMicros > item.micros) {
         return fail(CLOUD_COST_ERRORS.OVER_RESERVED)
       }
@@ -364,6 +465,7 @@ export async function openCostLedger({
     return run((current) => {
       const item = current.reservations.find((entry) => entry.reservationId === reservationId)
       if (!item) return fail(CLOUD_COST_ERRORS.RESERVATION_NOT_FOUND)
+      if (item.ownerId !== ownerId) return fail(CLOUD_COST_ERRORS.OWNERSHIP_MISMATCH)
       current.reservations = current.reservations.filter((entry) => entry.reservationId !== reservationId)
       current.unknownMicros += item.micros
       current.completed.push({ requestId: item.requestId, state: 'UNKNOWN', micros: item.micros, at: now().toISOString() })
@@ -375,19 +477,26 @@ export async function openCostLedger({
     return run((current) => {
       const item = current.reservations.find((entry) => entry.reservationId === reservationId)
       if (!item) return fail(CLOUD_COST_ERRORS.RESERVATION_NOT_FOUND)
+      if (item.ownerId !== ownerId) return fail(CLOUD_COST_ERRORS.OWNERSHIP_MISMATCH)
       current.reservations = current.reservations.filter((entry) => entry.reservationId !== reservationId)
       current.completed.push({ requestId: item.requestId, state: 'RELEASED', micros: 0, at: now().toISOString() })
       return { ok: true, reservationId, state: 'RELEASED' }
     })
   }
 
+  function close() {
+    LIVE_OWNERS.delete(ownerId)
+  }
+
   return {
     ok: true,
+    ownerId,
     snapshot,
     reserve,
     commit,
     markUnknown,
     release,
+    close,
     recoveredUnknown,
     namespace: CLOUD_COST_NAMESPACE,
   }

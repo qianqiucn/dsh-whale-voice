@@ -144,11 +144,25 @@ export function createAzureSpeechProvider(options = {}) {
     return fail(AZURE_SPEECH_ERRORS.CREDENTIALS_MISSING)
   }
 
+  function costLedgerView() {
+    try {
+      return costLedger && typeof costLedger.snapshot === 'function' ? costLedger.snapshot() : null
+    } catch {
+      return null
+    }
+  }
+
+  function costValid() {
+    const view = costLedgerView()
+    return Boolean(view && view.ok === true && view.mode === 'paid' && view.unitPriceMicrosPerCharacter > 0)
+  }
+
   function healthState() {
     if (!built.ok) return { state: AZURE_HEALTH_STATES.NOT_CONFIGURED, reason: built.code }
     if (!credentialRef) return { state: AZURE_HEALTH_STATES.NOT_CONFIGURED, reason: AZURE_SPEECH_ERRORS.CREDENTIALS_MISSING }
     if (!credentialPresent) return { state: AZURE_HEALTH_STATES.CREDENTIALS_MISSING, reason: AZURE_SPEECH_ERRORS.CREDENTIALS_MISSING }
     if (!networkEnabled) return { state: AZURE_HEALTH_STATES.NETWORK_DISABLED, reason: AZURE_SPEECH_ERRORS.NETWORK_DISABLED }
+    if (!costValid()) return { state: AZURE_HEALTH_STATES.DEGRADED, reason: AZURE_SPEECH_ERRORS.COST_UNKNOWN }
     if (lastError) return { state: AZURE_HEALTH_STATES.DEGRADED, reason: lastError }
     if (lastVerifiedAt && lastVerificationSource === 'LIVE') return { state: AZURE_HEALTH_STATES.AVAILABLE, reason: null }
     return { state: AZURE_HEALTH_STATES.CONFIGURED_UNVERIFIED, reason: null }
@@ -169,6 +183,7 @@ export function createAzureSpeechProvider(options = {}) {
         credentials: credentialPresent ? 'PRESENT' : 'MISSING',
         credentialCheckedAt,
         network: networkEnabled ? (lastVerifiedAt && lastVerificationSource === 'LIVE' ? 'VERIFIED' : 'ENABLED_UNVERIFIED') : 'DISABLED',
+        cost: { mode: costLedgerView() ? costLedgerView().mode : null, valid: costValid(), unitPriceMicrosPerCharacter: costLedgerView() ? costLedgerView().unitPriceMicrosPerCharacter : null },
         version: { value: null, audited: false },
         lastVerifiedAt,
         lastVerificationSource,
@@ -202,8 +217,8 @@ export function createAzureSpeechProvider(options = {}) {
         uploadLabel: consent && consent.textUpload === true ? '已确认文字上传' : '未确认文字上传',
         credential: credentialPresent ? 'PRESENT' : 'MISSING',
         credentialLabel: credentialPresent ? '凭据已配置' : '凭据缺失',
-        cost: unitPriceMicrosPerCharacter ? 'KNOWN' : 'UNKNOWN',
-        costLabel: unitPriceMicrosPerCharacter ? '费用单价已配置' : '费用单价未知',
+        cost: costValid() ? 'KNOWN' : 'UNKNOWN',
+        costLabel: costValid() ? '付费账本与正价已配置' : '付费账本/正价无效，禁止请求',
       },
       retention: manifest ? manifest.privacy.retention : 'unknown',
       retentionLabel: 'Azure 标准预置音色官方说明不存文字/音频日志；账户与地区条款仍需确认。',
@@ -251,7 +266,7 @@ export function createAzureSpeechProvider(options = {}) {
     if (!secret || secret.ok !== true || typeof secret.secret !== 'string' || secret.secret.length === 0) {
       return fail(AZURE_SPEECH_ERRORS.CREDENTIALS_MISSING)
     }
-    if (!costLedger) return fail(AZURE_SPEECH_ERRORS.COST_UNKNOWN)
+    if (!costLedger || !costValid()) return fail(AZURE_SPEECH_ERRORS.COST_UNKNOWN, { sent: false })
     const requestId = typeof request.requestId === 'string' ? request.requestId : requestIdFactory()
     if (!REQUEST_ID_PATTERN.test(requestId)) return fail(PROVIDER_ERRORS.INVALID_RESPONSE)
     const checked = checkSynthesisRequest(manifest, { state: 'ok', credentials: 'present', observedAt: now().toISOString() }, {

@@ -526,16 +526,22 @@ projection, logs or Git. Non-Windows or a missing protector is explicitly `UNAVA
 plaintext fallback. DPAPI protects against other Windows users, not every same-user process.
 
 A request needs all of: a trusted configured target, explicit text-upload consent, a resolved
-credential and a known cost mode/bound. One ledger file is the atomic authority; every operation
-reloads it under an in-process queue plus a bounded file lock, so two handles on the same root cannot
-spend the same budget or overwrite each other. Paid execution uses an integer character price and a
-durable reserve-before-send ledger; a same-requestId `PENDING` duplicate is refused before transport;
-success commits, pre-send failure releases, post-send timeout/unknown keeps the reservation as
-`UNKNOWN`, restart-recovered PENDING becomes `UNKNOWN`, and completed/UNKNOWN dedup is bounded but
-never truncated into a new request (capacity fails closed). Custom HTTP must be explicit `unknown`
-(zero request), confirmed `free` (same ledger with call/text limits) or paid (known price/hard
-budget); the old `FREE_OR_UNKNOWN` behavior is removed. Unknown prices, missing limits, corrupt
-ledgers and exhausted budgets fail closed. No silent free retry or paid downgrade exists.
+credential and a known cost mode/bound. One ledger file is the atomic authority; every write uses a
+token-owned short file lock plus an optimistic revision check, and the slow temp-file write happens
+outside the lock. A lock is never removed merely because its mtime is old; release only deletes its
+own token, so two handles on the same root cannot spend the same budget, delete each other's lock or
+overwrite a committed record (a revision conflict retries). Each reservation carries an execution
+owner; a normal open of another handle protects a live owner's `PENDING`, while a closed/dead owner
+(including a real child-process crash) is recovered to `UNKNOWN`. Paid execution uses an integer
+character price and a durable reserve-before-send ledger; a same-requestId `PENDING` duplicate is
+refused before transport; success commits, pre-send failure releases, post-send timeout/unknown
+keeps the reservation as `UNKNOWN`, and completed/UNKNOWN dedup is bounded but never truncated into
+a new request (capacity fails closed). Custom HTTP must be explicit `unknown` (zero request),
+confirmed `free` (same ledger with call/text limits) or paid (known price/hard budget); the old
+`FREE_OR_UNKNOWN` behavior is removed. Azure is paid-only and must use a `paid` ledger with a
+positive integer price in both health and synthesis; free/unknown/zero-price ledgers make zero
+transport. Unknown prices, missing limits, corrupt ledgers and exhausted budgets fail closed. No
+silent free retry or paid downgrade exists.
 
 Cancellation is checked before request construction and around credential/DNS/cost awaits. The
 request error listener is installed before any destroy, non-2xx bodies are destroyed instead of

@@ -213,6 +213,27 @@ test('timeout and cancellation are UNKNOWN/CANCELLED and never resent', async (t
   assert.equal(cancelled.terminal, 'CANCELLED')
 })
 
+test('Azure rejects a free/unknown ledger and does not treat it as a zero-price run', async (t) => {
+  const root = await tempRoot(t)
+  const freeLedger = await openCostLedger({ rootDir: root, mode: 'free', maxCalls: 10, limitMicros: 0, unitPriceMicrosPerCharacter: 0 })
+  assert.equal(freeLedger.ok, true)
+  let calls = 0
+  const provider = createAzureSpeechProvider({
+    ...baseOptions(),
+    costLedger: freeLedger,
+    unitPriceMicrosPerCharacter: 10,
+    transport: async () => { calls += 1; return { ok: true, status: 200, body: wavBytes(), headers: {}, live: false } },
+  })
+  const health = await provider.health()
+  assert.equal(health.status.cost.valid, false)
+  assert.equal(health.status.state, 'DEGRADED')
+  const result = await provider.synthesize({ ...goodRequest, requestId: 'azure-free-ledger' })
+  assert.equal(result.code, AZURE_SPEECH_ERRORS.COST_UNKNOWN)
+  assert.equal(result.sent, false)
+  assert.equal(calls, 0)
+  assert.equal(provider.publicProjection().gates.cost, 'UNKNOWN')
+})
+
 test('same requestId concurrent calls enter transport exactly once', async (t) => {
   const ledger = await ledgerFor(t)
   let calls = 0

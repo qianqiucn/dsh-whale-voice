@@ -69,17 +69,22 @@ normal state, not an error to be retried silently.
 - The integer price is `unitPriceMicrosPerCharacter` in a configured currency; there is no float
   money and no default price. A `free` mode uses price 0 and still keeps a durable call/character
   limit and request dedup.
-- One ledger file is the authority. Every operation re-reads it under an in-process queue plus a
-  bounded file lock, so two handles on the same root cannot spend the same budget or overwrite each
-  other. `reserve` computes `charCount × price`, checks `spent + unknown + pending + new <= limit`,
-  and persists a `PENDING` reservation **before** the request.
+- One ledger file is the authority. Every write uses an optimistic revision check plus a
+  token-owned short file lock. The slow temp-file write happens **outside** the lock; a contender
+  re-reads the revision under the lock and retries instead of overwriting a committed record. A lock
+  is never removed merely because its mtime is old, and a release only deletes the lock whose token
+  still matches. A live/foreign lock makes the operation fail closed as `LEDGER_BUSY`.
+  `reserve` computes `charCount × price`, checks `spent + unknown + pending + new <= limit`, and
+  persists a `PENDING` reservation **before** the request.
 - A same-requestId `PENDING` duplicate is refused, not allowed into transport a second time. A
   success commits the actual amount; a failure before the request releases it; a timeout, broken
   connection or any post-send uncertainty becomes `UNKNOWN` and keeps the reserved amount (never a
   free retry).
-- A restart converts any leftover `PENDING` reservation to `UNKNOWN`. Completed/UNKNOWN requestIds
-  stay deduplicated; at the bounded capacity (`maxCalls`) the ledger fails closed
-  (`CALL_LIMIT_EXCEEDED`/`DEDUP_CAPACITY`) instead of truncating old records and reusing an UNKNOWN id.
+- Each reservation carries an execution owner (`ownerId`/pid/host). Opening another handle or normal
+  restart does **not** convert a live owner's PENDING; a PENDING whose owner is dead/absent becomes
+  `UNKNOWN`, and a same-id replay is refused. Completed/UNKNOWN requestIds stay deduplicated; at the
+  bounded capacity (`maxCalls`) the ledger fails closed (`CALL_LIMIT_EXCEEDED`/`DEDUP_CAPACITY`)
+  instead of truncating old records and reusing an UNKNOWN id.
 - A corrupt ledger, changed mode/price/limit or unknown price fails closed instead of resetting the
   budget.
 
@@ -123,6 +128,11 @@ The health states are deliberately separate:
 
 A successful **injected/Fake** response never sets `AVAILABLE`; it is labelled
 `INJECTED_TEST` internally. Offline success cannot be shown as ONLINE.
+
+Azure is a **paid** provider: health and synthesis both require a ledger in `paid` mode with a
+positive integer price. A free/unknown ledger, zero price or incompatible ledger mode makes health
+`DEGRADED` and synthesis `COST_UNKNOWN` with zero transport. The custom adapter keeps its separate
+explicit-free path; Azure never borrows it.
 
 ### 5.4 Official basis
 
@@ -230,9 +240,13 @@ New tests (all offline / synthetic):
 - Credential ciphertext roundtrip, corruption/write-failure old-value preservation, non-Windows
   unavailable, invalid refs and a real Windows DPAPI temp-fixture roundtrip.
 - Cost reserve/commit, duplicate, unknown price/limit, concurrent quota, restart UNKNOWN, corrupt
-  ledger, changed config, two handles on one root, full dedup capacity and explicit-free call limits.
+  ledger, changed config, two handles on one root, full dedup capacity, explicit-free call limits,
+  foreign/live lock not stolen by age, slow temp I/O not overwriting a concurrent commit, live-owner
+  PENDING protection and a real child-process crash recovery to UNKNOWN.
 - Same-requestId concurrency/restart for Azure and custom; pre-cancel, credential/DNS-await cancel,
   commit-during-cancel, non-2xx infinite-stream destruction, request-listener-before-destroy.
+- Azure rejects a free/unknown ledger and zero price with zero transport and `DEGRADED` health;
+  legitimate paid reserve/commit remains successful.
 - Public address policy, DNS pinning, mixed/private/loopback rejection, redirect/content-type/header/
   body/timeout/abort/broken-stream behaviour, plus a real loopback HTTP fixture.
 - SSML escaping; Azure gates, 401/403/429/5xx, timeout, cancel, bad WAV, oversize, duplicate and
@@ -242,7 +256,7 @@ New tests (all offline / synthetic):
   projections.
 - Neutral fixture results for both adapters; no Task/Artifact/delivery is created.
 
-Local result at this unit: **49 Plan11 tests** (all offline/synthetic), full suite **1059 / 1055 pass /
+Local result at this unit: **53 Plan11 tests** (all offline/synthetic), full suite **1063 / 1059 pass /
 4 platform skips / 0 fail**, UI **63/63**, `node build.mjs` unchanged. These are offline/injected
 evidence; no real Azure/custom API was called.
 
