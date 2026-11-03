@@ -11,7 +11,7 @@ import {
   openUnifiedRelay,
   projectUnifiedRelayComponent,
 } from '../core/audio/relay-core-offline.mjs'
-import { createVoiceSavedTask, mutableClock, relayHandoff } from './support/relay-authority.mjs'
+import { createVoiceSavedTask, latestRelayStoreFile, mutableClock, relayHandoff } from './support/relay-authority.mjs'
 
 const SAVE_NOW = '2026-10-27T00:00:01.000Z'
 const RELAY_NOW = '2026-10-27T00:00:02.000Z'
@@ -265,7 +265,7 @@ test('a real child-process exit leaves SUBMITTING as UNKNOWN, no replay', async 
   try {
     const ensured = await relay.ensureDelivery(handoff())
     const deliveryId = ensured.delivery.deliveryId
-    const storePath = JSON.stringify(sandbox.root + '/unified-relay-v1.json')
+    const storePath = JSON.stringify(latestRelayStoreFile(sandbox.root))
     const code = `
       import fs from 'node:fs';
       const file = ${storePath};

@@ -606,4 +606,11 @@ delivery digest is recomputed with one `canonicalDeliveryDigest` from the persis
 store validation, so a digest/index edited without the facts is `STORE_INVALID` and can never re-accept an
 already accepted request under a new alias.
 
+111 revision (0141 review): the store is an append-only log of immutable revision files
+(`unified-relay-v1.r<N>.json`); a commit is the create-or-fail publication of the next revision file after a
+fully written/fsynced temp, so there is no fixed current-store name to rename/reclaim/release and a writer whose
+advisory lease was moved aside can never overwrite a newer commit (it fails closed). Readers take the highest
+validated revision; pruning is bounded to the newest four and can never be a writer's base; dead-owner delivery
+recovery is unchanged. The two real three-process interleavings now run against the immutable publish.
+
 Evidence: 33 relay tests in 4 files (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races), full suite 1105/1101 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.

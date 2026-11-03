@@ -21,6 +21,7 @@ import {
   createSingingSavedTask,
   createVoiceSavedTask,
   mutableClock,
+  readRelayStore,
   relayHandoff,
 } from './support/relay-authority.mjs'
 
@@ -88,7 +89,7 @@ test('TRUST-01 Voice: a real persisted SAVED task reaches the Fake chain once', 
     assert.equal(backend.stats().submitted, 1)
     assert.equal(backend.stats().accepted, 1)
     assert.equal(backend.stats().targetChecks >= 1, true)
-    const store = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'unified-relay-v1.json'), 'utf8'))
+    const store = readRelayStore(sandbox.root)
     const record = store.deliveries[0]
     assert.equal(record.intent.kind, 'TASK_OWNER_SAVED_V2')
     assert.equal(record.intent.deliveryRequested, true)
@@ -157,7 +158,7 @@ test('TRUST-01 Singing: a frozen Cover record needs a persisted source permit, t
     assert.equal(submitted.ok, true, JSON.stringify(submitted))
     assert.equal(submitted.delivery.state, RELAY_STATES.ACCEPTED)
     assert.equal(backend.stats().accepted, 1)
-    const store = JSON.parse(fs.readFileSync(path.join(sandbox.root, 'unified-relay-v1.json'), 'utf8'))
+    const store = readRelayStore(sandbox.root)
     assert.equal(store.deliveries[0].intent.authorizedBy, 'PERSISTED_COVER_DELIVERY_PERMIT')
     assert.equal(store.deliveries[0].intent.permitId, issued.permit.permitId)
     assert.equal(store.permits.length, 1)

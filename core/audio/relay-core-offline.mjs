@@ -32,7 +32,10 @@ import { samplesFromWav } from './cover-stage-bytes-internal.mjs'
 import { openFixtureTaskOwner } from './task-owner.mjs'
 
 export const RELAY_CORE_SCHEMA_VERSION = 1
-export const RELAY_STORE_FILE = 'unified-relay-v1.json'
+export const RELAY_STORE_PREFIX = 'unified-relay-v1.r'
+const STORE_REVISION_FILE = /^unified-relay-v1\.r([0-9]+)\.json$/
+const STORE_TEMP_FILE = /^unified-relay-v1\.r[0-9]+\.json\.([0-9]+)\.[0-9a-f]+\.tmp$/
+const KEEP_REVISIONS = 4
 export const RELAY_LOCK_FILE = 'unified-relay-v1.lock'
 export const RELAY_STATES = Object.freeze({
   QUEUED: 'QUEUED',
@@ -357,30 +360,132 @@ function validateStoreState(store) {
   return true
 }
 
-function readStore(file) {
-  let text
-  try {
-    text = fs.readFileSync(file, 'utf8')
-  } catch (error) {
-    if (error && error.code === 'ENOENT') return emptyStore()
-    throw error
-  }
-  let parsed
-  try { parsed = JSON.parse(text) } catch { throw new Error('corrupt') }
-  if (!validateStoreState(parsed)) throw new Error('corrupt')
-  return parsed
+function revisionStoreFile(root, revision) {
+  return path.join(root, RELAY_STORE_PREFIX + revision + '.json')
 }
 
-function atomicWrite(file, value) {
-  const temp = file + '.' + process.pid + '.' + crypto.randomBytes(8).toString('hex') + '.tmp'
-  const handle = fs.openSync(temp, 'wx', 0o600)
-  try {
-    fs.writeFileSync(handle, JSON.stringify(value) + '\n', 'utf8')
-    fs.fsyncSync(handle)
-  } finally {
-    fs.closeSync(handle)
+function listRevisionFiles(root) {
+  let names = []
+  try { names = fs.readdirSync(root) } catch { return [] }
+  const files = []
+  for (const name of names) {
+    if (typeof name !== 'string') continue
+    const match = STORE_REVISION_FILE.exec(name)
+    if (!match) continue
+    const revision = Number(match[1])
+    if (!Number.isSafeInteger(revision) || revision < 0) continue
+    files.push({ revision, file: path.join(root, name) })
   }
-  fs.renameSync(temp, file)
+  files.sort((left, right) => right.revision - left.revision)
+  return files
+}
+
+function latestStoreRevision(root) {
+  const files = listRevisionFiles(root)
+  return files.length ? files[0].revision : 0
+}
+
+/**
+ * The store is an append-only sequence of immutable revision files: `unified-relay-v1.r<N>.json`.
+ * A commit is the atomic create-or-fail publication of exactly the next revision file (hard link of a
+ * fully written/fsynced private temp). No fixed "current store" name is ever overwritten, moved,
+ * reclaimed or deleted as part of a commit, so a writer whose advisory lease was moved aside can never
+ * replace a newer commit: it either creates a revision nobody else took, or the create fails and it
+ * reports BUSY. Readers take the highest validated revision; a corrupt higher revision fails closed
+ * instead of falling back to older data.
+ */
+function readStore(root) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const files = listRevisionFiles(root)
+    if (!files.length) return emptyStore()
+    let text
+    try {
+      text = fs.readFileSync(files[0].file, 'utf8')
+    } catch (error) {
+      if (error && error.code === 'ENOENT' && attempt === 0) continue
+      throw error
+    }
+    let parsed
+    try { parsed = JSON.parse(text) } catch { throw new Error('corrupt') }
+    if (!validateStoreState(parsed) || parsed.revision !== files[0].revision) throw new Error('corrupt')
+    return parsed
+  }
+  throw new Error('corrupt')
+}
+
+/** Private temp files are never authoritative; only a provably dead owner's temp is removed. */
+function removeStaleStoreTemps(root) {
+  let names = []
+  try { names = fs.readdirSync(root) } catch { return }
+  for (const name of names) {
+    if (typeof name !== 'string') continue
+    const match = STORE_TEMP_FILE.exec(name)
+    if (!match) continue
+    const pid = Number(match[1])
+    if (Number.isInteger(pid) && pid !== process.pid && pidAlive(pid)) continue
+    try { fs.rmSync(path.join(root, name), { force: true }) } catch {}
+  }
+}
+
+/** Old immutable revisions can never be a writer's base again; keeping a few bounds the directory. */
+function pruneOldRevisions(root, revision) {
+  for (const item of listRevisionFiles(root)) {
+    if (item.revision > revision - KEEP_REVISIONS) continue
+    try { fs.rmSync(item.file, { force: true }) } catch {}
+  }
+}
+
+/**
+ * Publish exactly `store.revision + 1` as an immutable revision file. The content is fully written and
+ * fsynced to a private temp first, then published with `link` (create-or-fail). The create is the
+ * commit: there is no post-create step that could fail, so no successful commit can be lost or
+ * overwritten, and a losing writer fails closed.
+ */
+function commitStore(root, store) {
+  const revision = (Number.isInteger(store.revision) ? store.revision : 0) + 1
+  const file = revisionStoreFile(root, revision)
+  const temp = file + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp'
+  let prepared = false
+  try {
+    const handle = fs.openSync(temp, 'wx', 0o600)
+    try {
+      fs.writeFileSync(handle, JSON.stringify({ ...store, revision }) + '\n', 'utf8')
+      fs.fsyncSync(handle)
+    } finally {
+      fs.closeSync(handle)
+    }
+    prepared = true
+  } catch {
+    prepared = false
+  }
+  let created = false
+  let busy = false
+  if (prepared) {
+    try {
+      fs.linkSync(temp, file)
+      created = true
+    } catch (error) {
+      const code = error && error.code
+      if (code === 'EEXIST') busy = true
+      // Only a filesystem that cannot hard-link falls back to an exclusive copy; any other error is a
+      // failed commit (never silently retried).
+      else if (['EPERM', 'ENOSYS', 'EXDEV', 'EOPNOTSUPP', 'ENOTSUP', 'EACCES'].includes(code)) {
+        try { fs.copyFileSync(temp, file, fs.constants.COPYFILE_EXCL); created = true } catch (copyError) {
+          busy = Boolean(copyError && copyError.code === 'EEXIST')
+        }
+      }
+    }
+  }
+  try { fs.rmSync(temp, { force: true }) } catch {}
+  if (!created) {
+    if (!prepared) return fail(RELAY_ERRORS.STORE_INVALID, 'revision write failed')
+    return busy
+      ? fail(RELAY_ERRORS.STORE_BUSY, 'revision already committed')
+      : fail(RELAY_ERRORS.STORE_INVALID, 'revision publish failed')
+  }
+  try { removeStaleStoreTemps(root) } catch {}
+  try { pruneOldRevisions(root, revision) } catch {}
+  return { ok: true, revision }
 }
 
 function lockPath(root) {
@@ -424,98 +529,6 @@ function restoreQuarantine(quarantine, file) {
   }
   try { fs.rmSync(quarantine, { force: true }) } catch {}
   return true
-}
-
-function commitGuardPath(root, revision) {
-  return path.join(root, RELAY_STORE_FILE + '.commit-' + revision)
-}
-
-function readCommitGuard(file) {
-  try {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (!value || !Number.isInteger(value.revision) || typeof value.token !== 'string' || !Number.isInteger(value.pid)) return null
-    return value
-  } catch {
-    return null
-  }
-}
-
-/** Commit guards for already-published revisions are obsolete; safe best-effort cleanup. */
-function removeObsoleteCommitGuards(root, revision) {
-  let names = []
-  try { names = fs.readdirSync(root) } catch { return }
-  const prefix = RELAY_STORE_FILE + '.commit-'
-  for (const name of names) {
-    if (typeof name !== 'string' || !name.startsWith(prefix)) continue
-    const suffix = name.slice(prefix.length)
-    if (!/^[0-9]+$/.test(suffix)) continue
-    if (Number(suffix) > revision) continue
-    try { fs.rmSync(path.join(root, name), { force: true }) } catch {}
-  }
-}
-
-/**
- * The commit reservation for exactly `baseRevision + 1`. The guard is created with its full content
- * through an atomic hard link (a create-or-fail publish of a prepared file), so it is never observed
- * empty. Only the guard owner may publish that revision: even if the advisory lease is moved aside
- * and a third process legally acquires the canonical lock, that process cannot reserve the same
- * revision and therefore cannot commit. A dead guard owner is provably fenced by move-then-verify
- * before it is removed; an unreadable guard is conservative BUSY.
- */
-function reserveCommitGuard(root, revision, owner) {
-  const guard = commitGuardPath(root, revision)
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const temp = guard + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp'
-    let prepared = false
-    try {
-      const handle = fs.openSync(temp, 'wx', 0o600)
-      try {
-        fs.writeFileSync(handle, JSON.stringify({ token: owner.token, pid: process.pid, revision, createdAt: new Date().toISOString() }) + '\n', 'utf8')
-        fs.fsyncSync(handle)
-      } finally {
-        fs.closeSync(handle)
-      }
-      prepared = true
-    } catch {
-      prepared = false
-    }
-    let created = false
-    if (prepared) {
-      try {
-        fs.linkSync(temp, guard)
-        created = true
-      } catch (error) {
-        if (error && error.code !== 'EEXIST') {
-          try { fs.copyFileSync(temp, guard, fs.constants.COPYFILE_EXCL); created = true } catch { created = false }
-        }
-      }
-    }
-    try { fs.rmSync(temp, { force: true }) } catch {}
-    if (created) return { ok: true, file: guard }
-    if (!prepared) return { ok: false, code: RELAY_ERRORS.STORE_INVALID, detail: 'commit guard write failed' }
-    const existing = readCommitGuard(guard)
-    if (!existing) return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard unreadable' }
-    if (!pidAlive(existing.pid)) {
-      const quarantine = guard + '.stale.' + owner.token + '.' + crypto.randomBytes(4).toString('hex')
-      let moved = false
-      try { fs.renameSync(guard, quarantine); moved = true } catch { moved = false }
-      if (moved) {
-        const verified = readCommitGuard(quarantine)
-        if (verified && verified.token === existing.token && !pidAlive(verified.pid)) {
-          try { fs.rmSync(quarantine, { force: true }) } catch {}
-          continue
-        }
-        restoreQuarantine(quarantine, guard)
-      }
-    }
-    return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard held' }
-  }
-  return { ok: false, code: RELAY_ERRORS.STORE_BUSY, detail: 'commit guard contention' }
-}
-
-function releaseCommitGuard(guard) {
-  if (!guard || typeof guard.file !== 'string') return
-  try { fs.rmSync(guard.file, { force: true }) } catch {}
 }
 
 async function acquireLock(root, owner) {
@@ -762,11 +775,10 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     if (!target.bridgeAllowed || !target.workerAllowed) return null
     return clone(target)
   }
-  const storeFile = path.join(root, RELAY_STORE_FILE)
+  const queueKey = path.join(root, RELAY_STORE_PREFIX)
   const ownerToken = crypto.randomBytes(16).toString('hex')
   const ownerPid = process.pid
   const ownerHost = 'fixture-host'
-  const queueKey = storeFile
   let recovered = []
 
   function ownerIsLive(owner) {
@@ -802,35 +814,26 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       }
       try {
         let store
-        try { store = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
+        try { store = readStore(root) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
         const baseRevision = store.revision
         const outcome = await fn(store)
         if (outcome && outcome.persist === true) {
-          if (!Number.isInteger(store.revision)) store.revision = 0
           const nextRevision = baseRevision + 1
-          try { removeObsoleteCommitGuards(root, baseRevision) } catch {}
-          // The commit reservation is the single-writer authority for this revision: it is taken
-          // before the final publish and held until the rename really happened. A writer whose live
-          // lease was moved aside still owns its revision, so a third process cannot publish the same
-          // revision; it fails closed instead of overwriting this snapshot.
-          const guard = reserveCommitGuard(root, nextRevision, owner)
-          if (!guard.ok) return fail(guard.code, guard.detail)
-          try {
-            // Belt-and-braces fence after the reservation: the advisory lease must still be this
-            // run's lease and no other writer may have committed since this run read the store.
-            let current = null
-            try { current = readStore(storeFile) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
-            const lease = readLease(lockPath(root))
-            if (!lease || lease.token !== owner.token) return fail(RELAY_ERRORS.STORE_BUSY, 'lease lost before commit')
-            if (current.revision !== baseRevision) return fail(RELAY_ERRORS.STORE_BUSY, 'store advanced before commit')
-            store.revision = nextRevision
-            atomicWrite(storeFile, store)
-            // A live owner token is registered only once its claim commit really happened, so a
-            // failed claim can never leave a phantom live token behind.
-            if (typeof outcome.liveToken === 'string') LIVE_SUBMITS.set(outcome.liveToken, ownerPid)
-          } finally {
-            releaseCommitGuard(guard)
-          }
+          // Advisory contention fence only (no write authority): the commit authority is the
+          // immutable revision-file create below. A moved/expired lease can therefore delay a writer
+          // but can never let it overwrite a newer commit.
+          let currentRevision = 0
+          try { currentRevision = latestStoreRevision(root) } catch { return fail(RELAY_ERRORS.STORE_INVALID) }
+          const lease = readLease(lockPath(root))
+          if (!lease || lease.token !== owner.token) return fail(RELAY_ERRORS.STORE_BUSY, 'lease lost before commit')
+          if (currentRevision !== baseRevision) return fail(RELAY_ERRORS.STORE_BUSY, 'store advanced before commit')
+          store.revision = baseRevision
+          const committed = commitStore(root, store)
+          if (!committed.ok) return committed
+          if (committed.revision !== nextRevision) return fail(RELAY_ERRORS.STORE_INVALID, 'revision mismatch')
+          // A live owner token is registered only once its claim commit really happened, so a failed
+          // claim can never leave a phantom live token behind.
+          if (typeof outcome.liveToken === 'string') LIVE_SUBMITS.set(outcome.liveToken, ownerPid)
         }
         return outcome ? outcome.value : fail(RELAY_ERRORS.INPUT_INVALID)
       } catch (error) {

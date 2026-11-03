@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { createFakeDeliveryBackend, openUnifiedRelay } from '../core/audio/relay-core-offline.mjs'
-import { createVoiceSavedTask, relayHandoff } from './support/relay-authority.mjs'
+import { createVoiceSavedTask, latestRelayStoreFile, relayHandoff } from './support/relay-authority.mjs'
 
 const TARGET_A = {
   targetId: 'fixture-private-a', kind: 'PRIVATE', authorized: true, allowlisted: true,
@@ -63,7 +63,6 @@ test('PERSIST-02 a stolen live lease cannot let a stale snapshot overwrite a new
     assert.notEqual(first.delivery.deliveryId, second.delivery.deliveryId)
 
     const lockFile = path.join(sandbox.root, LOCK)
-    const storeFile = path.join(sandbox.root, STORE)
     const ready = path.join(sandbox.root, 'race.ready')
     const release = path.join(sandbox.root, 'race.release')
     const payloadFile = path.join(outDir, 'race-payload.json')
@@ -107,12 +106,12 @@ test('PERSIST-02 a stolen live lease cannot let a stale snapshot overwrite a new
     assert.equal(waitForFile(resultCFile, 5000), true, 'worker C never wrote its result')
     const resultA = JSON.parse(fs.readFileSync(resultAFile, 'utf8'))
     const resultC = JSON.parse(fs.readFileSync(resultCFile, 'utf8'))
-    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    const store = JSON.parse(fs.readFileSync(latestRelayStoreFile(sandbox.root), 'utf8'))
     const storedA = store.deliveries.find((item) => item.deliveryId === first.delivery.deliveryId)
     const storedB = store.deliveries.find((item) => item.deliveryId === second.delivery.deliveryId)
     // C's successful cancel must survive.
     assert.equal(resultC.ok, true, JSON.stringify(resultC))
-    assert.equal(storedB.state, 'CANCEL_REQUESTED', 'worker C cancellation was lost')
+    assert.equal(storedB.state, 'CANCEL_REQUESTED', 'worker C cancellation was lost: ' + JSON.stringify({ resultC, resultA }))
     assert.equal(storedB.cancel.requested, true)
     // A must not have committed a stale snapshot over C: its lease/revision authority was lost, so
     // it fails closed with BUSY and its own record stays QUEUED (no successful result is lost).
@@ -157,7 +156,6 @@ test('PERSIST-02 a stolen lease after the fence cannot let another process publi
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(second.ok, true, JSON.stringify(second))
     const lockFile = path.join(sandbox.root, LOCK)
-    const storeFile = path.join(sandbox.root, STORE)
     const ready = path.join(sandbox.root, 'race.ready')
     const release = path.join(sandbox.root, 'race.release')
     const payloadFile = path.join(outDir, 'race-payload.json')
@@ -171,7 +169,7 @@ test('PERSIST-02 a stolen lease after the fence cannot let another process publi
     fs.renameSync = function patchedRename(from, to) {
       if (!injected && typeof from === 'string' && path.resolve(from) === lockFile && String(to).includes('.stale.')) {
         injected = true
-        childA = spawn(process.execPath, [worker, 'A_RENAME', payloadFile], { cwd: sandbox.root, stdio: 'ignore', windowsHide: true })
+        childA = spawn(process.execPath, [worker, 'A_PUBLISH', payloadFile], { cwd: sandbox.root, stdio: 'ignore', windowsHide: true })
         if (!waitForFile(ready, 15000)) throw new Error('worker A never paused before its final rename')
         const moved = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
         assert.equal(moved.pid, childA.pid, 'worker A must hold the live lease that gets moved aside')
@@ -192,23 +190,25 @@ test('PERSIST-02 a stolen lease after the fence cannot let another process publi
       fs.renameSync = originalRename
     }
     assert.equal(injected, true)
-    const resultAFile = path.join(outDir, 'worker-A_RENAME-result.json')
+    const resultAFile = path.join(outDir, 'worker-A_PUBLISH-result.json')
     const resultCFile = path.join(outDir, 'worker-C-result.json')
     assert.equal(waitForFile(resultAFile, 20000), true, 'worker A never wrote its result')
     assert.equal(waitForFile(resultCFile, 5000), true, 'worker C never wrote its result')
     const resultA = JSON.parse(fs.readFileSync(resultAFile, 'utf8'))
     const resultC = JSON.parse(fs.readFileSync(resultCFile, 'utf8'))
-    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    const store = JSON.parse(fs.readFileSync(latestRelayStoreFile(sandbox.root), 'utf8'))
     const storedA = store.deliveries.find((item) => item.deliveryId === first.delivery.deliveryId)
     const storedB = store.deliveries.find((item) => item.deliveryId === second.delivery.deliveryId)
-    // The commit reservation was already held by A, so C cannot publish the same revision.
-    assert.equal(resultC.ok, false, JSON.stringify(resultC))
-    assert.equal(resultC.code, 'RELAY_CORE_STORE_BUSY', JSON.stringify(resultC))
-    assert.equal(storedB.state, 'QUEUED', 'C must not have committed a cancel')
-    // A owns the revision and its publish is the only one.
-    assert.equal(resultA.ok, true, JSON.stringify(resultA))
-    assert.equal(storedA.state, 'CANCEL_REQUESTED')
-    assert.equal(observed && observed.ok !== undefined, true)
+    // A had read base N and paused before publishing revision N+1; C legally acquired the lock and
+    // published N+1 first. A's immutable create therefore fails: its old snapshot can never overwrite
+    // C's successful cancel.
+    assert.equal(resultC.ok, true, JSON.stringify(resultC))
+    assert.equal(storedB.state, 'CANCEL_REQUESTED', 'worker C cancellation was lost: ' + JSON.stringify({ resultC, resultA }))
+    assert.equal(storedB.cancel.requested, true)
+    assert.equal(resultA.ok, false, JSON.stringify(resultA))
+    assert.equal(resultA.code, 'RELAY_CORE_STORE_BUSY', JSON.stringify(resultA))
+    assert.equal(storedA.state, 'QUEUED')
+    assert.notEqual(observed && observed.ok, undefined)
   } finally {
     fs.renameSync = originalRename
     if (childA && childA.exitCode === null) {

@@ -8,6 +8,7 @@
  */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import path from 'node:path'
 
 import { openFixtureTaskCatalog } from '../../core/audio/task-catalog.mjs'
 import { openFixtureTaskOwner } from '../../core/audio/task-owner.mjs'
@@ -164,4 +165,17 @@ export function mutableClock(startIso) {
     set(next) { value = next },
     advance(ms) { value = new Date(Date.parse(value) + ms).toISOString() },
   }
+}
+
+export function latestRelayStoreFile(root) {
+  const names = fs.readdirSync(root).filter((name) => /^unified-relay-v1\.r[0-9]+\.json$/.test(name))
+  if (!names.length) return null
+  const revisions = names.map((name) => ({ name, revision: Number(/\.r([0-9]+)\.json$/.exec(name)[1]) }))
+  revisions.sort((left, right) => right.revision - left.revision)
+  return path.join(root, revisions[0].name)
+}
+
+export function readRelayStore(root) {
+  const file = latestRelayStoreFile(root)
+  return file ? JSON.parse(fs.readFileSync(file, 'utf8')) : null
 }

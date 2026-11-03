@@ -1,6 +1,6 @@
 # Whale Relay Core · Plan 13-A / OFFLINE
 
-**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-03, 108 revision).
+**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-03, 111 revision).
 This is the first offline owner of delivery persistence for the ADR-001 unified
 `Whale Audio Core → Whale Relay Core → supported target` boundary. It consumes a *persisted* SAVED Audio
 Task (or a persisted SAVED Cover MASTER), reads the real Fixture Artifact bytes through the existing
@@ -61,10 +61,12 @@ is created. The delivery's issuance records `authorizedBy:"PERSISTED_COVER_DELIV
 versioned issuance: `intentId: "intent:<32hex>"` plus
 `intent { version: 1, kind, taskIdentityHash, deliveryRequested, authorizedBy, permitId, issuedAt }`.
 
-The store is `unified-relay-v1.json` under the trusted Fixture sandbox. It holds the delivery record, the
-`taskId → deliveryId → backendRequestId` mapping, canonical semantic digest (authority kind + task identity
-hash + artifact hash + target + proof + expiry, **not** requestKey), artifact hash/bytes/duration/format,
-rights proof/expiry, target id/kind, fixed backend, issuance and state.
+The store is an append-only sequence of immutable revision files, `unified-relay-v1.r<N>.json`, under the
+trusted Fixture sandbox. Each revision file holds the delivery records (with their `requestKeys` aliases),
+the `taskId → deliveryId → backendRequestId` mapping, canonical semantic digest (authority kind + task
+identity hash + artifact hash/target/proof/expiry/bytes/duration/format/permit, **not** requestKey), artifact
+hash/bytes/duration/format, rights proof/expiry, target id/kind, fixed backend, issuance and state. Readers
+take the highest validated revision; no fixed "current store" name exists.
 
 A same semantic digest returns `EXISTING`; a changed requestKey is only an alias while unbound. A
 `requestKey` is an **immutable binding** checked before any digest reuse: once bound it can never be
@@ -80,17 +82,18 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
   replacement is restored with a create-or-fail link/copy (never overwritten) or left in quarantine and
   reported busy. A release moves its own lease aside, verifies it, and restores a moved foreign lease
   without overwriting a third live lease.
-- The lock alone is not the write authority. A commit first reserves `unified-relay-v1.json.commit-<rev>`
-  for exactly `revision + 1`: the guard is published with its full content through an atomic hard link
-  (create-or-fail), so it is never observed empty, and only its owner may publish that revision. The
-  reservation is taken before the final publish and held until the store rename really happened; a third
-  process that legally acquires the canonical lock after a stale reclaim moved the live lease still cannot
-  reserve the same revision and therefore cannot commit — it fails closed with `STORE_BUSY`. After the
-  reservation the writer also re-checks its lease token and the store revision it started from. A writer
-  that lost its lease or was overtaken writes nothing. Guards for already published revisions are
-  best-effort cleaned; a dead guard owner is fenced by move-then-verify, an unreadable guard is
-  conservative `STORE_BUSY`. This makes the acquisition, reclaim, release and the final rename one
-  explainable single-writer boundary rather than a check followed by another race window.
+- The lock is advisory only and is not the write authority. A commit is the atomic creation of exactly the
+  next immutable revision file: the complete new state is written and fsynced to a private temp file, then
+  published with a create-or-fail hard link to `unified-relay-v1.r<revision+1>.json` (an exclusive copy is
+  used only on filesystems that cannot hard-link). The create **is** the commit — there is no fixed name that
+  is renamed, replaced, reclaimed or deleted, and no post-create step that could fail. A writer whose live
+  lease was moved aside by a stale reclaim can therefore never overwrite a newer commit: it either creates a
+  revision nobody else took, or the create fails and it reports `STORE_BUSY` (both writers can never publish
+  the same revision). The advisory lease and a latest-revision re-check are kept only as contention hints.
+  Old revisions are pruned best-effort (the newest four are kept) — they can never be a writer's base again,
+  so pruning cannot create an empty-current window. Private temp files are never authoritative and only a
+  provably dead owner's temp is removed. Crash/dead-owner recovery of in-flight deliveries (`SUBMITTING` →
+  `UNKNOWN` on reopen) is unchanged and independent of the commit path.
 - `ensureDelivery` persists the record before any backend call. `submit` claims the record with an owner
   token, persists `SUBMITTING` (the live token is registered only after that commit really happened, so a
   failed claim never leaves a phantom live owner), then re-reads the artifact/target.
@@ -191,12 +194,15 @@ was moved aside fails closed with `STORE_BUSY` without writing; corrupt/inconsis
 index, missing key index, both, dangling entry, duplicate record, illegal terminal relation) are refused with
 `STORE_INVALID` without being rewritten and without a second acceptance.
 
-`test/relay-lease-race.test.mjs` (2) replays both reported real three-process interleavings: a live writer A
-reads the store and pauses before its commit, a stale reclaim moves A's live lease aside, C legally acquires
-the empty canonical name and commits a normal cancel, then A tries to commit its old snapshot. A fails closed
-with `STORE_BUSY` and writes nothing; C's successful cancellation survives (`CANCEL_REQUESTED`), so no
-successful result is lost; the after-fence variant pauses A after the lease/revision fence and after the temp\nfile was written/fsynced, immediately before the final rename — the commit reservation keeps that revision\nexclusively A's, so C fails closed with `STORE_BUSY` and A's publish is the only one. `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are
-arranged with real child processes and file markers, never by editing a relay record.
+`test/relay-lease-race.test.mjs` (2) replays both reported real three-process interleavings with the immutable
+revision commit: a live writer A reads the store and pauses before its commit, a stale reclaim moves A's live
+lease aside, C legally acquires the empty canonical name and commits a normal cancel, then A tries to publish
+its old snapshot. A's immutable create of the already published revision fails closed with `STORE_BUSY` and
+writes nothing; C's successful cancellation survives (`CANCEL_REQUESTED`), so no successful result is lost.
+The after-fence variant pauses A after the temp revision file was written/fsynced and immediately before the
+publish (the window the 0140/0141 review named): C publishes first, A's old snapshot cannot overwrite it.
+`test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
+processes and file markers, never by editing a relay record.
 
 Local: **1105 tests / 1101 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
 (build unchanged by the Core-only revision).

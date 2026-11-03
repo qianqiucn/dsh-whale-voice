@@ -16,7 +16,7 @@ import {
   createFakeDeliveryBackend,
   openUnifiedRelay,
 } from '../core/audio/relay-core-offline.mjs'
-import { createVoiceSavedTask, mutableClock, relayHandoff } from './support/relay-authority.mjs'
+import { createVoiceSavedTask, latestRelayStoreFile, mutableClock, readRelayStore, relayHandoff } from './support/relay-authority.mjs'
 
 const TARGET = {
   targetId: 'fixture-private-a',
@@ -40,7 +40,7 @@ function withSandbox(fn) {
 }
 
 function readStore(sandbox) {
-  return JSON.parse(fs.readFileSync(path.join(sandbox.root, STORE), 'utf8'))
+  return readRelayStore(sandbox.root)
 }
 
 async function openRelay(sandbox, { backend, targets = [TARGET, TARGET_B], clock } = {}) {
@@ -262,7 +262,6 @@ test('PERSIST-02 a failed claim commit leaves no phantom live owner and stays re
     const voice = await createVoiceSavedTask(sandbox, {
       now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
     })
-    const storeFile = path.join(sandbox.root, STORE)
     const backend = createFakeDeliveryBackend({ targets: [TARGET] })
     const relay = await openRelay(sandbox, { backend })
     const ensured = await relay.ensureDelivery(relayHandoff({
@@ -270,20 +269,20 @@ test('PERSIST-02 a failed claim commit leaves no phantom live owner and stays re
       targetId: TARGET.targetId, requestKey: 'claim-failure', proofRef: PROOF,
     }))
     let injected = 0
-    const originalRename = fs.renameSync
-    fs.renameSync = function patchedRename(from, to) {
-      if (injected === 0 && typeof to === 'string' && to === storeFile) {
+    const originalLink = fs.linkSync
+    fs.linkSync = function patchedLink(from, to) {
+      if (injected === 0 && typeof to === 'string' && /\.r[0-9]+\.json$/.test(to)) {
         injected += 1
         throw Object.assign(new Error('injected claim failure'), { code: 'EIO' })
       }
-      return originalRename(from, to)
+      return originalLink(from, to)
     }
     try {
       const failed = await relay.submit(ensured.delivery.deliveryId)
       assert.equal(failed.ok, false)
       assert.equal(failed.code, RELAY_ERRORS.STORE_INVALID)
     } finally {
-      fs.renameSync = originalRename
+      fs.linkSync = originalLink
     }
     assert.equal(injected, 1)
     // The claim never committed: the record is still QUEUED, not a phantom SUBMITTING owner.
@@ -304,18 +303,24 @@ test('PERSIST-02 a terminal-state write failure stays BUSY for the live owner in
     const voice = await createVoiceSavedTask(sandbox, {
       now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
     })
-    const storeFile = path.join(sandbox.root, STORE)
     const base = createFakeDeliveryBackend({ targets: [TARGET] })
     let armed = false
     let armedWrites = 0
-    const originalRename = fs.renameSync
-    fs.renameSync = function patchedRename(from, to) {
-      if (armed && typeof to === 'string' && to === storeFile && typeof from === 'string' && from.endsWith('.tmp')) {
+    const originalLink = fs.linkSync
+    const originalCopy = fs.copyFileSync
+    fs.linkSync = function patchedLink(from, to) {
+      if (armed && typeof to === 'string' && /\.r[0-9]+\.json$/.test(to)) {
         armedWrites += 1
-        // The claim (first armed write) commits; every terminal write after it fails.
+        // The claim (first armed commit) publishes; every terminal commit after it fails.
         if (armedWrites >= 2) throw Object.assign(new Error('injected finalize failure'), { code: 'EIO' })
       }
-      return originalRename(from, to)
+      return originalLink(from, to)
+    }
+    fs.copyFileSync = function patchedCopy(from, to, ...rest) {
+      if (armed && typeof to === 'string' && /\.r[0-9]+\.json$/.test(to) && armedWrites >= 2) {
+        throw Object.assign(new Error('injected finalize copy failure'), { code: 'EIO' })
+      }
+      return originalCopy(from, to, ...rest)
     }
     try {
       const relay = await openRelay(sandbox, { backend: base })
@@ -331,7 +336,8 @@ test('PERSIST-02 a terminal-state write failure stays BUSY for the live owner in
       assert.equal(submitted.ok, false)
       assert.equal(submitted.code, RELAY_ERRORS.STORE_INVALID)
     } finally {
-      fs.renameSync = originalRename
+      fs.linkSync = originalLink
+      fs.copyFileSync = originalCopy
     }
     // The Fake Worker really accepted, so the durable outcome is unknown at best; the live owner is
     // retained (busy) rather than a concurrent open silently rewriting it to UNKNOWN.
@@ -367,7 +373,7 @@ test('PERSIST-01 a corrupt or inconsistent store is refused instead of re-mintin
       const accepted = await relay.submit(first.delivery.deliveryId)
       assert.equal(accepted.delivery.state, RELAY_STATES.ACCEPTED)
       assert.equal(backend.stats().accepted, 1)
-      const storeFile = path.join(sandbox.root, STORE)
+      const storeFile = latestRelayStoreFile(sandbox.root)
       const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
       if (variant === 'digest-index') store.byDigest = {}
       if (variant === 'key-index') delete store.byRequestKey
@@ -398,7 +404,7 @@ test('PERSIST-01 a corrupt or inconsistent store is refused instead of re-mintin
   }
 })
 
-test('PERSIST-02 a commit whose canonical lease was moved aside fails closed without writing', async () => {
+test('PERSIST-02 a commit can never overwrite an already published revision', async () => {
   await withSandbox(async (sandbox) => {
     const voice = await createVoiceSavedTask(sandbox, {
       now: '2026-10-27T00:00:00.000Z', saveNow: '2026-10-27T00:00:01.000Z', expiresAt: EXPIRES, proofRef: PROOF,
@@ -406,43 +412,38 @@ test('PERSIST-02 a commit whose canonical lease was moved aside fails closed wit
     const relay = await openRelay(sandbox)
     const ensured = await relay.ensureDelivery(relayHandoff({
       scopeId: voice.scopeId, taskId: voice.taskId, artifactRef: voice.artifactRef,
-      targetId: TARGET.targetId, requestKey: 'lease-lost', proofRef: PROOF,
+      targetId: TARGET.targetId, requestKey: 'revision-collision', proofRef: PROOF,
     }))
     assert.equal(ensured.ok, true, JSON.stringify(ensured))
-    const lockFile = path.join(sandbox.root, LOCK)
-    const storeFile = path.join(sandbox.root, STORE)
-    let armed = false
-    let storeReads = 0
-    let swapped = 0
-    const originalRead = fs.readFileSync
-    fs.readFileSync = function patchedRead(file, ...args) {
-      const bytes = originalRead.call(fs, file, ...args)
-      if (armed && typeof file === 'string' && file === storeFile) {
-        storeReads += 1
-        // The second store read of this run is the commit fence: replace the canonical lease after
-        // its bytes were read, exactly like a reclaim that moved the live lease aside.
-        if (storeReads === 2 && swapped === 0) {
-          swapped += 1
-          fs.writeFileSync(lockFile, JSON.stringify({ token: 'foreign-live-token', pid: process.pid, host: 'other', createdAt: new Date().toISOString() }) + '\n')
-        }
+    const originalLink = fs.linkSync
+    let injected = 0
+    fs.linkSync = function patchedLink(from, to) {
+      if (injected === 0 && typeof to === 'string' && /\.r[0-9]+\.json$/.test(to)) {
+        injected += 1
+        // Simulate another process publishing exactly this revision first: a valid store snapshot
+        // with the same revision but a different terminal outcome for this delivery.
+        const base = JSON.parse(fs.readFileSync(latestRelayStoreFile(sandbox.root), 'utf8'))
+        const competing = JSON.parse(JSON.stringify(base))
+        competing.revision = base.revision + 1
+        competing.deliveries[0].state = RELAY_STATES.CANCEL_REQUESTED
+        competing.deliveries[0].cancel = { requested: true, confirmed: false, requestedAt: NOW, confirmedAt: null }
+        competing.deliveries[0].updatedAt = NOW
+        fs.writeFileSync(to, JSON.stringify(competing) + '\n')
       }
-      return bytes
+      return originalLink(from, to)
     }
     let result
     try {
-      armed = true
       result = await relay.cancel(ensured.delivery.deliveryId)
     } finally {
-      fs.readFileSync = originalRead
+      fs.linkSync = originalLink
     }
-    assert.equal(swapped, 1, 'the commit-fence read was not exercised')
+    assert.equal(injected, 1, 'the immutable revision create was not exercised')
     assert.equal(result.ok, false, JSON.stringify(result))
     assert.equal(result.code, RELAY_ERRORS.STORE_BUSY)
-    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
-    assert.equal(store.deliveries[0].state, RELAY_STATES.QUEUED)
-    assert.equal(store.deliveries[0].cancel.requested, false)
-    // The foreign lease was never deleted by our release path.
-    const lease = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
-    assert.equal(lease.token, 'foreign-live-token')
+    // The competing revision survives byte-for-byte; the losing writer published nothing.
+    const store = readStore(sandbox)
+    assert.equal(store.deliveries[0].state, RELAY_STATES.CANCEL_REQUESTED)
+    assert.equal(store.deliveries[0].cancel.requested, true)
   })
 })

@@ -729,3 +729,36 @@ including the exact 0140 after-fence and digest-tamper counterexamples replayed 
 `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 stays open and unmerged; real DSH page visual, real Sender/WeChat,
 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. The permit cross-record redundancy limitation stays
 booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.
+
+### Plan 13-A 111 revision — immutable revision-log commit (2026-11-03)
+
+Same branch/PR (#50), no new PR and no merge. This revision closes the last 137-PERSIST-02 lifecycle item named
+by the 0141 review (`3e696ee`); the accepted canonical digest, Cover permit, accept-boundary expiry, Voice/Worker
+and UI evidence are not redone.
+
+- **Root cause:** the revision reservation introduced in 110 was itself a movable/deletable same-name file. A
+  dead-guard reclaim could move a live replacement, a release could hit a newly reused path, and the holder's
+  exclusivity across the final rename was therefore not provable. Adding checks around the rename would only
+  move the window again.
+- **Change:** the store is now an append-only log of immutable revision files
+  (`unified-relay-v1.r<N>.json`). A commit writes the complete next state to a private fsynced temp and
+  publishes it with a create-or-fail hard link; the create *is* the commit. No fixed "current store" name is
+  renamed, replaced, reclaimed or deleted, so a writer whose advisory lease was moved aside can never overwrite
+  a newer commit — it either creates a revision nobody else took or fails closed with `STORE_BUSY`.
+  Readers take the highest validated revision (a corrupt higher revision is `STORE_INVALID`, never a fallback);
+  old revisions are pruned best-effort (newest four kept) and can never be a writer's base; only a provably
+  dead owner's private temp is removed. The advisory lease and latest-revision re-check are contention hints
+  only. Crash/dead-owner delivery recovery (`SUBMITTING` → `UNKNOWN` on reopen) is unchanged.
+- **Tests:** the two real three-process interleavings now run against the immutable publish: A pauses before
+  its publish (after the temp was fsynced), a stale reclaim moves A's live lease aside, C legally acquires the
+  lock and publishes its cancel; A's create of the same revision fails closed and C's `CANCEL_REQUESTED`
+  survives. The store-corruption matrix (7 variants incl. canonical digest), key binding, finalize timing,
+  claim failure, terminal failure and both child-process recoveries stay green. A new in-process test proves a
+  commit can never overwrite an already published revision (create-or-fail collision with a competing valid
+  snapshot, our writer reports `STORE_BUSY`, the competitor's state survives byte-for-byte).
+
+Evidence: 4 relay files / 33 tests (12 core + 9 TRUST + 10 PERSIST + 2 real three-process races); full suite
+**1105 / 1101 pass / 4 platform skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js`
+314,687 chars (unchanged). Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and
+unmerged; real DSH page visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN.
+The permit cross-record redundancy limitation stays booked as `RELAY-DEFER-PERMIT-CROSSCHECK-140`.

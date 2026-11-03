@@ -770,3 +770,33 @@ guard file age/mtime as staleness (could delete a live reservation); repairing/r
 re-minting ids or replaying; trusting the stored digest/index strings.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-028 — The store is an immutable revision log; the create-or-fail revision file is the commit
+
+**Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03). Supersedes ADR-027.
+**Related:** ADR-001, ADR-024, ADR-025, ADR-026, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** The delivery store is an append-only log of immutable revision files
+`unified-relay-v1.r<N>.json`. A commit is the atomic create-or-fail publication of exactly the next revision
+file: the complete new state is written and fsynced to a private temp file, then published with a hard link
+(exclusive copy only on filesystems that cannot hard-link). The create *is* the commit; there is no fixed
+"current store" name that is renamed, replaced, reclaimed or deleted, and no post-create step. A writer whose
+advisory lease was moved aside by a stale reclaim can therefore never overwrite a newer commit: it either
+creates a revision nobody else took, or the create fails and it reports `STORE_BUSY` — two writers can never
+publish the same revision. Readers take the highest validated revision; a corrupt higher revision fails
+closed instead of falling back to older data. Old revisions are pruned best-effort (newest four kept) and can
+never be a writer's base again, so pruning cannot create an empty-current window. Private temp files are never
+authoritative and only a provably dead owner's temp is removed. The advisory lease and a latest-revision
+re-check are kept only as contention hints, never as write authority.
+
+**Reason:** the 0141 review showed that the revision guard of ADR-027 was itself a movable/deletable
+same-name file: a dead-guard reclaim could move a live replacement, a released path could be reused by a new
+guard, and the holder's exclusivity during the final rename was therefore not proven. Replacing the guard with
+an immutable log makes the exclusivity structural (the name is the committed data) instead of a lock
+lifecycle, without adding another reclaimable lock or moving the window.
+
+**Rejected alternatives:** another reclaimable reservation/lock; verifying and re-verifying the guard around
+the rename (still a window); pid/mtime-based guard stealing; repairing or falling back from a corrupt highest
+revision; migrating the unmerged previous store format.
+
+**Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
