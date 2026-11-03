@@ -529,6 +529,26 @@
     return adapter
   }
   window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
+  window.__WHALE_SINGING_APP__ = new URLSearchParams(window.location.search).get('singing') === 'none' ? null : (() => {
+    const request = async (path, options) => {
+      const response = await fetch(path, { cache: 'no-store', ...options })
+      return response.json()
+    }
+    const post = (path, body) => request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
+    return {
+      list: () => request('/singing-app/catalog'),
+      create: (draft) => post('/singing-app/create', draft),
+      execute: (taskId) => post('/singing-app/execute', { taskId }),
+      status: (taskId) => request('/singing-app/status?taskId=' + encodeURIComponent(taskId)),
+      cancel: (taskId) => post('/singing-app/cancel', { taskId }),
+      preview: (taskId, draft) => post('/singing-app/preview', { taskId, draft }),
+      reset: () => post('/singing-app/reset', {}),
+    }
+  })()
 
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {

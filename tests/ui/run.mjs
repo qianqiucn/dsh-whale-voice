@@ -7,6 +7,7 @@ import path from 'node:path'
 import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
 import { createConfigSandbox } from '../../core/config-sandbox.mjs'
 import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
+import { createSingingBridge } from './singing-bridge.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -41,7 +42,10 @@ const files = new Map([
   ['/react-dom.js', [path.join(reactDomDir, 'react-dom.development.js'), 'text/javascript; charset=utf-8']],
 ])
 
-const server = createServer((req, res) => {
+const singingBridge = await createSingingBridge()
+
+const server = createServer(async (req, res) => {
+  if (await singingBridge.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
   if (!entry) {
@@ -635,6 +639,183 @@ await check('plan09 singing validates source, consent, mode and SVC limits', asy
     await page.locator('[data-testid="plan09-preview"]').click()
     assert.match(await errors.innerText(), /未授权微信投递/)
     assert.equal(await page.locator('[data-testid="plan09-unsupported"]').count(), 1)
+  })
+})
+
+await check('plan12 real fixture bridge creates, saves and previews through Core', async () => {
+  await singingBridge.reset()
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    assert.match(await page.locator('[data-testid="plan12-task-id"]').innerText(), /尚未创建/)
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    const taskId = (await page.locator('[data-testid="plan12-task-id"]').innerText()).replace('任务：', '')
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已保存'), null, { timeout: 15000 })
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /MASTER/)
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /SAVED ≠ SENT/)
+    await page.locator('[data-testid="plan12-preview"]').click()
+    await page.locator('[data-testid="plan12-preview-result"]').waitFor({ timeout: 5000 })
+    const metrics = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(metrics.taskId, taskId)
+    assert.equal(metrics.state, 'SAVED')
+    assert.equal(metrics.masterCount, 1)
+    assert.ok(metrics.preview.byteLength > 0)
+    assert.match(metrics.preview.sha256, /^[0-9a-f]{64}$/)
+    assert.equal(metrics.preview.sha256, metrics.master.sha256)
+    assert.match(await page.locator('[data-testid="plan12-preview-result"]').innerText(), new RegExp(metrics.preview.byteLength + 'B'))
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForTimeout(150)
+    assert.equal(await page.locator('[data-testid="plan12-task-id"]').innerText(), '任务：' + taskId)
+    const again = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(again.taskId, taskId)
+    assert.equal(again.masterCount, 1)
+  })
+})
+
+await check('plan12 real bridge exposes status and confirmed cancel during a slow run', async () => {
+  await singingBridge.reset()
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('执行中'), null, { timeout: 15000 })
+    assert.equal(await page.locator('[data-testid="plan12-cancel"]').isDisabled(), false)
+    assert.equal(await page.locator('[data-testid="plan12-status"]').isDisabled(), false)
+    await page.locator('[data-testid="plan12-cancel"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已取消'), null, { timeout: 15000 })
+    const metrics = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(metrics.state, 'CANCELLED')
+    assert.equal(metrics.masterCount, 0)
+    await page.locator('[data-testid="plan12-preview"]').click()
+    await page.locator('[data-testid="plan12-error"]').waitFor({ timeout: 5000 })
+    assert.match(await page.locator('[data-testid="plan12-error"]').innerText(), /SINGING_APP_NOT_SAVED/)
+    assert.equal(await page.locator('[data-testid="plan12-preview-result"]').count(), 0)
+  })
+})
+
+await check('plan12 without an injected adapter fails closed', async () => {
+  await withPage('?bridge=normal&singing=none', async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-no-adapter"]').waitFor({ state: 'visible' })
+    assert.match(await page.locator('[data-testid="plan12-no-adapter"]').innerText(), /未接入/)
+    assert.equal(await page.locator('[data-testid="plan12-create"]').count(), 0)
+  })
+})
+
+await check('plan12 a delayed A create cannot rebind after selecting B', async () => {
+  await singingBridge.reset()
+  await fetch(base + '/singing-app/hold-next-create', { method: 'POST' })
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    const sourceA = await page.locator('[data-testid="plan12-source"] option').first().getAttribute('value')
+    const sourceB = await page.locator('[data-testid="plan12-source"] option').nth(1).getAttribute('value')
+    await page.locator('[data-testid="plan12-create"]').click()
+    let held = null
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      held = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+      if (held.tasks && held.tasks.length === 1) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    assert.equal(held.tasks.length, 1)
+    assert.equal(held.tasks[0].sourceRef, sourceA)
+    const taskA = held.tasks[0].taskId
+    await page.locator('[data-testid="plan12-source"]').selectOption(sourceB)
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('尚未创建'))
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    const taskB = (await page.locator('[data-testid="plan12-task-id"]').innerText()).replace('任务：', '')
+    assert.notEqual(taskB, taskA)
+    await fetch(base + '/singing-app/release-create', { method: 'POST' })
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan12-task-id"]').innerText(), '任务：' + taskB)
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已保存'), null, { timeout: 15000 })
+    const metrics = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(metrics.taskId, taskB)
+    assert.equal(metrics.sourceRef, sourceB)
+    assert.equal(metrics.state, 'SAVED')
+    assert.equal(metrics.masterCount, 1)
+    const stale = metrics.tasks.find((item) => item.taskId === taskA)
+    const current = metrics.tasks.find((item) => item.taskId === taskB)
+    assert.equal(stale.state, 'NO_ATTEMPT')
+    assert.equal(stale.master, null)
+    assert.equal(current.state, 'SAVED')
+    assert.equal(current.sourceRef, sourceB)
+  })
+})
+
+await check('plan12 a late A rejection cannot replace the selected B state', async () => {
+  await singingBridge.reset()
+  await fetch(base + '/singing-app/hold-next-create', { method: 'POST' })
+  await fetch(base + '/singing-app/fail-next-create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'SINGING_APP_REJECTED' }) })
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    const sourceB = await page.locator('[data-testid="plan12-source"] option').nth(1).getAttribute('value')
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForTimeout(150)
+    await page.locator('[data-testid="plan12-source"]').selectOption(sourceB)
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('尚未创建'))
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    const taskB = (await page.locator('[data-testid="plan12-task-id"]').innerText()).replace('任务：', '')
+    await fetch(base + '/singing-app/release-create', { method: 'POST' })
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan12-error"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="plan12-task-id"]').innerText(), '任务：' + taskB)
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已保存'), null, { timeout: 15000 })
+    const metrics = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(metrics.taskId, taskB)
+    assert.equal(metrics.sourceRef, sourceB)
+    assert.equal(metrics.masterCount, 1)
+  })
+})
+
+await check('plan12 late task responses cannot overwrite a switched task', async () => {
+  await singingBridge.reset()
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="plan09-wizard"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan09-wizard-browse"]').click()
+    await page.locator('[data-testid="plan12-singing-app"]').waitFor({ state: 'visible' })
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    const firstTask = (await page.locator('[data-testid="plan12-task-id"]').innerText()).replace('任务：', '')
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('执行中'), null, { timeout: 15000 })
+    await page.locator('[data-testid="plan12-source"]').selectOption({ index: 1 })
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('尚未创建'))
+    await page.locator('[data-testid="plan12-create"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-task-id"]')?.innerText.includes('task:fixture-'), null, { timeout: 15000 })
+    const secondTask = (await page.locator('[data-testid="plan12-task-id"]').innerText()).replace('任务：', '')
+    assert.notEqual(secondTask, firstTask)
+    // Core keeps one active Cover claim: let the switched-away slow task settle before starting B.
+    await page.waitForTimeout(1800)
+    await page.locator('[data-testid="plan12-execute"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="plan12-state"]')?.innerText.includes('已保存'), null, { timeout: 15000 })
+    await page.waitForTimeout(700)
+    assert.equal(await page.locator('[data-testid="plan12-task-id"]').innerText(), '任务：' + secondTask)
+    assert.match(await page.locator('[data-testid="plan12-state"]').innerText(), /已保存/)
+    const metrics = await fetch(base + '/singing-app/metrics').then((response) => response.json())
+    assert.equal(metrics.taskId, secondTask)
+    assert.equal(metrics.state, 'SAVED')
+    assert.equal(metrics.masterCount, 1)
   })
 })
 
@@ -1543,5 +1724,6 @@ writeFileSync(path.join(artifactDir, 'report.json'), JSON.stringify(report, null
 console.log('\n' + results.filter((item) => item.result === 'PASS').length + '/' + results.length + ' UI checks passed')
 console.log('Artifacts: ' + artifactDir)
 await browser.close()
+await singingBridge.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

@@ -568,3 +568,66 @@ from the provider; claiming INTEGRATED from Fake tests.
 
 **Related:** [CLOUD_PROVIDERS.md](CLOUD_PROVIDERS.md), [ARCHITECTURE.md](ARCHITECTURE.md),
 [TTS_PROVIDER_ARCHITECTURE.md](TTS_PROVIDER_ARCHITECTURE.md).
+
+## ADR-022 — Whale Singing application is a thin adapter over the existing Cover single-claim/MASTER path
+
+**Status:** accepted (`12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-017, [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Decision:** The first Singing application unit is a thin coordinator, not a second Core. It consumes the
+existing `createCoverTask` / `executeCover` / `coverStatus` / `requestCoverCancel` / `resumeCoverFinal` and the
+existing Fixture Artifact library. Source/voice rights, model facts and dependency evidence come from trusted
+injected catalogs/providers; the browser only selects a trusted source/voice and bounded pitch/layout/mix
+parameters. One idempotency key is derived from source + voice: same parameters return `EXISTING`, changed
+parameters conflict, and an existing `CLAIMED/SAVED/CANCELLED/FAILED/UNKNOWN` is never silently re-executed.
+Preview reads only a saved MASTER through the library's scope/ref/rights/expiry gate. The page panel appears only
+with an explicitly injected `window.__WHALE_SINGING_APP__`; production Host remains read-only and shows
+“未接入”. Results are Fixture-only, `persisted:false` and `realReady=false`; no Relay/WeChat send is created.
+
+**Reason:** The existing Cover executor already owns the single Task claim, dependency gate, synthetic stage
+state, unique MASTER import and terminal/cancel semantics. Rebuilding any of those in the page would create a
+second task/delivery truth and a browser-controlled rights path. The adapter/harness split lets the UI be tested
+without turning a production read-only Host into an unauthenticated write surface.
+
+**Rejected alternatives:** A second singing Task/Artifact store; page-computed rights/ready/hash; treating a
+Fixture save as a real cover or `SENT`; auto-starting or retrying when status is `UNKNOWN`; adding a production
+Host write route or real audio/device playback in this unit; implementing 13-A/12-B/C/D to make the panel appear
+complete.
+
+**Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).
+
+## ADR-023 — The Singing page is proven through a test-only HTTP bridge to real Core, not a fixed fake adapter
+
+**Status:** accepted (`12-A/APP-OFFLINE` / `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
+**Related:** ADR-022, [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md).
+
+**Decision:** The isolated UI harness injects a browser fetch adapter (`window.__WHALE_SINGING_APP__`) whose
+endpoints are served by `tests/ui/singing-bridge.mjs`. The bridge owns a temporary sandbox, imports real synthetic
+WAVs into the Fixture Artifact library, and calls the actual `openSingingApp`/`createCoverTask`/`executeCover`/
+`coverStatus`/`requestCoverCancel`/`preview` path. It exposes only metadata derived from actual Core results
+(state, MASTER count/hash/length, preview bytes/hash); there are no fixed task ids, stage labels or hashes in the
+browser adapter. The bridge is test-only and never registered by `index.js`.
+
+To make cancel observable, `executeCover` accepts an optional test/harness `stageDelayMs` (0–2000, default 0) and
+the app exposes `start()` so the long Promise is not held by the page; a `CLAIMED` task can be queried/canceled
+while running, and a task-ref guard ignores late responses from a switched-away task. Production callers omit the
+delay (0), and cancel still goes through the existing fence/requested/confirmed semantics.
+
+105 tightens the browser identity rule: a monotonic selection generation plus a per-operation busy token covers
+create/execute/status/cancel/preview and auto-poll **success, rejection, exception and finally**. A stale response
+cannot set task id, stage, preview, error or clear a newer busy state; A→B→A also gets a new generation. The bridge
+stores an immutable `taskId → {draft,sourceRef,voiceProfileId}` map and executes/previews only from that record;
+a global `lastDraft`/`lastTaskId` is never enough to grant old A execution rights under B.
+
+**Reason:** Fixed fake returns only show the UI can render; they cannot prove the page reaches the real single-claim
+executor, saves one MASTER or reads actual stored bytes. A real temporary bridge is the minimum evidence for R01,
+while keeping the production Host read-only. A controlled pause is preferable to weakening Core assertions or
+sleeping for an arbitrary duration.
+
+**Rejected alternatives:** Fixed task/stage/hash stubs in `harness.js`; a production HTTP write route; mocking
+`coverStatus`/`requestCoverCancel`; removing cancellation assertions to avoid timing flakiness; disabling the
+task-ref guard and letting a late result overwrite the current task.
+
+**Related:** [SINGING_APP_OFFLINE.md](SINGING_APP_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md),
+[PLAN09_ONBOARDING_UX.md](PLAN09_ONBOARDING_UX.md).
