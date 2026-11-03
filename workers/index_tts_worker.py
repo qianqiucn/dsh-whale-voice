@@ -954,7 +954,21 @@ def synthesize_once(message):
     thread.start()
 
 
+def clear_active(request_id):
+    global ACTIVE_REQUEST
+    with CANCEL_LOCK:
+        if ACTIVE_REQUEST == request_id:
+            ACTIVE_REQUEST = None
+        CANCEL_EVENTS.pop(request_id, None)
+
+
+def finish_fail(message_id, code, text, request_id):
+    clear_active(request_id)
+    fail(message_id, code, text, request_id)
+
+
 def emit_cancelled(message, payload, request_id):
+    clear_active(request_id)
     emit({
         "v": PROTOCOL_VERSION,
         "id": message["id"],
@@ -986,7 +1000,7 @@ def run_synthesis(message, payload):
             if payload.get("emotionRef"):
                 emotion_path = write_reference_file(payload["emotionRef"], request_id)
         except ResourceChanged as error:
-            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+            finish_fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
             return
         if event is not None and event.is_set():
             emit_cancelled(message, payload, request_id)
@@ -996,16 +1010,16 @@ def run_synthesis(message, payload):
         try:
             model = ensure_model(use_qwen_emo=use_text)
         except DependencyMissing:
-            fail(message["id"], ERRORS["DEPENDENCY_MISSING"], "the local indextts package is not importable", request_id)
+            finish_fail(message["id"], ERRORS["DEPENDENCY_MISSING"], "the local indextts package is not importable", request_id)
             return
         except NetworkBlocked:
-            fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+            finish_fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
             return
         except ResourceChanged as error:
-            fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+            finish_fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
             return
         except Exception:
-            fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local model could not be loaded", request_id)
+            finish_fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local model could not be loaded", request_id)
             return
         if event is not None and event.is_set():
             if created_model:
@@ -1036,10 +1050,10 @@ def run_synthesis(message, payload):
         try:
             model.infer(**kwargs)
         except NetworkBlocked:
-            fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+            finish_fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
             return
         except Exception as error:
-            fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local synthesis failed (" + type(error).__name__ + ")", request_id)
+            finish_fail(message["id"], ERRORS["RESOURCE_UNVERIFIED"], "the local synthesis failed (" + type(error).__name__ + ")", request_id)
             return
         if event is not None and event.is_set():
             emit_cancelled(message, payload, request_id)
@@ -1047,8 +1061,9 @@ def run_synthesis(message, payload):
         try:
             data, sample_rate, channels, duration_ms = read_wav(output_path, MAX_OUTPUT_BYTES)
         except ResourceChanged as error:
-            fail(message["id"], ERRORS["OUTPUT_INVALID"], str(error), request_id)
+            finish_fail(message["id"], ERRORS["OUTPUT_INVALID"], str(error), request_id)
             return
+        clear_active(request_id)
         emit({
             "v": PROTOCOL_VERSION,
             "id": message["id"],
@@ -1067,11 +1082,11 @@ def run_synthesis(message, payload):
             },
         })
     except NetworkBlocked:
-        fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
+        finish_fail(message["id"], ERRORS["NETWORK_BLOCKED"], "a local loader attempted a network access", request_id)
     except ResourceChanged as error:
-        fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
+        finish_fail(message["id"], ERRORS["RESOURCE_CHANGED"], str(error), request_id)
     except Exception as error:  # noqa: BLE001 — never leave the caller without a terminal answer
-        fail(message["id"], ERRORS["OUTPUT_INVALID"], "the worker could not complete the synthesis (" + type(error).__name__ + ")", request_id)
+        finish_fail(message["id"], ERRORS["OUTPUT_INVALID"], "the worker could not complete the synthesis (" + type(error).__name__ + ")", request_id)
     finally:
         for path in (reference_path, emotion_path, output_path):
             if path:
