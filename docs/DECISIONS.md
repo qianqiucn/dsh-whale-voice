@@ -637,19 +637,24 @@ task-ref guard and letting a late result overwrite the current task.
 **Status:** accepted (`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-03).
 **Related:** ADR-001, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Decision:** `core/audio/relay-core-offline.mjs` is the only writer of delivery records. It references the Whale
-Audio Core `taskId`/SAVED artifact and mints one persistent `delivery:<32hex>` plus a separate
-`[A-Za-z0-9_-]{8,64}` backend request id; it stores `taskId → deliveryId → backendRequestId`, artifact
-hash/bytes/duration/format, rights expiry, target and fixed backend. A canonical digest returns `EXISTING` for the
-same semantic request and rejects a same-`requestKey` content/target conflict. The store is atomic
-(temp+fsync+rename) under a token-owned lock, has bounded capacity, persists `SUBMITTING` before submit, and
-recovers a real dead child-process owner to `UNKNOWN`; `UNKNOWN` is terminal and never retried. Cancel is requested
-first and only `confirmCancel` becomes `CANCELLED`.
+**Decision:** `core/audio/relay-core-offline.mjs` is the only writer of delivery records. It validates the actual
+SAVED Audio Task record, reads the real Fixture Artifact bytes through the existing library under the supplied
+scope/rights proof, computes the artifact hash/bytes/duration/format itself, and resolves the target from a trusted
+Core target directory. It mints one persistent `delivery:<32hex>` plus a separate `[A-Za-z0-9_-]{8,64}` backend
+request id; it stores `taskId → deliveryId → backendRequestId`, rights proof/expiry, target and fixed backend. A
+semantic digest (task/artifact hash/target/proof/expiry, **not** requestKey) returns `EXISTING` for the same
+request and rejects a same-`requestKey` content/target conflict; a changed requestKey is only an alias. The store
+is atomic (temp+fsync+rename) under a token-owned lock with token-quarantine release, has bounded capacity, persists
+`SUBMITTING` before submit, protects a same-process/global live owner from another normal open, and recovers a real
+dead child-process owner to `UNKNOWN`; `UNKNOWN` is terminal and never retried. Submit re-reads the artifact and
+target before any Fake call. Cancel is requested first and only `confirmCancel` becomes `CANCELLED`. Normal handles
+have no reset API, so tombstones cannot be cleared.
 
-The only accepted backend for this unit is `createFakeDeliveryBackend`, which rechecks target authorization/identity
-and the Bridge/Worker two-gate and records only simulated `QUEUED` receipts. Sender is not imported, no production
-config/token/port/process/network/device/WeChat is touched. `projectUnifiedRelayComponent` is one product view with
-legacy `whale-relay`/`voice-sender` aliases and no second install store; WeChatAgent remains independent.
+The only accepted backend for this unit is `createFakeDeliveryBackend`, which has its own target directory and
+rechecks target identity/type/authorization and the Bridge/Worker two-gate, then records only simulated `QUEUED`
+receipts. Sender is not imported, no production config/token/port/process/network/device/WeChat is touched.
+`projectUnifiedRelayComponent` is one product view with legacy `whale-relay`/`voice-sender` aliases and no second
+install store; WeChatAgent remains independent.
 
 **Reason:** ADR-001 requires `SAVED ≠ SENT` and one delivery owner; the previous Fake Relay was an in-memory Map
 without durable delivery id or restart protection. A single persistent store plus a Fake backend is the minimum

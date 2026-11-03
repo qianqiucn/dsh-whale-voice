@@ -17,6 +17,10 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { openFixtureArtifactLibrary } from './artifact-library.mjs'
+import { samplesFromWav } from './cover-stage-bytes-internal.mjs'
+import { validateAudioTaskRecord } from './task-contract.mjs'
+
 export const RELAY_CORE_SCHEMA_VERSION = 1
 export const RELAY_STORE_FILE = 'unified-relay-v1.json'
 export const RELAY_LOCK_FILE = 'unified-relay-v1.lock'
@@ -39,6 +43,7 @@ export const RELAY_ERRORS = Object.freeze({
   CONFLICT: 'RELAY_CORE_CONFLICT',
   NOT_FOUND: 'RELAY_CORE_NOT_FOUND',
   TARGET_REJECTED: 'RELAY_CORE_TARGET_REJECTED',
+  ARTIFACT_UNAVAILABLE: 'RELAY_CORE_ARTIFACT_UNAVAILABLE',
   UNSUPPORTED_CAPABILITY: 'RELAY_CORE_UNSUPPORTED_CAPABILITY',
   UNKNOWN_NO_RESEND: 'RELAY_CORE_UNKNOWN_NO_RESEND',
   CANCELLED: 'RELAY_CORE_CANCELLED',
@@ -54,7 +59,7 @@ const ARTIFACT_REF = /^artifact:fixture-bytes-[0-9a-f]{32}$/
 const SHA256 = /^[0-9a-f]{64}$/
 const TARGET_ID = /^[A-Za-z0-9:_-]{1,64}$/
 const REQUEST_KEY = /^[A-Za-z0-9:_-]{1,128}$/
-const LIVE_OWNERS = new Set()
+const LIVE_SUBMITS = new Map()
 const QUEUES = new Map()
 const MAX_ATTEMPTS = 40
 
@@ -115,10 +120,11 @@ function validateTarget(target) {
   if (Object.keys(target).some((key) => !keys.includes(key))) return null
   if (typeof target.targetId !== 'string' || !TARGET_ID.test(target.targetId)) return null
   if (target.kind !== 'PRIVATE' && target.kind !== 'GROUP') return null
-  for (const key of keys.slice(2)) if (target[key] !== true) return null
+  for (const key of keys.slice(2)) if (typeof target[key] !== 'boolean') return null
   return {
-    targetId: target.targetId, kind: target.kind, authorized: true, allowlisted: true,
-    identityVerified: true, bridgeAllowed: true, workerAllowed: true,
+    targetId: target.targetId, kind: target.kind, authorized: target.authorized,
+    allowlisted: target.allowlisted, identityVerified: target.identityVerified,
+    bridgeAllowed: target.bridgeAllowed, workerAllowed: target.workerAllowed,
   }
 }
 
@@ -205,10 +211,23 @@ async function acquireLock(root, owner) {
 
 function releaseLock(root, owner) {
   const file = lockPath(root)
+  const quarantine = file + '.release.' + owner.token + '.' + crypto.randomBytes(4).toString('hex')
   try {
     const current = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (current && current.token === owner.token) fs.rmSync(file, { force: true })
-  } catch { /* only own lock is removed */ }
+    if (!current || current.token !== owner.token) return
+    // Move first, then verify the moved token. A lock replaced between read and rename is moved
+    // aside and restored, never blindly deleted as if it belonged to this caller.
+    fs.renameSync(file, quarantine)
+    let moved = null
+    try { moved = JSON.parse(fs.readFileSync(quarantine, 'utf8')) } catch { moved = null }
+    if (moved && moved.token === owner.token) {
+      fs.rmSync(quarantine, { force: true })
+      return
+    }
+    if (!fs.existsSync(file)) {
+      try { fs.renameSync(quarantine, file) } catch { /* leave the quarantined file untouched */ }
+    }
+  } catch { /* no lock or unreadable: leave it alone */ }
 }
 
 export function createFakeDeliveryBackend({ id = 'fake-relay', targets = [], capabilities = {}, failMode = 'none', bridgeAllowed = true, workerAllowed = true } = {}) {
@@ -228,6 +247,7 @@ export function createFakeDeliveryBackend({ id = 'fake-relay', targets = [], cap
   }
   const stats = { submitted: 0, accepted: 0, cancelled: 0, rejected: 0, unknown: 0, targetChecks: 0 }
   const deliveries = new Map()
+  let releaseDeferred = null
   const backend = {
     id,
     realOperationAllowed: false,
@@ -263,6 +283,9 @@ export function createFakeDeliveryBackend({ id = 'fake-relay', targets = [], cap
       if (failMode === 'hang') {
         await new Promise(() => {})
       }
+      if (failMode === 'defer') {
+        await new Promise((resolve) => { releaseDeferred = resolve })
+      }
       if (failMode === 'throw') throw new Error('fixture backend throw')
       const receiptId = 'fixture-receipt-' + crypto.randomBytes(8).toString('hex')
       deliveries.set(delivery.deliveryId, { state: 'QUEUED', receiptId })
@@ -280,27 +303,43 @@ export function createFakeDeliveryBackend({ id = 'fake-relay', targets = [], cap
       deliveries.set(deliveryId, { state: 'CANCELLED', receiptId: item.receiptId })
       return { ok: true, confirmed: true, state: 'CANCELLED' }
     },
+    releaseDeferred() {
+      if (releaseDeferred) { const release = releaseDeferred; releaseDeferred = null; release() }
+    },
     stats() { return { ...stats, deliveries: deliveries.size } },
   }
   return Object.freeze(backend)
 }
 
-export async function openUnifiedRelay({ sandbox, backend, now = () => new Date().toISOString(), maxDeliveries = 256 } = {}) {
+export async function openUnifiedRelay({ sandbox, backend, targets = [], now = () => new Date().toISOString(), maxDeliveries = 256 } = {}) {
   const root = sandbox && typeof sandbox.root === 'string' ? sandbox.root : null
   if (!root || !isObject(backend) || typeof backend.id !== 'string' || !Number.isInteger(maxDeliveries) || maxDeliveries < 1 || maxDeliveries > 4096) {
     return fail(RELAY_ERRORS.INPUT_INVALID)
+  }
+  const targetDirectory = new Map()
+  if (!Array.isArray(targets)) return fail(RELAY_ERRORS.INPUT_INVALID, 'targets')
+  for (const target of targets) {
+    const normalized = validateTarget(target)
+    if (!normalized) return fail(RELAY_ERRORS.INPUT_INVALID, 'target')
+    targetDirectory.set(normalized.targetId, normalized)
+  }
+  function trustedTarget(targetId) {
+    const target = targetDirectory.get(targetId)
+    if (!target) return null
+    if (!target.authorized || !target.allowlisted || !target.identityVerified) return null
+    if (!target.bridgeAllowed || !target.workerAllowed) return null
+    return clone(target)
   }
   const storeFile = path.join(root, RELAY_STORE_FILE)
   const ownerToken = crypto.randomBytes(16).toString('hex')
   const ownerPid = process.pid
   const ownerHost = 'fixture-host'
-  const LIVE = new Set()
   const queueKey = storeFile
   let recovered = []
 
   function ownerIsLive(owner) {
     if (!owner || typeof owner.token !== 'string') return false
-    if (LIVE.has(owner.token)) return true
+    if (LIVE_SUBMITS.has(owner.token)) return true
     if (owner.pid === ownerPid) return false
     return pidAlive(owner.pid)
   }
@@ -360,28 +399,55 @@ export async function openUnifiedRelay({ sandbox, backend, now = () => new Date(
     backendId: backend.id,
     recovered: opened.recovered,
     ready: Promise.resolve({ ok: true, recovered: opened.recovered }),
-    async ensureDelivery(input = {}) {
-      const taskId = input.taskId
-      const artifact = validateArtifact(input.artifact)
-      const target = validateTarget(input.target)
-      const rights = input.rights
-      const requestKey = input.requestKey
-      if (typeof taskId !== 'string' || !TASK_ID.test(taskId) || !artifact || !target || typeof requestKey !== 'string' || !REQUEST_KEY.test(requestKey)) {
-        return fail(RELAY_ERRORS.INPUT_INVALID)
+    async ensureDelivery({ handoff } = {}) {
+      if (!isObject(handoff)) return fail(RELAY_ERRORS.INPUT_INVALID, 'handoff')
+      const taskValidation = validateAudioTaskRecord(handoff.taskRecord)
+      if (!taskValidation.ok) return fail(RELAY_ERRORS.INPUT_INVALID, 'taskRecord')
+      const taskRecord = taskValidation.value
+      if (taskRecord.state !== 'SAVED' || taskRecord.deliveryRequested !== true) return fail(RELAY_ERRORS.INPUT_INVALID, 'taskRecord.state')
+      if (typeof handoff.scopeId !== 'string' || !/^[A-Za-z0-9:_-]{1,64}$/.test(handoff.scopeId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'scopeId')
+      if (typeof handoff.artifactRef !== 'string' || !ARTIFACT_REF.test(handoff.artifactRef) || taskRecord.outputArtifactRef !== handoff.artifactRef) {
+        return fail(RELAY_ERRORS.INPUT_INVALID, 'artifactRef')
       }
-      if (!isObject(rights) || rights.state !== 'GRANTED' || typeof rights.expiresAt !== 'string') return fail(RELAY_ERRORS.INPUT_INVALID, 'rights')
-      const expires = Date.parse(rights.expiresAt)
-      const current = Date.parse(nowIso(now))
-      if (!Number.isFinite(expires) || !Number.isFinite(current) || expires <= current) return fail(RELAY_ERRORS.TARGET_REJECTED, 'rightsExpired')
-      const digest = sha256([taskId, artifact.artifactRef, artifact.sha256, target.targetId, target.kind, requestKey, rights.expiresAt].join('|'))
+      if (typeof handoff.requestKey !== 'string' || !REQUEST_KEY.test(handoff.requestKey)) return fail(RELAY_ERRORS.INPUT_INVALID, 'requestKey')
+      if (!isObject(handoff.rights) || handoff.rights.state !== 'GRANTED' || typeof handoff.rights.proofRef !== 'string') return fail(RELAY_ERRORS.INPUT_INVALID, 'rights')
+      const target = trustedTarget(handoff.targetId)
+      if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
+      const at = nowIso(now)
+      const library = await openFixtureArtifactLibrary({ sandbox })
+      if (!library || library.ok !== true) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
+      let read
+      try {
+        read = await library.value.readBytes({
+          schemaVersion: 1, scopeId: handoff.scopeId, artifactRef: handoff.artifactRef, now: at,
+          rights: { state: 'GRANTED', proofRef: handoff.rights.proofRef },
+        })
+      } catch {
+        return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
+      }
+      if (!read || read.ok !== true || !read.value || !read.value.bytes || !read.value.artifact) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
+      const bytes = Buffer.from(read.value.bytes)
+      let parsed
+      try { parsed = samplesFromWav(bytes) } catch { return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'WAV') }
+      const artifactSha256 = crypto.createHash('sha256').update(bytes).digest('hex')
+      const expiresAt = read.value.artifact.expiresAt
+      if (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(at)) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'expired')
+      const durationMs = Math.max(1, Math.round((parsed.frameCount / parsed.sampleRate) * 1000))
+      const artifact = validateArtifact({
+        artifactRef: handoff.artifactRef, sha256: artifactSha256, byteLength: bytes.length,
+        durationMs, format: 'WAV',
+      })
+      if (!artifact) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
+      const digest = sha256([taskRecord.taskId, artifact.artifactRef, artifact.sha256, target.targetId, target.kind, handoff.rights.proofRef, expiresAt].join('|'))
       return run((store) => {
         const existing = store.byDigest[digest]
         if (existing) {
           const record = store.deliveries.find((item) => item.deliveryId === existing)
           if (!record) return { value: fail(RELAY_ERRORS.STORE_INVALID) }
-          return { value: { ok: true, outcome: 'EXISTING', delivery: publicRecord(record) } }
+          store.byRequestKey[handoff.requestKey] = existing
+          return { persist: true, value: { ok: true, outcome: 'EXISTING', delivery: publicRecord(record) } }
         }
-        const sameRequest = store.byRequestKey[requestKey]
+        const sameRequest = store.byRequestKey[handoff.requestKey]
         if (sameRequest) {
           const record = store.deliveries.find((item) => item.deliveryId === sameRequest)
           if (!record) return { value: fail(RELAY_ERRORS.STORE_INVALID) }
@@ -391,19 +457,20 @@ export async function openUnifiedRelay({ sandbox, backend, now = () => new Date(
         const deliveryId = 'delivery:' + crypto.randomBytes(16).toString('hex')
         const backendRequestId = 'wv' + crypto.randomBytes(16).toString('hex')
         if (!DELIVERY_ID.test(deliveryId) || !BACKEND_REQUEST_ID.test(backendRequestId)) return { value: fail(RELAY_ERRORS.INPUT_INVALID) }
-        const at = nowIso(now)
         const record = {
-          deliveryId, taskId, artifactRef: artifact.artifactRef, artifactSha256: artifact.sha256,
+          deliveryId, taskId: taskRecord.taskId, taskRecordState: 'SAVED', scopeId: handoff.scopeId,
+          artifactRef: artifact.artifactRef, artifactSha256: artifact.sha256,
           byteLength: artifact.byteLength, durationMs: artifact.durationMs, format: artifact.format,
-          rightsExpiresAt: rights.expiresAt, targetId: target.targetId, targetKind: target.kind,
-          backendId: backend.id, backendRequestId, digest, requestKey,
+          rightsProofRef: handoff.rights.proofRef, rightsExpiresAt: expiresAt,
+          targetId: target.targetId, targetKind: target.kind,
+          backendId: backend.id, backendRequestId, digest, requestKey: handoff.requestKey,
           state: RELAY_STATES.QUEUED, backendState: null, receiptId: null, error: null,
           cancel: { requested: false, confirmed: false, requestedAt: null, confirmedAt: null },
           owner: null, createdAt: at, updatedAt: at,
         }
         store.deliveries.push(record)
         store.byDigest[digest] = deliveryId
-        store.byRequestKey[requestKey] = deliveryId
+        store.byRequestKey[handoff.requestKey] = deliveryId
         return { persist: true, value: { ok: true, outcome: 'CREATED', delivery: publicRecord(record) } }
       })
     },
@@ -423,13 +490,37 @@ export async function openUnifiedRelay({ sandbox, backend, now = () => new Date(
         record.owner = { token, pid: ownerPid, host: ownerHost, at: nowIso(now) }
         record.state = RELAY_STATES.SUBMITTING
         record.updatedAt = nowIso(now)
-        LIVE.add(token)
+        LIVE_SUBMITS.set(token, ownerPid)
         return { persist: true, value: { ok: true, record: clone(record), token } }
       })
       if (!claim.ok) return claim
       if (claim.outcome === 'EXISTING') return claim
       const { record, token } = claim
       try {
+        const library = await openFixtureArtifactLibrary({ sandbox })
+        let fresh
+        try {
+          fresh = library && library.ok === true
+            ? await library.value.readBytes({
+                schemaVersion: 1, scopeId: record.scopeId, artifactRef: record.artifactRef, now: nowIso(now),
+                rights: { state: 'GRANTED', proofRef: record.rightsProofRef },
+              })
+            : null
+        } catch {
+          fresh = null
+        }
+        if (!fresh || fresh.ok !== true || !fresh.value || !fresh.value.bytes) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact no longer readable' })
+        }
+        const freshBytes = Buffer.from(fresh.value.bytes)
+        const freshHash = crypto.createHash('sha256').update(freshBytes).digest('hex')
+        if (freshHash !== record.artifactSha256 || freshBytes.length !== record.byteLength) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact changed' })
+        }
+        const coreTarget = trustedTarget(record.targetId)
+        if (!coreTarget || coreTarget.kind !== record.targetKind) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.TARGET_REJECTED, detail: 'core target changed or revoked' })
+        }
         const health = await backend.health()
         if (!health || health.ok !== true) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.BACKEND_REJECTED, detail: 'backend health unavailable' })
@@ -439,8 +530,10 @@ export async function openUnifiedRelay({ sandbox, backend, now = () => new Date(
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.UNSUPPORTED_CAPABILITY, detail: 'capability rejected' })
         }
         const resolved = await backend.resolveTarget({ targetId: record.targetId })
-        if (!resolved || resolved.ok !== true || !resolved.value || resolved.value.identityVerified !== true || resolved.value.bridgeAllowed !== true || resolved.value.workerAllowed !== true) {
-          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.TARGET_REJECTED, detail: 'target recheck failed' })
+        if (!resolved || resolved.ok !== true || !resolved.value ||
+            resolved.value.targetId !== record.targetId || resolved.value.kind !== record.targetKind ||
+            resolved.value.identityVerified !== true || resolved.value.bridgeAllowed !== true || resolved.value.workerAllowed !== true) {
+          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.TARGET_REJECTED, detail: 'target identity/type recheck failed' })
         }
         const submitted = await backend.submit({
           delivery: publicRecord(record), artifact: { artifactRef: record.artifactRef, sha256: record.artifactSha256, byteLength: record.byteLength, durationMs: record.durationMs, format: record.format },
@@ -502,17 +595,10 @@ export async function openUnifiedRelay({ sandbox, backend, now = () => new Date(
     async stats() {
       return run((store) => ({ value: { ok: true, count: store.deliveries.length, revision: store.revision } }))
     },
-    reset() {
-      return run((store) => {
-        store.deliveries = []
-        store.byDigest = {}
-        return { persist: true, value: { ok: true } }
-      })
-    },
   }
 
   async function finalize(deliveryId, token, state, error, extra = {}) {
-    LIVE.delete(token)
+    LIVE_SUBMITS.delete(token)
     return run((store) => {
       const record = store.deliveries.find((item) => item.deliveryId === deliveryId)
       if (!record || !record.owner || record.owner.token !== token) return { value: fail(RELAY_ERRORS.OWNER_LOST) }
