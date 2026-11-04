@@ -2904,17 +2904,8 @@ function plan09Adapter() {
 }
 
 function plan09Context(adapter) {
-  const fallback = {
-    workspace: 'demo-workspace', profile: 'demo-profile', manifestRevision: PLAN09_MANIFEST_REVISION,
-    capabilityRevision: null, gpuAvailable: null, cloudAuthorized: false, deliveryAuthorized: false, senderRevision: null,
-  }
-  if (!adapter || typeof adapter.getContext !== 'function') return fallback
-  try {
-    const context = adapter.getContext() || {}
-    return { ...fallback, ...context, manifestRevision: context.manifestRevision || PLAN09_MANIFEST_REVISION }
-  } catch {
-    return fallback
-  }
+  const context = adapter.getContext()
+  return { ...context, manifestRevision: context.manifestRevision || PLAN09_MANIFEST_REVISION }
 }
 
 /* Dependency evidence follows the shared host identity. Items the catalog marks `shared` are keyed
