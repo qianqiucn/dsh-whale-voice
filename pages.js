@@ -371,7 +371,7 @@ function GenerationStorageDraftCard({ notify }) {
           type: 'text',
           value,
           placeholder: '例如 D:\\WhaleVoice\\generation',
-          disabled: !available || busy,
+          disabled: !available || busy || loading,
           onChange: (event) => { setValue(event.target.value); setError('') },
           'aria-label': '生成数据保存位置',
           'data-testid': 'generation-storage-input',
