@@ -104,7 +104,7 @@ test('144 the Host route saves and re-reads the draft without a generation servi
 
   const empty = await callRoute(route, { method: 'GET', url: ROUTE_PATH, token })
   assert.equal(empty.status, 200)
-  assert.deepEqual(JSON.parse(empty.body), { ok: true, draft: null, savedAt: null })
+  assert.deepEqual(JSON.parse(empty.body), { ok: true, draft: null, savedAt: null, applied: null, appliedAt: null })
 
   const target = path.join(os.tmpdir(), 'whale-voice-generation-draft-host-target')
   const saved = await callRoute(route, { method: 'PUT', url: ROUTE_PATH, token, body: { generationStorageRoot: target } })

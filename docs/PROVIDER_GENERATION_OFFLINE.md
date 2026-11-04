@@ -72,6 +72,20 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Applied generation storage location (146)
+
+The saved draft can be explicitly applied: the draft store also keeps a fixed
+`generation-settings-applied.json` (`schemaVersion:1`, `generationStorageRoot`, `appliedAt`),
+`installHostBridge` adds `POST /whale-voice/setup/settings/generation-storage/apply` (400
+`draft_missing` when nothing is saved) and the GET/PUT responses carry `applied`/`appliedAt`. The
+settings page's 应用保存的位置 button applies the saved draft and says "已应用，下次重开插件生效"; the
+card states that the current runtime still uses its original location. Saving alone changes nothing.
+The normal plugin dispose keeps the current runtime's location and lifecycle; the next formal
+`apply(ctx, config)` with the same serialized config reads the applied fact and opens the generation
+storage at that location (no migration, no deletion of the old location's results, and no
+Worker/model when generation is disabled). Applying only records the fact: it does not create the
+location, switch the current service or write the production config.
+
 ### Formal plugin draft-storage wiring (145)
 
 The formal plugin entry opens the draft store from serializable config: `apply(ctx, config)` reads
@@ -329,8 +343,21 @@ generation disabled):
 - 145 no config: `undefined`, `{}`, `{ settings: {} }` and a `generation`-only config all leave the
   draft route at `503 settings_draft_unavailable`.
 
-Full suite after this unit: **1168 tests / 1164 pass / 4 platform skips / 0 fail**; UI **75/75**; build
-`client.js` **351,806 bytes** (144's settings card; 145 did not change the bundle).
+`test/plugin-generation-applied-storage.test.mjs` (2 tests, formal plugin entry + existing Fixture Worker):
+
+- 146 applied location: with locations A and B under a fresh test temporary parent and the serialized
+  config naming A, a generation saves in A; saving the draft B (without applying) and applying B both
+  leave the current runtime writing to A; a normal dispose keeps A and the applied fact; the same
+  serialized config reopened through the formal entry reads the applied fact and the next simulated
+  generation is saved in B, while A's catalog bytes and history stay untouched (no migration).
+- 146 disabled generation: a draft-only config saves and applies a location while generation stays
+  `503 generation_not_enabled`; applying creates no location and reopening the same config reads the
+  applied fact back without starting a Worker/model.
+- `tests/ui` settings page: save → 应用保存的位置 → "已应用，下次重开插件生效" → reload reads the saved
+  draft and the applied fact back (UI **75/75**).
+
+Full suite after this unit: **1170 tests / 1166 pass / 4 platform skips / 0 fail**; UI **75/75**; build
+`client.js` **354,353 bytes** (146's 应用 button/card copy is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

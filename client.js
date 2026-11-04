@@ -2333,6 +2333,8 @@ const GENERATION_DRAFT_ERRORS = {
   draft_root_invalid: '请填写生成数据保存位置。',
   draft_root_not_absolute: '保存位置需要使用绝对路径，例如 D:\\WhaleVoice\\generation。',
   draft_invalid: '已保存的草稿无法读取，未显示旧值。',
+  draft_missing: '尚未保存草稿，请先保存再应用。',
+  applied_invalid: '已应用的位置无法读取，未显示旧值。',
   invalid_body: '草稿请求无效。',
   internal_error: '草稿保存失败：Host 内部错误。',
   core_unreachable: '无法连接 Host 接口。',
@@ -2342,19 +2344,22 @@ function generationDraftError(error) {
   return GENERATION_DRAFT_ERRORS[error] || ('草稿操作失败：' + (error || '未知'))
 }
 
-/** 144: the generation data storage location is a real Host-side draft, not a frontend demo field. */
+/** 144/146: a real Host-side draft plus an explicit applied fact, never a frontend demo field. */
 function GenerationStorageDraftCard({ notify }) {
   const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
   const available = Boolean(host
     && typeof host.getGenerationStorageDraft === 'function'
-    && typeof host.saveGenerationStorageDraft === 'function')
+    && typeof host.saveGenerationStorageDraft === 'function'
+    && typeof host.applyGenerationStorageDraft === 'function')
   const [value, setValue] = React.useState('')
   const [savedValue, setSavedValue] = React.useState(null)
+  const [applied, setApplied] = React.useState(null)
   const [loading, setLoading] = React.useState(available)
   const [busy, setBusy] = React.useState(false)
+  const [applying, setApplying] = React.useState(false)
   const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
 
-  const applyDraft = (payload) => {
+  const applyPayload = (payload) => {
     setLoading(false)
     if (!payload || payload.ok !== true) {
       setError(generationDraftError(payload && payload.error))
@@ -2365,6 +2370,9 @@ function GenerationStorageDraftCard({ notify }) {
       : ''
     setSavedValue(saved)
     setValue(saved)
+    setApplied(payload.applied && typeof payload.applied.generationStorageRoot === 'string'
+      ? { generationStorageRoot: payload.applied.generationStorageRoot }
+      : null)
     setError('')
   }
 
@@ -2372,7 +2380,7 @@ function GenerationStorageDraftCard({ notify }) {
     if (!available) return undefined
     let alive = true
     host.getGenerationStorageDraft().then(
-      (payload) => { if (alive) applyDraft(payload) },
+      (payload) => { if (alive) applyPayload(payload) },
       () => {
         if (!alive) return
         setLoading(false)
@@ -2394,12 +2402,42 @@ function GenerationStorageDraftCard({ notify }) {
         notify('生成数据保存位置草稿未保存。', 'error')
         return
       }
-      applyDraft(payload)
-      notify('生成数据保存位置草稿已保存，尚未应用。', 'success')
+      applyPayload(payload)
+      const saved = payload.draft && payload.draft.generationStorageRoot
+      const alreadyApplied = !!(payload.applied && payload.applied.generationStorageRoot === saved)
+      notify(alreadyApplied
+        ? '草稿已保存；该位置已应用，下次重开插件生效。'
+        : '生成数据保存位置草稿已保存，尚未应用。', 'success')
     } catch {
       setBusy(false)
       setError(generationDraftError('core_unreachable'))
       notify('生成数据保存位置草稿未保存。', 'error')
+    }
+  }
+
+  const applySaved = async () => {
+    if (!available || applying || busy || loading) return
+    if (!savedValue) { setError(generationDraftError('draft_missing')); return }
+    if (value.trim() !== savedValue) {
+      setError('请先保存当前修改，再应用已保存的位置。')
+      return
+    }
+    setApplying(true)
+    setError('')
+    try {
+      const payload = await host.applyGenerationStorageDraft()
+      setApplying(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('生成数据保存位置未应用。', 'error')
+        return
+      }
+      applyPayload(payload)
+      notify('生成数据保存位置已应用，下次重开插件生效。', 'success')
+    } catch {
+      setApplying(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('生成数据保存位置未应用。', 'error')
     }
   }
 
@@ -2410,10 +2448,14 @@ function GenerationStorageDraftCard({ notify }) {
       : savedValue
         ? '已保存草稿：' + savedValue
         : '尚未保存草稿'
+  const appliedText = applied
+    ? '已应用：' + applied.generationStorageRoot + '（下次重开插件生效；当前运行仍用原位置）'
+    : '尚未应用保存位置'
+  const canApply = available && !loading && !busy && !applying && !!savedValue && value.trim() === savedValue
 
   return h(Card, {
     title: '生成数据保存位置',
-    desc: '填写生成任务与产物的保存目录；这里只保存配置草稿，不会启用或切换生成服务。',
+    desc: '填写生成任务与产物的保存目录；保存后仍需明确应用，应用在下次重开插件时生效，当前运行不会立即切换。',
     actions: h(Badge, { tone: 'wait' }, '配置草稿'),
   },
     h('div', { className: 'wv-settings-group' },
@@ -2439,12 +2481,19 @@ function GenerationStorageDraftCard({ notify }) {
           disabled: !available || busy || loading,
           'data-testid': 'generation-storage-save',
         }, busy ? '保存中…' : '保存草稿'),
+        h(Button, {
+          onClick: () => { void applySaved() },
+          disabled: !canApply,
+          title: canApply ? '应用已保存的位置；下次重开插件生效' : '需要先保存草稿，且当前输入与已保存值一致',
+          'data-testid': 'generation-storage-apply',
+        }, applying ? '应用中…' : '应用保存的位置'),
         h('span', { className: 'wv-muted', 'data-testid': 'generation-storage-status' }, statusText)),
       error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'generation-storage-error' },
         h(Icon, { name: 'info', size: 14 }),
         h('span', null, error)) : null,
+      h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'generation-storage-applied' }, appliedText),
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
-        '保存成功只代表草稿已写入；尚未应用到生成服务，也不代表生成已启用。')))
+        '保存只写入草稿；应用只记录“下次重开插件生效”，当前服务不会立即切换，也不会启用生成。')))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {

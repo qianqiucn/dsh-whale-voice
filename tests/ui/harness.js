@@ -407,6 +407,7 @@
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
     fakeBridge.getGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage')
     fakeBridge.saveGenerationStorageDraft = (request) => hostSettings('/whale-voice/setup/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) })
+    fakeBridge.applyGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage/apply', { method: 'POST', body: '{}' })
     window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
   }
 

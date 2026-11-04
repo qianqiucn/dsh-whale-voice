@@ -588,7 +588,7 @@ await check('send & safety groups capabilities and keeps unsupported controls di
   })
 })
 
-await check('generation storage location draft is saved on the Host and survives a page reload', async () => {
+await check('generation storage location draft is saved, applied and survives a page reload', async () => {
   await hostSettings.reset()
   const target = path.join(os.tmpdir(), 'whale-voice-ui-settings-draft', 'generation-data')
   await withPage('?bridge=normal', async (page) => {
@@ -617,10 +617,25 @@ await check('generation storage location draft is saved on the Host and survives
     const toast = await page.locator('.wv-toast').innerText()
     assert.match(toast, /草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()
-    assert.match(pageText, /保存成功只代表草稿已写入；尚未应用到生成服务/)
+    assert.match(pageText, /保存只写入草稿/)
+    assert.match(pageText, /下次重开插件生效/)
     assert.match(pageText, /生成数据保存位置/)
+    assert.match(await page.getByTestId('generation-storage-applied').innerText(), /尚未应用/)
 
-    // Reload the page and reopen the settings page: the same saved draft is read again.
+    // Applying the saved draft only records the fact for the next plugin open.
+    await page.getByTestId('generation-storage-apply').click()
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="generation-storage-applied"]')?.innerText.includes('下次重开插件生效'),
+      null,
+      { timeout: 8000 },
+    )
+    const appliedToast = await page.locator('.wv-toast').innerText()
+    assert.match(appliedToast, /已应用，下次重开插件生效/)
+    const appliedText = await page.getByTestId('generation-storage-applied').innerText()
+    assert.ok(appliedText.includes(target), appliedText)
+    assert.match(await page.locator('body').innerText(), /当前运行仍用原位置/)
+
+    // Reload the page and reopen the settings page: the saved draft and the applied fact are read again.
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.getByRole('button', { name: '语音设置', exact: true }).click()
@@ -631,6 +646,9 @@ await check('generation storage location draft is saved on the Host and survives
     )
     const reopenedStatus = await page.getByTestId('generation-storage-status').innerText()
     assert.ok(reopenedStatus.includes(target), reopenedStatus)
+    const reopenedApplied = await page.getByTestId('generation-storage-applied').innerText()
+    assert.ok(reopenedApplied.includes(target), reopenedApplied)
+    assert.match(reopenedApplied, /下次重开插件生效/)
     await page.screenshot({ path: path.join(artifactDir, 'settings-generation-draft-1440.png') })
   })
 })

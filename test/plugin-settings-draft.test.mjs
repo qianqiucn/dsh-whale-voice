@@ -113,7 +113,7 @@ test('145 the formal plugin opens the serialized draft storage and keeps it acro
 
   const empty = await callRoute(route, { method: 'GET', url: ROUTE, token })
   assert.equal(empty.status, 200)
-  assert.deepEqual(JSON.parse(empty.body), { ok: true, draft: null, savedAt: null })
+  assert.deepEqual(JSON.parse(empty.body), { ok: true, draft: null, savedAt: null, applied: null, appliedAt: null })
 
   const saved = await callRoute(route, { method: 'PUT', url: ROUTE, token, body: { generationStorageRoot: location } })
   assert.equal(saved.status, 200, saved.body)

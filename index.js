@@ -107,6 +107,7 @@ export function bridgeScript(token) {
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
     getGenerationStorageDraft: () => generation('/settings/generation-storage'),
     saveGenerationStorageDraft: (request) => generation('/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) }),
+    applyGenerationStorageDraft: () => generation('/settings/generation-storage/apply', { method: 'POST', body: '{}' }),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -185,10 +186,28 @@ export function installHostBridge(scope, options = {}) {
     return send(res, 200, await detector.detectComponent(component))
   })
 
-  // 144: the Chinese settings page records the generation data storage location as an isolated
-  // settings draft. `options.settingsDraft` is a store over a trusted storage context supplied by the
-  // Host; without it the route explicitly reports that the draft store is unavailable, and saving a
-  // draft never enables generation, starts a worker or touches a running generation object.
+  // 144/146: the Chinese settings page records the generation data storage location as an isolated
+  // settings draft and can explicitly apply the saved draft. `options.settingsDraft` is a store over a
+  // trusted storage context supplied by the Host; without it the routes explicitly report that the
+  // draft store is unavailable. Saving or applying a draft never enables generation, starts a worker
+  // or touches a running generation object; the applied fact is read when the plugin opens again.
+  function settingsDraftEnvelope() {
+    const draft = settingsDraft.read()
+    if (draft.ok !== true) return { status: 500, body: draft }
+    const applied = settingsDraft.readApplied()
+    if (applied.ok !== true) return { status: 500, body: applied }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        draft: draft.draft,
+        savedAt: draft.savedAt,
+        applied: applied.applied,
+        appliedAt: applied.appliedAt,
+      },
+    }
+  }
+
   route(PREFIX + '/settings/generation-storage', async (req, res) => {
     if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
     if (String(req.method || '').toUpperCase() === 'PUT') {
@@ -199,11 +218,21 @@ export function installHostBridge(scope, options = {}) {
         return send(res, 400, { ok: false, error: 'invalid_body' })
       }
       const result = settingsDraft.save({ generationStorageRoot: body && body.generationStorageRoot })
-      return send(res, result.ok === true ? 200 : 400, result)
+      if (result.ok !== true) return send(res, 400, result)
+      const envelope = settingsDraftEnvelope()
+      return send(res, envelope.status, envelope.body)
     }
-    const result = settingsDraft.read()
-    return send(res, result.ok === true ? 200 : 500, result)
+    const envelope = settingsDraftEnvelope()
+    return send(res, envelope.status, envelope.body)
   }, ['GET', 'PUT'])
+
+  route(PREFIX + '/settings/generation-storage/apply', async (req, res) => {
+    if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
+    const result = settingsDraft.apply()
+    if (result.ok !== true) return send(res, result.error === 'draft_missing' ? 400 : 500, result)
+    const envelope = settingsDraftEnvelope()
+    return send(res, envelope.status, envelope.body)
+  }, ['POST'])
 
   // 136: formal Host call surface for the preset generation Core entry. `options.generation` is an
   // already-opened `openPresetGenerationApp` value supplied by the isolated Host assembly; without it
@@ -335,13 +364,20 @@ export function apply(ctx, config = undefined) {
       const settingsDraft = draftRoot === undefined
         ? null
         : openGenerationSettingsDraft({ sandbox: openConfigStorage({ root: draftRoot }) })
-      if (!settings) {
+      // 146: the applied location (if any) is used when the plugin opens; the current runtime keeps
+      // whatever location it was assembled with until this plugin is closed and opened again.
+      const applied = settingsDraft === null ? null : settingsDraft.readApplied()
+      if (applied !== null && applied.ok !== true) throw new Error('whale-voice settings draft: ' + applied.error)
+      const effective = settings !== null && applied !== null && applied.applied
+        ? { ...settings, storageRoot: applied.applied.generationStorageRoot }
+        : settings
+      if (!effective) {
         const host = installHostBridge(scope, { env: process.env, settingsDraft })
         if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
         resolve()
         return
       }
-      resolve(assembleGenerationHost(scope, settings, settingsDraft))
+      resolve(assembleGenerationHost(scope, effective, settingsDraft))
     })
   })
 }
