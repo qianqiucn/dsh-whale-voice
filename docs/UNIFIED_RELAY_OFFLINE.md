@@ -169,7 +169,11 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Four offline relay files cover the unit (35 tests):
+Four offline relay files cover the unit (35 tests), and the internal Windows delivery module
+(13-B, 144 revision) is covered by its own two offline files (`test/internal-sender-offline.test.mjs`
+29 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
+[INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
+persistent relay entry, never a second queue or generation registry.
 
 `test/relay-core-offline.test.mjs` (12): real SAVED task + actual Fixture library bytes, stable delivery
 id/alias/intent, safe legacy request id, conflict; a caller-supplied record is never an authority; one submit
@@ -214,7 +218,7 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1107 tests / 1103 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
+Local: **1144 tests / 1140 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
 (build unchanged by the Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

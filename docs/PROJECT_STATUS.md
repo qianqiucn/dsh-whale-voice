@@ -3,8 +3,12 @@
 **Project:** Whale Voice / `dsh-whale-voice`
 **Version:** 0.1.0
 **Repository:** https://github.com/qianqiucn/dsh-whale-voice (public; corrected 2026-10-29 after re-checking GitHub metadata — earlier "private" wording was inaccurate)
-**Updated:** 2026-11-03
-**Current main:** `b64b0e2b4c6287b2e098b8fc65ddd1091d82c5c3` (merge of PR #47; Plan 10's Qwen/IndexTTS/Kokoro offline candidates are now merged). Plan 11's cloud/custom offline unit is on `feature/plan11-cloud-custom-providers` as PR **#48** and is **not merged**. Older “current main 08cf0b6 / PR #37” wording below is historical.
+**Updated:** 2026-11-04
+**Current main:** `4b45ebd41df0d535c837332e940515d0569550b1` (merge of PR #50; the Plan 13-A unified relay core is on `main`, its push/main CI `41738183306` succeeded). PR **#51** (`feature/plan13b-internal-sender-offline`, base `main`) carries Plan 13-B and is **OPEN / not merged**. Older “current main b64b0e2 / PR #48 / #47” wording below is historical.
+**Plan 13-B · 117 revision (current branch, PR #51, not merged):** `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. The 117 close-out finishes the lease-evidence edges: a pre-UI refusal (`FAILED`/`not_foreground`/`RESTORING`) no longer short-circuits the device-recovery check — the archived worker may switch devices and then fail before recording, so the "not recorded/sent" verdict is preserved while the unrestored resource keeps the single execution slot; `restore_ok` is tri-state (`true` verified, omitted = Fixture-compatible positive, `false` or any other provided non-boolean = held), so `SENT_LOCAL`/legal `CANCELLED` facts and receipts survive a recovery problem; and a late clean invoke result after an already observed verdict releases the slot without rewriting the verdict, flags or receipt (bad/missing/recovery-failed late results keep holding; concurrent releases are idempotent and never free another delivery). Tests: internal 29 + legacy 8; full suite **1144 / 1140 pass / 4 platform skips / 0 fail**, build unchanged (`client.js` 314,687 chars), UI 72/72 unchanged. Real Worker/process/device/WeChat execution, real TTS synthesis and the real Plan12/13 DoD remain OPEN.
+**Plan 13-B · 116 revision (same branch):** previous close-out: `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. The 116 close-out separates the logical delivery verdict from the execution lease: an `UNKNOWN`, an unconfirmed cancel, a missing/empty/bad invoke result, a thrown transport or a failed device restore keeps the single execution slot (`occupancy:'HELD'`, `leaseReleased:false`) until trusted exit/recovery evidence — an invoke-returned clean terminal, or a transport `released:true` observation; the static `recover()` descriptor is not evidence. Exceptions are classified by the invoke boundary (pre-invoke = `preSubmit` and slot released; after invoke, including the acceptance-time clock sample = `UNKNOWN` with uncertain lease), and a `CANCELLED_BEFORE_UI` claim contradicting `RECORDING`/`SENDING` evidence becomes `UNKNOWN` (legal `CANCELLED_CONFIRMED` preserved). Adjacent ordinary items: a queued cancellation now answers its own submit promise immediately, and a failed cancel write returns a verdict that arrived meanwhile instead of a stale `CANCEL_REQUESTED`. Tests: internal 24 + legacy 8; full suite **1139 / 1135 pass / 4 platform skips / 0 fail**, build unchanged (`client.js` 314,687 chars), UI 72/72 unchanged. Real Worker/process/device/WeChat execution, real TTS synthesis and the real Plan12/13 DoD remain OPEN.
+**Plan 13-B · 115 revision (same branch):** previous close-out: `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`. The 115 close-out adds: a terminal verdict observed while `invoke` is awaiting is final (a late `{dispatchOnly:true}` acknowledgement cannot reopen `ACCEPTED`); a settled verdict can never be rewritten, and its cancel flags/receipt cannot be changed by later or concurrent observations; observation is bound to a real invocation (a still-queued delivery cannot consume a worker result and stays `QUEUED`); the single execution slot covers the whole Worker holding period (a dispatch-only claim holds it until its terminal observation, so no second delivery is invoked meanwhile); malformed or contradictory evidence (`cancel_stage:'UNKNOWN'`, bad bubble/reason/stage/phases/timeline, a rejection carrying UI evidence) is `UNKNOWN`, and only a well-formed pre-UI refusal is `preSubmit`; and the legacy request identity is `(scope, legacyRequestId)` so a changed text reuses the original Task/Artifact/delivery result and a changed target is refused by the relay's immutable request-key binding (`RELAY_CORE_CONFLICT`) with no new task/artifact/delivery. Tests: internal 16 + legacy 8; full suite **1131 / 1127 pass / 4 platform skips / 0 fail**, build unchanged (`client.js` 314,687 chars), UI 72/72 unchanged. The **BRIDGE-UI-001** floating panel was also revised (146-UI-STALE/CONFIRM-SCOPE): strict snapshot validation, current-vs-history projection, ordered responses, and separate temporary-peak vs persistent-off-peak confirmation copy (local-only frontend, not deployed). Real Worker/process/device/WeChat execution, real TTS synthesis and the real Plan12/13 DoD remain OPEN.
+**Plan 13-B · 114 revision (same branch):** the previous close-out: real archived Worker ABI (`voice-sender.ps1 -Request -JsonOut -ProgressFile -CancelFile -GlobalCancelFile`), reviewed per-job cancel file, one delivery id executed exactly once over an immutable fact snapshot (`DELIVERY_CONFLICT` on differing facts), indeterminate `UNKNOWN` for missing/empty/broken/thrown results, and the callable legacy text facade. Older 1123/1119 wording is historical.
 **Plan 08-E-E-B Step 1:** shared store base extracted (`fixture-store-base-internal.mjs`), Task store re-exports the same ten bindings, Artifact store imports the same eight helpers; old behaviour and files unchanged, B01 green, save runtime still `RUNTIME_NOT_IMPLEMENTED` / `NOT_INTEGRATED`.
 **Plan 08-E-E-A:** candidate same-claim save-transaction contract at [TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md](TASK_ARTIFACT_SAVE_TRANSACTION_CONTRACT.md) — **v1.6** after the 071–076 R1–R3 review (`PLANNED` / `DESIGN_REVIEW_REQUIRED` / `RUNTIME_NOT_IMPLEMENTED`); owner still only `run`/`get`, library still `FIXTURE_IMPORT` only, no task save exists.
 **Current stage:** P0/P9 baseline complete; P7 Phase 2 UI complete; Phase 3A `OFFLINE`; Phase 3B `INTEGRATED`; **Phase 4A read-only config `INTEGRATED`** (real Host + bridge + eight-page GUI readout), not `VERIFIED`; `发送与安全` frontend is `MOCK`/disabled with **real DSH GUI visual acceptance PASS**; native voice research is `RESEARCH_CANDIDATE` (WeChatAgent native `UNSUPPORTED`); Phase 4A-H safety contracts fixed; **PR #3–#15 integrated into `main` with merge commits**; **Phase 4B-1 isolated config write is merged and `OFFLINE`**; **Phase 4B-2A coordination protocol is merged and `OFFLINE`**; **Phase 4B-2B-1 audit is `AUDIT COMPLETE` / `OFFLINE`**; **Phase 4B-2B-2a read-only capability/status projection is `INTEGRATED`** (real Host/GUI, full eight-page coverage; no write route); **Phase R1 `COMPLETE`**; **TTS-A Provider-neutral audit + pure contracts are `DESIGN`/`OFFLINE`** (no provider connected); **Phase 4B-2B-2b NOT STARTED**; **Plan 08-A shared voice-asset binding is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`**; **Plan 08-B Fixture source association is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`**; **Plan 08-C task fixture runner is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`**; **Plan 08-D-A isolated task catalog is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #30**; **Plan 08-D-B existing-record internal reuse is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #32**; **Plan 08-D-C persistent owner and Plan 08-E-A WAV byte inspector are `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #33/#34**; **Plan 08-E-B isolated WAV artifact library is `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` and merged via PR #35 at `main` M `78c3ea0`** (report 0058); **Plan 08-E-C restricted PCM16 fixture producer is `OFFLINE` / `SYNTHETIC_FIXTURE` / `NOT_INTEGRATED` (new branch, PR open, not merged)**
@@ -40,10 +44,14 @@
 ## Current scope
 
 This repository contains the **DSH frontend plugin, a read-only Core detector, the Phase 4B-1
-isolated config store and TTS-A Provider-neutral contracts**. It does not contain:
+isolated config store, TTS-A Provider-neutral contracts, the Plan 13-A unified relay core and the
+Plan 13-B internal Sender offline unit** (the reviewed Voice Sender source closure is carried as
+resources under `core/audio/sender-internal/` and is adapted/verified statically, never executed
+offline). It does not contain:
 
 - a real local/cloud/custom TTS provider adapter, credential store or provider request path;
-- Voice Sender Windows service (or its installer);
+- a runnable Voice Sender Windows service (or its installer); the archived Worker is a reviewed
+  resource plus a verified ABI descriptor, not a started process;
 - WeChatAgent, WeChat Hook/Bridge;
 - a Qwen3-TTS runtime, model weights or `whale-v1` reference audio (Qwen is only a reference path);
 - a production configuration write/apply service;
@@ -789,3 +797,43 @@ skips / 0 fail**; UI **72/72** (product UI unchanged, CI ui job); `client.js` 31
 Status still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; PR #50 open and unmerged; real DSH page
 visual, real Sender/WeChat, 13-B/C, Plan14 and every real Plan12/13 DoD remain OPEN. `RELAY-DEFER-COPY-PUBLISH-142`
 and `RELAY-DEFER-PERMIT-CROSSCHECK-140` stay booked.
+
+### Plan 13-A merge and Plan 13-B internal Sender OFFLINE (2026-11-04)
+
+**A — fixed PR #50 merge.** PR #50 (`feature/plan13-unified-relay-offline` → `main`) was merged with one
+standard Merge Commit after adjacent gate re-checks (RUNNING, 00/113, clean worktree, remote G/H,
+OPEN/non-draft/MERGEABLE/reviews empty, exact-H CI success, `allow_merge_commit=true`,
+`delete_branch_on_merge=false`, main unprotected). Actual `M=4b45ebd41df0d535c837332e940515d0569550b1`:
+exactly two parents (first `G=42b96ce`, second `H=f368855`), `tree(M)=10d3b97…=T`, content identical to
+H, first-parent diff `G..M` equals `G..H` (20 files, +4338/−77), remote `main=M`, source branch preserved
+at H. New main push CI `41738183306` success (build `126272696587`, ui `126272696192`). No squash/rebase/
+auto/admin, no branch deletion, no other PR/#17/base/protection/visibility change.
+
+**B — internal Windows Sender offline unit.** From the verified M, branch
+`feature/plan13b-internal-sender-offline` (new PR, not merged) adds:
+
+- `core/audio/internal-sender-offline.mjs`: the relay's internal delivery backend (same interface), with
+  Artifact-only input (refuses path/URL/command/script/env/token-shaped fields), its own target directory
+  plus identity/authorization/allowlist/Bridge/Worker gates, a fixed whitelisted invocation builder
+  (`voice-sender.ps1`/recover/cancel/preflight/status/hotkey/desktop-guard ids, fixed parameter order,
+  bounded scalars, `shell:false`, contained paths), one serial queue and one invocation per delivery,
+  `ACCEPTED`/`CANCELLED`/`FAILED`/`UNKNOWN` mapping, NEVER_WRITE and terminal UNKNOWN (no resend/re-bind/
+  text fallback). No process/socket/device/WeChat/write; no import of the original HTTP server.
+- `core/audio/sender-internal/source/` + `source-manifest.json`: the reviewed user-owned source closure
+  (26 files/202,655 B + `package.json`/`README.md`) carried as resources, with relative paths, original
+  and stored SHA256, Service 0.1.0, the preflight hash `a3056dea…`, the user-confirmed reuse basis and
+  the explicit “no license inferred” fact. No developer absolute path, token, chat, binary/model/audio/
+  cache, runtime state or production config is committed.
+- `test/internal-sender-offline.test.mjs` (7 tests): manifest/hash/no-leak/no-bare-import and
+  no-server-import static checks; fixed invocation whitelist; Artifact-only and target-gate refusals;
+  single queue + dedupe (one invocation per delivery); cancel/UNKNOWN no-resend; and two end-to-end
+  paths — a real persisted Voice SAVED task and a real persisted Singing Cover MASTER (with its explicit
+  permit) each reach this internal backend through the relay exactly once (`ACCEPTED`).
+- Docs: [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), ADR-030, roadmap/status/changelog/
+  AI-context updates.
+
+Evidence: full suite **1114 tests / 1110 pass / 4 platform skips / 0 fail** (was 1107/1103 before the
+new unit; +7); UI **72/72** (no product UI change; CI ui job); `client.js` 314,687 chars (unchanged).
+Status: 13-A merged; the internal Sender unit is `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, its
+new PR is **not merged**. Real process/device/WeChat/window path, real host visual, 13-B runtime,
+13-C, Plan14 and every real Plan12/13 DoD remain OPEN.

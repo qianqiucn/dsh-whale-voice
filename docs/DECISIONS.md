@@ -830,3 +830,198 @@ age; rebuilding a lower revision on enumeration failure; returning a fake new st
 store cannot be enumerated; repairing a corrupt highest revision by falling back.
 
 **Related:** [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-030 — The internal Windows Sender is an Artifact-only delivery module over reviewed resources
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04).
+**Related:** ADR-001, ADR-024–ADR-029, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md),
+[UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** Whale Relay Core owns one internal Windows delivery module
+(`core/audio/internal-sender-offline.mjs`) with the relay's backend interface. It consumes only the
+trusted SAVED Artifact fact + trusted target, rejects any path/URL/command/script/env/token-shaped
+input, resolves the target from its own directory and rechecks identity/authorization/allowlist and
+the Bridge/Worker gates, builds a fixed whitelisted invocation (script id + fixed parameter order +
+bounded single-line scalars, `shell:false`, contained script path), serializes through one in-memory
+queue and invokes an **injected Fixture transport** exactly once per delivery. It never imports the
+original HTTP server, never spawns, opens a socket/device/WeChat window or writes, and preserves
+NEVER_WRITE plus terminal `UNKNOWN` (no resend/backend switch/id change/text fallback).
+
+The original user-owned Voice Sender source closure (26 files + 2 metadata, reviewed preflight
+SHA256 `a3056dea…`) is carried as resources with a manifest of relative paths, original hashes and
+stored hashes; no developer absolute path, token, chat, binary/model/audio/cache, runtime state or
+production config is included, and no third-party license is inferred.
+
+**Reason:** ADR-001 and the Plan13 queue require the Sender to become the relay's internal module
+without copying a second window-sending implementation, and the original source is the only reviewed
+algorithm/secure-check asset. A resource-only, Artifact-only, injected-transport unit proves the
+integration boundary offline while keeping real process/device/WeChat operation out of scope.
+
+**Rejected alternatives:** a second window/recording implementation; importing the original HTTP
+server or spawning PowerShell in tests; accepting file paths/URLs/commands from the request; a second
+generation registry or queue; retrying/re-binding `UNKNOWN`; inferring a license for third-party
+components.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-031 — The internal Sender speaks the archived Worker's real ABI and cancels through its cancel file
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 114 revision).
+Extends ADR-030.
+**Related:** ADR-001, ADR-024–ADR-030, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md),
+[UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** the internal Sender never invents an execution protocol.
+
+1. **ABI.** Every invocation is built from a version-bound descriptor of the *actual* archived Worker:
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File voice-sender.ps1 -Request <json> -JsonOut
+   <json> -ProgressFile <p> -CancelFile <c> -GlobalCancelFile <g>`, with the request JSON carrying
+   exactly the fields `voice-sender.ps1` reads. `verifyWorkerAbi()` re-derives each `param()` table,
+   the request-field usage and the reviewed `service/src/sender.mjs` argv from the archived bytes and
+   reports mismatches; a Fixture can therefore never "accept" an argv the Worker would reject. The
+   previously invented `cancel-test.ps1`/`preflight-wechat.ps1` ids do not exist and are refused.
+2. **Cancel.** Cancellation is the reviewed per-job cancel *file*, not a script result: `cancel()`
+   writes the signal and reports requested → confirmed (the Worker's own `CANCELLED` with
+   `CANCELLED_BEFORE_UI`/`CANCELLED_CONFIRMED`) or unconfirmed (`UNKNOWN`); a queued job is a pre-UI
+   cancellation with zero Worker call; a terminal delivery is `CANCEL_TOO_LATE`. An accepted fact and
+   its receipt are never erased by a later cancel.
+3. **Single execution.** Validation, the immutable fact snapshot, the id claim, the conflict check and
+   the post-queue re-check live in one trusted boundary: one delivery id = at most one invocation, the
+   same id with different artifact/target is `DELIVERY_CONFLICT`, and an indeterminate result is
+   terminal (no second invoke).
+4. **Result layering.** Only a provable pre-UI `REJECTED`/`FAILED` is a pre-submit failure; a missing,
+   empty, corrupt or thrown Worker result is indeterminate `UNKNOWN` with `recoveryRequired`.
+5. **Legacy text.** A callable offline facade sends legacy text through the *same* generation owner →
+   the *same* persisted SAVED Artifact → the *same* persistent relay entry → the *same* backend; the
+   request identity is deterministic, so a replay is `EXISTING` everywhere and a failed/cancelled/
+   unknown delivery is never regenerated or resent. No second cache, queue, timer or generation
+   registry is introduced.
+
+**Reason:** the 0144 review proved the first revision was self-consistent but not Worker-compatible
+(SEND argv absent from the real parameter table, CANCEL/PREFLIGHT pointing at unpackaged files, a
+second invocation after the first `UNKNOWN`, an Artifact/target re-bind while queued, and post-invoke
+empty results reported as "provably not sent"). A static ABI cross-check plus the real cancel-file
+protocol and one write-once claim keep the offline unit honest without executing PowerShell/C#.
+
+**Rejected alternatives:** inventing a parallel argv/request schema; simulating cancellation inside
+`submit`; a global id owner or a second business queue; treating a missing/thrown result as
+`preSubmit`; a legacy-text cache or generation registry; running the archived scripts offline.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-032 — One observed verdict is final, and the execution slot covers the Worker holding period
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 115 revision).
+Extends ADR-031.
+**Related:** ADR-001, ADR-024–ADR-031, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **Terminal monotonicity.** A worker verdict observed through `query()` while `transport.invoke` is
+   still awaiting is final. A late dispatch acknowledgement can never reopen it into `ACCEPTED`, and
+   a settled delivery's state, cancel flags and receipt are write-once: later/concurrent observations
+   cannot rewrite them.
+2. **Observation belongs to the invocation.** Only a delivery that actually invoked may consume a
+   worker result; a still-queued delivery stays `QUEUED` and never "inherits" an old result.
+3. **The execution slot covers the holding period.** The single serial slot stays owned until the
+   claim's terminal observation (a dispatch-only Worker holds it), not merely until the acceptance
+   callback. A terminal worker result is what releases it; `UNKNOWN` is such a terminal result, not a
+   proof that the device was freed. No second business queue or global id owner is introduced.
+4. **Bad evidence is indeterminate.** A recognized status name is not a trusted result: malformed or
+   contradictory key evidence (`cancel_stage:'UNKNOWN'`, bad bubble/reason/stage/phases/timeline, a
+   rejection carrying UI evidence) is `UNKNOWN`; only a well-formed pre-UI refusal is `preSubmit`.
+5. **Stable legacy identity.** The legacy text facade keys its request identity on
+   `(scope, legacyRequestId)`: changed text reuses the original Task/Artifact/delivery result, changed
+   target is refused by the relay's immutable request-key binding. No payload-hash fork, no second
+   generation registry.
+
+**Reason:** the 0145 review replayed concrete counterexamples: a settled `UNKNOWN` was reopened to
+`ACCEPTED` by a late dispatch acknowledgement, concurrent observations mutated `cancel.confirmed`
+after a terminal state, a queued delivery consumed a pre-set worker result, a second Worker started
+while the first only had a dispatch acknowledgement, `CANCELLED` with an `UNKNOWN` stage was reported
+as a confirmed cancel, and a changed legacy payload minted a second task/artifact/delivery that
+bypassed the original `UNKNOWN`.
+
+**Rejected alternatives:** keeping the slot until acceptance only; polling timers/background loops;
+treating an unknown cancel stage as a confirmed cancel; deriving legacy identity from the payload;
+adding a second id owner or business queue.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-033 — The logical verdict and the execution lease are separate facts
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 116 revision).
+Extends ADR-032.
+**Related:** ADR-001, ADR-024–ADR-032, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **Verdict ≠ resources.** `settle()` fixes the delivery verdict (write-once, monotonic, answers the
+   submit promise) but does not by itself free the one serial execution slot. The slot is released
+   only by trusted exit/recovery evidence:
+   - an invoke-returned trustworthy terminal (pre-UI refusal; `SENT_LOCAL`; legal `CANCELLED`) is the
+     offline model of the worker process ending, and a send/rollback additionally requires the result
+     not to report `restore_ok:false`;
+   - a later `query()` observation is logical only; it releases the slot only when the transport
+     reports `released:true` (trusted exit + device recovery). Exit with no usable result settles
+     `UNKNOWN` and then releases.
+2. **Uncertain occupancy.** `UNKNOWN`, unconfirmed cancels, missing/empty/bad results, thrown
+   transports and failed restores keep the slot (`occupancy:'HELD'`); the delivery stays terminal and
+   refuses the same id. The static `recover()` descriptor is never exit evidence.
+3. **Exception classification by boundary.** Before `claim.invocation` is set, a failure is a
+   deterministic pre-invoke rejection (`preSubmit`, slot released). After the invocation — including
+   the acceptance-time clock sample — it is `UNKNOWN` with the uncertain lease preserved.
+4. **Evidence consistency.** A `CANCELLED` claiming `CANCELLED_BEFORE_UI` (or none) while carrying
+   `RECORDING`/`SENDING`/release evidence is `UNKNOWN`; a legal `CANCELLED_CONFIRMED` may carry
+   recording evidence.
+
+**Reason:** the 0146 review proved `settle()` released the slot on every terminal, so a query-observed
+`UNKNOWN`, an unconfirmed cancel, an empty/thrown invoke result or the acceptance-clock exception let
+the next delivery start with no exit/recovery proof; and a self-contradictory pre-UI cancel was still
+confirmed.
+
+**Rejected alternatives:** treating any terminal as release; auto-releasing on a timeout; a boolean
+self-report as exit proof; a second queue/ID owner/retry path; treating a `BEFORE_UI` claim as proof
+despite UI evidence.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+---
+
+## ADR-034 — Recovery evidence is tri-state, and a late exit releases the lease without rewriting the verdict
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 117 revision).
+Extends ADR-033.
+**Related:** ADR-001, ADR-024–ADR-033, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **A pre-UI verdict is not a recovery proof.** The archived worker may switch the capture device and
+   then fail before recording (`voice-sender.ps1` ~416–439, `finally` ~641–668). A `FAILED`/`REJECTED`
+   verdict therefore keeps its "not recorded/sent" meaning but does not release the execution slot on
+   its own; the unrestored resource is held until trusted exit/recovery evidence.
+2. **Tri-state recovery.** `restoreState()` accepts `restore_ok:true` as verified and an omitted field
+   as the established Fixture-compatible positive; `false` and every other provided non-boolean value
+   (`'false'`, `null`, `0`, `1`, `''`, arrays, objects) are failed/unknown and conservatively hold the
+   slot. Omission is never used to assert *real* device recovery.
+3. **Late exit.** After a verdict is fixed, a late invoke answer is inspected independently: a
+   contract-recognised clean result with compatible recovery evidence releases the lease, while the
+   verdict, cancel flags and receipt stay write-once — no reopen, no second invocation of the same id,
+   no extra queue. Bad/missing/recovery-failed late results keep holding; concurrent releases are
+   idempotent and one delivery's release evidence never frees another delivery.
+
+**Reason:** the 0147 review showed a pre-UI `FAILED` with `restore_ok:false` released the slot and
+started the next worker, `restore_ok` bad types (`'false'`, null, 0, 1, empty string, arrays, objects)
+were accepted by `!== false`, and a late clean exit after a query verdict was dropped by the
+`SETTLED` guard, leaving a reachable queue stuck until a manual release.
+
+**Rejected alternatives:** treating any pre-UI verdict as resource release; treating omission/bad
+types as proven recovery; letting a late exit rewrite the verdict; a synthetic release API or a second
+queue.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
