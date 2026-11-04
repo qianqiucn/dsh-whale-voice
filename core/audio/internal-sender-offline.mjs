@@ -476,7 +476,14 @@ function classifyWorkerResult(result) {
       return { kind: 'UNKNOWN', detail: 'worker cancel stage is unrecognized' }
     }
     if (/cancel_unconfirmed|UNKNOWN_AFTER_SEND/i.test(reason)) return { kind: 'UNKNOWN', detail: 'a cancellation could not be proven' }
-    return { kind: 'CANCELLED', cancelStage: result.cancel_stage || 'CANCELLED_BEFORE_UI' }
+    const stage = result.cancel_stage || 'CANCELLED_BEFORE_UI'
+    // 147-CANCEL-EVIDENCE-CONTRADICTION: a "before UI" cancellation that carries RECORDING/SENDING
+    // evidence contradicts itself; it may not be confirmed as a clean pre-UI cancel. A legal
+    // CANCELLED_CONFIRMED may carry recording evidence (the worker rolled the recording back).
+    if (stage === 'CANCELLED_BEFORE_UI' && evidence === 'YES') {
+      return { kind: 'UNKNOWN', detail: 'a before-UI cancellation contradicts the observed UI evidence' }
+    }
+    return { kind: 'CANCELLED', cancelStage: stage }
   }
   if (status === 'REJECTED' || status === 'FAILED') {
     if (evidence === 'YES') return { kind: 'UNKNOWN', detail: 'worker reports a rejection after the UI was touched' }
@@ -509,12 +516,22 @@ export function createFixtureTransport(options = {}) {
   const cancelResult = options.cancelResult || { status: 'CANCELLED', reason: 'USER_CANCELLED:CANCELLED_CONFIRMED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false }
   const dispatched = new Set()
   const later = new Map()
+  const released = new Set()
   return Object.freeze({
     invocations,
     cancelSignals,
     enqueue(result) { scripted.push(result) },
-    /** Script the terminal result a dispatch-only worker reports on a later query. */
-    resolveLater(deliveryId, result) { later.set(deliveryId, result) },
+    /**
+     * Script the terminal result a dispatch-only worker reports on a later query. `released:true`
+     * additionally models trusted exit + device recovery; without it the verdict stays logical and
+     * the single execution slot remains occupied.
+     */
+    resolveLater(deliveryId, result, { released: releaseNow = false } = {}) {
+      later.set(deliveryId, result)
+      if (releaseNow) released.add(deliveryId)
+    },
+    /** Trusted offline exit/recovery evidence: the modelled worker ended and its devices are restored. */
+    release(deliveryId) { released.add(deliveryId) },
     async invoke(invocation) {
       invocations.push(invocation)
       const next = scripted.length ? scripted.shift() : defaultResult
@@ -534,12 +551,13 @@ export function createFixtureTransport(options = {}) {
       return { ok: true, file: signal.cancelFile }
     },
     async query({ deliveryId } = {}) {
-      if (later.has(deliveryId)) return { ok: true, value: later.get(deliveryId) }
+      const releaseNow = released.has(deliveryId)
+      if (later.has(deliveryId)) return { ok: true, value: later.get(deliveryId), released: releaseNow }
       if (dispatched.has(deliveryId)) {
         const cancelled = cancelSignals.some((signal) => signal.deliveryId === deliveryId)
-        return { ok: true, value: cancelled ? cancelResult : null }
+        return { ok: true, value: cancelled ? cancelResult : null, released: releaseNow }
       }
-      return { ok: true, value: null }
+      return { ok: true, value: null, released: releaseNow }
     },
   })
 }
@@ -584,8 +602,12 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     return 'fixture-internal-' + crypto.randomBytes(8).toString('hex')
   }
 
-  /** Write-once terminal outcome; resolving the terminal promise releases the execution slot. */
-  function settle(claim, outcome) {
+  /**
+   * Write-once logical terminal. The delivery verdict is final here, but the *execution lease*
+   * (worker/device resources) is separate: it is released only with trusted exit/recovery evidence
+   * (`release:true`). A logical UNKNOWN therefore keeps the single execution slot occupied.
+   */
+  function settle(claim, outcome, { release = false } = {}) {
     if (claim.phase === 'SETTLED') return claim.result
     const frozen = deepFreeze({ ...outcome })
     claim.result = frozen
@@ -597,7 +619,21 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       claim.resolveTerminal(frozen)
       claim.resolveTerminal = null
     }
+    // The submit promise is decided by the verdict itself; it must not wait for an unrelated
+    // delivery's lease (147-QUEUED-CANCEL-PROMISE adjacent close-out).
+    resolveSubmit(claim, frozen)
+    if (release) releaseLease(claim)
     return frozen
+  }
+
+  /** Free the one serial slot. Only trusted exit/recovery evidence may call this. */
+  function releaseLease(claim) {
+    if (claim.leaseReleased) return
+    claim.leaseReleased = true
+    if (typeof claim.resolveRelease === 'function') {
+      claim.resolveRelease()
+      claim.resolveRelease = null
+    }
   }
 
   function unknownOutcome(detail, claim) {
@@ -609,15 +645,27 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     }
   }
 
-  function settleFromWorker(claim, result) {
-    // A late or concurrent observation can never reopen, rewrite or re-flag a settled delivery.
+  /**
+   * Map a worker result into the claim.
+   *
+   * `source` distinguishes the two evidence classes:
+   * - `invoke`: the transport promise settled with this final result, the offline model of the
+   *   worker process ending. A clean pre-UI refusal releases the lease; a clean send/rollback
+   *   releases it unless the result itself reports a failed device restore (`restore_ok:false`).
+   * - `query`: a later observation is only a logical verdict. It never proves process exit or
+   *   device recovery, so it does not release the lease by itself.
+   */
+  function settleFromWorker(claim, result, source = 'query') {
     if (claim.phase === 'SETTLED') return claim.result
     const classified = classifyWorkerResult(result)
+    const clean = classified.kind === 'SENT_LOCAL' || classified.kind === 'CANCELLED' || classified.kind === 'PRE_SUBMIT'
+    const release = source === 'invoke' && clean
+      && (classified.kind === 'PRE_SUBMIT' || (isObject(result) && result.restore_ok !== false))
     if (classified.kind === 'SENT_LOCAL') {
       return settle(claim, {
         ok: true, accepted: true, sentLocal: true, backendState: 'SENT_LOCAL',
         receiptId: claim.accepted?.receiptId ?? mintReceipt(),
-      })
+      }, { release })
     }
     if (classified.kind === 'CANCELLED') {
       claim.cancelConfirmed = true
@@ -625,14 +673,27 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       return settle(claim, {
         ok: true, accepted: false, cancelled: true, cancelStage: classified.cancelStage, backendState: 'CANCELLED',
         receiptId: claim.accepted?.receiptId ?? null,
-      })
+      }, { release })
     }
     if (classified.kind === 'PRE_SUBMIT') {
       stats.rejected += 1
-      return settle(claim, { ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: classified.detail })
+      return settle(claim, { ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: classified.detail }, { release })
     }
     stats.rejected += 1
-    return settle(claim, unknownOutcome(classified.detail, claim))
+    return settle(claim, unknownOutcome(classified.detail, claim), { release: false })
+  }
+
+  /** The generic queue/limit exception: classify by whether the worker boundary was crossed. */
+  function internalFailure(claim) {
+    if (claim.phase === 'SETTLED') return claim.result
+    if (claim.invocation) {
+      stats.rejected += 1
+      return settle(claim, unknownOutcome('internal exception after the worker invocation', claim), { release: false })
+    }
+    return settle(claim, {
+      ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.INPUT_INVALID,
+      detail: 'internal rejection before the worker invocation',
+    }, { release: true })
   }
 
   /** Resolve the submit promise exactly once; the caller must always receive a verdict. */
@@ -644,24 +705,25 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
   }
 
   async function runClaim(claim) {
-    if (claim.phase === 'SETTLED') return { result: claim.result, hold: false }
+    if (claim.phase === 'SETTLED') return { result: claim.result }
     claim.phase = 'RUNNING'
-    // A cancel that arrives while the job is still queued is a pre-UI cancellation: no worker call.
+    // A cancel that arrives while the job is still queued is a pre-UI cancellation: no worker call,
+    // and nothing was switched, so the lease is released.
     if (claim.cancelRequested) {
       claim.cancelStage = 'CANCELLED_BEFORE_UI'
       claim.cancelConfirmed = true
-      return { result: settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null }), hold: false }
+      return { result: settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null }, { release: true }) }
     }
     const built = buildSendRequest({
       deliveryId: claim.deliveryId, artifact: claim.snapshot.artifact, target: claim.snapshot.target,
       runRoot: resolvedRunRoot, now: now(), silence,
     })
-    if (!built.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: built.code, detail: built.detail }), hold: false }
+    if (!built.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: built.code, detail: built.detail }, { release: true }) }
     const plan = buildInternalInvocation('SEND', {
       Request: built.value.files.request, JsonOut: built.value.files.result, ProgressFile: built.value.files.progress,
       CancelFile: built.value.files.cancel, GlobalCancelFile: built.value.files.globalCancel,
     })
-    if (!plan.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: plan.code, detail: plan.detail }), hold: false }
+    if (!plan.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: plan.code, detail: plan.detail }, { release: true }) }
     claim.invocation = deepFreeze({ ...plan.value, deliveryId: claim.deliveryId, request: built.value.request, files: built.value.files })
     stats.invocations += 1
     let result
@@ -669,32 +731,31 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       result = await transport.invoke(claim.invocation)
     } catch {
       stats.rejected += 1
-      return { result: settle(claim, unknownOutcome('worker transport threw before returning a result', claim)), hold: false }
+      // The worker boundary was crossed and its state is unknown: logical UNKNOWN, lease retained.
+      return { result: settle(claim, unknownOutcome('worker transport threw before returning a result', claim), { release: false }) }
     }
     // 145-ASYNC-TERMINAL: an observation may have settled the claim while the invoke was awaiting;
     // a late dispatch acknowledgement must not reopen it into ACCEPTED.
-    if (claim.phase === 'SETTLED') return { result: claim.result, hold: false }
+    if (claim.phase === 'SETTLED') return { result: claim.result }
     if (result && result.ok === true && result.dispatched === true) {
       // The worker process started but has no terminal result yet: accepted, verdict pending, and
-      // the single execution slot stays owned until that terminal observation arrives.
+      // the single execution slot stays owned until trusted exit/recovery evidence arrives.
       const receiptId = mintReceipt()
       claim.accepted = { receiptId, backendState: 'QUEUED', sentLocal: false, at: now() }
       claim.phase = 'SUBMITTED'
       claim.submitResult = deepFreeze({ ok: true, accepted: true, backendState: 'QUEUED', receiptId, pending: true })
-      return { result: claim.submitResult, hold: true }
+      return { result: claim.submitResult }
     }
-    return { result: settleFromWorker(claim, result), hold: false }
+    return { result: settleFromWorker(claim, result, 'invoke') }
   }
 
   /**
    * Read the worker's later observation without inventing a result. Observation is bound to the one
-   * actual invocation of this claim: a delivery that was never invoked can never consume a worker
-   * result, and a verdict that arrived while awaiting is final.
+   * actual invocation of this claim, and a later query is only a logical verdict: the lease is
+   * released only when the transport reports trusted exit/recovery (`released:true`).
    */
   async function observe(claim) {
-    if (!claim || claim.phase === 'SETTLED') return
-    if (!claim.invocation) return
-    if (claim.phase !== 'SUBMITTED' && claim.phase !== 'RUNNING') return
+    if (!claim || !claim.invocation) return
     if (typeof transport.query !== 'function') return
     let observed
     try {
@@ -702,12 +763,18 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     } catch {
       return
     }
-    if (claim.phase === 'SETTLED') return
-    if (!observed || observed.ok !== true || !isObject(observed.value)) return
-    // A non-result object (or one without a status) is not a terminal worker verdict.
-    if (typeof observed.value.status !== 'string') return
-    // A late terminal worker result can settle an accepted delivery; it can never re-open it.
-    settleFromWorker(claim, observed.value)
+    if (!observed || observed.ok !== true) return
+    const released = observed.released === true
+    if (claim.phase !== 'SETTLED') {
+      if (isObject(observed.value) && typeof observed.value.status === 'string') {
+        settleFromWorker(claim, observed.value, 'query')
+      } else if (released) {
+        // Trusted exit without a usable verdict: indeterminate, and only then the lease may go.
+        stats.rejected += 1
+        settle(claim, unknownOutcome('the worker exited without a usable result', claim), { release: false })
+      }
+    }
+    if (released) releaseLease(claim)
   }
 
   function project(claim) {
@@ -729,10 +796,27 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
         stage: claim.cancelStage ?? null,
       }),
       recoveryRequired: settled?.recoveryRequired === true,
+      leaseReleased: claim.leaseReleased === true,
+      occupancy: claim.leaseReleased === true ? 'RELEASED' : 'HELD',
       resendAllowed: false,
       realReady: false,
       fixtureOnly: true,
     })
+  }
+
+  /**
+   * A cancel signal that could not be written must report the truth: when the delivery already
+   * settled (a query observed the verdict during the write), return that verdict instead of a stale
+   * CANCEL_REQUESTED (147-CANCEL-ERROR-RETURN adjacent, ordinary accounting).
+   */
+  function cancelSignalFailure(claim, detail) {
+    if (claim.phase === 'SETTLED') {
+      return {
+        ok: true, requested: true, confirmed: claim.result.cancelled === true,
+        cancelStage: claim.result.cancelStage ?? null, state: project(claim).state,
+      }
+    }
+    return { ok: false, requested: true, confirmed: false, state: 'CANCEL_REQUESTED', code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail }
   }
 
   const backend = {
@@ -807,21 +891,26 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
         phase: 'QUEUED', cancelRequested: false, cancelRequestedAt: null, cancelConfirmed: false, cancelStage: null,
         invocation: null, accepted: null, submitResult: null, result: null,
         promise: null, resolveSubmit: null, terminal: null, resolveTerminal: null,
+        leaseReleased: false, releasePromise: null, resolveRelease: null,
       }
       claim.promise = new Promise((resolve) => { claim.resolveSubmit = resolve })
       claim.terminal = new Promise((resolve) => { claim.resolveTerminal = resolve })
+      claim.releasePromise = new Promise((resolve) => { claim.resolveRelease = resolve })
       claims.set(checkedDelivery.deliveryId, claim)
-      // 145-PENDING-SERIAL: the one execution slot is owned until the claim is terminal, so a
-      // dispatch-only Worker keeps holding it; no second delivery is invoked meanwhile.
+      // 147-UNKNOWN-LEASE: the one execution slot is owned until the claim is *logically* settled
+      // and its execution lease is released by trusted exit/recovery evidence. A logical UNKNOWN
+      // therefore keeps the slot; no second delivery is invoked meanwhile.
       serialized(async () => {
-        const out = await runClaim(claim)
+        let out
+        try {
+          out = await runClaim(claim)
+        } catch {
+          out = { result: internalFailure(claim) }
+        }
         resolveSubmit(claim, out.result)
-        if (out.hold) await claim.terminal
+        if (!claim.leaseReleased) await claim.releasePromise
       }).catch(() => {
-        const failed = claim.phase === 'SETTLED'
-          ? claim.result
-          : settle(claim, { ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.INPUT_INVALID, detail: 'internal queue failure' })
-        resolveSubmit(claim, failed)
+        resolveSubmit(claim, internalFailure(claim))
       })
       return claim.promise
     },
@@ -846,7 +935,7 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
         // No worker was started: the job is cancelled before any UI, exactly like the reviewed queue.
         claim.cancelConfirmed = true
         claim.cancelStage = 'CANCELLED_BEFORE_UI'
-        settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null })
+        settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null }, { release: true })
         return { ok: true, requested: true, confirmed: true, cancelStage: 'CANCELLED_BEFORE_UI', state: 'CANCELLED' }
       }
       // A worker is running: write the real per-job cancel signal. Only its own result can confirm.
@@ -857,10 +946,10 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
           payload: { reason: 'USER_CANCELLED', at: claim.cancelRequestedAt, source: 'internal-sender' },
         })
       } catch {
-        return { ok: false, requested: true, confirmed: false, state: 'CANCEL_REQUESTED', code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: 'cancel signal could not be delivered' }
+        return cancelSignalFailure(claim, 'cancel signal could not be delivered')
       }
       if (!written || written.ok !== true) {
-        return { ok: false, requested: true, confirmed: false, state: 'CANCEL_REQUESTED', code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: 'cancel signal was rejected' }
+        return cancelSignalFailure(claim, 'cancel signal was rejected')
       }
       // The verdict may have arrived while the signal was being written: report the settled truth,
       // never a stale "requested" state and never a later flag rewrite.

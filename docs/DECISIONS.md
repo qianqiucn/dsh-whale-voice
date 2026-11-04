@@ -951,3 +951,43 @@ treating an unknown cancel stage as a confirmed cancel; deriving legacy identity
 adding a second id owner or business queue.
 
 **Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-033 — The logical verdict and the execution lease are separate facts
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 116 revision).
+Extends ADR-032.
+**Related:** ADR-001, ADR-024–ADR-032, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **Verdict ≠ resources.** `settle()` fixes the delivery verdict (write-once, monotonic, answers the
+   submit promise) but does not by itself free the one serial execution slot. The slot is released
+   only by trusted exit/recovery evidence:
+   - an invoke-returned trustworthy terminal (pre-UI refusal; `SENT_LOCAL`; legal `CANCELLED`) is the
+     offline model of the worker process ending, and a send/rollback additionally requires the result
+     not to report `restore_ok:false`;
+   - a later `query()` observation is logical only; it releases the slot only when the transport
+     reports `released:true` (trusted exit + device recovery). Exit with no usable result settles
+     `UNKNOWN` and then releases.
+2. **Uncertain occupancy.** `UNKNOWN`, unconfirmed cancels, missing/empty/bad results, thrown
+   transports and failed restores keep the slot (`occupancy:'HELD'`); the delivery stays terminal and
+   refuses the same id. The static `recover()` descriptor is never exit evidence.
+3. **Exception classification by boundary.** Before `claim.invocation` is set, a failure is a
+   deterministic pre-invoke rejection (`preSubmit`, slot released). After the invocation — including
+   the acceptance-time clock sample — it is `UNKNOWN` with the uncertain lease preserved.
+4. **Evidence consistency.** A `CANCELLED` claiming `CANCELLED_BEFORE_UI` (or none) while carrying
+   `RECORDING`/`SENDING`/release evidence is `UNKNOWN`; a legal `CANCELLED_CONFIRMED` may carry
+   recording evidence.
+
+**Reason:** the 0146 review proved `settle()` released the slot on every terminal, so a query-observed
+`UNKNOWN`, an unconfirmed cancel, an empty/thrown invoke result or the acceptance-clock exception let
+the next delivery start with no exit/recovery proof; and a self-contradictory pre-UI cancel was still
+confirmed.
+
+**Rejected alternatives:** treating any terminal as release; auto-releasing on a timeout; a boolean
+self-report as exit proof; a second queue/ID owner/retry path; treating a `BEFORE_UI` claim as proof
+despite UI evidence.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
