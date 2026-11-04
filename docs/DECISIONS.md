@@ -1040,9 +1040,14 @@ queue.
   ms, boolean) but has **no LICENSE**, still asks users to disable antivirus, and documents only
   Windows WeChat 3.6.0.18 / 4.1.12.26;
 - PadChat-SDK (`master` @ `f1dd594`, 2024 code) publishes `sendVoice` (SILK base64, ms, `msgId`
-  examples) but has **no LICENSE** and depends on a separate Windows iPad-protocol login service;
-- WeChatAgent 0.4.2 (`main` @ `38c1060`) has **no outbound voice API**; its new `silk-wasm` codec and
-  optional speech-recognition plugin are inbound/transcription features, not a send capability.
+  examples); its `package.json` v0.6.1 declares **ISC** (no separate LICENSE/notice file), but it
+  depends on a separate Windows iPad-protocol login service whose authorization is unpublished — the
+  full path’s license gate is therefore UNKNOWN, not “no license”;
+- WeChatAgent 0.4.2 (`main` @ `38c1060`) has **no outbound voice API**; its `silk-wasm` codec and
+  optional speech-recognition plugin are inbound/transcription features. Its root MIT covers the
+  project’s own code only; `docs/WECHAT_HOOK.md` requires separately licensed third-party Hook source
+  and a matching client build for the complete native path, so that path’s license/component gates are
+  UNKNOWN, not PASS.
 
 All 12 existing admission gates are scored PASS/FAIL/UNKNOWN per candidate; none is
 `PROTOTYPE_READY`. The original plan's “two community developers”, `wechat_voice_say` and

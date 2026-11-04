@@ -685,8 +685,9 @@ Branch `docs/plan13c-native-admission-20261104` from M, new research PR (not mer
 first-party evidence for WeChatPYAPI, PadChat-SDK and WeChatAgent(0.4.2) was refreshed on 2026-11-04
 against the 2026-10-24 snapshot, pinned to head commits, and scored against the existing 12 admission
 gates (PASS/FAIL/UNKNOWN per candidate). None is `PROTOTYPE_READY`: WeChatPYAPI has no LICENSE and
-still requires disabling antivirus; PadChat-SDK is a 2024 iPad-protocol service with no LICENSE;
-WeChatAgent 0.4.2 has no outbound voice API (inbound `record`/`silk-wasm`/speech-recognition are
-receive-side). The original “two community developers”/`wechat_voice_say`/`wechat_sing` remain
+still requires disabling antivirus; PadChat-SDK is a 2024 iPad-protocol service whose SDK
+`package.json` declares ISC but whose external service authorization is unknown; WeChatAgent 0.4.2 has
+no outbound voice API (inbound `record`/`silk-wasm`/speech-recognition are receive-side) and its root
+MIT does not cover the complete third-party Hook/client path required for native voice. The original “two community developers”/`wechat_voice_say`/`wechat_sing` remain
 UNKNOWN (no precise first-party source). Native/auto stay unselectable; no DLL/Hook/SDK was downloaded
 or run; no runner, production route or second queue was created.

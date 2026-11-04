@@ -1,4 +1,9 @@
-# Native Voice Delivery — Research Candidates（2026-11-04 refresh）
+# Native Voice Delivery — Research Candidates（2026-11-04 refresh, 119 revision）
+
+> **119 revision (2026-11-04):** license/admission wording corrected in place — PadChat-SDK’s
+> `package.json` declares ISC (the external protocol service authorization stays UNKNOWN) and
+> WeChatAgent’s root MIT does not cover the complete third-party Hook/client native path (gates 3/6
+> for that path are UNKNOWN/not admitted). Capability conclusions are unchanged; see §3a and §7.
 
 **Status:** documentation research only (`13-C / RESEARCH_CANDIDATE`). No third-party package, DLL,
 Hook, service or WeChat client was downloaded, installed, executed or changed. No voice message was
@@ -43,10 +48,10 @@ Whale Voice delivery status (unchanged by this refresh):
 | Candidate | Repository | Default branch @ head | Head commit time | Repo metadata observed |
 |---|---|---|---|---|
 | A | https://github.com/mrsanshui/WeChatPYAPI | `master` @ `05060facb1ca87ba1cc088597e23c0163c7f1479` | 2026-10-27T12:38:53Z (`WeChatPYAPI V-9.2.1`) | 1,081 stars / 227 forks / 0 open issues; `pushed_at` 2026-10-27T12:39:41Z; **no LICENSE**; `version.txt` = `WeChatPYAPI V-9.2.1`; root has `专业版/` and `社区版/` (HTTP + Python interface dirs) |
-| B | https://github.com/AvengersWeChat/PadChat-SDK | `master` @ `f1dd594233fbf11c2ffb8de3adea80c178edad21` | 2024-03-01T21:07:40Z (`Update README.md`) | 2,017 stars / 538 forks / 7 open issues; `pushed_at` 2024-06-13T13:13:02Z; **no LICENSE**; WebSocket SDK to a separate Windows iPad-protocol service |
-| C | https://github.com/sourcepro5/WeChatAgent | `main` @ `38c1060ce500a294d69a4a2f9e07ca1b63a08b06` | 2026-11-01T03:53:33Z (`docs: add plugin package download paths to README`) | 2,230 stars / 39 forks / 32 open issues; `pushed_at` 2026-11-01T03:53:36Z; `package.json` version **0.4.2**; root `LICENSE` MIT + `LICENSES.md` third-party notices (`license.spdx_id` = `NOASSERTION`) |
+| B | https://github.com/AvengersWeChat/PadChat-SDK | `master` @ `f1dd594233fbf11c2ffb8de3adea80c178edad21` | 2024-03-01T21:07:40Z (`Update README.md`) | 2,017 stars / 538 forks / 7 open issues; `pushed_at` 2024-06-13T13:13:02Z; **no separate LICENSE file**, but `package.json` v0.6.1 declares `"license": "ISC"` with a `binsee/padchat-sdk` source pointer; WebSocket SDK to a separate Windows iPad-protocol service |
+| C | https://github.com/sourcepro5/WeChatAgent | `main` @ `38c1060ce500a294d69a4a2f9e07ca1b63a08b06` | 2026-11-01T03:53:33Z (`docs: add plugin package download paths to README`) | 2,230 stars / 39 forks / 32 open issues; `pushed_at` 2026-11-01T03:53:36Z; `package.json` version **0.4.2**; root `LICENSE` MIT + `LICENSES.md` third-party notices (`license.spdx_id` = `NOASSERTION`); `docs/WECHAT_HOOK.md` states the source copy excludes third-party Hook source/DLL/client and that the native path needs separately licensed source and a matching client build |
 
-`license: null` from the GitHub API means **no recognized license file**; it is not an implicit grant.
+`license: null` from the GitHub API means GitHub found **no recognized LICENSE file**; it is not an implicit grant. A package-level `license` field is separate evidence and is recorded per candidate below.
 The local installed WeChatAgent version and the local Windows WeChat version are **historical
 snapshot facts only** (last recorded 0.3.9 / 4.1.10.27) and were **not re-measured** in this round;
 both remain **UNKNOWN** for the current machine.
@@ -65,13 +70,36 @@ both remain **UNKNOWN** for the current machine.
 | WeChatPYAPI security instruction | README asks to disable antivirus before cloning | Still present | Unacceptable for Whale Voice |
 | PadChat-SDK code | last commit 2024-03-01; `pushed_at` 2024-06-13 | Unchanged (same commit / push timestamps) | No maintenance movement |
 | PadChat-SDK stars/forks/issues | 2,007 / 535 / 7 | 2,017 / 538 / 7 | Popularity drift only |
-| PadChat-SDK voice API | `sendVoice(toUserName, file, time)` | Unchanged: SILK only, `file` = base64 buffer, `time` in **ms**, returns `Promise<object>` with `msgId`/`status:0` examples | Interface unchanged; not a Windows-client integration |
-| PadChat-SDK LICENSE | none | Still **none** | Redistribution NOT granted |
+| PadChat-SDK voice API | `sendVoice(toUserName, file, time)` | Unchanged: SILK only, `file` = **base64-encoded buffer** (docs: “文件buffer的base64编码”), `time` in **ms**, returns `Promise<object>` with `msgId`/`status:0` examples | Interface unchanged; not a Windows-client integration |
+| PadChat-SDK license | none at repo root | Still **no separate LICENSE file**; `package.json` v0.6.1 declares **ISC** (`binsee/padchat-sdk` source pointer) | SDK package license declaration exists; the external iPad-protocol **service** authorization is still UNKNOWN |
 | WeChatAgent public version | 0.4.0 | **0.4.2** | Upstream advanced two patch versions |
 | WeChatAgent outbound methods | `sendText`, `sendSticker` | **Still only text/sticker** in `components/qq-bridge/src/adapters/wechat/wechat-onebot-adapter.js`; `record` appears only in the incoming filter | Still no outbound voice API |
 | WeChatAgent SILK capability | not noted | `packages/voice-codec/silk-wasm` pinned to `idranme/silk-wasm` npm **3.7.1** (MIT), listed in `LICENSES.md` | SILK codec exists for **inbound decode / voice-input**, not for sending |
 | WeChatAgent voice feature | none | Optional `speech-recognition-1.2.0` plugin (voice **input** transcription, `docs/VOICE_INPUT.md`) | Receive/transcribe only; still not outbound |
-| WeChatAgent license | root MIT + third-party notices | Unchanged root MIT + expanded `LICENSES.md` (qq-bridge, weflow-cli, silk-wasm …); Hook/DLL excluded | Voice send still absent; license does not grant a voice-send path |
+| WeChatAgent license | root MIT + third-party notices | Unchanged root MIT + expanded `LICENSES.md` (qq-bridge, weflow-cli, silk-wasm …); `docs/WECHAT_HOOK.md` states the copy excludes third-party Hook source/DLL/client and the native path requires separately licensed source plus a matching client build | Voice send still absent; root MIT covers the project’s own code only, not the complete native Hook/client path |
+
+---
+
+## 3a. 119 revision — license/admission correction (2026-11-04)
+
+Two absolute statements in the 118 revision were wrong and are corrected here (the capability facts do
+not change):
+
+1. **PadChat-SDK is not “no license”.** Its `package.json` at `f1dd594…` is `padchat-sdk` **v0.6.1**,
+   `"license": "ISC"`, author `binsee`, repository `git+https://github.com/binsee/padchat-sdk.git`.
+   There is no separate LICENSE/notice file in the repository, and the **external iPad-protocol
+   service** that the SDK talks to publishes no authorization terms. The SDK package declaration and
+   the external service authorization are different facts and are scored separately.
+2. **WeChatAgent root MIT is not a native-voice admission.** `docs/WECHAT_HOOK.md` at `38c1060…`
+   states that the public source copy “不包含第三方 Hook 源码、DLL、微信程序或安装包”, that the native
+   path needs separately authorized Hook source (`components/WeChat-Hook`) built against a matching
+   Windows x64 WeChat client (the 4.1.10.27 path cites `aixed/WeChat-Hook` @ `e905d07…`), and that
+   “引用、动态表情和音视频发送不在此 profile 的支持范围” for the newer 4.1.15.13 profile. The root MIT
+   license covers the project’s own code; gates 3 and 6 for the **complete native path** therefore
+   remain UNKNOWN / explicitly not admitted — the public tree not bundling the Hook is not evidence
+   that no unverified component is required.
+
+The 12-gate scores in §7 are updated accordingly (B gate 3 → UNKNOWN, C gates 3/6 → UNKNOWN).
 
 ---
 
@@ -114,7 +142,10 @@ environment.
     也就是说大约36~40秒以上的语音会丢失后边部分语音内容” (receive side).
 - Login dependency text: `init` / `login` / `logout` / `getWxData` / `getLoginToken`; separate
   device/login data and a separate account session.
-- No repository LICENSE. “Free/open” wording in a README is not a license grant.
+- The repository has **no separate LICENSE/notice file**, but `package.json` (v0.6.1) declares
+  `"license": "ISC"` and points to `binsee/padchat-sdk` as the upstream source. That declaration
+  covers the SDK package; it does **not** publish authorization for the separate Windows
+  iPad-protocol service, and a README “free/open” tone is still not a grant for the service.
 - Evidence gap: no current Windows-WeChat compatibility evidence; no coexistence with WeChatAgent; no
   proof that the returned `msgId` corresponds to a locally observed native voice bubble; no official
   `UNKNOWN`/cancel/recovery contract; the required protocol service’s availability and authorization
@@ -137,8 +168,12 @@ A message ID is a possible server acknowledgement, not proof of a native bubble.
   and the optional `speech-recognition-1.2.0` plugin / `docs/VOICE_INPUT.md` — these decode and
   transcribe **incoming** voice; they are not an outbound voice API.
 - License: root `LICENSE` is MIT; `LICENSES.md` records qq-bridge (MIT), weflow-cli (MIT), silk-wasm
-  (MIT) and states the public source copy does not include third-party WeChat-Hook source/binaries.
-  GitHub reports `license.spdx_id = NOASSERTION`; treat third-party components individually.
+  (MIT). `docs/WECHAT_HOOK.md` at the same commit states that the public source copy “不包含第三方 Hook
+  源码、DLL、微信程序或安装包”, that the native path requires separately authorized Hook source built
+  against a matching Windows x64 client (4.1.10.27 path cites `aixed/WeChat-Hook` @ `e905d07…`), and
+  that the newer 4.1.15.13 profile explicitly excludes “音视频发送”. GitHub reports
+  `license.spdx_id = NOASSERTION`; the root MIT license covers this project’s own code, not the
+  complete Hook/client path.
 - Evidence gap: no voice send, no voice send contract, no voice receipt, no extension point for native
   voice. Incoming `record` support must not be read as outbound capability.
 
@@ -156,10 +191,10 @@ Legend: **PASS** = public evidence satisfies the gate; **FAIL** = public evidenc
 |---|---|---|---|---|
 | 1 | Real callable voice API identified | **PASS** (`send_voice`, README) | **PASS** (`sendVoice`, docs) | **FAIL** (text/sticker only) |
 | 2 | Current or explicitly supported WeChat version verified | **FAIL** (3.6.0.18 / 4.1.12.26 only; current client unverified) | **FAIL/UNKNOWN** (no current Windows-client evidence; iPad-protocol service) | **UNKNOWN** (0.4.2 baseline; local runtime unmeasured) |
-| 3 | License permits the intended use/distribution | **FAIL** (no LICENSE; professional terms absent) | **FAIL** (no LICENSE) | **PASS** (root MIT + notices; no voice path anyway) |
+| 3 | License permits the intended use/distribution | **FAIL** (no LICENSE; professional terms absent) | **UNKNOWN** (`package.json` v0.6.1 declares **ISC** for the SDK; no separate LICENSE/notice file; the external iPad-protocol service publishes no authorization) | **UNKNOWN** (root MIT covers the project’s own code; the complete native path needs separately licensed third-party Hook source and a matching client build) |
 | 4 | No system security feature must be disabled | **FAIL** (README asks to disable antivirus) | **UNKNOWN** (no such instruction; unverified service binary) | **PASS** |
 | 5 | Coexistence with WeChatAgent proven or architecture documented | **FAIL/UNKNOWN** (no evidence; separate Hook/login likely) | **FAIL** (separate iPad-protocol login/service) | **PASS** (is the platform) |
-| 6 | No unverified binary required | **FAIL** (DLL/service) | **FAIL** (proprietary service binary) | **PASS** (source; Hook excluded) |
+| 6 | No unverified binary required | **FAIL** (DLL/service) | **FAIL** (external iPad-protocol service binary required; authorization unknown) | **UNKNOWN** (external Hook DLL + matching Windows x64 client build required; not bundled by the public tree and not verified) |
 | 7 | Private and group target identity verifiable | **UNKNOWN** (`to_wx` accepts wxid/群ID; verification semantics undocumented) | **UNKNOWN** (`toUserName` accepts group id; provenance unverified) | **UNKNOWN** (no voice path) |
 | 8 | Submission / receipt / `UNKNOWN` semantics documented | **FAIL** (boolean only) | **UNKNOWN/FAIL** (`msgId`+`status:0` examples; no bubble proof, no UNKNOWN/cancel contract) | **FAIL** (no voice send) |
 | 9 | Isolated test environment possible | **UNKNOWN** (not attempted) | **UNKNOWN** (not attempted) | **UNKNOWN** (no voice path) |
@@ -187,7 +222,7 @@ authorized; Native/auto remain unselectable/unsubmittable in Whale Voice.
 | `ret=0` / boolean / HTTP 200 / `accepted_unconfirmed` | Returns `True/False`; acceptance ≠ bubble | `status:0` + `msgId` examples; acceptance ≠ bubble | n/a |
 | `SENT_LOCAL` / trusted server receipt | Boolean only; no receipt | `msgId` only; no local-bubble proof | text/sticker database-confirmed only |
 | Cancel / recovery / `UNKNOWN` / single-delivery single-entry | Not documented | Not documented | n/a |
-| Source / license / redistribution | No LICENSE; professional terms absent | No LICENSE; service availability unverified | Root MIT + third-party notices; Hook/DLL excluded |
+| Source / license / redistribution | No LICENSE; professional terms absent | `package.json` declares ISC for the SDK (v0.6.1); no separate notice; external service authorization unknown | Root MIT + notices for its own code; `docs/WECHAT_HOOK.md` excludes third-party Hook/client and requires separate authorization |
 
 A message ID, `True`, `status:0` or an HTTP 200 is **not** a native-bubble receipt. Whale Voice must
 record a delivery grade, not collapse everything into `success`.
@@ -224,7 +259,8 @@ evidence and must not be treated as established provenance.
 
 ### PadChat-SDK
 
-- No repository LICENSE; “free” wording is not a license grant.
+- No separate LICENSE file; `package.json` v0.6.1 declares **ISC** for the SDK package only. The
+  separate iPad-protocol service publishes no authorization terms.
 - Requires a separate proprietary iPad-protocol service and login channel.
 - Old code (2024) and service availability are unverified.
 - A separate account/session may conflict with WeChatAgent and platform terms.
@@ -233,7 +269,9 @@ evidence and must not be treated as established provenance.
 ### WeChatAgent
 
 - Root MIT plus separate third-party notices; the public source copy excludes third-party
-  WeChat-Hook source/binaries and does not grant them.
+  WeChat-Hook source/binaries/WeChat client and does not grant them. The complete native path depends
+  on externally licensed Hook source and a matching client build, so its license gate is UNKNOWN, not
+  a pass based on the root MIT.
 - No outbound voice API; inbound SILK/transcription capability must not be re-labeled as send.
 
 ### Shared

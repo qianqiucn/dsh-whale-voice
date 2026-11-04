@@ -381,8 +381,9 @@ The third-party native candidates are not a third column of “supported” yet:
 
 - WeChatPYAPI would add a proprietary Python/DLL/service dependency, has a 4.1.12.26 vs 4.1.10.27
   version gap, no repository license, and only a boolean return.
-- PadChat-SDK would add a separate iPad-protocol login/service, has stale code and no license; its
-  `msgId` is not proof of a local native bubble.
+- PadChat-SDK would add a separate iPad-protocol login/service, has stale code, its SDK `package.json`
+  declares ISC but the external service authorization is unknown, and its `msgId` is not proof of a
+  local native bubble.
 - Both remain `RESEARCH_CANDIDATE`; neither should replace or bypass Voice Sender.
 
 ---
