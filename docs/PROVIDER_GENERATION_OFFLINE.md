@@ -309,7 +309,7 @@ generation disabled):
   "草稿已保存，尚未应用", and a page reload reads the same saved value back (UI **75/75**).
 
 Full suite after this unit: **1166 tests / 1162 pass / 4 platform skips / 0 fail**; UI **75/75**; build
-`client.js` **351,752 bytes** (the 144 settings card is the bundle change).
+`client.js` **351,806 bytes** (the 144 settings card is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
