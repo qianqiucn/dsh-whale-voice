@@ -45,7 +45,23 @@ returns `{catalog, generate, status}`.
 - The entry does not import the UI test bridge or the Fixture worker: the caller injects the trusted
   sandbox and an already started `createQwenProvider`. The test-only
   `tests/ui/studio-generation-bridge.mjs` now only supplies that controlled execution object and the
-  HTTP surface, and delegates the business flow to this Core entry. No Host route is registered.
+  HTTP surface, and delegates the business flow to this Core entry.
+
+### Host call surface (136)
+
+`index.js` (`installHostBridge`) registers three routes on the existing loopback/Origin/connection/
+token bridge:
+
+- `GET /whale-voice/setup/generation/catalog`
+- `POST /whale-voice/setup/generation` (JSON `{text, voiceId, language}`)
+- `GET /whale-voice/setup/generation/status?taskId=...`
+
+Only `/generation` accepts POST; the other routes keep their declared methods, and the existing
+token/Origin/connection gate is unchanged. The handler calls the injected `options.generation` Core
+entry (an already-opened `openPresetGenerationApp` value). The production `apply()` passes no runtime,
+so every generation route returns `503 {ok:false,error:'generation_not_enabled'}` and nothing is
+generated. No new listener, no authentication change; responses are the Core envelope and remain
+Fixture/isolated only.
 
 ## 2. Contract (v1, fail-closed)
 
@@ -85,7 +101,7 @@ returns `{catalog, generate, status}`.
   worker (a local child process; no model, no network).
 - `SAVED` never implies delivery, never allocates a `deliveryId`, and never touches the relay.
 
-## 3. Explicit limits / not done (135 status)
+## 3. Explicit limits / not done (136 status)
 
 1. **Original-task SAVED (132: completed).** `taskOwner.saveArtifact` records the already-imported
    provider Artifact on the birth task; reopen reads the same `SAVED`/`READABLE` artifact from the
@@ -98,10 +114,12 @@ returns `{catalog, generate, status}`.
    wires the real `createQwenProvider` public interface to the existing Fixture worker
    (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model, GPU, real inference,
    network or cloud path is started; clone and VoiceDesign remain unwired.
-4. **No production Host/UI generation route.** The only page entry is the test-only `tests/ui`
-   harness bridge (134); in an environment without that injected adapter the 音色中心 page keeps the
-   disabled generate button and states that production generation is not connected. No production
-   write, no real model and no UI claim of real readiness.
+4. **No enabled Host/UI generation.** The formal Host call surface exists in source (136), but the
+   production assembly provides no generation runtime, so those routes are inert
+   (`503 generation_not_enabled`). The only page entry is the test-only `tests/ui` harness bridge
+   (134); in an environment without that injected adapter the 音色中心 page keeps the disabled
+   generate button and states that production generation is not connected. No production write, no
+   real model and no UI claim of real readiness.
 5. The `expiresAt` window (24 h) is used only for the Artifact library entry, not a delivery/TTL policy.
 
 ## 4. Tests
@@ -125,7 +143,7 @@ returns `{catalog, generate, status}`.
   deterministic output, the original task is SAVED, and a reopen reads the same artifact. On the
   baseline the same test fails as `PROVIDER_GENERATION_INPUT_INVALID` / `request.modality`.
 
-`tests/ui` Studio page harness (134, test-only; the production Host still adds no generation route):
+`tests/ui` Studio page harness (134, test-only; the production Host keeps generation disabled):
 
 - the existing Chinese 音色中心 page's text/预设音色/生成并保存 controls drive
   `tests/ui/studio-generation-bridge.mjs`, which supplies the controlled Fixture-worker provider and
@@ -140,9 +158,18 @@ returns `{catalog, generate, status}`.
   first saved result again, and the Core source is asserted to have no test-bridge / Fixture-worker
   imports.
 
-Full suite after this unit: **1158 tests / 1154 pass / 4 platform skips / 0 fail**; UI **73/73**; build
-`client.js` **318,823 bytes** (unchanged by 135 — the page and bundle are not modified; the earlier
-318,823 figure already includes the 134 Studio page wiring).
+`test/host-generation.test.mjs` (1 test, isolated Host scope/Connection assembly + real Core entry):
+
+- 136: the formal Host scope registers the generation catalog/status/generation routes; the catalog is
+  read over the route, a POST submits a preset request through the Core entry and returns the real
+  saved Task/Artifact facts, the status route queries the same task and Artifact, the existing
+  token/Origin/connection gate still applies (401 for a wrong token, 405 for a wrong method), a new
+  Host + Core assembly over the same sandbox queries the same saved result after the first one is
+  disposed, and a Host without a configured runtime answers `503 generation_not_enabled`.
+
+Full suite after this unit: **1159 tests / 1155 pass / 4 platform skips / 0 fail**; UI **73/73**; build
+`client.js` **318,823 bytes** (unchanged by 136 — no page/bundle change; the figure already includes
+the 134 Studio page wiring).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

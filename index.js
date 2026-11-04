@@ -4,6 +4,7 @@ import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilit
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
+const MAX_BODY_BYTES = 64 * 1024
 
 function send(res, status, body) {
   res.writeHead(status, {
@@ -12,6 +13,34 @@ function send(res, status, body) {
     'x-content-type-options': 'nosniff',
   })
   res.end(JSON.stringify(body))
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks = []
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('body too large'))
+        if (typeof req.destroy === 'function') req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (chunks.length === 0) {
+        resolve({})
+        return
+      }
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch {
+        reject(new Error('invalid json'))
+      }
+    })
+    req.on('error', reject)
+  })
 }
 
 export function bridgeScript(token) {
@@ -54,7 +83,7 @@ export function bridgeScript(token) {
 })();`
 }
 
-function makeGuard(scope) {
+function makeGuard(scope, methods = ['GET']) {
   function currentConnection() {
     try { return typeof scope.get === 'function' ? scope.get('connection') : null } catch { return null }
   }
@@ -63,7 +92,7 @@ function makeGuard(scope) {
     if (!loopbackHost(req)) return 403
     if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') return 403
     if (!sameOrigin(req)) return 403
-    if (req.method !== 'GET') return 405
+    if (!methods.includes(String(req.method || '').toUpperCase())) return 405
     const connection = currentConnection()
     if (!connection || typeof connection.requestRejection !== 'function') return 503
     try {
@@ -79,16 +108,18 @@ function makeGuard(scope) {
 export function installHostBridge(scope, options = {}) {
   const token = options.token || randomBytes(32).toString('hex')
   const detector = options.detector || createDetector({ env: options.env || process.env, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs })
+  const generation = options.generation || null
   const guard = makeGuard(scope)
   const disposers = []
 
-  function route(pathname, handler) {
+  function route(pathname, handler, methods = ['GET']) {
+    const guard = makeGuard(scope, methods)
     const dispose = scope.webServer.register({
       kind: 'exact',
       path: pathname,
       handler: async (req, res) => {
         const rejected = guard(req)
-        if (rejected) return send(res, rejected, { ok: false, error: rejected === 405 ? 'read_only' : 'forbidden' })
+        if (rejected) return send(res, rejected, { ok: false, error: rejected === 405 ? 'method_not_allowed' : 'forbidden' })
         if (!tokenMatches(req.headers['x-whale-core-token'], token)) return send(res, 401, { ok: false, error: 'unauthorized' })
         try {
           return await handler(req, res)
@@ -118,6 +149,31 @@ export function installHostBridge(scope, options = {}) {
     const component = url.searchParams.get('component') || ''
     if (!components.includes(component)) return send(res, 400, { ok: false, error: 'unsupported_component' })
     return send(res, 200, await detector.detectComponent(component))
+  })
+
+  // 136: formal Host call surface for the preset generation Core entry. `options.generation` is an
+  // already-opened `openPresetGenerationApp` value supplied by the isolated Host assembly; without it
+  // every generation route explicitly reports that it is not enabled and nothing is generated.
+  route(PREFIX + '/generation/catalog', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    return send(res, 200, generation.catalog())
+  })
+  route(PREFIX + '/generation', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      return send(res, 400, { ok: false, error: 'invalid_body' })
+    }
+    const result = await generation.generate({ text: body.text, voiceId: body.voiceId, language: body.language })
+    return send(res, 200, result)
+  }, ['POST'])
+  route(PREFIX + '/generation/status', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    const result = await generation.status(url.searchParams.get('taskId') || '')
+    return send(res, 200, result)
   })
 
   const script = bridgeScript(token)
