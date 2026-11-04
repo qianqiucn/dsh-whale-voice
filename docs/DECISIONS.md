@@ -1064,3 +1064,36 @@ DLL/service; disabling antivirus; re-labeling inbound `record`/SILK/transcriptio
 starting a prototype without license, coexistence and receipt evidence.
 
 **Related:** [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+---
+
+## ADR-036 — Provider generation is claim-first and isolated; a SAVED candidate is not an owner SAVED entry
+
+**Status:** proposed / accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-04, 120-B).
+**Related:** ADR-001, ADR-024–ADR-035, [PROVIDER_GENERATION_OFFLINE.md](PROVIDER_GENERATION_OFFLINE.md).
+
+**Decision:** the first provider → SAVED wiring unit is a separate, versioned coordinator
+(`core/audio/provider-generation-offline.mjs`) rather than an in-place extension of the Plan 08 owner
+snapshot:
+
+1. the claim is persisted **before** any synthesis and binds scope/task/birth, provider instance,
+   model/backend/voice, the exact request digest and the rights proof; duplicate, conflicting,
+   cross-scope, unauthorized and `UNKNOWN` re-entry never synthesise again;
+2. provider output is re-measured by the coordinator (WAV PCM16/24 kHz/mono, 200–20000 ms, ≤1 MiB)
+   and stored through the existing Artifact library, then re-read and SHA256-compared before `SAVED`;
+3. cancel, late result, unconfirmed exit, failed artifact write and readback mismatch are separate
+   facts; a `SAVE_UNKNOWN` tombstone is never repaired by a second synthesis; `SAVED` never implies
+   delivery;
+4. **the Plan 08 owner snapshot is not modified.** Its v1/v2 schema has no provider entry kind; a
+   versioned owner-schema v3 extension (mixed-entry parsing, write path, full owner-invariant
+   regression) is deliberately deferred to its own reviewed unit. The claim record keeps
+   `taskIdentityHash`/`claimDigest` so a future v3 can bind to the same claim without re-synthesis.
+
+**Reason:** the owner snapshot is a strict, security-critical on-disk contract; bolting a provider
+entry into it in the same unit as the first provider wiring would mix two independent risk domains
+(provider output handling vs. owner invariant changes). A separate coordinator delivers the isolated,
+testable pipeline now while keeping the owner contract untouched.
+
+**Rejected alternatives:** writing provider bytes through the fixture engine (would mislabel fixture
+authorization as real), a second task/artifact store, and an untested owner-schema change.
+
+**Related:** [PROVIDER_GENERATION_OFFLINE.md](PROVIDER_GENERATION_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
