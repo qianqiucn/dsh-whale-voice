@@ -72,6 +72,21 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Formal Qwen runtime assembly (140)
+
+`core/qwen-generation-runtime.mjs` exposes `openQwenGenerationRuntime({ sandbox, scopeId,
+rightsProofRef, allowedRoot, worker, instanceId?, requestTimeoutMs?, handshakeTimeoutMs?,
+shutdownGraceMs?, killWaitMs?, now? })`. It creates the existing supervisor and audited Qwen
+provider, starts them, and builds the same Core application object from the worker's real handshake/
+discovery result: the preset voices, languages and text limit come from discovery, and the task's
+provider facts are the discovered manifest/provider identity (`providerId` from the manifest, `model`
+and `backend` from discovery; `instanceId` is the caller-supplied runtime label) instead of the
+fixed example. It returns `{ app, provider, discovery, close }`; `close()` stops exactly the worker
+this runtime created through the existing normal shutdown path, and a second close is a no-op. The
+isolated Host test and the UI Host assembly now use this one entry instead of hand-assembling
+supervisor/provider/app; production `apply()` still receives no generation runtime, so the installed
+Host remains not enabled.
+
 ### Formal Provider task (139)
 
 The Core entry now issues a v2 Provider generation task through the same catalog:
@@ -178,12 +193,12 @@ generation disabled):
 
 - the existing Chinese 音色中心 page uses the production bridge contract
   (`window.__WHALE_SETUP__.getGenerationCatalog/generatePreset/getGenerationStatus`) served by
-  `tests/ui/host-generation-assembly.mjs`, which runs the real 136 Host routes, the 135 Core entry, the
-  real `createQwenProvider` and the Fixture worker; the page loads the preset voices, submits a short
-  text, queries the returned Task ID through the status route, shows the original task `SAVED`, and
-  after a browser reload queries the same saved result by its locally remembered Task ID; a second run
-  mints a different task id. With the Host runtime absent the page shows `生成未启用` and never a
-  success state. UI suite **74/74**.
+  `tests/ui/host-generation-assembly.mjs`, which runs the real 136 Host routes over the 140 formal
+  runtime assembly (real supervisor/provider/discovery, 135 Core entry and the Fixture worker); the
+  page loads the discovered preset voices, submits a short text, queries the returned Task ID through
+  the status route, shows the original task `SAVED`, and after a browser reload queries the same saved
+  result by its locally remembered Task ID; a second run mints a different task id. With the Host
+  runtime absent the page shows `生成未启用` and never a success state. UI suite **74/74**.
 - `test/core.test.mjs` also executes the production bridge script in a VM: `generatePreset` posts to
   the formal route with the per-process token, `getGenerationStatus` queries by Task ID, and a 503
   answer is returned as the `generation_not_enabled` envelope instead of throwing.
@@ -203,16 +218,24 @@ generation disabled):
   and `generate`/`status`/reopened status return the same provider/voice/input facts. On the baseline
   the same test fails as `provider: undefined` because the birth task was a v1 Fixture task.
 
-`test/host-generation.test.mjs` (1 test, isolated Host scope/Connection assembly + real Core entry):
+`test/host-generation.test.mjs` (1 test, formal runtime assembly + isolated Host scope/Connection):
 
 - 136: the formal Host scope registers the generation catalog/status/generation routes; the catalog is
   read over the route, a POST submits a preset request through the Core entry and returns the real
   saved Task/Artifact facts, the status route queries the same task and Artifact, the existing
-  token/Origin/connection gate still applies (401 for a wrong token, 405 for a wrong method), a new
-  Host + Core assembly over the same sandbox queries the same saved result after the first one is
-  disposed, and a Host without a configured runtime answers `503 generation_not_enabled`.
+  token/Origin/connection gate still applies (401 for a wrong token, 405 for a wrong method), a second
+  formal runtime assembly over the same sandbox queries the same saved result after the first Host is
+  disposed, each assembly closes only its own worker, and a Host without a configured runtime answers
+  `503 generation_not_enabled`.
 
-Full suite after this unit: **1160 tests / 1156 pass / 4 platform skips / 0 fail**; UI **74/74**; build
+`test/qwen-generation-runtime.test.mjs` (1 test, real supervisor/provider + existing Fixture worker):
+
+- 140: the formal runtime assembles the worker discovery result (preset voices `示例音色 A/B`, model,
+  backend, limits) into the same Core app, records exactly those provider facts in the persisted v2
+  task, generates once to `SAVED` (`PROVIDER_GENERATION_FIXTURE`), queries it by Task ID, and `close()`
+  stops the worker it created (a second close is a no-op; generation afterwards is refused).
+
+Full suite after this unit: **1161 tests / 1157 pass / 4 platform skips / 0 fail**; UI **74/74**; build
 `client.js` **320,456 bytes** (the 137 page wiring is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)

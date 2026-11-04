@@ -6,9 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { installHostBridge } from '../index.js'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
-import { openPresetGenerationApp } from '../core/preset-generation-app.mjs'
-import { createQwenProvider } from '../core/tts/qwen-adapter.mjs'
-import { createQwenSupervisor } from '../core/tts/qwen-supervisor.mjs'
+import { openQwenGenerationRuntime } from '../core/qwen-generation-runtime.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeRoot = path.join(here, '..', 'test-fixtures')
@@ -27,20 +25,6 @@ const spawnSkip = SPAWN_OK ? false : 'child_process spawn is not permitted on th
 const SCOPE = 'scope:fixture-host-preset'
 const PROOF = 'fixture-rights:host-preset'
 const TOKEN = 'host-generation-token'
-const VOICES = Object.freeze([
-  { id: 'demo-voice-a', label: '示例女声 A', languages: ['zh-CN'] },
-  { id: 'demo-voice-b', label: '示例男声 B', languages: ['zh-CN', 'en-US'] },
-])
-
-function makeSupervisor() {
-  return createQwenSupervisor({
-    allowedRoot: fakeRoot,
-    worker: { command: fakeWorker, runtime: process.execPath, args: ['--mode=ok'] },
-    handshakeTimeoutMs: 5000,
-    shutdownGraceMs: 500,
-    killWaitMs: 300,
-  })
-}
 
 /** The existing isolated Host scope shape used by core.test.mjs. */
 function makeScope(routes) {
@@ -87,14 +71,17 @@ async function callRoute(route, options) {
   return response
 }
 
-async function openApp(sandbox, provider) {
-  const opened = await openPresetGenerationApp({
+async function openRuntime(sandbox) {
+  const opened = await openQwenGenerationRuntime({
     sandbox,
-    provider,
     scopeId: SCOPE,
     rightsProofRef: PROOF,
-    voices: VOICES,
-    now: () => new Date().toISOString(),
+    allowedRoot: fakeRoot,
+    worker: { command: fakeWorker, runtime: process.execPath, args: ['--mode=ok'] },
+    requestTimeoutMs: 5000,
+    handshakeTimeoutMs: 5000,
+    shutdownGraceMs: 500,
+    killWaitMs: 300,
   })
   assert.equal(opened.ok, true, JSON.stringify(opened))
   return opened.value
@@ -102,17 +89,13 @@ async function openApp(sandbox, provider) {
 
 test('136 the formal Host surface generates through the Core entry, queries by task and survives a reopen', { skip: spawnSkip }, async () => {
   const sandbox = createConfigSandbox({ prefix: 'wv-host-preset-' })
-  const supervisor = makeSupervisor()
-  let provider = null
+  let runtime = null
+  let reopenedRuntime = null
   try {
-    provider = createQwenProvider({ supervisor, requestTimeoutMs: 5000 })
-    assert.equal(provider.ok, true, JSON.stringify(provider))
-    const started = await provider.start()
-    assert.equal(started.ok, true, JSON.stringify(started))
+    runtime = await openRuntime(sandbox)
 
-    const app = await openApp(sandbox, provider)
     const routes = []
-    const host = installHostBridge(makeScope(routes), { token: TOKEN, generation: app })
+    const host = installHostBridge(makeScope(routes), { token: TOKEN, generation: runtime.app })
     const generateRoute = routes.find((route) => route.path === '/whale-voice/setup/generation')
     const statusRoute = routes.find((route) => route.path === '/whale-voice/setup/generation/status')
     const catalogRoute = routes.find((route) => route.path === '/whale-voice/setup/generation/catalog')
@@ -120,9 +103,13 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     assert.ok(statusRoute, 'generation status route missing')
     assert.ok(catalogRoute, 'generation catalog route missing')
 
+    // The catalog is the worker's real discovery result, not a fixed test voice list.
     const catalog = await callRoute(catalogRoute, { method: 'GET', url: '/whale-voice/setup/generation/catalog' })
     assert.equal(catalog.status, 200)
-    assert.deepEqual(JSON.parse(catalog.body).voices.map((voice) => voice.id), ['demo-voice-a', 'demo-voice-b'])
+    const catalogBody = JSON.parse(catalog.body)
+    assert.deepEqual(catalogBody.voices.map((voice) => voice.id), ['demo-voice-a', 'demo-voice-b'])
+    assert.deepEqual(catalogBody.voices.map((voice) => voice.label), ['示例音色 A', '示例音色 B'])
+    assert.equal(catalogBody.textLimit, 200)
 
     const generated = await callRoute(generateRoute, {
       method: 'POST',
@@ -137,6 +124,8 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     assert.match(saved.taskId, /^task:fixture-[0-9a-f]{32}$/)
     assert.match(saved.artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
     assert.match(saved.sha256, /^[0-9a-f]{64}$/)
+    assert.deepEqual(saved.provider, { providerId: runtime.provider.providerId, model: runtime.provider.model })
+    assert.deepEqual(saved.voice, { kind: 'PRESET', voiceId: 'demo-voice-a' })
 
     const queried = await callRoute(statusRoute, {
       method: 'GET',
@@ -149,6 +138,7 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     assert.equal(status.state, 'SAVED')
     assert.equal(status.artifactRef, saved.artifactRef)
     assert.equal(status.sha256, saved.sha256)
+    assert.deepEqual(status.provider, saved.provider)
 
     // The existing Host gate still applies: token required, method must match the route.
     const unauthorized = await callRoute(generateRoute, {
@@ -165,10 +155,10 @@ test('136 the formal Host surface generates through the Core entry, queries by t
 
     host.dispose()
 
-    // Reopen: a new Host + Core assembly over the same sandbox queries the same saved result.
-    const reopenedApp = await openApp(sandbox, provider)
+    // Reopen: a second formal assembly over the same sandbox queries the same saved result.
+    reopenedRuntime = await openRuntime(sandbox)
     const reopenedRoutes = []
-    const reopenedHost = installHostBridge(makeScope(reopenedRoutes), { token: TOKEN, generation: reopenedApp })
+    const reopenedHost = installHostBridge(makeScope(reopenedRoutes), { token: TOKEN, generation: reopenedRuntime.app })
     const reopenedStatusRoute = reopenedRoutes.find((route) => route.path === '/whale-voice/setup/generation/status')
     const reopenedStatus = await callRoute(reopenedStatusRoute, {
       method: 'GET',
@@ -180,7 +170,15 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     assert.equal(reopened.readable, true)
     assert.equal(reopened.artifactRef, saved.artifactRef)
     assert.equal(reopened.sha256, saved.sha256)
+    assert.deepEqual(reopened.provider, saved.provider)
     reopenedHost.dispose()
+
+    // Each assembly closes only the worker it created; a second close is a normal no-op.
+    assert.deepEqual(await runtime.close(), { ok: true })
+    assert.deepEqual(await runtime.close(), { ok: true })
+    assert.deepEqual(await reopenedRuntime.close(), { ok: true })
+    runtime = null
+    reopenedRuntime = null
 
     // Without a configured generation runtime the same formal surface is explicitly not enabled.
     const disabledRoutes = []
@@ -195,8 +193,8 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     assert.equal(JSON.parse(disabled.body).error, 'generation_not_enabled')
     disabledHost.dispose()
   } finally {
-    if (provider && provider.ok) await provider.shutdown().catch(() => null)
-    else await supervisor.stop().catch(() => null)
+    if (runtime) await runtime.close().catch(() => null)
+    if (reopenedRuntime) await reopenedRuntime.close().catch(() => null)
     removeConfigSandbox(sandbox)
   }
 })

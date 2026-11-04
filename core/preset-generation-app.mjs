@@ -30,10 +30,36 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
 const SCOPE_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
 const TASK_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
+const PROVIDER_ID_PATTERN = /^[a-z0-9-]{1,64}$/
+const PROVIDER_INSTANCE_PATTERN = /^[A-Za-z0-9:._-]{1,64}$/
+const PROVIDER_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9. _-]{0,127}$/
+const PROVIDER_BACKEND_PATTERN = /^[a-z0-9-]{1,32}$/
 const DEFAULT_TEXT_LIMIT = 200
+const DEFAULT_PROVIDER_FACTS = Object.freeze({
+  providerId: 'qwen3-tts',
+  instanceId: 'instance-1',
+  model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
+  backend: 'custom-voice',
+})
 
 function failure(code, detail = null) {
   return detail === null ? { ok: false, code } : { ok: false, code, detail }
+}
+
+/** The provider facts written into the task: an explicit runtime label or the documented example. */
+function readProviderFacts(value) {
+  const facts = value === undefined ? DEFAULT_PROVIDER_FACTS : value
+  if (!facts || typeof facts !== 'object' || Array.isArray(facts)) return null
+  if (typeof facts.providerId !== 'string' || !PROVIDER_ID_PATTERN.test(facts.providerId)) return null
+  if (typeof facts.instanceId !== 'string' || !PROVIDER_INSTANCE_PATTERN.test(facts.instanceId)) return null
+  if (typeof facts.model !== 'string' || !PROVIDER_MODEL_PATTERN.test(facts.model)) return null
+  if (typeof facts.backend !== 'string' || !PROVIDER_BACKEND_PATTERN.test(facts.backend)) return null
+  return Object.freeze({
+    providerId: facts.providerId,
+    instanceId: facts.instanceId,
+    model: facts.model,
+    backend: facts.backend,
+  })
 }
 
 function sha256(value) {
@@ -53,6 +79,8 @@ function randomSuffix() {
  * @param {string} options.scopeId application scope
  * @param {string} options.rightsProofRef `fixture-rights:...` proof for generation and reads
  * @param {Array<{id:string,label:string,languages:string[]}>} options.voices existing preset voices
+ * @param {{providerId:string,instanceId:string,model:string,backend:string}} [options.providerFacts]
+ *   provider facts written into the task (defaults to the documented example)
  * @param {number} [options.textLimit] max text characters (default 200)
  * @param {Function} [options.now] ISO clock
  * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function}}|{ok:false,code:string,detail?:string}>}
@@ -65,6 +93,8 @@ export async function openPresetGenerationApp(options = {}) {
   const voices = options.voices
   const textLimit = Number.isInteger(options.textLimit) ? options.textLimit : DEFAULT_TEXT_LIMIT
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
+  const providerFacts = readProviderFacts(options.providerFacts)
+  if (!providerFacts) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'providerFacts')
 
   if (typeof scopeId !== 'string' || !SCOPE_PATTERN.test(scopeId)) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'scopeId')
   if (typeof rightsProofRef !== 'string' || !PROOF_PATTERN.test(rightsProofRef)) {
@@ -125,12 +155,6 @@ export async function openPresetGenerationApp(options = {}) {
     if (text.length === 0 || text.length > textLimit) return failure(PRESET_GENERATION_APP_ERRORS.TEXT_REJECTED, 'text')
     const language = voice.languages.includes(input.language) ? input.language : voice.languages[0]
     const observedAt = now()
-    const providerFacts = {
-      providerId: 'qwen3-tts',
-      instanceId: 'instance-1',
-      model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
-      backend: 'custom-voice',
-    }
 
     const reserved = await catalogHandle.value.reserve({
       schemaVersion: 1,

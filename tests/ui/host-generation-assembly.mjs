@@ -2,9 +2,9 @@
  *
  * The browser page talks to the production bridge contract (`window.__WHALE_SETUP__` generation
  * methods from index.js `bridgeScript`); this file serves the real 136 Host routes through the
- * harness HTTP server and supplies the controlled execution object (the existing Fixture worker
- * behind the real Qwen adapter) plus a temporary sandbox. The business flow lives in the formal Core
- * entry `core/preset-generation-app.mjs`; nothing here is imported by index.js or production.
+ * harness HTTP server. The worker, provider, discovery and Core application object are assembled by
+ * the formal 140 entry `openQwenGenerationRuntime` with a temporary sandbox and the existing Fixture
+ * worker. Nothing here is imported by index.js or production.
  */
 
 import path from 'node:path'
@@ -12,9 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import { installHostBridge } from '../../index.js'
 import { createConfigSandbox, removeConfigSandbox } from '../../core/config-sandbox.mjs'
-import { openPresetGenerationApp } from '../../core/preset-generation-app.mjs'
-import { createQwenProvider } from '../../core/tts/qwen-adapter.mjs'
-import { createQwenSupervisor } from '../../core/tts/qwen-supervisor.mjs'
+import { openQwenGenerationRuntime } from '../../core/qwen-generation-runtime.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeRoot = path.join(here, '..', '..', 'test-fixtures')
@@ -23,10 +21,6 @@ const fakeWorker = path.join(fakeRoot, 'fake-qwen-worker.mjs')
 const TOKEN = 'host-generation-ui-token'
 const SCOPE = 'scope:fixture-ui-host-generation'
 const PROOF = 'fixture-rights:ui-host-generation'
-const VOICES = Object.freeze([
-  { id: 'demo-voice-a', label: '示例女声 A', languages: ['zh-CN'] },
-  { id: 'demo-voice-b', label: '示例男声 B', languages: ['zh-CN', 'en-US'] },
-])
 
 function json(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
@@ -35,49 +29,35 @@ function json(res, status, value) {
 
 export async function createHostGenerationAssembly() {
   let sandbox = null
-  let supervisor = null
-  let provider = null
-  let app = null
+  let runtime = null
   let routes = []
   let host = null
   let generationEnabled = true
 
   async function reset() {
     if (host) host.dispose()
-    if (sandbox) {
-      if (provider && provider.ok) await provider.shutdown().catch(() => null)
-      removeConfigSandbox(sandbox)
-    }
+    if (runtime) await runtime.close().catch(() => null)
+    if (sandbox) removeConfigSandbox(sandbox)
     sandbox = null
-    supervisor = null
-    provider = null
-    app = null
+    runtime = null
     routes = []
     host = null
     generationEnabled = true
 
     sandbox = createConfigSandbox({ prefix: 'wv-ui-host-generation-' })
-    supervisor = createQwenSupervisor({
+    const opened = await openQwenGenerationRuntime({
+      sandbox,
+      scopeId: SCOPE,
+      rightsProofRef: PROOF,
       allowedRoot: fakeRoot,
       worker: { command: fakeWorker, runtime: process.execPath, args: ['--mode=ok'] },
+      requestTimeoutMs: 5000,
       handshakeTimeoutMs: 5000,
       shutdownGraceMs: 500,
       killWaitMs: 300,
     })
-    provider = createQwenProvider({ supervisor, requestTimeoutMs: 5000 })
-    if (!provider.ok) throw new Error('ui host generation provider unavailable: ' + (provider.code || 'UNKNOWN'))
-    const started = await provider.start()
-    if (!started.ok) throw new Error('ui host generation provider start failed: ' + (started.code || 'UNKNOWN'))
-    const opened = await openPresetGenerationApp({
-      sandbox,
-      provider,
-      scopeId: SCOPE,
-      rightsProofRef: PROOF,
-      voices: VOICES,
-      now: () => new Date().toISOString(),
-    })
-    if (!opened.ok) throw new Error('ui host generation app unavailable: ' + (opened.code || 'UNKNOWN'))
-    app = opened.value
+    if (!opened.ok) throw new Error('ui host generation runtime unavailable: ' + (opened.code || 'UNKNOWN'))
+    runtime = opened.value
 
     const scope = {
       webServer: {
@@ -87,7 +67,7 @@ export async function createHostGenerationAssembly() {
       get() { return { requestRejection() { return null } } },
       on() { return () => {} },
     }
-    host = installHostBridge(scope, { token: TOKEN, generation: app })
+    host = installHostBridge(scope, { token: TOKEN, generation: runtime.app })
   }
 
   async function handle(req, res) {
@@ -112,13 +92,11 @@ export async function createHostGenerationAssembly() {
 
   async function close() {
     if (host) host.dispose()
-    if (provider && provider.ok) await provider.shutdown().catch(() => null)
+    if (runtime) await runtime.close().catch(() => null)
     if (sandbox) removeConfigSandbox(sandbox)
     host = null
     sandbox = null
-    supervisor = null
-    provider = null
-    app = null
+    runtime = null
     routes = []
   }
 
