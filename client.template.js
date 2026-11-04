@@ -396,7 +396,6 @@ window.__ModuleLoader__.load({
       React.useEffect(() => () => {
         if (handle.current) { handle.current.close(); handle.current = null }
       }, [])
-      // Safety fallback only: every real mount is inside WhaleVoiceApp, which provides the layer.
       if (!host) return h(ModalSurface, props)
       return null
     }

@@ -419,8 +419,7 @@ body:not([data-ds-dark-theme]) .wv-root {
 
 /* Controlled plugin root layer for every dialog. It is a sibling of .wv-shell inside .wv-root, so
  * neither the .wv-scroll clip nor the .wv-page animation transform can capture a dialog. Sizing is
- * container-based (no 100vw/100vh), the body scrolls on its own, head/footer stay reachable, and
- * the surface keeps an opaque local fallback when a host theme token is missing. */
+ * container-based (no 100vw/100vh) and the body scrolls on its own. */
 .wv-overlay-layer { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
 .wv-overlay-layer > .wv-overlay { pointer-events: auto; }
 .wv-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--wv-bg) 46%, transparent); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); min-width: 0; min-height: 0; }
