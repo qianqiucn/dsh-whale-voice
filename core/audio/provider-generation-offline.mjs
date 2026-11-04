@@ -28,8 +28,6 @@ import { isTrustedSandbox } from '../config-sandbox.mjs'
 import { inspectFixtureWavBytes } from './wav-byte-inspector.mjs'
 
 export const PROVIDER_GENERATION_SCHEMA_VERSION = 1
-export const PROVIDER_GENERATION_CONTEXT = 'provider-generation-v1'
-export const PROVIDER_GENERATION_ENTRY = 'provider-generation-entry-v1'
 
 export const PROVIDER_GENERATION_ERRORS = Object.freeze({
   INPUT_INVALID: 'PROVIDER_GENERATION_INPUT_INVALID',
@@ -62,7 +60,6 @@ const TASK_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const KEY_PATTERN = /^[A-Za-z0-9:._-]{1,64}$/
 const PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
 const CLAIM_ID_PATTERN = /^claim:[0-9a-f]{32}$/
-const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const ARTIFACT_REF_PATTERN = /^artifact:fixture-bytes-[0-9a-f]{32}$/
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 const WAV_LIMITS = Object.freeze({ sampleRate: 24000, channels: 1, bitsPerSample: 16 })
@@ -101,13 +98,6 @@ export function canonicalJson(value) {
   return JSON.stringify(value)
 }
 
-function readNow(now) {
-  const value = now()
-  const parsed = new Date(value)
-  if (typeof value !== 'string' || !ISO_PATTERN.test(value) || Number.isNaN(parsed.getTime())) return null
-  return value
-}
-
 function claimPath(sandbox) {
   return join(sandbox.root, 'provider-generation', 'claims.json')
 }
@@ -118,7 +108,7 @@ function readLedger(sandbox) {
   try {
     bytes = readFileSync(path)
   } catch (error) {
-    if (error && error.code === 'ENOENT') return { schemaVersion: PROVIDER_GENERATION_SCHEMA_VERSION, revision: 0, entries: [], digest: sha256('') }
+    if (error && error.code === 'ENOENT') return { schemaVersion: PROVIDER_GENERATION_SCHEMA_VERSION, revision: 0, entries: [] }
     return null
   }
   try {
@@ -142,7 +132,6 @@ function readLedger(sandbox) {
       schemaVersion: parsed.schemaVersion,
       revision: parsed.revision,
       entries: parsed.entries.map((entry) => deepFreeze(entry)),
-      digest: sha256(bytes),
     }
   } catch {
     return null
@@ -176,7 +165,6 @@ function writeLedger(sandbox, entries, baseRevision) {
     closeSync(handle)
   }
   renameSync(temp, path)
-  return sha256(bytes)
 }
 
 function project(entry) {
@@ -253,7 +241,7 @@ function readPrepare(input) {
 
 /* ------------------------------------- output ------------------------------------- */
 
-function inspectOutput({ bytes, claim }) {
+function inspectOutput({ bytes }) {
   if (!(bytes instanceof Uint8Array)) return failure(PROVIDER_GENERATION_ERRORS.OUTPUT_INVALID, 'bytes')
   if (bytes.length > PROVIDER_GENERATION_LIMITS.maxBytes) return failure(PROVIDER_GENERATION_ERRORS.RESOURCE_LIMIT, 'bytes')
   const inspected = inspectFixtureWavBytes({ schemaVersion: 1, bytes })
@@ -273,8 +261,6 @@ function inspectOutput({ bytes, claim }) {
     sha256: value.sha256,
     byteLength: value.byteLength,
     durationMs: value.durationMs,
-    format: { sampleRate: value.sampleRate, channels: value.channels, bitsPerSample: value.bitsPerSample },
-    claimProvider: claim.provider,
   })
 }
 
@@ -315,7 +301,8 @@ export function createProviderGenerationCoordinator(options = {}) {
 
   function writeEntries(entries, revision) {
     try {
-      return { ok: true, digest: writeLedger(sandbox, entries, revision) }
+      writeLedger(sandbox, entries, revision)
+      return { ok: true }
     } catch {
       return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
     }
@@ -330,7 +317,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       if (error && error.ok === false) return error
       return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'claim')
     }
-    const stamp = readNow(now)
+    const stamp = now()
     if (stamp === null) return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'now')
     let birth
     try {
@@ -411,7 +398,7 @@ export function createProviderGenerationCoordinator(options = {}) {
     const target = entries.find((item) => item.claimId === claimId)
     if (!target) return { ok: false, code: PROVIDER_GENERATION_ERRORS.NOT_FOUND }
     mutate(target)
-    target.updatedAt = readNow(now) || target.updatedAt
+    target.updatedAt = now()
     const written = writeEntries(entries, ledger.revision)
     if (!written.ok) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
     return { ok: true, entry: target }
@@ -426,7 +413,7 @@ export function createProviderGenerationCoordinator(options = {}) {
     if (CLAIM_TERMINAL.has(entry.state)) return Object.freeze({ ok: true, outcome: 'EXISTING', claim: project(entry) })
     if (entry.state !== 'CLAIMED') return failure(PROVIDER_GENERATION_ERRORS.CONFLICT, 'state')
 
-    const begunAt = readNow(now)
+    const begunAt = now()
     if (begunAt === null) return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'now')
     const begin = update(claimId, (target) => {
       target.state = 'BEGINNING'
@@ -501,7 +488,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       return Object.freeze({ ok: terminal === 'CANCELLED', outcome: terminal, claim: settled.ok ? project(settled.entry) : null })
     }
 
-    const inspected = inspectOutput({ bytes: answered.bytes, claim: entry })
+    const inspected = inspectOutput({ bytes: answered.bytes })
     if (!inspected.ok) {
       const settled = update(claimId, (target) => {
         if (CLAIM_TERMINAL.has(target.state)) return
@@ -511,7 +498,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       return Object.freeze({ ok: false, outcome: 'FAILED', code: inspected.code, claim: settled.ok ? project(settled.entry) : null })
     }
 
-    const expiresAt = new Date(Date.parse(inspected.claimedAt || now()) + 24 * 60 * 60 * 1000).toISOString()
+    const expiresAt = new Date(Date.parse(now()) + 24 * 60 * 60 * 1000).toISOString()
     let stored
     try {
       stored = await artifacts.import({
@@ -579,7 +566,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       artifactSha256: inspected.sha256,
       byteLength: inspected.byteLength,
       durationMs: inspected.durationMs,
-      savedAt: readNow(now),
+      savedAt: now(),
     }
     const settled = update(claimId, (target) => {
       if (CLAIM_TERMINAL.has(target.state)) return
