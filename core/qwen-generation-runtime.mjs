@@ -77,7 +77,7 @@ export async function openQwenGenerationRuntime(options = {}) {
 
   const started = await provider.start()
   if (!started || started.ok !== true) {
-    await provider.shutdown().catch(() => null)
+    await provider.shutdown()
     return failure(
       QWEN_GENERATION_RUNTIME_ERRORS.WORKER_NOT_STARTED,
       started && (started.qwenCode || started.code) ? started.qwenCode || started.code : 'worker',
@@ -109,7 +109,7 @@ export async function openQwenGenerationRuntime(options = {}) {
     now: options.now,
   })
   if (!opened || opened.ok !== true) {
-    await provider.shutdown().catch(() => null)
+    await provider.shutdown()
     return failure(
       QWEN_GENERATION_RUNTIME_ERRORS.APP_REJECTED,
       opened && opened.detail ? opened.detail : opened && opened.code ? opened.code : 'app',
