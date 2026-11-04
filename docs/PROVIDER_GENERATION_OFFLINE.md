@@ -72,6 +72,20 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Generation-data storage across plugin reopen (143)
+
+`config.generation.storageRoot` names one explicit, absolute storage location for the generation
+Task/Artifact stores. When present, the Host opens that location through the persistent trusted
+capability (`core/config-sandbox.mjs` `openConfigStorage`, same marker contract the stores already
+validate, stored marker id reused because the Artifact pack is bound to it) instead of a fresh
+temporary sandbox. Disposing the plugin still disposes the routes and closes the runtime/worker it
+created but keeps the location's marker and the three store files; assembling the plugin again with
+the same location and config answers the original Task ID on the status route with the same Artifact,
+SHA-256 and `PROVIDER_GENERATION_FIXTURE` origin, and the store files stay byte-identical — the second
+assembly only queries and never re-synthesises. Nothing is migrated and no production store is read;
+a location that is missing, not a directory or carries an invalid marker is refused, and without
+`storageRoot` the 142 temporary-sandbox behaviour (ephemeral, removed on dispose) is unchanged.
+
 ### Plugin runtime-config assembly (142)
 
 The formal plugin entry `apply(ctx, config)` accepts a serializable config:
@@ -257,7 +271,17 @@ generation disabled):
   config (or with `enabled:false`) the routes answer `503 generation_not_enabled` and no runtime
   sandbox is created.
 
-Full suite after this unit: **1163 tests / 1159 pass / 4 platform skips / 0 fail**; UI **74/74**; build
+`test/plugin-generation-storage.test.mjs` (1 test, formal plugin entry + real runtime + Fixture worker):
+
+- 143: a JSON-serialized config with `storageRoot` under a fresh test temporary parent makes the
+  formal `apply` write one `SAVED` task at that explicit location; disposing keeps the marker and all
+  three store files byte-identical; a second `apply` over the same location and config queries the
+  original Task ID through the status route and returns the same Artifact, SHA-256 and origin, with
+  every store file still byte-identical (the reopen only reads; it never re-synthesises). On the
+  baseline the configured location is never created because the config surface had no storage
+  location.
+
+Full suite after this unit: **1164 tests / 1160 pass / 4 platform skips / 0 fail**; UI **74/74**; build
 `client.js` **320,456 bytes** (the 137 page wiring is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)

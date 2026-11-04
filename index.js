@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createDetector, components } from './core/detect.mjs'
 import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilities.mjs'
-import { createConfigSandbox, removeConfigSandbox } from './core/config-sandbox.mjs'
+import { createConfigSandbox, openConfigStorage, removeConfigSandbox } from './core/config-sandbox.mjs'
 import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
@@ -251,6 +251,7 @@ function generationSettings(config) {
     scopeId: generation.scopeId,
     rightsProofRef: generation.rightsProofRef,
     allowedRoot: generation.allowedRoot,
+    storageRoot: generation.storageRoot,
     worker: generation.worker,
     instanceId: generation.instanceId,
     requestTimeoutMs: generation.requestTimeoutMs,
@@ -262,14 +263,20 @@ function generationSettings(config) {
 
 /**
  * 142: the Host obtains its own isolated storage context, calls the existing Qwen runtime factory and
- * hands that same Core generation object to the existing Host surface. The temporary sandbox and the
- * worker are owned by this assembly and released together on dispose.
+ * hands that same Core generation object to the existing Host surface. The worker belongs to this
+ * assembly and is closed on dispose. 143: when the serializable config names a `storageRoot`, that
+ * explicit location is the storage context instead of a temporary sandbox and is kept on dispose, so
+ * a later assembly over the same location reads the same saved tasks and artifacts.
  */
 async function assembleGenerationHost(scope, settings) {
-  const sandbox = createConfigSandbox({ prefix: 'whale-voice-qwen-runtime-' })
-  const opened = await openQwenGenerationRuntime({ sandbox, ...settings })
+  const { storageRoot, ...runtimeSettings } = settings
+  const temporary = storageRoot === undefined
+  const sandbox = temporary
+    ? createConfigSandbox({ prefix: 'whale-voice-qwen-runtime-' })
+    : openConfigStorage({ root: storageRoot })
+  const opened = await openQwenGenerationRuntime({ sandbox, ...runtimeSettings })
   if (!opened.ok) {
-    removeConfigSandbox(sandbox)
+    if (temporary) removeConfigSandbox(sandbox)
     throw new Error('whale-voice generation runtime: ' + (opened.code || 'ASSEMBLY_FAILED'))
   }
   const runtime = opened.value
@@ -277,7 +284,8 @@ async function assembleGenerationHost(scope, settings) {
   if (typeof scope.effect === 'function') {
     scope.effect(() => () => {
       host.dispose()
-      return runtime.close().finally(() => removeConfigSandbox(sandbox))
+      const closed = runtime.close()
+      return temporary ? closed.finally(() => removeConfigSandbox(sandbox)) : closed
     })
   }
 }
