@@ -63,7 +63,6 @@ const RECORD_KEYS = [
 ]
 const PHASES = new Set(['CLAIMED', 'FINAL'])
 const COMPLETIONS = new Set(['SAVED', 'CANCELLED', 'FAILED'])
-const OWNER_STATES = new Set(['CREATED', 'CANCELLED', 'FAILED', 'SAVED'])
 
 function exactKeys(value, keys) {
   if (!isPlainObject(value)) return false
@@ -327,7 +326,7 @@ export function resolveCoverFile(state, kind) {
 export function getCoverState(sandbox) {
   let state = STATES.get(sandbox)
   if (!state) {
-    state = { sandbox, tail: Promise.resolve(), locked: false, digests: new Map() }
+    state = { sandbox, tail: Promise.resolve(), locked: false }
     STATES.set(sandbox, state)
   }
   return state
@@ -594,7 +593,6 @@ export function writeCoverSnapshot(state, name, candidate, options) {
     raise(COVER_STORE_CODES.WRITE_UNKNOWN, '$')
   }
   const digest = sha256(verify)
-  state.digests.set(name, digest)
   return { digest, revision: candidate.revision, bytes: bytes.length }
 }
 
@@ -606,9 +604,4 @@ export function emptyCoverCatalog() {
 /** Build an empty v3 owner snapshot. */
 export function emptyCoverOwner() {
   return { schemaVersion: COVER_STORE_SCHEMA_VERSION, revision: 0, entries: [] }
-}
-
-/** True when two snapshots are byte-identical (used by tests and idempotency checks). */
-export function sameSnapshot(left, right) {
-  return stableStringify(left) === stableStringify(right)
 }

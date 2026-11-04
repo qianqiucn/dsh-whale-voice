@@ -113,21 +113,6 @@ const BINDING_INNER_KEYS = Object.freeze(
     'providerRef',
   ]),
 )
-const PROVIDER_KEYS = Object.freeze(
-  new Set([
-    'schemaVersion',
-    'category',
-    'instanceId',
-    'candidateId',
-    'decision',
-    'reason',
-    'messageZh',
-    'mockOnly',
-    'realOperationAllowed',
-    'submitAllowed',
-    'automaticRetryAllowed',
-  ]),
-)
 const SOURCE_POINTER_KEYS = Object.freeze(new Set(['kind', 'revision']))
 
 const SOURCE_LAYOUTS = Object.freeze(
