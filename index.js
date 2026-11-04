@@ -66,6 +66,31 @@ export function bridgeScript(token) {
     }
   }
   const allowed = new Set(['wechatagent', 'sender', 'qwen']);
+  async function generation(path, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const init = {
+      method: options && options.method ? options.method : 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: { accept: 'application/json', 'x-whale-core-token': coreToken },
+    };
+    if (options && typeof options.body === 'string') {
+      init.body = options.body;
+      init.headers['content-type'] = 'application/json';
+    }
+    try {
+      const response = await fetch(prefix + path, init);
+      let payload = null;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (payload && typeof payload === 'object') return payload;
+      return { ok: false, error: 'core_http_' + response.status };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   window.__WHALE_SETUP__ = Object.freeze({
     version: '1',
     getStatus: () => call('/status'),
@@ -74,6 +99,9 @@ export function bridgeScript(token) {
     getConfigStatus: () => call('/config/status'),
     getCapabilities: () => call('/capabilities'),
     getCapabilityStatus: () => call('/capabilities/status'),
+    getGenerationCatalog: () => generation('/generation/catalog'),
+    generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
+    getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));

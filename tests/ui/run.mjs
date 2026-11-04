@@ -8,7 +8,7 @@ import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
 import { createConfigSandbox } from '../../core/config-sandbox.mjs'
 import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 import { createSingingBridge } from './singing-bridge.mjs'
-import { createStudioGenerationBridge } from './studio-generation-bridge.mjs'
+import { createHostGenerationAssembly } from './host-generation-assembly.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -44,11 +44,11 @@ const files = new Map([
 ])
 
 const singingBridge = await createSingingBridge()
-const studioGenerationBridge = await createStudioGenerationBridge()
+const hostGeneration = await createHostGenerationAssembly()
 
 const server = createServer(async (req, res) => {
   if (await singingBridge.handle(req, res)) return
-  if (await studioGenerationBridge.handle(req, res)) return
+  if (await hostGeneration.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
   if (!entry) {
@@ -92,7 +92,9 @@ async function withPage(query, fn, setupPage) {
   })
   try {
     if (setupPage) await setupPage(page)
-    await page.goto(base + (query || ''), { waitUntil: 'load' })
+    const queryString = query || ''
+    const separator = queryString.includes('?') ? '&' : '?'
+    await page.goto(base + queryString + separator + 'hostToken=' + encodeURIComponent(hostGeneration.token), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
     return await fn(page)
@@ -361,6 +363,10 @@ await check('studio preset generation saves the original task and survives reloa
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '音色中心', exact: true }).click()
     await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
+    await page.waitForFunction(() => {
+      const select = document.querySelector('select[aria-label="音色"]')
+      return select && Array.from(select.options).some((option) => option.value === 'demo-voice-a')
+    }, null, { timeout: 10000 })
     await page.getByLabel('试听文本').fill('你好，这是隔离预设生成演示。')
     await page.getByLabel('音色').selectOption('demo-voice-a')
     await page.getByRole('button', { name: /生成并保存/ }).click()
@@ -373,8 +379,8 @@ await check('studio preset generation saves the original task and survives reloa
     assert.match(artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
     const pageText = await page.locator('body').innerText()
     assert.match(pageText, /隔离模拟/)
-    assert.match(pageText, /不加载模型/)
-    assert.match(pageText, /生产生成与播放仍未接入/)
+    assert.match(pageText, /不加载真实模型/)
+    assert.match(pageText, /生产生成与试听仍未接入/)
     await page.screenshot({ path: path.join(artifactDir, 'studio-generation-1440.png') })
 
     // A second run mints a different original task: the state is not a fixed success value.
@@ -394,7 +400,7 @@ await check('studio preset generation saves the original task and survives reloa
     assert.match(secondTaskId, /^task:fixture-[0-9a-f]{32}$/)
     assert.match(secondArtifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
 
-    // Reload: the page reads the same saved result back from the original task store.
+    // Reload: the page queries the same saved result back through the formal Host status route.
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(500)
@@ -404,6 +410,23 @@ await check('studio preset generation saves the original task and survives reloa
     assert.equal(await page.locator('[data-testid="studio-generation-task"]').innerText(), secondTaskId)
     assert.equal(await page.locator('[data-testid="studio-generation-artifact"]').innerText(), secondArtifactRef)
   })
+})
+
+await check('studio reports generation not enabled when the Host runtime is absent', async () => {
+  await hostGeneration.setGenerationEnabled(false)
+  try {
+    await withPage('?bridge=normal&generation=off', async (page) => {
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      await page.locator('[data-testid="studio-generation-disabled"]').waitFor({ timeout: 5000 })
+      const text = await page.locator('body').innerText()
+      assert.match(text, /生成未启用/)
+      assert.match(text, /未配置生成运行对象/)
+      assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 0)
+      assert.equal(await page.getByRole('button', { name: /生成并保存/ }).isDisabled(), true)
+    })
+  } finally {
+    await hostGeneration.setGenerationEnabled(true)
+  }
 })
 
 await check('Worker version unknown is displayed without claiming Service version', async () => {
@@ -2033,7 +2056,13 @@ await check('plan09 real Coordinator accepts the existing/custom provider mappin
 })
 
 await check('no console errors or failed resources', async () => {
-  const errors = consoleMessages.filter((item) => item.type === 'error' || item.type === 'pageerror')
+  // The single expected console entry is the disabled-generation scene: its deliberate request to the
+  // real Host route returns the 503 `generation_not_enabled` that the page must surface. All other
+  // scenes must stay clean.
+  const expectedDisabled503 = (item) => item.scene === '?bridge=normal&generation=off'
+    && item.type === 'error'
+    && /Failed to load resource: the server responded with a status of 503/.test(item.text)
+  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item))
   assert.deepEqual(errors, [])
   assert.deepEqual(failedRequests, [])
 })
@@ -2052,6 +2081,6 @@ console.log('\n' + results.filter((item) => item.result === 'PASS').length + '/'
 console.log('Artifacts: ' + artifactDir)
 await browser.close()
 await singingBridge.close()
-await studioGenerationBridge.close()
+await hostGeneration.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

@@ -379,7 +379,29 @@
   }
 
   const fakeBridge = bridge(bridgeMode)
-  if (fakeBridge) window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
+  if (fakeBridge) {
+    // Same client contract as the production bridge script in index.js: the generation calls go to
+    // the formal Host routes with the per-run token; the harness server serves the real 136 handler.
+    const hostToken = new URLSearchParams(window.location.search).get('hostToken') || ''
+    const hostGeneration = async (path, options = {}) => {
+      const headers = { accept: 'application/json', 'x-whale-core-token': hostToken }
+      if (typeof options.body === 'string') headers['content-type'] = 'application/json'
+      let response
+      try {
+        response = await fetch(path, { cache: 'no-store', credentials: 'same-origin', ...options, headers })
+      } catch {
+        return { ok: false, error: 'core_unreachable' }
+      }
+      let payload = null
+      try { payload = await response.json() } catch { payload = null }
+      if (payload && typeof payload === 'object') return payload
+      return { ok: false, error: 'core_http_' + response.status }
+    }
+    fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
+    fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
+    fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
+    window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
+  }
 
   // Plan 09 test-only adapter. It never touches production config; it records the calls the UI makes
   // and enforces the same confirmation/expiry/consumed/revision semantics as the real Coordinator.
@@ -547,22 +569,6 @@
       cancel: (taskId) => post('/singing-app/cancel', { taskId }),
       preview: (taskId, draft) => post('/singing-app/preview', { taskId, draft }),
       reset: () => post('/singing-app/reset', {}),
-    }
-  })()
-  window.__WHALE_STUDIO_GENERATION__ = new URLSearchParams(window.location.search).get('studio') === 'none' ? null : (() => {
-    const request = async (path, options) => {
-      const response = await fetch(path, { cache: 'no-store', ...options })
-      return response.json()
-    }
-    const post = (path, body) => request(path, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body || {}),
-    })
-    return {
-      catalog: () => request('/studio-generation/catalog'),
-      generate: (payload) => post('/studio-generation/generate', payload),
-      status: (taskId) => request('/studio-generation/status' + (taskId ? '?taskId=' + encodeURIComponent(taskId) : '')),
     }
   })()
   const spec = window.__WHALE_VOICE_SPEC__

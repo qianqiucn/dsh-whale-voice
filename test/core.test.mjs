@@ -4,11 +4,12 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test, after } from 'node:test'
+import vm from 'node:vm'
 
 import { createDetector, detectQwen } from '../core/detect.mjs'
 import { createCoreServer } from '../core/server.mjs'
 import { fetchJson } from '../core/http.mjs'
-import { installHostBridge, apply as applyHost } from '../index.js'
+import { installHostBridge, apply as applyHost, bridgeScript } from '../index.js'
 
 const roots = []
 async function fixture() {
@@ -474,6 +475,9 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   assert.match(rows[0].text, /getStatus: \(\) => call\('\/status'\)/)
   assert.match(rows[0].text, /getCapabilities: \(\) => call\('\/capabilities'\)/)
   assert.match(rows[0].text, /getCapabilityStatus: \(\) => call\('\/capabilities\/status'\)/)
+  assert.match(rows[0].text, /getGenerationCatalog: \(\) => generation\('\/generation\/catalog'\)/)
+  assert.match(rows[0].text, /generatePreset: \(request\) => generation\('\/generation'/)
+  assert.match(rows[0].text, /getGenerationStatus: \(taskId\) => generation\('\/generation\/status\?taskId='/)
   assert.equal(host.scripts.includes('host-token'), true)
 
   const route = routes.find((r) => r.path === '/whale-voice/setup/status')
@@ -529,4 +533,49 @@ test('host bridge injects a token-protected bridge and same-origin route', async
     headers: { host: '127.0.0.1:59575' },
   }, denied)
   assert.equal(denied.status, 401)
+})
+
+test('host bridge script calls the formal generation routes with its token', async () => {
+  const calls = []
+  const window = {}
+  const fakeFetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        if (url === '/whale-voice/setup/generation/catalog') {
+          return { ok: true, textLimit: 200, voices: [{ id: 'demo-voice-a', label: '示例女声 A', languages: ['zh-CN'] }] }
+        }
+        return { ok: true, taskId: 'task:fixture-' + 'a'.repeat(32), state: 'SAVED', readable: true }
+      },
+    }
+  }
+  vm.runInNewContext(bridgeScript('generation-token'), {
+    window, fetch: fakeFetch, AbortController, setTimeout, clearTimeout, encodeURIComponent, JSON, Set, String,
+  })
+  const bridge = window.__WHALE_SETUP__
+  const catalog = await bridge.getGenerationCatalog()
+  assert.equal(catalog.voices[0].id, 'demo-voice-a')
+  const generated = await bridge.generatePreset({ text: '你好', voiceId: 'demo-voice-a', language: 'zh-CN' })
+  assert.equal(generated.state, 'SAVED')
+  const generateCall = calls.find((call) => call.url === '/whale-voice/setup/generation')
+  assert.equal(generateCall.options.method, 'POST')
+  assert.equal(generateCall.options.headers['x-whale-core-token'], 'generation-token')
+  assert.equal(JSON.parse(generateCall.options.body).voiceId, 'demo-voice-a')
+  const status = await bridge.getGenerationStatus('task:fixture-' + 'a'.repeat(32))
+  assert.equal(status.readable, true)
+  const statusCall = calls.find((call) => call.url.startsWith('/whale-voice/setup/generation/status'))
+  assert.match(statusCall.url, /taskId=task%3Afixture/)
+
+  // An unconfigured Host answers 503, and the bridge returns that JSON envelope instead of throwing.
+  const disabledWindow = {}
+  vm.runInNewContext(bridgeScript('generation-token'), {
+    window: disabledWindow,
+    fetch: async () => ({ ok: false, status: 503, async json() { return { ok: false, error: 'generation_not_enabled' } } }),
+    AbortController, setTimeout, clearTimeout, encodeURIComponent, JSON, Set, String,
+  })
+  const disabled = await disabledWindow.__WHALE_SETUP__.getGenerationCatalog()
+  assert.equal(disabled.ok, false)
+  assert.equal(disabled.error, 'generation_not_enabled')
 })

@@ -44,10 +44,10 @@ returns `{catalog, generate, status}`.
   the library `readBytes`), so a reopened entry returns the same saved Artifact facts.
 - The entry does not import the UI test bridge or the Fixture worker: the caller injects the trusted
   sandbox and an already started `createQwenProvider`. The test-only
-  `tests/ui/studio-generation-bridge.mjs` now only supplies that controlled execution object and the
-  HTTP surface, and delegates the business flow to this Core entry.
+  `tests/ui/host-generation-assembly.mjs` now only supplies that controlled execution object, the
+  sandbox and the isolated Host assembly, and delegates the business flow to this Core entry.
 
-### Host call surface (136)
+### Host call surface (136) and page wiring (137)
 
 `index.js` (`installHostBridge`) registers three routes on the existing loopback/Origin/connection/
 token bridge:
@@ -62,6 +62,15 @@ entry (an already-opened `openPresetGenerationApp` value). The production `apply
 so every generation route returns `503 {ok:false,error:'generation_not_enabled'}` and nothing is
 generated. No new listener, no authentication change; responses are the Core envelope and remain
 Fixture/isolated only.
+
+The production client bridge script (`index.js` `bridgeScript`) exposes
+`getGenerationCatalog()`, `generatePreset({text, voiceId, language})` and
+`getGenerationStatus(taskId)` next to the existing setup methods, with the same per-process token and
+same-origin rules. 137 wires the existing Chinese 音色中心 page to those methods instead of a
+page-specific test adapter: it loads the preset voices from the catalog route, submits the short text,
+queries the returned Task ID through the status route, remembers that Task ID locally so a reload
+re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
+answer `generation_not_enabled`.
 
 ## 2. Contract (v1, fail-closed)
 
@@ -114,12 +123,11 @@ Fixture/isolated only.
    wires the real `createQwenProvider` public interface to the existing Fixture worker
    (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model, GPU, real inference,
    network or cloud path is started; clone and VoiceDesign remain unwired.
-4. **No enabled Host/UI generation.** The formal Host call surface exists in source (136), but the
-   production assembly provides no generation runtime, so those routes are inert
-   (`503 generation_not_enabled`). The only page entry is the test-only `tests/ui` harness bridge
-   (134); in an environment without that injected adapter the 音色中心 page keeps the disabled
-   generate button and states that production generation is not connected. No production write, no
-   real model and no UI claim of real readiness.
+4. **No enabled generation in the installed Host.** The formal routes (136) and the client bridge
+   methods exist, but the production assembly supplies no generation runtime, so the 音色中心 page
+   honestly shows `生成未启用` (`503 generation_not_enabled`) and nothing is generated. The flow only
+   runs in the isolated Host harness below. No production write, no real model and no UI claim of real
+   readiness.
 5. The `expiresAt` window (24 h) is used only for the Artifact library entry, not a delivery/TTL policy.
 
 ## 4. Tests
@@ -143,13 +151,20 @@ Fixture/isolated only.
   deterministic output, the original task is SAVED, and a reopen reads the same artifact. On the
   baseline the same test fails as `PROVIDER_GENERATION_INPUT_INVALID` / `request.modality`.
 
-`tests/ui` Studio page harness (134, test-only; the production Host keeps generation disabled):
+`tests/ui` Studio page harness (137, test-only isolated Host assembly; the production Host keeps
+generation disabled):
 
-- the existing Chinese 音色中心 page's text/预设音色/生成并保存 controls drive
-  `tests/ui/studio-generation-bridge.mjs`, which supplies the controlled Fixture-worker provider and
-  delegates the business flow to the Core entry above; the page shows the original task `SAVED`, a
-  browser reload reads the same artifact back from the owner/artifact stores, and a second run mints a
-  different task id (no fixed success value). UI suite **73/73**.
+- the existing Chinese 音色中心 page uses the production bridge contract
+  (`window.__WHALE_SETUP__.getGenerationCatalog/generatePreset/getGenerationStatus`) served by
+  `tests/ui/host-generation-assembly.mjs`, which runs the real 136 Host routes, the 135 Core entry, the
+  real `createQwenProvider` and the Fixture worker; the page loads the preset voices, submits a short
+  text, queries the returned Task ID through the status route, shows the original task `SAVED`, and
+  after a browser reload queries the same saved result by its locally remembered Task ID; a second run
+  mints a different task id. With the Host runtime absent the page shows `生成未启用` and never a
+  success state. UI suite **74/74**.
+- `test/core.test.mjs` also executes the production bridge script in a VM: `generatePreset` posts to
+  the formal route with the per-process token, `getGenerationStatus` queries by Task ID, and a 503
+  answer is returned as the `generation_not_enabled` envelope instead of throwing.
 
 `test/preset-generation-app.test.mjs` (1 test, real `createQwenProvider` + existing Fixture worker):
 
@@ -167,9 +182,8 @@ Fixture/isolated only.
   Host + Core assembly over the same sandbox queries the same saved result after the first one is
   disposed, and a Host without a configured runtime answers `503 generation_not_enabled`.
 
-Full suite after this unit: **1159 tests / 1155 pass / 4 platform skips / 0 fail**; UI **73/73**; build
-`client.js` **318,823 bytes** (unchanged by 136 — no page/bundle change; the figure already includes
-the 134 Studio page wiring).
+Full suite after this unit: **1160 tests / 1156 pass / 4 platform skips / 0 fail**; UI **74/74**; build
+`client.js` **320,456 bytes** (the 137 page wiring is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
