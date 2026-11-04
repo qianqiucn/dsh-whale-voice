@@ -863,3 +863,50 @@ generation registry or queue; retrying/re-binding `UNKNOWN`; inferring a license
 components.
 
 **Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-031 — The internal Sender speaks the archived Worker's real ABI and cancels through its cancel file
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 114 revision).
+Extends ADR-030.
+**Related:** ADR-001, ADR-024–ADR-030, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md),
+[UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** the internal Sender never invents an execution protocol.
+
+1. **ABI.** Every invocation is built from a version-bound descriptor of the *actual* archived Worker:
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File voice-sender.ps1 -Request <json> -JsonOut
+   <json> -ProgressFile <p> -CancelFile <c> -GlobalCancelFile <g>`, with the request JSON carrying
+   exactly the fields `voice-sender.ps1` reads. `verifyWorkerAbi()` re-derives each `param()` table,
+   the request-field usage and the reviewed `service/src/sender.mjs` argv from the archived bytes and
+   reports mismatches; a Fixture can therefore never "accept" an argv the Worker would reject. The
+   previously invented `cancel-test.ps1`/`preflight-wechat.ps1` ids do not exist and are refused.
+2. **Cancel.** Cancellation is the reviewed per-job cancel *file*, not a script result: `cancel()`
+   writes the signal and reports requested → confirmed (the Worker's own `CANCELLED` with
+   `CANCELLED_BEFORE_UI`/`CANCELLED_CONFIRMED`) or unconfirmed (`UNKNOWN`); a queued job is a pre-UI
+   cancellation with zero Worker call; a terminal delivery is `CANCEL_TOO_LATE`. An accepted fact and
+   its receipt are never erased by a later cancel.
+3. **Single execution.** Validation, the immutable fact snapshot, the id claim, the conflict check and
+   the post-queue re-check live in one trusted boundary: one delivery id = at most one invocation, the
+   same id with different artifact/target is `DELIVERY_CONFLICT`, and an indeterminate result is
+   terminal (no second invoke).
+4. **Result layering.** Only a provable pre-UI `REJECTED`/`FAILED` is a pre-submit failure; a missing,
+   empty, corrupt or thrown Worker result is indeterminate `UNKNOWN` with `recoveryRequired`.
+5. **Legacy text.** A callable offline facade sends legacy text through the *same* generation owner →
+   the *same* persisted SAVED Artifact → the *same* persistent relay entry → the *same* backend; the
+   request identity is deterministic, so a replay is `EXISTING` everywhere and a failed/cancelled/
+   unknown delivery is never regenerated or resent. No second cache, queue, timer or generation
+   registry is introduced.
+
+**Reason:** the 0144 review proved the first revision was self-consistent but not Worker-compatible
+(SEND argv absent from the real parameter table, CANCEL/PREFLIGHT pointing at unpackaged files, a
+second invocation after the first `UNKNOWN`, an Artifact/target re-bind while queued, and post-invoke
+empty results reported as "provably not sent"). A static ABI cross-check plus the real cancel-file
+protocol and one write-once claim keep the offline unit honest without executing PowerShell/C#.
+
+**Rejected alternatives:** inventing a parallel argv/request schema; simulating cancellation inside
+`submit`; a global id owner or a second business queue; treating a missing/thrown result as
+`preSubmit`; a legacy-text cache or generation registry; running the archived scripts offline.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

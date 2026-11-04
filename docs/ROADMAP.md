@@ -622,18 +622,28 @@ and recovery stay green.
 
 Evidence: 35 relay tests in 4 files (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), full suite 1107/1103 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
 
-### Plan 13-B / Internal Windows Sender OFFLINE (2026-11-04)
+### Plan 13-B / Internal Windows Sender OFFLINE (2026-11-04, 114 revision)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`
-(new PR, not merged). The relay's own Windows delivery module is an Artifact-only backend over the
-reviewed user-owned Voice Sender source closure: fixed whitelisted script/argv, own target directory +
-identity/authorization/allowlist/Bridge/Worker gates, one serial queue with one invocation per delivery,
-injected Fixture transport (no process/socket/device/WeChat/write), NEVER_WRITE and terminal UNKNOWN.
+(PR #51, not merged). The relay's own Windows delivery module is an Artifact-only backend over the
+reviewed user-owned Voice Sender source closure: own target directory + identity/authorization/
+allowlist/Bridge/Worker gates, one serial queue with one invocation per delivery, injected Fixture
+transport (no process/socket/device/WeChat/write), NEVER_WRITE and terminal UNKNOWN.
 The 26 sourced files + 2 metadata are carried as resources with a manifest of relative paths and
 original/stored SHA256; no developer path, token, chat, binary/model/audio/cache, runtime state or
-production config is included, and no third-party license is inferred. Generation is untouched: the
-legacy text facade keeps the same generation owner and the same SAVED Artifact, then the one relay
-queue (no second generation registry, dual synthesis, cache double-write or second retry path).
+production config is included, and no third-party license is inferred.
 
-Evidence: 7 internal-sender tests, full suite 1114/1110 pass/4 platform skips/0 fail, UI 72/72
-(unchanged product UI), `client.js` 314,687 chars; real process/device/WeChat/window = UNKNOWN.
+The 114 revision replaces the invented invocation with the **real archived Worker ABI** (`-Request`,
+`-JsonOut`, `-ProgressFile`, `-CancelFile`, `-GlobalCancelFile` under `-NoProfile -ExecutionPolicy
+Bypass -File`), re-derived statically by `verifyWorkerAbi()`; cancellation is the reviewed per-job
+cancel file (requested → confirmed/unconfirmed, accepted receipt preserved) instead of a script result;
+one delivery id executes exactly once over an immutable fact snapshot (`DELIVERY_CONFLICT` on differing
+facts); missing/empty/corrupt/thrown results are indeterminate `UNKNOWN`; and the callable legacy text
+facade (`core/audio/legacy-text-delivery-offline.mjs`) goes through the same generation owner → SAVED
+Artifact → same relay entry → same backend with no replay generation/send and no second cache, queue,
+timer or generation registry.
+
+Evidence: 11 internal-sender + 5 legacy-text tests, full suite 1123/1119 pass/4 platform skips/0 fail,
+UI 72/72 (unchanged product UI), `client.js` 314,687 chars; real process/device/WeChat/window = UNKNOWN.
+Open: the real 13-B runtime (materialise the closure, spawn/observe the Worker, real cancel confirmation,
+device recovery), real TTS synthesis for the legacy text path, and 13-C/Plan14.

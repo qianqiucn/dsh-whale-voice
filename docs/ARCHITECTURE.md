@@ -77,7 +77,9 @@ plugin manager does not run a build lifecycle. Source remains authoritative.
 
 The following are real, separately deployed systems and are **not included**:
 
-- Voice Sender (Windows/PowerShell/C# audio and UI automation);
+- a runnable Voice Sender service (the reviewed PowerShell/C# audio and UI-automation source is carried
+  as *inert resources* under `core/audio/sender-internal/` for the Plan 13-B offline unit; no process,
+  device or window automation is started here);
 - WeChatAgent / WeChat Hook / Bridge;
 - Qwen3-TTS runtime and local model files;
 - `whale-v1` private reference audio and profile;
@@ -228,12 +230,19 @@ speech/singing audio instead of text. It shares the voice library, audio pipelin
 is not in the TTS Provider Registry and is not implemented. See `core/svc/`.
 
 **Whale Relay Core（鲸递）:** target delivery layer for safe delivery, UI Automation adapter, optional
-future Native Hook, delivery status, deduplication and target verification. It is **not implemented**
-in this repository; the existing Voice Sender UI Automation path remains the current execution backend.
-Relay is the only future layer allowed to hand audio to WeChat-facing delivery.
+future Native Hook, delivery status, deduplication and target verification. Its persistent delivery
+owner is implemented **offline** (`core/audio/relay-core-offline.mjs`, Plan 13-A, merged to `main` as
+`M=4b45ebd`, `OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`); its internal Windows delivery module is the
+Plan 13-B offline unit (`core/audio/internal-sender-offline.mjs` + the inert reviewed source closure,
+PR #51 not merged). The existing Voice Sender UI Automation path therefore remains the current real
+execution backend until 13-B is integrated. Relay is the only future layer allowed to hand audio to
+WeChat-facing delivery.
 
 **Voice Sender:** independent Windows component for audio device handling, UI automation and native
-voice bubbles. It must expose a versioned contract and retain its own safety checks.
+voice bubbles. It must expose a versioned contract and retain its own safety checks. Plan 13-B adapts
+its reviewed source as resources and speaks the real Worker ABI (`voice-sender.ps1` request/result/
+progress/cancel files) without executing it; the original installation and its recovery tooling stay
+unchanged and must not be retired by this offline work.
 
 **WeChatAgent adapter:** required bridge to the independent sourcepro5/WeChatAgent platform. It
 owns version/compatibility discovery, connection health, target identity evidence, account/session
