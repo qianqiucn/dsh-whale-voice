@@ -7,8 +7,6 @@
  * refusal, not an automatic-ready fallback. Every result is synthetic/Fixture and realReady=false.
  */
 
-import crypto from 'node:crypto'
-
 import { openFixtureArtifactLibrary } from './audio/artifact-library.mjs'
 import {
   COVER_EXECUTION_CODES,
@@ -227,7 +225,7 @@ export function openSingingApp({ sandbox, scopeId, sources, voices, dependencies
         },
         outputProfile: { format: 'WAV', codec: 'PCM_S16LE', sampleRate: SINGING_APP_LIMITS.sampleRate, channels: SINGING_APP_LIMITS.channels },
       }
-      const idempotencyKey = 'singing:' + crypto.createHash('sha256').update(source.sourceRef + '|' + voice.voiceProfileId, 'utf8').digest('hex').slice(0, 40)
+      const idempotencyKey = 'singing:' + source.sourceRef + '|' + voice.voiceProfileId
       const created = await createCoverTask({ sandbox, scopeId, idempotencyKey, intentDraft, observedAt: now() })
       if (!created || created.ok !== true) return mapCoreFailure(created)
       intents.set(created.value.taskId, created.value.intent)
