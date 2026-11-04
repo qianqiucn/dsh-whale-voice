@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { createDetector, components } from './core/detect.mjs'
 import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilities.mjs'
+import { createConfigSandbox, removeConfigSandbox } from './core/config-sandbox.mjs'
+import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -236,9 +238,61 @@ export function installHostBridge(scope, options = {}) {
   }
 }
 
-export function apply(ctx) {
-  ctx.inject(['webServer', 'connection'], (scope) => {
-    const host = installHostBridge(scope, { env: process.env })
-    if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
+/**
+ * 142: the serializable runtime config surface. Only plain JSON values are read; no sandbox or app
+ * object is accepted. `enabled` must be exactly true, otherwise generation stays explicitly off.
+ */
+function generationSettings(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return null
+  const generation = config.generation
+  if (!generation || typeof generation !== 'object' || Array.isArray(generation)) return null
+  if (generation.enabled !== true) return null
+  return {
+    scopeId: generation.scopeId,
+    rightsProofRef: generation.rightsProofRef,
+    allowedRoot: generation.allowedRoot,
+    worker: generation.worker,
+    instanceId: generation.instanceId,
+    requestTimeoutMs: generation.requestTimeoutMs,
+    handshakeTimeoutMs: generation.handshakeTimeoutMs,
+    shutdownGraceMs: generation.shutdownGraceMs,
+    killWaitMs: generation.killWaitMs,
+  }
+}
+
+/**
+ * 142: the Host obtains its own isolated storage context, calls the existing Qwen runtime factory and
+ * hands that same Core generation object to the existing Host surface. The temporary sandbox and the
+ * worker are owned by this assembly and released together on dispose.
+ */
+async function assembleGenerationHost(scope, settings) {
+  const sandbox = createConfigSandbox({ prefix: 'whale-voice-qwen-runtime-' })
+  const opened = await openQwenGenerationRuntime({ sandbox, ...settings })
+  if (!opened.ok) {
+    removeConfigSandbox(sandbox)
+    throw new Error('whale-voice generation runtime: ' + (opened.code || 'ASSEMBLY_FAILED'))
+  }
+  const runtime = opened.value
+  const host = installHostBridge(scope, { env: process.env, generation: runtime.app })
+  if (typeof scope.effect === 'function') {
+    scope.effect(() => () => {
+      host.dispose()
+      return runtime.close().finally(() => removeConfigSandbox(sandbox))
+    })
+  }
+}
+
+export function apply(ctx, config = undefined) {
+  const settings = generationSettings(config)
+  return new Promise((resolve) => {
+    ctx.inject(['webServer', 'connection'], (scope) => {
+      if (!settings) {
+        const host = installHostBridge(scope, { env: process.env })
+        if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
+        resolve()
+        return
+      }
+      resolve(assembleGenerationHost(scope, settings))
+    })
   })
 }

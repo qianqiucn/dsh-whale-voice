@@ -72,6 +72,19 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Plugin runtime-config assembly (142)
+
+The formal plugin entry `apply(ctx, config)` accepts a serializable config:
+`{ generation: { enabled: true, scopeId, rightsProofRef, allowedRoot, worker: { command, runtime,
+args }, instanceId?, requestTimeoutMs?, handshakeTimeoutMs?, shutdownGraceMs?, killWaitMs? } }`.
+Nothing here accepts a sandbox or an already-open app: the Host creates its own temporary isolated
+sandbox, calls `openQwenGenerationRuntime`, and passes that same Core app to the existing Host
+surface. Without `generation.enabled === true` the plugin installs the read-only Host surface and the
+generation routes keep answering `503 generation_not_enabled` without starting a worker. Disposing
+the plugin scope disposes the Host routes, closes the runtime it created and removes that temporary
+sandbox. The temporary sandbox is not a production persistence root and the worker output remains
+simulated.
+
 ### Formal Qwen runtime assembly (140)
 
 `core/qwen-generation-runtime.mjs` exposes `openQwenGenerationRuntime({ sandbox, scopeId,
@@ -235,7 +248,16 @@ generation disabled):
   task, generates once to `SAVED` (`PROVIDER_GENERATION_FIXTURE`), queries it by Task ID, and `close()`
   stops the worker it created (a second close is a no-op; generation afterwards is refused).
 
-Full suite after this unit: **1161 tests / 1157 pass / 4 platform skips / 0 fail**; UI **74/74**; build
+`test/plugin-generation-config.test.mjs` (2 tests, formal plugin entry + real runtime + Fixture worker):
+
+- 142: a JSON-serialized `generation` config passed to `apply(ctx, config)` makes the Host obtain its
+  own temporary sandbox, assemble the existing runtime and expose the three generation routes; the
+  catalog/`generate`/`status` calls then return the discovered voices, a `SAVED` task and the same
+  saved result; disposing the plugin routes closes the runtime and removes the sandbox. Without the
+  config (or with `enabled:false`) the routes answer `503 generation_not_enabled` and no runtime
+  sandbox is created.
+
+Full suite after this unit: **1163 tests / 1159 pass / 4 platform skips / 0 fail**; UI **74/74**; build
 `client.js` **320,456 bytes** (the 137 page wiring is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
