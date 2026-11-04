@@ -4,6 +4,8 @@ import crypto from 'node:crypto'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
+import { openFixtureTaskCatalog } from '../core/audio/task-catalog.mjs'
+import { openFixtureTaskOwner } from '../core/audio/task-owner.mjs'
 import {
   PROVIDER_GENERATION_ERRORS,
   PROVIDER_GENERATION_SCHEMA_VERSION,
@@ -112,19 +114,46 @@ async function withSandbox(fn) {
   }
 }
 
-async function open({ sandbox, artifacts, provider, authority = createAuthority(), now = () => NOW }) {
-  const coordinator = createProviderGenerationCoordinator({ sandbox, artifacts, provider, authority, now })
+/** A real TTS birth task issued by the existing catalog (the same task-id issuer Core uses). */
+async function createBirthTask(sandbox, { scopeId = SCOPE, idempotencyKey = 'key:fixture-provider-birth' } = {}) {
+  const catalog = await openFixtureTaskCatalog({ sandbox })
+  assert.equal(catalog.ok, true, JSON.stringify(catalog))
+  const draft = {
+    schemaVersion: 1,
+    feature: 'voice-bubbles',
+    taskType: 'TTS',
+    source: { kind: 'TEXT_REF', ref: 'artifact:fixture-text-1' },
+    voiceProfileId: 'voice:demo-hero',
+    deliveryRequested: false,
+    rights: { state: 'CONFIRMED_FIXTURE' },
+  }
+  const reserved = await catalog.value.reserve({ schemaVersion: 1, scopeId, idempotencyKey, draft, observedAt: NOW })
+  assert.equal(reserved.ok, true, JSON.stringify(reserved))
+  return reserved.value.task.taskId
+}
+
+async function openTaskOwner(sandbox) {
+  const owner = await openFixtureTaskOwner({ sandbox })
+  assert.equal(owner.ok, true, JSON.stringify(owner))
+  return owner.value
+}
+
+async function open({ sandbox, artifacts, provider, authority = createAuthority(), now = () => NOW, taskOwner }) {
+  const owner = taskOwner || (await openTaskOwner(sandbox))
+  const coordinator = createProviderGenerationCoordinator({ sandbox, artifacts, provider, authority, now, taskOwner: owner })
   assert.equal(coordinator.ok, true, JSON.stringify(coordinator))
   return coordinator
 }
 
-test('provider generation: prepare → submit → SAVED artifact, reopen and readback', async () => {
+test('provider generation: prepare → submit → SAVED artifact, original task saved, reopen and readback', async () => {
   await withSandbox(async ({ sandbox, artifacts }) => {
     const bytes = makeWav({ durationMs: 800 })
     const provider = createMockProvider({ bytes })
-    const coordinator = await open({ sandbox, artifacts, provider })
+    const taskId = await createBirthTask(sandbox)
+    const owner = await openTaskOwner(sandbox)
+    const coordinator = await open({ sandbox, artifacts, provider, taskOwner: owner })
 
-    const prepared = await coordinator.prepare(claimInput())
+    const prepared = await coordinator.prepare(claimInput({ taskId }))
     assert.equal(prepared.ok, true, JSON.stringify(prepared))
     assert.equal(prepared.outcome, 'CREATED')
     assert.equal(prepared.claim.state, 'CLAIMED')
@@ -138,9 +167,25 @@ test('provider generation: prepare → submit → SAVED artifact, reopen and rea
     assert.equal(submitted.claim.artifact.sha256, sha256(bytes))
     assert.equal(submitted.claim.artifact.byteLength, bytes.length)
     assert.equal(submitted.claim.jointProof.artifactSha256, sha256(bytes))
-    assert.equal(submitted.claim.jointProof.taskIdentityHash, sha256(SCOPE + '|' + TASK))
+    assert.equal(submitted.claim.jointProof.taskIdentityHash, sha256(SCOPE + '|' + taskId))
     assert.equal(prepared.claim.provider.model, 'Qwen3-TTS-12Hz-1.7B-CustomVoice')
     assert.equal(provider.calls, 1)
+
+    // 132: the *original* task is SAVED and points at the artifact the provider produced.
+    assert.equal(submitted.task.ownerState, 'SAVED')
+    assert.equal(submitted.task.artifact.artifactRef, submitted.claim.artifact.artifactRef)
+    const taskStatus = await owner.artifactStatus({
+      schemaVersion: 1, scopeId: SCOPE, taskId, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(taskStatus.ok, true, JSON.stringify(taskStatus))
+    assert.equal(taskStatus.value.state, 'READABLE')
+    assert.equal(taskStatus.value.ownerState, 'SAVED')
+    assert.equal(taskStatus.value.artifactRef, submitted.claim.artifact.artifactRef)
+    const got = await owner.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
+    assert.equal(got.ok, true, JSON.stringify(got))
+    assert.equal(got.value.ownerState, 'SAVED')
+    assert.equal(got.value.task.state, 'SAVED')
+    assert.equal(got.value.task.hasOutput, true)
 
     // A second submit of a terminal claim never synthesises again.
     const again = await coordinator.submit({ claimId: prepared.claim.claimId })
@@ -429,5 +474,61 @@ test('provider generation: an unconfirmed cancel and a contradictory cancelled+u
     const settled = await running
     assert.equal(settled.outcome, 'UNKNOWN')
     assert.equal(coordinator.status(prepared.claim.claimId).claim.artifact, null)
+  })
+})
+
+test('132 the provider result is saved by the original task and survives a full reopen', async () => {
+  await withSandbox(async ({ sandbox, artifacts }) => {
+    const bytes = makeWav({ durationMs: 640, amplitude: 0.2 })
+    const taskId = await createBirthTask(sandbox)
+    const provider = createMockProvider({ bytes })
+    const owner = await openTaskOwner(sandbox)
+    const coordinator = await open({ sandbox, artifacts, provider, taskOwner: owner })
+
+    const prepared = await coordinator.prepare(claimInput({ taskId }))
+    assert.equal(prepared.ok, true, JSON.stringify(prepared))
+    const submitted = await coordinator.submit({ claimId: prepared.claim.claimId })
+    assert.equal(submitted.ok, true, JSON.stringify(submitted))
+    assert.equal(submitted.outcome, 'SAVED')
+    const artifactRef = submitted.claim.artifact.artifactRef
+
+    // Close the running units, then reopen only the original task store and the same Artifact library.
+    await coordinator.close()
+    const reopenedOwner = await openTaskOwner(sandbox)
+    const reopenedLibrary = await openFixtureArtifactLibrary({ sandbox })
+    assert.equal(reopenedLibrary.ok, true, JSON.stringify(reopenedLibrary))
+
+    const got = await reopenedOwner.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
+    assert.equal(got.ok, true, JSON.stringify(got))
+    assert.equal(got.value.ownerState, 'SAVED')
+    assert.equal(got.value.task.state, 'SAVED')
+    assert.equal(got.value.task.hasOutput, true)
+    // The saved task is still the isolated simulation: no real model/device operation is claimed.
+    assert.equal(got.value.task.mockOnly, true)
+    assert.equal(got.value.task.realOperationAllowed, false)
+
+    const status = await reopenedOwner.artifactStatus({
+      schemaVersion: 1, scopeId: SCOPE, taskId, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(status.ok, true, JSON.stringify(status))
+    assert.equal(status.value.state, 'READABLE')
+    assert.equal(status.value.ownerState, 'SAVED')
+    assert.equal(status.value.artifactRef, artifactRef)
+
+    const read = await reopenedLibrary.value.readBytes({
+      schemaVersion: 1, scopeId: SCOPE, artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(read.ok, true, JSON.stringify(read))
+    assert.equal(sha256(read.value.bytes), sha256(bytes), 'the original task reads exactly the provider bytes')
+
+    // The claim ledger still describes the same isolated result; nothing was regenerated.
+    const reopenedCoordinator = await open({
+      sandbox, artifacts: reopenedLibrary.value, provider: createMockProvider({ bytes }), taskOwner: reopenedOwner,
+    })
+    const claimStatus = reopenedCoordinator.status(prepared.claim.claimId)
+    assert.equal(claimStatus.ok, true)
+    assert.equal(claimStatus.claim.state, 'SAVED')
+    assert.equal(claimStatus.claim.provider.providerId, 'qwen3-tts')
+    assert.equal(provider.calls, 1, 'reopen must not synthesise again')
   })
 })

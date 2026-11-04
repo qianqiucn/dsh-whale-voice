@@ -1066,9 +1066,9 @@ starting a prototype without license, coexistence and receipt evidence.
 **Related:** [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
 ---
 
-## ADR-036 — Provider generation is claim-first and isolated; a SAVED candidate is not an owner SAVED entry
+## ADR-036 — Provider generation is claim-first and isolated; the original task owner records SAVED (132 amendment)
 
-**Status:** proposed / accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-04, 120-B).
+**Status:** accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-04, 120-B; point 4 resolved by 132 on 2026-11-04).
 **Related:** ADR-001, ADR-024–ADR-035, [PROVIDER_GENERATION_OFFLINE.md](PROVIDER_GENERATION_OFFLINE.md).
 
 **Decision:** the first provider → SAVED wiring unit is a separate, versioned coordinator
@@ -1083,19 +1083,29 @@ snapshot:
 3. cancel, late result, unconfirmed exit, failed artifact write and readback mismatch are separate
    facts; a `SAVE_UNKNOWN` tombstone is never repaired by a second synthesis; `SAVED` never implies
    delivery;
-4. **the Plan 08 owner SAVED entry is still missing (121 status: not completed).** The owner’s SAVED
-   write is a strict `SaveProof` transaction validated against the artifact store, and the existing
-   artifact library labels every entry with a fixed fixture origin. A provider entry therefore needs
-   **coordinated schema changes in two stores** (artifact origin/version plus an owner v3 entry and
-   proof keys) with full regression of the owner invariants — a separate, reviewed unit. This is
-   recorded as a concrete gap, not as a silent extension of the plan.
+4. **the original task SAVED entry is now written (132).** The 121 analysis assumed the owner’s
+   `SaveProof` and the fixed artifact origin required coordinated schema changes in both stores. The
+   132 implementation showed that assumption was too conservative: the existing owner v2 SAVED entry
+   and its `SaveProof` bind the *Artifact facts* (ref/identity/bytes/inspection/rights/expiry), not the
+   engine that produced them. `openFixtureTaskOwner` therefore gained `saveArtifact(...)`, which runs
+   the same `CLAIMED → FINAL SAVED` transaction and mandatory proof over an already-imported Artifact
+   (task record `CREATED → PROCESSING → ARTIFACT_READY → SAVED`), and the coordinator now requires the
+   owner handle and only reports `SAVED` after that write succeeded. No owner/artifact schema change,
+   no second task or asset store. A failed task write is a `SAVE_UNKNOWN` tombstone, never a SAVED
+   claim and never a second synthesis.
 
 **Reason:** the owner snapshot is a strict, security-critical on-disk contract; bolting a provider
 entry into it in the same unit as the first provider wiring would mix two independent risk domains
 (provider output handling vs. owner invariant changes). A separate coordinator delivers the isolated,
-testable pipeline now while keeping the owner contract untouched.
+testable pipeline now while keeping the owner contract untouched; 132 then closes the task-save gap
+through the existing owner transaction rather than a schema extension.
 
 **Rejected alternatives:** writing provider bytes through the fixture engine (would mislabel fixture
 authorization as real), a second task/artifact store, and an untested owner-schema change.
+
+**Amendment (132, 2026-11-04):** `taskOwner` is now a required coordinator dependency; the owner save
+path reuses the existing SAVED transaction and `SaveProof`, and open/reopen both read the same
+`SAVED`/`READABLE` artifact from the persisted stores. Still `OFFLINE` / `FIXTURE_ONLY` /
+`NOT_INTEGRATED`; no real model, Host/UI, delivery or WeChat path.
 
 **Related:** [PROVIDER_GENERATION_OFFLINE.md](PROVIDER_GENERATION_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

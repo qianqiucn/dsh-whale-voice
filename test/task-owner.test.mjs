@@ -1297,7 +1297,7 @@ test('C08 public surface, descriptors and input boundaries stay safe and frozen'
     const b = await birth(sandbox, svc, 'key:fixture-c08')
     const owner = await openFixtureTaskOwner({ sandbox })
     assert.equal(owner.ok, true)
-    assert.deepEqual(Object.keys(owner.value).sort(), ['artifactStatus', 'get', 'run', 'save'])
+    assert.deepEqual(Object.keys(owner.value).sort(), ['artifactStatus', 'get', 'run', 'save', 'saveArtifact'])
     assert.equal(Object.isFrozen(owner.value), true)
 
     expectOwnerError(await owner.value.run({ schemaVersion: 1, scopeId: b.scopeId, taskId: b.taskId }), 'INVALID_INPUT', '$')

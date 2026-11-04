@@ -284,6 +284,12 @@ export function createProviderGenerationCoordinator(options = {}) {
   }
   const authority = options.authority
   if (typeof authority !== 'function') return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'task authority is required' }
+  // 132: a SAVED generation is only reported after the *original* task owner recorded the artifact;
+  // the claim ledger alone is not a task save.
+  const taskOwner = options.taskOwner
+  if (!taskOwner || typeof taskOwner.saveArtifact !== 'function') {
+    return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'task owner is required' }
+  }
   const provider = options.provider
   if (!provider || typeof provider.beginSynthesis !== 'function' || typeof provider.cancel !== 'function') {
     return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'provider is required' }
@@ -555,6 +561,40 @@ export function createProviderGenerationCoordinator(options = {}) {
       return Object.freeze({ ok: false, outcome: 'SAVE_UNKNOWN', code: PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, claim: settled.ok ? project(settled.entry) : null })
     }
 
+    // 132: the original task owner records the already-imported, readback-verified Artifact before
+    // this claim becomes SAVED. A missing/failed task save is a SAVE_UNKNOWN tombstone, never a
+    // SAVED claim, and never a second synthesis.
+    let taskSave
+    try {
+      taskSave = await taskOwner.saveArtifact({
+        schemaVersion: 1,
+        scopeId: entry.scopeId,
+        taskId: entry.taskId,
+        now: now(),
+        rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
+        artifactRef: artifact.artifactRef,
+        artifactSha256: inspected.sha256,
+        artifactByteLength: inspected.byteLength,
+      })
+    } catch {
+      taskSave = null
+    }
+    if (
+      !taskSave ||
+      taskSave.ok !== true ||
+      taskSave.value.ownerState !== 'SAVED' ||
+      !taskSave.value.artifact ||
+      taskSave.value.artifact.artifactRef !== artifact.artifactRef
+    ) {
+      const code = taskSave && taskSave.errors && taskSave.errors[0] ? taskSave.errors[0].code : 'TASK_SAVE_REJECTED'
+      const settled = update(claimId, (target) => {
+        if (CLAIM_TERMINAL.has(target.state)) return
+        target.state = 'SAVE_UNKNOWN'
+        target.lastError = 'task:' + code
+      })
+      return Object.freeze({ ok: false, outcome: 'SAVE_UNKNOWN', code: PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, claim: settled.ok ? project(settled.entry) : null })
+    }
+
     const jointProof = {
       schemaVersion: PROVIDER_GENERATION_SCHEMA_VERSION,
       claimDigest: entry.claimDigest,
@@ -580,7 +620,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       target.lastError = null
     })
     if (!settled.ok) return failure(PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, 'claim-write')
-    return Object.freeze({ ok: true, outcome: 'SAVED', claim: project(settled.entry) })
+    return Object.freeze({ ok: true, outcome: 'SAVED', claim: project(settled.entry), task: taskSave.value })
   }
 
   function status(claimId) {

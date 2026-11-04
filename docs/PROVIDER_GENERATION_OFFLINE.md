@@ -2,16 +2,17 @@
 
 **Status:** `IN PROGRESS` / `OFFLINE` — internal wiring candidate only. No model was loaded, no process
 was spawned, no WeChat/device/window was touched, no production Host route was added, and nothing is
-merged. `SAVED` here means "the isolated coordinator stored provider bytes in the existing Artifact
-library", **not** that a user can click real generation, not that a Sender can deliver it, and not
-that the Plan 08 owner snapshot contains a provider entry.
+merged. `SAVED` means "the isolated coordinator stored provider bytes in the existing Artifact
+library **and** the original task owner recorded that Artifact as the task's SAVED result (132)", not
+that a user can click real generation, not that a Sender can deliver it, and not that a real model
+ran.
 
 ## 1. What this unit actually is
 
 `core/audio/provider-generation-offline.mjs` is a claim-first coordinator between an already-audited
-provider contract (the existing Qwen adapter/supervisor API) and the existing Artifact authority
-(`openFixtureArtifactLibrary`, `artifact:fixture-bytes-…`). It deliberately does **not** modify the
-Plan 08 owner snapshot (schema v1/v2 has no provider entry kind) and does not add a Host/UI route.
+provider contract (the existing Qwen adapter/supervisor API), the existing Artifact authority
+(`openFixtureArtifactLibrary`, `artifact:fixture-bytes-…`) and the existing Task owner
+(`openFixtureTaskOwner`). It deliberately does not add a Host/UI route.
 
 Pipeline:
 
@@ -22,8 +23,12 @@ prepare(scope, task, requestKey, rights, provider, request)
   → re-measure bytes here (WAV: PCM16 / 24 kHz / mono / 200–20000 ms / ≤1 MiB)
   → artifacts.import(same Artifact authority)
   → artifacts.readBytes readback + SHA256 equality
+  → taskOwner.saveArtifact(...)  → original task CREATED → PROCESSING → ARTIFACT_READY → SAVED
   → claim SAVED (+ jointProof: claim/request digest, task birth hash, provider binding, artifact ref/hash/length/duration)
 ```
+
+A failed original-task save leaves a `SAVE_UNKNOWN` tombstone on the claim (no SAVED claim, no second
+synthesis, the already-imported Artifact stays as it is).
 
 ## 2. Contract (v1, fail-closed)
 
@@ -47,19 +52,24 @@ prepare(scope, task, requestKey, rights, provider, request)
   an ACK with `confirmed:false` is not a confirmation; a contradictory `cancelled+unknown` result is
   `UNKNOWN`, not `CANCELLED`.
 - A failed artifact write or a readback mismatch leaves a `SAVE_UNKNOWN` tombstone with no artifact.
+- **132 original-task save:** `taskOwner` is a required dependency. After the readback, the coordinator
+  calls `taskOwner.saveArtifact({scopeId, taskId, now, rights, artifactRef, artifactSha256,
+  artifactByteLength})`; only when that write returns `ownerState:'SAVED'` for the same `artifactRef`
+  does the claim become `SAVED` (the result exposes that owner value as `task`). The owner write is
+  the same `CLAIMED → FINAL SAVED` transaction with the mandatory `SaveProof`; the task record itself
+  moves `CREATED → PROCESSING → ARTIFACT_READY → SAVED`. No owner/artifact schema change was needed:
+  the v2 SAVED entry and its proof bind Artifact facts, not the fixture engine that produced them.
 - `SAVED` never implies delivery, never allocates a `deliveryId`, and never touches the relay.
 
-## 3. Explicit limits / not done (121 status)
+## 3. Explicit limits / not done (132 status)
 
-1. **Owner SAVED entry not written (121 status: not completed).** The Plan 08 owner SAVED write is a
-   strict `SaveProof` transaction validated against the artifact store, and the artifact library labels
-   every entry with a fixed fixture origin. A provider entry therefore needs **coordinated schema
-   changes in both stores** (artifact origin/version + owner v3 entry/proof keys) plus full
-   owner-invariant regression — explicitly not completed in this pass. The claim keeps
-   `taskIdentityHash`/`claimDigest` so a later unit can bind without re-synthesis.
-2. **Catalog/owner authority is injected**, not read internally. This keeps the module free of owner
-   internals; the existing owner tests remain the authority for catalog issuance and owner invariants,
-   and the provider unit tests use a deterministic test authority.
+1. **Original-task SAVED (132: completed).** `taskOwner.saveArtifact` records the already-imported
+   provider Artifact on the birth task; reopen reads the same `SAVED`/`READABLE` artifact from the
+   persisted owner and library stores. It does not synthesize and does not create a second task or
+   asset store.
+2. **Catalog/owner authority is injected** (and the owner handle is now required). The provider unit
+   tests use a deterministic test authority with a real catalog birth/owner store; the existing owner
+   tests remain the authority for catalog issuance and owner invariants.
 3. **Provider is injected** (the audited `createQwenProvider` in production, a test double here). No
    model, GPU, interpreter, network or cloud path is started.
 4. **No Host/UI route**, no production write, no UI change.
@@ -67,9 +77,11 @@ prepare(scope, task, requestKey, rights, provider, request)
 
 ## 4. Tests
 
-`test/provider-generation-offline.test.mjs` (8 tests, synthetic WAV in a temporary sandbox):
+`test/provider-generation-offline.test.mjs` (12 tests, synthetic WAV in a temporary sandbox):
 
-- prepare → submit → SAVED artifact, joint proof, reopen/readback, double-submit no resynthesis;
+- prepare → submit → SAVED artifact, joint proof, original task SAVED, double-submit no resynthesis;
+- 132: the provider result is saved by the original task and survives a full reopen (the same test
+  fails on the baseline as `TASK_OWNER_NOT_FOUND` when the task owner write is missing);
 - unsupported version, denied rights, duplicate/conflict/cross-scope, over-long text, refused authority;
 - invalid or over-limit provider output (sample rate, channels, duration) → FAILED with no artifact;
 - cancel ACK + late result → CANCELLED; unknown result → UNKNOWN and no resynthesis;
@@ -77,12 +89,11 @@ prepare(scope, task, requestKey, rights, provider, request)
 - readback mismatch → `SAVE_UNKNOWN` tombstone;
 - closed coordinator rejects new claims.
 
-Full suite after this unit: **1152 tests / 1148 pass / 4 platform skips / 0 fail**; build unchanged
+Full suite after this unit: **1156 tests / 1152 pass / 4 platform skips / 0 fail**; build unchanged
 (`client.js` 314,687).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
-- An explicit owner-schema v3 decision/extension (or an alternative joint-proof design) for Task SAVED.
 - A trusted provider configuration surface (model path/identity, interpreter, GPU use) and a separate
   runtime permission for `start/health` and synthesis.
 - Fixed short text, 1–3 requests, a bounded timeout, an isolated temp root and a snapshot budget.
