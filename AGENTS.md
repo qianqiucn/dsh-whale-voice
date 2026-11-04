@@ -6,24 +6,13 @@ do not silently weaken a safety boundary.
 
 ## 1. Startup workflow (every session)
 
-1. Read this `AGENTS.md`.
-2. Read [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) as a recovery summary, not an authority.
-3. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
-4. Read [docs/ROADMAP.md](docs/ROADMAP.md); read [docs/DECISIONS.md](docs/DECISIONS.md) for accepted
-   architecture decisions.
-5. Check Git branch, staged/untracked changes and recent commits:
-   ```powershell
-   git status --short --branch
-   git log --oneline -5
-   ```
-6. Check the current task's PRs, CI, reviews and whether required backend/runtime is actually
-   available. Do not infer project progress from chat history alone.
-7. Verify that `docs/AI_CONTEXT.md` is not stale relative to Git/HEAD/PRs/tests. Re-read the named
-   authoritative docs when it disagrees.
-8. State the current task boundary and whether explicit authorization is required.
-9. Select the highest-priority task that is safe to execute.
-10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
-    restarts or production configuration changes, stop and obtain explicit authorization first.
+1. Read this `AGENTS.md` and the current task named in the handoff / `00_DS当前执行入口.md`. Do not
+   run a full-repository audit and do not choose a task on your own.
+2. Check the real workspace: branch, HEAD, staged/untracked changes and the exact baseline commit.
+3. Check the current task's PR/CI/review state; do not infer progress from chat history.
+4. State the task boundary. Real WeChat UI/window operations, real sends, driver changes, service
+   restarts, production configuration writes, releases or visibility changes still need the current
+   task's authorization or an explicit user decision.
 
 ## 1.1 WeChatAgent dependency rule (permanent)
 
@@ -223,27 +212,18 @@ Before staging or pushing:
 
 ## 10. What "continue the plan" means
 
-When the user says **“继续 Whale Voice 开发计划”** (or equivalent), an agent should:
+There is no autonomous scheduler. An agent executes only the task named in the current handoff /
+`00_DS当前执行入口.md`; it does not choose, dispatch or start the next task or cleanup batch itself.
 
-1. Read the current GitHub `main` state.
-2. Read `AGENTS.md`, roadmap and project status.
-3. Choose the next safe, highest-priority task.
-4. Create a task branch.
-5. Implement a minimal change.
-6. Run the available checks.
-7. Update status/roadmap/changelog.
-8. Commit and push when authorized.
-9. Open a PR when appropriate.
-10. Report exact results and remaining risks.
-
-There is no autonomous scheduler in this repository. Do not claim GitHub is developing itself or that
-a roadmap automatically executes. The next cycle is triggered by the user's instruction.
+A task cycle is: check the stated baseline commit → implement only the authorized scope → run the
+existing checks → commit/push the task branch → update the existing PR → report exact results and
+stop. GPT/owner dispatches the next task or batch.
 
 ## 11. Stop conditions
 
 Stop and ask before proceeding if:
 
-- the work requires a real WeChat UI action or real send;
+- the work requires an action that §6 does not authorize for the current task;
 - the remote history diverged unexpectedly, or a force-push/rewrite would be required;
 - a secret or private datum is found in the staged content;
 - the only way to pass is to remove a safety check;
