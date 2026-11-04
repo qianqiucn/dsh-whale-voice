@@ -8,6 +8,7 @@ import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
 import { createConfigSandbox } from '../../core/config-sandbox.mjs'
 import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 import { createSingingBridge } from './singing-bridge.mjs'
+import { createStudioGenerationBridge } from './studio-generation-bridge.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -43,9 +44,11 @@ const files = new Map([
 ])
 
 const singingBridge = await createSingingBridge()
+const studioGenerationBridge = await createStudioGenerationBridge()
 
 const server = createServer(async (req, res) => {
   if (await singingBridge.handle(req, res)) return
+  if (await studioGenerationBridge.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
   if (!entry) {
@@ -351,6 +354,55 @@ await check('settings/studio/safety expose surface-specific reload semantics', a
     assert.match(text, /读取时机未知/)
     assert.match(text, /是否热更新未知/)
     assert.match(text, /本插件永不写入/)
+  })
+})
+
+await check('studio preset generation saves the original task and survives reload', async () => {
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
+    await page.getByLabel('试听文本').fill('你好，这是隔离预设生成演示。')
+    await page.getByLabel('音色').selectOption('demo-voice-a')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    const state = page.locator('[data-testid="studio-generation-state"]')
+    await state.waitFor({ timeout: 15000 })
+    assert.equal(await state.innerText(), '原任务已保存')
+    const taskId = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    const artifactRef = await page.locator('[data-testid="studio-generation-artifact"]').innerText()
+    assert.match(taskId, /^task:fixture-[0-9a-f]{32}$/)
+    assert.match(artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /隔离模拟/)
+    assert.match(pageText, /不加载模型/)
+    assert.match(pageText, /生产生成与播放仍未接入/)
+    await page.screenshot({ path: path.join(artifactDir, 'studio-generation-1440.png') })
+
+    // A second run mints a different original task: the state is not a fixed success value.
+    await page.getByLabel('试听文本').fill('第二个隔离测试生成。')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.waitForFunction(
+      (previous) => {
+        const element = document.querySelector('[data-testid="studio-generation-task"]')
+        return element && element.textContent && element.textContent !== previous
+      },
+      taskId,
+      { timeout: 15000 },
+    )
+    const secondTaskId = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    const secondArtifactRef = await page.locator('[data-testid="studio-generation-artifact"]').innerText()
+    assert.notEqual(secondTaskId, taskId)
+    assert.match(secondTaskId, /^task:fixture-[0-9a-f]{32}$/)
+    assert.match(secondArtifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+
+    // Reload: the page reads the same saved result back from the original task store.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.waitForTimeout(500)
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.locator('[data-testid="studio-generation-state"]').waitFor({ timeout: 5000 })
+    assert.equal(await page.locator('[data-testid="studio-generation-state"]').innerText(), '原任务已保存')
+    assert.equal(await page.locator('[data-testid="studio-generation-task"]').innerText(), secondTaskId)
+    assert.equal(await page.locator('[data-testid="studio-generation-artifact"]').innerText(), secondArtifactRef)
   })
 })
 
@@ -2000,5 +2052,6 @@ console.log('\n' + results.filter((item) => item.result === 'PASS').length + '/'
 console.log('Artifacts: ' + artifactDir)
 await browser.close()
 await singingBridge.close()
+await studioGenerationBridge.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

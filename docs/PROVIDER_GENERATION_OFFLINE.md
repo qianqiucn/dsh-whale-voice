@@ -81,7 +81,10 @@ synthesis, the already-imported Artifact stays as it is).
 3. **Provider is injected** and 133 wires the real `createQwenProvider` public interface to the
    existing Fixture worker (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model,
    GPU, real inference, network or cloud path is started; clone and VoiceDesign remain unwired.
-4. **No Host/UI route**, no production write, no UI change.
+4. **No production Host/UI generation route.** The only page entry is the test-only `tests/ui`
+   harness bridge (134); in an environment without that injected adapter the 音色中心 page keeps the
+   disabled generate button and states that production generation is not connected. No production
+   write, no real model and no UI claim of real readiness.
 5. The `expiresAt` window (24 h) is used only for the Artifact library entry, not a delivery/TTL policy.
 
 ## 4. Tests
@@ -105,8 +108,17 @@ synthesis, the already-imported Artifact stays as it is).
   deterministic output, the original task is SAVED, and a reopen reads the same artifact. On the
   baseline the same test fails as `PROVIDER_GENERATION_INPUT_INVALID` / `request.modality`.
 
-Full suite after this unit: **1157 tests / 1153 pass / 4 platform skips / 0 fail**; build unchanged
-(`client.js` 314,687).
+`tests/ui` Studio page harness (134, test-only; the production Host still adds no generation route):
+
+- the existing Chinese 音色中心 page's text/预设音色/生成并保存 controls drive
+  `tests/ui/studio-generation-bridge.mjs`, which runs the real `createQwenProvider` + existing Fixture
+  worker and the 133/132 save chain against a temporary sandbox; the page shows the original task
+  `SAVED`, a browser reload reads the same artifact back from the owner/artifact stores, and a second
+  run mints a different task id (no fixed success value). UI suite **73/73**.
+
+Full suite after this unit: **1157 tests / 1153 pass / 4 platform skips / 0 fail**; build
+`client.js` **318,823 bytes** (the Studio page wiring is the only bundle change; the unit suite is
+unchanged at 1157/1153/4/0).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

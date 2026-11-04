@@ -549,7 +549,22 @@
       reset: () => post('/singing-app/reset', {}),
     }
   })()
-
+  window.__WHALE_STUDIO_GENERATION__ = new URLSearchParams(window.location.search).get('studio') === 'none' ? null : (() => {
+    const request = async (path, options) => {
+      const response = await fetch(path, { cache: 'no-store', ...options })
+      return response.json()
+    }
+    const post = (path, body) => request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
+    return {
+      catalog: () => request('/studio-generation/catalog'),
+      generate: (payload) => post('/studio-generation/generate', payload),
+      status: (taskId) => request('/studio-generation/status' + (taskId ? '?taskId=' + encodeURIComponent(taskId) : '')),
+    }
+  })()
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {
     document.getElementById('wv-harness-root').textContent = 'harness module missing'

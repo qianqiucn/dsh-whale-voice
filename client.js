@@ -2660,18 +2660,79 @@ function GroupDialog({ form, errors, patchForm, onClose, onSave }) {
 
 function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
+  const isolated = typeof window !== 'undefined' && window.__WHALE_STUDIO_GENERATION__ ? window.__WHALE_STUDIO_GENERATION__ : null
+  const [catalog, setCatalog] = React.useState(null)
+  const [busy, setBusy] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+  const [genError, setGenError] = React.useState('')
+  React.useEffect(() => {
+    if (!isolated) return undefined
+    let live = true
+    isolated.catalog().then((value) => {
+      if (!live || !value || value.ok !== true) return
+      setCatalog(value)
+      const voices = Array.isArray(value.voices) ? value.voices : []
+      const first = voices[0] || null
+      if (first) {
+        setPreview((current) => voices.some((voice) => voice.id === current.voice)
+          ? current
+          : { ...current, voice: first.id, language: first.languages && first.languages[0] ? first.languages[0] : current.language })
+      }
+    }).catch(() => { if (live) setGenError('STUDIO_GENERATION_UNAVAILABLE') })
+    isolated.status().then((value) => {
+      if (!live || !value || value.ok !== true || value.state === 'NO_TASK') return
+      setResult(value)
+    }).catch(() => {})
+    return () => { live = false }
+  }, [isolated])
+  const voices = catalog && Array.isArray(catalog.voices) && catalog.voices.length
+    ? catalog.voices
+    : [{ id: 'whale-v1', label: 'whale-v1', languages: ['zh-CN'] }]
+  const selectedVoice = voices.find((voice) => voice.id === preview.voice) || voices[0]
+  const languages = isolated && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
+  const textLimit = isolated && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 300
+  const generate = async () => {
+    if (!isolated || busy) return
+    const text = String(preview.text || '').trim()
+    if (!text) { notify('请先输入要生成的短文本。', 'error'); return }
+    if (text.length > textLimit) { notify('文本超过隔离测试生成上限（' + textLimit + ' 字）。', 'error'); return }
+    setBusy(true); setGenError('')
+    try {
+      const value = await isolated.generate({
+        text,
+        voiceId: selectedVoice.id,
+        language: languages.includes(preview.language) ? preview.language : languages[0],
+      })
+      if (!value || value.ok !== true) {
+        setGenError((value && value.code) || 'STUDIO_GENERATION_REJECTED')
+        notify('隔离测试生成未完成：' + ((value && value.code) || 'STUDIO_GENERATION_REJECTED'), 'error')
+        return
+      }
+      setResult(value)
+      notify('隔离测试生成已由原任务保存。', 'success')
+    } catch {
+      setGenError('STUDIO_GENERATION_UNAVAILABLE')
+      notify('隔离测试生成适配器异常；未自动重试。', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
   return h(React.Fragment, null,
     h(PageHead, {
       eyebrow: 'WHALE VOICE / STUDIO',
       title: '音色中心',
-      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。试听面板为前端演示，不调用真实 Qwen API。',
+      description: isolated
+        ? 'whale-v1 是小鲸鱼目前唯一的专属音色。生产生成与试听仍未接入；下方为隔离测试生成（FIXTURE/OFFLINE），经真实 Qwen 公开接口与既有 Fixture worker 生成一次模拟输出，不代表真实模型可用。'
+        : 'whale-v1 是小鲸鱼目前唯一的专属音色。试听面板为前端演示，不调用真实 Qwen API。',
       actions: h(React.Fragment, null,
-        h(Badge, { tone: 'demo' }, '试听未接入'),
-        h(Button, { disabled: true, title: '等待语音服务接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
+        h(Badge, { tone: 'demo' }, isolated ? '隔离模拟' : '试听未接入'),
+        h(Button, { disabled: true, title: '生产生成未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, '本轮不合成真实音频。生成与播放按钮保持禁用；下方波形为示意，不代表真实音频。')),
+      h('span', null, isolated
+        ? '生产生成与播放仍未接入。下方隔离测试生成使用真实 Qwen 公开接口与既有 Fixture worker（不加载模型、不联网、不播放、不发送），结果由原任务正式保存。'
+        : '本轮不合成真实音频。生成与播放按钮保持禁用；下方波形为示意，不代表真实音频。')),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,
@@ -2701,16 +2762,16 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('div', { className: 'wv-version' }, h('div', null, h('strong', null, '自定义音色'), h('span', null, '未来功能')), h(Badge, { tone: 'wait' }, '未接入'))))),
       h('section', { className: 'wv-card pad wv-preview' },
         h('div', { className: 'wv-card-title' },
-          h('div', null, h('h2', null, '试听面板'), h('p', null, '演示文本与参数不会发送到 Qwen')),
-          h(Badge, { tone: 'wait' }, 'Mock')),
+          h('div', null, h('h2', null, isolated ? '隔离测试生成' : '试听面板'), h('p', null, isolated ? '选择已有预设音色并输入短文本；生成结果由原任务保存，刷新后仍可读取。' : '演示文本与参数不会发送到 Qwen')),
+          h(Badge, { tone: 'wait' }, isolated ? 'FIXTURE' : 'Mock')),
         h('div', { className: 'wv-field' },
           h('label', null, '试听文本'),
-          h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: 300, 'aria-label': '试听文本' }),
-          h('span', { className: 'wv-hint' }, preview.text.length + ' / 300')),
+          h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: textLimit, 'aria-label': '试听文本' }),
+          h('span', { className: 'wv-hint' }, preview.text.length + ' / ' + textLimit)),
         h('div', { className: 'wv-preview-controls' },
-          h('div', { className: 'wv-field' }, h('label', null, '音色'), h('select', { className: 'wv-select', value: preview.voice, onChange: (e) => patch('voice', e.target.value) }, h('option', { value: 'whale-v1' }, 'whale-v1'))),
-          h('div', { className: 'wv-field' }, h('label', null, '语言'), h('select', { className: 'wv-select', value: preview.language, onChange: (e) => patch('language', e.target.value) }, h('option', { value: 'zh-CN' }, '中文'), h('option', { value: 'en-US' }, 'English'))),
-          h('div', { className: 'wv-field' }, h('label', null, '情绪 ', h(Badge, { tone: 'wait' }, '实验性')), h('select', { className: 'wv-select', value: preview.emotion, onChange: (e) => patch('emotion', e.target.value) }, EMOTIONS.map((x) => h('option', { key: x.id, value: x.id }, x.zh + ' / ' + x.en))))),
+          h('div', { className: 'wv-field' }, h('label', null, '音色'), h('select', { className: 'wv-select', value: preview.voice, onChange: (e) => patch('voice', e.target.value), 'aria-label': '音色' }, voices.map((voice) => h('option', { key: voice.id, value: voice.id }, isolated ? voice.label + ' · ' + voice.id : voice.label)))),
+          h('div', { className: 'wv-field' }, h('label', null, '语言'), h('select', { className: 'wv-select', value: preview.language, onChange: (e) => patch('language', e.target.value), 'aria-label': '语言' }, languages.map((code) => h('option', { key: code, value: code }, code === 'zh-CN' ? '中文' : code === 'en-US' ? 'English' : code)))),
+          h('div', { className: 'wv-field' }, h('label', null, '情绪 ', h(Badge, { tone: 'wait' }, isolated ? '隔离生成固定中性' : '实验性')), h('select', { className: 'wv-select', value: preview.emotion, onChange: (e) => patch('emotion', e.target.value), disabled: !!isolated, 'aria-label': '情绪' }, EMOTIONS.map((x) => h('option', { key: x.id, value: x.id }, x.zh + ' / ' + x.en))))),
         h('div', { className: 'wv-player' },
           h('div', { className: 'wv-player-wave', 'aria-label': '示意波形，非真实音频' }, h(WaveBars, { count: 58, seed: 5 }), h('span', { className: 'playhead' })),
           h('div', { className: 'wv-player-controls' },
@@ -2718,13 +2779,26 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('div', { className: 'wv-progress', 'aria-hidden': true }, h('i', null)),
             h('span', { className: 'wv-time' }, '0:00 / --:--'),
             h('div', { className: 'wv-volume' }, h(Icon, { name: 'volume', size: 14 }), h('input', { type: 'range', min: 0, max: 100, value: preview.volume, disabled: true, onChange: (e) => patch('volume', Number(e.target.value)), 'aria-label': '音量（未接入）' })))),
-        h('div', { className: 'wv-empty', style: { minHeight: 96 } },
-          h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
-          h('strong', null, '还没有可播放的试听音频'),
-          h('p', null, '本轮不调用 Qwen，也不伪造试听成功。等待语音服务接入后，这里会显示真实音频与进度。')),
+        isolated && result
+          ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-result', style: { minHeight: 96, alignItems: 'flex-start' } },
+            h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'check', size: 18 })),
+            h('strong', { 'data-testid': 'studio-generation-state' }, result.state === 'SAVED' ? '原任务已保存' : '原任务状态：' + result.state),
+            h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
+            h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
+            result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
+            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是原任务的保存事实；刷新页面会重新读取同一产物，不代表真实模型可用。'))
+          : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
+            h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+            h('strong', null, isolated ? '还没有隔离测试生成结果' : '还没有可播放的试听音频'),
+            h('p', null, isolated ? '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。' : '本轮不调用 Qwen，也不伪造试听成功。等待语音服务接入后，这里会显示真实音频与进度。')),
+        isolated && genError
+          ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null, '隔离测试生成失败：' + genError + '；未自动重试。'))
+          : null,
         h('div', { className: 'wv-row wv-wrap' },
-          h(Button, { disabled: true, title: '等待语音服务接入' }, h(Icon, { name: 'spark', size: 14 }), '生成试听 · 等待语音服务接入'),
-          h(Button, { variant: 'ghost', onClick: () => notify('试听不会在本轮调用真实 Qwen。', 'info') }, '了解限制')))
+          isolated
+            ? h(Button, { onClick: generate, disabled: busy || !String(preview.text || '').trim() }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存（隔离模拟）')
+            : h(Button, { disabled: true, title: '等待语音服务接入' }, h(Icon, { name: 'spark', size: 14 }), '生成试听 · 等待语音服务接入'),
+          h(Button, { variant: 'ghost', onClick: () => notify(isolated ? '这是隔离测试链路：真实模型、播放与发送都未接入。' : '试听不会在本轮调用真实 Qwen。', 'info') }, '了解限制')))
     ))
 }
 
