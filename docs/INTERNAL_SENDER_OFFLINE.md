@@ -91,23 +91,38 @@ backend (`id`, `health`, `capabilities`, `resolveTarget`, `submit`, `status`, `c
 One delivery therefore has exactly one worker invocation; mutating the caller's objects while the job
 is queued cannot change the consumed artifact/target/backend.
 
-## 4. Results, cancel and recovery (144-RESULT)
+**Terminal monotonicity and the execution slot (145-ASYNC-TERMINAL / QUEUED-OBSERVE / PENDING-SERIAL).**
+The terminal verdict is write-once and every async exit re-checks it:
 
-Worker results are classified with the same conservative rules as the reviewed service:
+- a `query()` observation that settles the claim while `transport.invoke` is still awaiting stays
+  final — a late `{dispatchOnly:true}` acknowledgement cannot reopen it into `ACCEPTED`, and a late
+  `SENT_LOCAL`/`CANCELLED`/`UNKNOWN` can never rewrite the state, the cancel flags or the receipt;
+- observation is bound to the one actual invocation: a delivery that is still queued (no invocation
+  yet) never consumes a pre-existing worker result, and its `status` stays `QUEUED`;
+- the single execution slot covers the **whole Worker holding period**: a dispatch-only claim keeps
+  the slot until its terminal observation arrives, so no second delivery is invoked meanwhile. Only a
+  terminal worker result (or a pre-UI cancel) releases the slot; `UNKNOWN` is such a terminal result,
+  not an assumption that the device is free. There is still no second business queue or id owner.
+
+## 4. Results, cancel and recovery (144-RESULT / 145-RESULT-BAD-EVIDENCE)
+
+Worker results are classified with the same conservative rules as the reviewed service. A recognized
+status name alone is never trusted: malformed or contradictory key evidence is `UNKNOWN`.
 
 | Worker result | Internal layer |
 |---|---|
 | `SENT_LOCAL` / `ok:true` | `ACCEPTED` (+ receipt, `sentLocal`) |
-| `CANCELLED` without bubble leak / `cancel_unconfirmed` | `CANCELLED` with `cancelStage` |
-| `CANCELLED` with `cancel_bubble_appeared` / `UNKNOWN_AFTER_SEND` | `UNKNOWN` (never "cancelled") |
-| `REJECTED` (always before push-to-talk) | `preSubmit` failure |
-| `FAILED` before the UI | `preSubmit` failure |
-| `FAILED` after `RECORDING`/`SENDING` | `UNKNOWN` |
-| missing / empty / unrecognized / thrown | `UNKNOWN` + `recoveryRequired`, terminal |
+| `CANCELLED` with `CANCELLED_BEFORE_UI`/`CANCELLED_CONFIRMED`, no bubble leak | `CANCELLED` with `cancelStage` |
+| `CANCELLED` with `cancel_stage:'UNKNOWN'`, unrecognized/bad stage, bad `cancel_bubble_appeared`, bubble leak, `cancel_unconfirmed`/`UNKNOWN_AFTER_SEND`, bad `reason`/`timeline` | `UNKNOWN` (never "cancelled") |
+| `REJECTED` with no UI evidence | `preSubmit` failure |
+| `REJECTED` carrying `RECORDING`/`SENDING`/release evidence | `UNKNOWN` |
+| `FAILED` before the UI (well-formed phases/timeline) | `preSubmit` failure |
+| `FAILED` after `RECORDING`/`SENDING`, or with non-array/bad-entry `phases`/`timeline` | `UNKNOWN` |
+| missing / empty / no usable status / thrown | `UNKNOWN` + `recoveryRequired`, terminal |
 
-Only a provable pre-execution refusal is `preSubmit`; a missing, empty, corrupt or thrown result is
-*indeterminate*, never "provably not sent". `UNKNOWN` is terminal: a later submit returns
-`UNKNOWN_NO_RESEND` and the receipt/accepted fact are preserved.
+Only a provable pre-execution refusal is `preSubmit`; a missing, empty, corrupt, contradictory or
+thrown result is *indeterminate*, never "provably not sent". `UNKNOWN` is terminal: a later submit
+returns `UNKNOWN_NO_RESEND` and the receipt/accepted fact are preserved.
 
 Cancellation is three explicit facts, never one flag:
 
@@ -143,27 +158,36 @@ legacy text request
   -> the same relay queue/backend (submit)
 ```
 
-The request identity is derived deterministically from `(scope, target, legacyRequestId, text)`, so the
-same request returns `EXISTING` from the existing catalog/owner/relay and can never generate, save or
-send twice; a `FAILED`, `CANCELLED` or `UNKNOWN` delivery is never regenerated or resent. The facade
-keeps no cache, queue, timer or generation registry of its own, never calls the fixture producer or a
-provider directly, and never invents a second artifact entry (the relay's new-Artifact path stays
-zero-synthesis). The bytes are Fixture bytes; a changed text is a different request identity (the task
-contract has no text field, and the facade deliberately does not add one).
+The request identity is derived deterministically from `(scope, legacyRequestId)` (**145-LEGACY-ID**):
+the text and target are validated facts of that same request, not new identities. A replayed request
+returns `EXISTING` from the existing catalog/owner/relay and can never generate, save or send twice; a
+`FAILED`, `CANCELLED` or `UNKNOWN` delivery is never regenerated or resent; a changed **text** reuses
+the original Task/Artifact/delivery result (no second invocation); a changed **target** is refused by
+the relay's immutable request-key binding (`RELAY_CORE_CONFLICT`, no new task/artifact/delivery). The
+facade keeps no cache, queue, timer or generation registry of its own, never calls the fixture producer
+or a provider directly, and never invents a second artifact entry (the relay's new-Artifact path stays
+zero-synthesis). The bytes are Fixture bytes; real text-to-speech synthesis remains OPEN.
 
 ## 6. Tests
 
-`test/internal-sender-offline.test.mjs` (11 tests) — source/manifest provenance and the read-only
+`test/internal-sender-offline.test.mjs` (16 tests) — source/manifest provenance and the read-only
 facade boundary (no write/spawn/socket import), the re-derived Worker ABI, the exact
 request/argv/cancel-protocol mapping, the Artifact-only and closed-gate refusals, single execution
 (concurrent/duplicate/after-UNKNOWN), fact binding (artifact/target conflict, frozen queued facts),
 result layering (missing/empty/broken/thrown vs pre-UI refusal vs post-UI failure), the full
 request→confirm/unconfirmed cancel protocol (queued/running/signal failure/too-late), the static
-recovery descriptor, and the Voice + permitted Singing relay chains (exactly one invocation).
+recovery descriptor, the Voice + permitted Singing relay chains (exactly one invocation), and the 145
+close-outs: a verdict observed while `invoke` is awaiting is final, a settled verdict is never
+rewritten by concurrent/late observations, a never-invoked queued delivery cannot consume a worker
+result, the execution slot covers the whole Worker holding period, and malformed/contradictory
+evidence is `UNKNOWN` while a well-formed pre-UI refusal stays `preSubmit`.
 
-`test/legacy-text-delivery-offline.test.mjs` (5 tests) — one generation/save/delivery/invocation per
+`test/legacy-text-delivery-offline.test.mjs` (8 tests) — one generation/save/delivery/invocation per
 legacy request, replay `EXISTING` everywhere, UNKNOWN never regenerated or resent, cancelled delivery
-kept but never resent, invalid text refused before any generation, and a static thin-chain check.
+kept but never resent, invalid text refused before any generation, a static thin-chain check, and the
+145-LEGACY-ID cases: a changed text reuses the original result without a second invocation, a changed
+target is refused by the immutable relay binding (no new task/artifact/delivery), and a changed text
+never bypasses an accepted delivery.
 
 All tests use synthetic WAV bytes in a temporary Fixture sandbox and the injected Fixture transport; no
 real audio/network/device/WeChat/process.

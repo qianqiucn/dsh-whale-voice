@@ -171,7 +171,7 @@ can be created for an already accepted request.
 
 Four offline relay files cover the unit (35 tests), and the internal Windows delivery module
 (13-B, 144 revision) is covered by its own two offline files (`test/internal-sender-offline.test.mjs`
-11 + `test/legacy-text-delivery-offline.test.mjs` 5) documented in
+16 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
 [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
 persistent relay entry, never a second queue or generation registry.
 
@@ -218,7 +218,7 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1123 tests / 1119 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
+Local: **1131 tests / 1127 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
 (build unchanged by the Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

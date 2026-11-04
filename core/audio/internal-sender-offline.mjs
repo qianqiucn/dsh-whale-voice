@@ -422,33 +422,68 @@ function deliveryFactKey({ deliveryId, targetId, targetKind, backendId, artifact
 }
 
 /**
+ * Tri-state UI evidence from the optional progress phases/timeline. `BAD` means the evidence itself
+ * is malformed, so it may not be used to prove a pre-execution refusal.
+ */
+function workerUiEvidence(result) {
+  let touched = false
+  if (result.phases !== undefined) {
+    if (!Array.isArray(result.phases)) return 'BAD'
+    for (const phase of result.phases) {
+      if (typeof phase !== 'string') return 'BAD'
+      if (phase === 'RECORDING' || phase === 'SENDING') touched = true
+    }
+  }
+  if (result.timeline !== undefined) {
+    if (!Array.isArray(result.timeline)) return 'BAD'
+    for (const line of result.timeline) {
+      let value = null
+      if (typeof line === 'string') value = line
+      else if (isObject(line) && typeof line.text === 'string') value = line.text
+      else return 'BAD'
+      if (/recording confirmed|right Alt (down|released)/i.test(value)) touched = true
+    }
+  }
+  return touched ? 'YES' : 'NO'
+}
+
+/**
  * Map one real worker result to this module's result layer, using the same conservative rules the
  * reviewed service applies: only a provable pre-UI rejection is "not sent"; everything that may have
- * reached the UI is indeterminate.
+ * reached the UI is indeterminate. A recognized status name alone is not trusted: malformed or
+ * contradictory key evidence (bad reason/stage/bubble/phases/timeline, or a rejection carrying UI
+ * evidence) is `UNKNOWN`, never a clean cancel or a pre-submit failure.
  */
 function classifyWorkerResult(result) {
   if (!isObject(result)) return { kind: 'UNKNOWN', detail: 'worker result is missing or not an object' }
-  const status = typeof result.status === 'string' ? result.status.toUpperCase() : ''
+  if (typeof result.status !== 'string' || result.status.length === 0) return { kind: 'UNKNOWN', detail: 'worker result has no usable status' }
+  const status = result.status.toUpperCase()
+  if (result.reason !== undefined && typeof result.reason !== 'string') return { kind: 'UNKNOWN', detail: 'worker result reason is malformed' }
   const reason = typeof result.reason === 'string' ? result.reason : ''
+  const evidence = workerUiEvidence(result)
+  if (evidence === 'BAD') return { kind: 'UNKNOWN', detail: 'worker UI evidence is malformed' }
   if (status === 'SENT_LOCAL') return { kind: 'SENT_LOCAL' }
   if (status === 'CANCELLED') {
-    if (result.cancel_bubble_appeared === true || /cancel_unconfirmed|UNKNOWN_AFTER_SEND/i.test(reason)) {
-      return { kind: 'UNKNOWN', detail: 'a cancellation could not be proven' }
+    if (result.cancel_bubble_appeared !== undefined && typeof result.cancel_bubble_appeared !== 'boolean') {
+      return { kind: 'UNKNOWN', detail: 'worker cancel bubble evidence is malformed' }
     }
-    const stage = typeof result.cancel_stage === 'string' && CANCEL_STAGES.includes(result.cancel_stage) ? result.cancel_stage : 'CANCELLED_BEFORE_UI'
-    return { kind: 'CANCELLED', cancelStage: stage }
+    if (result.cancel_bubble_appeared === true) return { kind: 'UNKNOWN', detail: 'a cancelled recording leaked a bubble' }
+    if (result.cancel_stage !== undefined && typeof result.cancel_stage !== 'string') {
+      return { kind: 'UNKNOWN', detail: 'worker cancel stage is malformed' }
+    }
+    if (result.cancel_stage === 'UNKNOWN') return { kind: 'UNKNOWN', detail: 'worker could not confirm the cancellation' }
+    if (result.cancel_stage !== undefined && !CANCEL_STAGES.includes(result.cancel_stage)) {
+      return { kind: 'UNKNOWN', detail: 'worker cancel stage is unrecognized' }
+    }
+    if (/cancel_unconfirmed|UNKNOWN_AFTER_SEND/i.test(reason)) return { kind: 'UNKNOWN', detail: 'a cancellation could not be proven' }
+    return { kind: 'CANCELLED', cancelStage: result.cancel_stage || 'CANCELLED_BEFORE_UI' }
   }
-  if (status === 'REJECTED') return { kind: 'PRE_SUBMIT', detail: 'worker rejected before the UI: ' + (reason || 'REJECTED') }
-  if (status === 'FAILED') {
-    const phases = Array.isArray(result.phases) ? result.phases : []
-    const timeline = Array.isArray(result.timeline) ? result.timeline : []
-    const uiTouched = phases.includes('RECORDING') || phases.includes('SENDING') || timeline.some((line) => /recording confirmed|right Alt (down|released)/i.test(String(line?.text ?? line)))
-    return uiTouched
-      ? { kind: 'UNKNOWN', detail: 'worker failed after the UI was touched' }
-      : { kind: 'PRE_SUBMIT', detail: 'worker failed before the UI: ' + (reason || 'FAILED') }
+  if (status === 'REJECTED' || status === 'FAILED') {
+    if (evidence === 'YES') return { kind: 'UNKNOWN', detail: 'worker reports a rejection after the UI was touched' }
+    return { kind: 'PRE_SUBMIT', detail: 'worker ' + status.toLowerCase() + ' before the UI: ' + (reason || status) }
   }
   if (status === 'UNKNOWN') return { kind: 'UNKNOWN', detail: reason || 'worker reported UNKNOWN' }
-  return { kind: 'UNKNOWN', detail: 'unrecognized worker status: ' + (status || 'empty') }
+  return { kind: 'UNKNOWN', detail: 'unrecognized worker status: ' + status }
 }
 
 /**
@@ -549,7 +584,7 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     return 'fixture-internal-' + crypto.randomBytes(8).toString('hex')
   }
 
-  /** Write-once terminal outcome. */
+  /** Write-once terminal outcome; resolving the terminal promise releases the execution slot. */
   function settle(claim, outcome) {
     if (claim.phase === 'SETTLED') return claim.result
     const frozen = deepFreeze({ ...outcome })
@@ -558,6 +593,10 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     if (frozen.accepted === true) stats.accepted += 1
     if (frozen.cancelled === true) stats.cancelled += 1
     if (frozen.unknown === true) stats.unknown += 1
+    if (typeof claim.resolveTerminal === 'function') {
+      claim.resolveTerminal(frozen)
+      claim.resolveTerminal = null
+    }
     return frozen
   }
 
@@ -571,6 +610,8 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
   }
 
   function settleFromWorker(claim, result) {
+    // A late or concurrent observation can never reopen, rewrite or re-flag a settled delivery.
+    if (claim.phase === 'SETTLED') return claim.result
     const classified = classifyWorkerResult(result)
     if (classified.kind === 'SENT_LOCAL') {
       return settle(claim, {
@@ -594,24 +635,33 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     return settle(claim, unknownOutcome(classified.detail, claim))
   }
 
+  /** Resolve the submit promise exactly once; the caller must always receive a verdict. */
+  function resolveSubmit(claim, result) {
+    if (typeof claim.resolveSubmit === 'function') {
+      claim.resolveSubmit(result)
+      claim.resolveSubmit = null
+    }
+  }
+
   async function runClaim(claim) {
-    if (claim.phase === 'SETTLED') return claim.result
+    if (claim.phase === 'SETTLED') return { result: claim.result, hold: false }
     claim.phase = 'RUNNING'
     // A cancel that arrives while the job is still queued is a pre-UI cancellation: no worker call.
     if (claim.cancelRequested) {
       claim.cancelStage = 'CANCELLED_BEFORE_UI'
-      return settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null })
+      claim.cancelConfirmed = true
+      return { result: settle(claim, { ok: true, accepted: false, cancelled: true, cancelStage: 'CANCELLED_BEFORE_UI', backendState: 'CANCELLED', receiptId: null }), hold: false }
     }
     const built = buildSendRequest({
       deliveryId: claim.deliveryId, artifact: claim.snapshot.artifact, target: claim.snapshot.target,
       runRoot: resolvedRunRoot, now: now(), silence,
     })
-    if (!built.ok) return settle(claim, { ok: false, preSubmit: true, code: built.code, detail: built.detail })
+    if (!built.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: built.code, detail: built.detail }), hold: false }
     const plan = buildInternalInvocation('SEND', {
       Request: built.value.files.request, JsonOut: built.value.files.result, ProgressFile: built.value.files.progress,
       CancelFile: built.value.files.cancel, GlobalCancelFile: built.value.files.globalCancel,
     })
-    if (!plan.ok) return settle(claim, { ok: false, preSubmit: true, code: plan.code, detail: plan.detail })
+    if (!plan.ok) return { result: settle(claim, { ok: false, preSubmit: true, code: plan.code, detail: plan.detail }), hold: false }
     claim.invocation = deepFreeze({ ...plan.value, deliveryId: claim.deliveryId, request: built.value.request, files: built.value.files })
     stats.invocations += 1
     let result
@@ -619,23 +669,32 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       result = await transport.invoke(claim.invocation)
     } catch {
       stats.rejected += 1
-      return settle(claim, unknownOutcome('worker transport threw before returning a result', claim))
+      return { result: settle(claim, unknownOutcome('worker transport threw before returning a result', claim)), hold: false }
     }
+    // 145-ASYNC-TERMINAL: an observation may have settled the claim while the invoke was awaiting;
+    // a late dispatch acknowledgement must not reopen it into ACCEPTED.
+    if (claim.phase === 'SETTLED') return { result: claim.result, hold: false }
     if (result && result.ok === true && result.dispatched === true) {
-      // The worker process started but has no terminal result yet: accepted, verdict pending.
+      // The worker process started but has no terminal result yet: accepted, verdict pending, and
+      // the single execution slot stays owned until that terminal observation arrives.
       const receiptId = mintReceipt()
       claim.accepted = { receiptId, backendState: 'QUEUED', sentLocal: false, at: now() }
       claim.phase = 'SUBMITTED'
       claim.submitResult = deepFreeze({ ok: true, accepted: true, backendState: 'QUEUED', receiptId, pending: true })
-      return claim.submitResult
+      return { result: claim.submitResult, hold: true }
     }
-    return settleFromWorker(claim, result)
+    return { result: settleFromWorker(claim, result), hold: false }
   }
 
-  /** Read the worker's later observation without inventing a result; settle only on a terminal one. */
+  /**
+   * Read the worker's later observation without inventing a result. Observation is bound to the one
+   * actual invocation of this claim: a delivery that was never invoked can never consume a worker
+   * result, and a verdict that arrived while awaiting is final.
+   */
   async function observe(claim) {
-    if (claim.phase === 'SETTLED') return
-    if (claim.phase !== 'SUBMITTED' && claim.phase !== 'RUNNING' && claim.phase !== 'QUEUED') return
+    if (!claim || claim.phase === 'SETTLED') return
+    if (!claim.invocation) return
+    if (claim.phase !== 'SUBMITTED' && claim.phase !== 'RUNNING') return
     if (typeof transport.query !== 'function') return
     let observed
     try {
@@ -643,6 +702,7 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     } catch {
       return
     }
+    if (claim.phase === 'SETTLED') return
     if (!observed || observed.ok !== true || !isObject(observed.value)) return
     // A non-result object (or one without a status) is not a terminal worker verdict.
     if (typeof observed.value.status !== 'string') return
@@ -745,10 +805,24 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       const claim = {
         deliveryId: checkedDelivery.deliveryId, factKey, snapshot,
         phase: 'QUEUED', cancelRequested: false, cancelRequestedAt: null, cancelConfirmed: false, cancelStage: null,
-        invocation: null, accepted: null, submitResult: null, result: null, promise: null,
+        invocation: null, accepted: null, submitResult: null, result: null,
+        promise: null, resolveSubmit: null, terminal: null, resolveTerminal: null,
       }
+      claim.promise = new Promise((resolve) => { claim.resolveSubmit = resolve })
+      claim.terminal = new Promise((resolve) => { claim.resolveTerminal = resolve })
       claims.set(checkedDelivery.deliveryId, claim)
-      claim.promise = serialized(() => runClaim(claim))
+      // 145-PENDING-SERIAL: the one execution slot is owned until the claim is terminal, so a
+      // dispatch-only Worker keeps holding it; no second delivery is invoked meanwhile.
+      serialized(async () => {
+        const out = await runClaim(claim)
+        resolveSubmit(claim, out.result)
+        if (out.hold) await claim.terminal
+      }).catch(() => {
+        const failed = claim.phase === 'SETTLED'
+          ? claim.result
+          : settle(claim, { ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.INPUT_INVALID, detail: 'internal queue failure' })
+        resolveSubmit(claim, failed)
+      })
       return claim.promise
     },
     async status({ deliveryId } = {}) {
@@ -787,6 +861,14 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       }
       if (!written || written.ok !== true) {
         return { ok: false, requested: true, confirmed: false, state: 'CANCEL_REQUESTED', code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: 'cancel signal was rejected' }
+      }
+      // The verdict may have arrived while the signal was being written: report the settled truth,
+      // never a stale "requested" state and never a later flag rewrite.
+      if (claim.phase === 'SETTLED') {
+        return {
+          ok: true, requested: true, confirmed: claim.result.cancelled === true,
+          cancelStage: claim.result.cancelStage ?? null, state: project(claim).state,
+        }
       }
       return { ok: true, requested: true, confirmed: false, state: 'CANCEL_REQUESTED' }
     },

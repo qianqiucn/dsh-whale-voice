@@ -411,3 +411,131 @@ test('13-B Singing: the same internal backend accepts a permitted Cover MASTER e
     assert.equal(internal.stats().accepted, 1)
   })
 })
+
+test('145-ASYNC-TERMINAL: a verdict that arrives while invoke is awaiting is final', async () => {
+  const transport = createFixtureTransport({ results: [{ dispatchOnly: true, delayMs: 30 }] })
+  const backend = backendWith(transport)
+  const pending = backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  // The worker's terminal verdict is observed before the dispatch acknowledgement resolves.
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'UNKNOWN', reason: 'result_file_lost' })
+  const observed = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(observed.value.state, 'UNKNOWN')
+  const submitted = await pending
+  assert.equal(submitted.unknown, true)
+  assert.equal(submitted.preSubmit, undefined)
+  const after = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(after.value.state, 'UNKNOWN', 'a late dispatch acknowledgement must not reopen ACCEPTED')
+  assert.equal(after.value.accepted, false)
+  assert.equal(after.value.receiptId, null)
+  assert.equal(transport.invocations.length, 1)
+})
+
+test('145-ASYNC-TERMINAL: a settled verdict is never rewritten by concurrent or later observations', async () => {
+  const transport = createFixtureTransport({
+    results: [{ dispatchOnly: true }],
+    cancelResult: { status: 'CANCELLED', reason: 'USER_CANCELLED:CANCELLED_CONFIRMED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false },
+  })
+  const backend = backendWith(transport)
+  const accepted = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  await backend.cancel({ deliveryId: DELIVERY.deliveryId })
+  const [first, second] = await Promise.all([
+    backend.status({ deliveryId: DELIVERY.deliveryId }),
+    backend.status({ deliveryId: DELIVERY.deliveryId }),
+  ])
+  assert.equal(first.value.state, 'CANCELLED')
+  assert.equal(first.value.cancel.confirmed, true)
+  assert.equal(second.value.state, 'CANCELLED')
+  assert.equal(second.value.receiptId, accepted.receiptId)
+  // A contradictory late result may not rewrite the terminal state or its flags.
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'SENT_LOCAL' })
+  const late = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(late.value.state, 'CANCELLED')
+  assert.equal(late.value.cancel.confirmed, true)
+  assert.equal(late.value.receiptId, accepted.receiptId)
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'UNKNOWN', reason: 'late' })
+  const later = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(later.value.state, 'CANCELLED')
+  assert.equal(later.value.cancel.stage, 'CANCELLED_CONFIRMED')
+})
+
+test('145-QUEUED-OBSERVE: a delivery that was never invoked cannot consume a worker result', async () => {
+  const transport = createFixtureTransport({ results: [{ dispatchOnly: true }, { status: 'SENT_LOCAL' }] })
+  const backend = backendWith(transport)
+  const first = backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  await first
+  // The second delivery is still queued behind the held slot; a pre-set "old" result must not leak.
+  transport.resolveLater(DELIVERY_B.deliveryId, { status: 'SENT_LOCAL' })
+  const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+  const queuedStatus = await backend.status({ deliveryId: DELIVERY_B.deliveryId })
+  assert.equal(queuedStatus.value.state, 'QUEUED')
+  assert.equal(queuedStatus.value.sentLocal, false)
+  assert.equal(transport.invocations.length, 1, 'the queued delivery must not be invoked while the slot is held')
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'SENT_LOCAL' })
+  const settledFirst = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(settledFirst.value.state, 'SENT_LOCAL')
+  const secondResult = await second
+  assert.equal(secondResult.sentLocal, true)
+  assert.equal(transport.invocations.length, 2)
+  assert.equal(transport.invocations.filter((item) => item.deliveryId === DELIVERY_B.deliveryId).length, 1)
+})
+
+test('145-PENDING-SERIAL: the single execution slot covers the whole worker holding period', async () => {
+  const transport = createFixtureTransport({ results: [{ dispatchOnly: true }, { status: 'SENT_LOCAL' }] })
+  const backend = backendWith(transport)
+  const first = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  assert.equal(first.accepted, true)
+  assert.equal(first.pending, true)
+  const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(transport.invocations.length, 1, 'no second worker may start while the first has no terminal')
+  assert.equal(backend.stats().invocations, 1)
+  // UNKNOWN is a terminal worker verdict and is the only thing that releases the slot here.
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'UNKNOWN', reason: 'worker_lost' })
+  const settled = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(settled.value.state, 'UNKNOWN')
+  const secondResult = await second
+  assert.equal(secondResult.sentLocal, true)
+  assert.equal(transport.invocations.length, 2)
+})
+
+test('145-RESULT-BAD-EVIDENCE: malformed or contradictory evidence is indeterminate, never a clean verdict', async () => {
+  const cases = [
+    [{ status: 'CANCELLED', cancel_stage: 'UNKNOWN' }, 'UNKNOWN stage is not a confirmed cancel'],
+    [{ status: 'CANCELLED', cancel_stage: 42 }, 'bad stage type'],
+    [{ status: 'CANCELLED', cancel_stage: 'SOMETHING_ELSE' }, 'unrecognized stage'],
+    [{ status: 'CANCELLED', cancel_bubble_appeared: 'yes' }, 'bad bubble type'],
+    [{ status: 'CANCELLED', reasons: 1, reason: 42 }, 'bad reason type'],
+    [{ status: 'CANCELLED', cancel_stage: 'CANCELLED_CONFIRMED', timeline: [42] }, 'bad timeline entry'],
+    [{ status: 'REJECTED', reason: 'nope', phases: ['SENDING'] }, 'rejection after the UI'],
+    [{ status: 'REJECTED', reason: 'nope', timeline: [{ text: 'right Alt released (send)' }] }, 'rejection after the release'],
+    [{ status: 'FAILED', reason: 'x', phases: 'RECORDING' }, 'bad phases container'],
+    [{ status: 'FAILED', reason: 'x', timeline: {} }, 'bad timeline container'],
+    [{ status: 'FAILED', reason: 'x', phases: ['RECORDING'] }, 'failure after recording'],
+    [{ status: 42 }, 'no usable status'],
+  ]
+  for (const [scripted, label] of cases) {
+    const transport = createFixtureTransport({ results: [scripted] })
+    const backend = backendWith(transport)
+    const result = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    assert.equal(result.ok, false, label)
+    assert.equal(result.unknown, true, label)
+    assert.equal(result.preSubmit, undefined, label)
+    const status = await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal(status.value.state, 'UNKNOWN', label)
+    assert.equal(status.value.cancel.confirmed, false, label)
+    assert.equal(transport.invocations.length, 1, label)
+  }
+  // Well-formed pre-UI evidence is still a deterministic pre-submit refusal.
+  for (const scripted of [
+    { status: 'REJECTED', reason: 'chat_not_allowed' },
+    { status: 'FAILED', reason: 'wav_missing', phases: ['TARGET_VERIFIED'] },
+    { status: 'FAILED', reason: 'busy', timeline: ['   20ms preflight failed'] },
+  ]) {
+    const transport = createFixtureTransport({ results: [scripted] })
+    const backend = backendWith(transport)
+    const result = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    assert.equal(result.preSubmit, true, JSON.stringify(scripted))
+    assert.equal(result.unknown, undefined, JSON.stringify(scripted))
+  }
+})

@@ -94,9 +94,11 @@ export function createLegacyTextDeliveryFacade({ sandbox, relay, textLimit = 200
         return reject(LEGACY_TEXT_DELIVERY_ERRORS.INPUT_INVALID, 'savedInput')
       }
 
-      // One deterministic request identity: the same legacy request/text/target can only ever map to
-      // one generation task, one save and one relay delivery.
-      const digest = sha256(['legacy-text-v1', scopeId, targetId, legacyRequestId, text].join('|'))
+      // 145-LEGACY-ID: the request identity is (scope, legacyRequestId) only. The text and target are
+      // validated facts of the *same* request, not new identities: a changed text can never fork a
+      // second Task/Artifact/delivery, and a changed target is refused by the relay's immutable
+      // request-key binding below (the existing delivery/target is never re-bound).
+      const digest = sha256(['legacy-text-v1', scopeId, legacyRequestId].join('|'))
       const idempotencyKey = 'key:fixture-legacy-' + digest.slice(0, 32)
       const saveRequestKey = 'save:legacy-' + digest.slice(0, 32)
       const relayRequestKey = 'legacy-relay-' + digest.slice(0, 32)
@@ -149,7 +151,25 @@ export function createLegacyTextDeliveryFacade({ sandbox, relay, textLimit = 200
           rights: { state: 'GRANTED', proofRef },
         },
       })
-      if (!ensured.ok) return reject(LEGACY_TEXT_DELIVERY_ERRORS.RELAY_REJECTED, ensured.code ? String(ensured.code) : 'relay rejected the delivery')
+      if (!ensured.ok) {
+        // A semantic change under the same request id is refused by the relay's immutable
+        // request-key binding; the original task/artifact is reported and nothing new is minted.
+        stats.rejected += 1
+        return {
+          ok: false,
+          stage: 'RELAY',
+          schemaVersion: LEGACY_TEXT_DELIVERY_SCHEMA_VERSION,
+          taskId,
+          artifactRef,
+          deliveryId: null,
+          generation,
+          deliveryOutcome: null,
+          code: LEGACY_TEXT_DELIVERY_ERRORS.RELAY_REJECTED,
+          detail: ensured.code ? String(ensured.code) : 'relay rejected the delivery',
+          mockOnly: true,
+          realOperationAllowed: false,
+        }
+      }
       if (ensured.outcome === 'EXISTING') stats.deliveryReuses += 1
       const deliveryId = ensured.delivery.deliveryId
 

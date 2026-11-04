@@ -910,3 +910,44 @@ protocol and one write-once claim keep the offline unit honest without executing
 `preSubmit`; a legacy-text cache or generation registry; running the archived scripts offline.
 
 **Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+---
+
+## ADR-032 — One observed verdict is final, and the execution slot covers the Worker holding period
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 115 revision).
+Extends ADR-031.
+**Related:** ADR-001, ADR-024–ADR-031, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **Terminal monotonicity.** A worker verdict observed through `query()` while `transport.invoke` is
+   still awaiting is final. A late dispatch acknowledgement can never reopen it into `ACCEPTED`, and
+   a settled delivery's state, cancel flags and receipt are write-once: later/concurrent observations
+   cannot rewrite them.
+2. **Observation belongs to the invocation.** Only a delivery that actually invoked may consume a
+   worker result; a still-queued delivery stays `QUEUED` and never "inherits" an old result.
+3. **The execution slot covers the holding period.** The single serial slot stays owned until the
+   claim's terminal observation (a dispatch-only Worker holds it), not merely until the acceptance
+   callback. A terminal worker result is what releases it; `UNKNOWN` is such a terminal result, not a
+   proof that the device was freed. No second business queue or global id owner is introduced.
+4. **Bad evidence is indeterminate.** A recognized status name is not a trusted result: malformed or
+   contradictory key evidence (`cancel_stage:'UNKNOWN'`, bad bubble/reason/stage/phases/timeline, a
+   rejection carrying UI evidence) is `UNKNOWN`; only a well-formed pre-UI refusal is `preSubmit`.
+5. **Stable legacy identity.** The legacy text facade keys its request identity on
+   `(scope, legacyRequestId)`: changed text reuses the original Task/Artifact/delivery result, changed
+   target is refused by the relay's immutable request-key binding. No payload-hash fork, no second
+   generation registry.
+
+**Reason:** the 0145 review replayed concrete counterexamples: a settled `UNKNOWN` was reopened to
+`ACCEPTED` by a late dispatch acknowledgement, concurrent observations mutated `cancel.confirmed`
+after a terminal state, a queued delivery consumed a pre-set worker result, a second Worker started
+while the first only had a dispatch acknowledgement, `CANCELLED` with an `UNKNOWN` stage was reported
+as a confirmed cancel, and a changed legacy payload minted a second task/artifact/delivery that
+bypassed the original `UNKNOWN`.
+
+**Rejected alternatives:** keeping the slot until acceptance only; polling timers/background loops;
+treating an unknown cancel stage as a confirmed cancel; deriving legacy identity from the payload;
+adding a second id owner or business queue.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

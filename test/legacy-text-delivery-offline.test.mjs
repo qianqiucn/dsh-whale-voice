@@ -20,7 +20,8 @@ const TARGET = {
   targetId: 'fixture-private-a', kind: 'PRIVATE', chat: 'fixture-chat-a', authorized: true, allowlisted: true,
   identityVerified: true, bridgeAllowed: true, workerAllowed: true,
 }
-const RELAY_TARGETS = [(() => { const { chat, ...rest } = TARGET; return rest })()]
+const TARGET_B = { ...TARGET, targetId: 'fixture-private-b', chat: 'fixture-chat-b' }
+const RELAY_TARGETS = [TARGET, TARGET_B].map(({ chat, ...rest }) => rest)
 const SCOPE = 'scope:fixture-demo'
 const NOW = '2026-10-27T00:00:00.000Z'
 const EXPIRES = '2026-10-28T00:00:00.000Z'
@@ -40,7 +41,7 @@ async function withSandbox(fn) {
 }
 
 async function harness(sandbox, transport) {
-  const internal = createInternalSenderOffline({ targets: [TARGET], transport, now: () => NOW })
+  const internal = createInternalSenderOffline({ targets: [TARGET, TARGET_B], transport, now: () => NOW })
   const relay = await openUnifiedRelay({ sandbox, backend: internal, targets: RELAY_TARGETS, now: () => NOW })
   const facade = createLegacyTextDeliveryFacade({ sandbox, relay })
   return { internal, relay, facade, input: fixtureRunnerExample() }
@@ -162,4 +163,62 @@ test('144-LEGACY: the facade is a thin chain, never a second generation path', (
   assert.doesNotMatch(source, /\b(writeFileSync|appendFileSync|mkdirSync|rmSync|unlinkSync)\b/)
   assert.doesNotMatch(source, /new Map\(|new Set\(/)
   assert.equal(INTERNAL_SENDER_ID, 'whale-relay-internal-sender')
+})
+
+test('145-LEGACY-ID: changing the text under the same request id reuses the original result', async () => {
+  await withSandbox(async (sandbox) => {
+    const transport = createFixtureTransport({ results: [{ status: 'UNKNOWN', reason: 'worker_lost' }] })
+    const { facade, input } = await harness(sandbox, transport)
+    const first = await facade.deliver(request(input, { text: '第一段文本。' }))
+    assert.equal(first.ok, false)
+    assert.equal(first.state, 'UNKNOWN')
+    const changed = await facade.deliver(request(input, { text: '完全不同的第二段文本。' }))
+    assert.equal(changed.ok, false)
+    assert.equal(changed.state, 'UNKNOWN')
+    assert.equal(changed.taskId, first.taskId, 'the same request id keeps one task')
+    assert.equal(changed.artifactRef, first.artifactRef, 'no second artifact is generated')
+    assert.equal(changed.deliveryId, first.deliveryId, 'no second delivery is minted')
+    assert.equal(changed.generation, 'EXISTING')
+    assert.equal(transport.invocations.length, 1)
+    assert.equal(facade.stats().generations, 1)
+  })
+})
+
+test('145-LEGACY-ID: changing the target under the same request id is refused by the immutable binding', async () => {
+  await withSandbox(async (sandbox) => {
+    const transport = createFixtureTransport()
+    const { facade, relay, input } = await harness(sandbox, transport)
+    const first = await facade.deliver(request(input))
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(first.state, 'ACCEPTED')
+    const otherTarget = await facade.deliver(request(input, { targetId: TARGET_B.targetId }))
+    assert.equal(otherTarget.ok, false)
+    assert.equal(otherTarget.code, LEGACY_TEXT_DELIVERY_ERRORS.RELAY_REJECTED)
+    assert.match(otherTarget.detail, /RELAY_CORE_CONFLICT/)
+    assert.equal(otherTarget.taskId, first.taskId)
+    assert.equal(otherTarget.artifactRef, first.artifactRef)
+    assert.equal(transport.invocations.length, 1, 'a changed target never invokes a second worker')
+    const mappings = await relay.mappings()
+    assert.equal(mappings.ok, true)
+    assert.equal(mappings.deliveries.length, 1)
+    assert.equal(facade.stats().generations, 1)
+  })
+})
+
+test('145-LEGACY-ID: a changed text never bypasses an accepted delivery', async () => {
+  await withSandbox(async (sandbox) => {
+    const transport = createFixtureTransport()
+    const { facade, input } = await harness(sandbox, transport)
+    const first = await facade.deliver(request(input, { text: 'A 文本。' }))
+    assert.equal(first.ok, true)
+    const replay = await facade.deliver(request(input, { text: 'B 文本。' }))
+    assert.equal(replay.ok, true)
+    assert.equal(replay.state, 'ACCEPTED')
+    assert.equal(replay.taskId, first.taskId)
+    assert.equal(replay.artifactRef, first.artifactRef)
+    assert.equal(replay.deliveryId, first.deliveryId)
+    assert.equal(replay.deliveryOutcome, 'EXISTING')
+    assert.equal(transport.invocations.length, 1)
+    assert.equal(facade.stats().generations, 1)
+  })
 })
