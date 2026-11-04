@@ -28,7 +28,7 @@
 
 - `scopeId`：`/^scope:fixture-[A-Za-z0-9_-]{1,32}$/`；
 - `idempotencyKey`：`/^key:fixture-[A-Za-z0-9_-]{1,48}$/`；
-- `draft`：旧 AudioTaskDraft 去掉 `taskId` 后的七个允许字段：`schemaVersion, feature, taskType, source, voiceProfileId, deliveryRequested, rights`。除 `deliveryRequested` 沿旧合同可缺省 `false` 外，其余六项必填；`taskId`/deliveryId/发送参数/正文/预验结果等额外字段一律拒绝。
+- `draft`：旧 AudioTaskDraft 去掉 `taskId` 后的七个允许字段：`schemaVersion, feature, taskType, source, voiceProfileId, deliveryRequested, rights`。除 `deliveryRequested` 沿旧合同可缺省 `false` 外，其余六项必填；`taskId`/deliveryId/发送参数/正文/预验结果等额外字段一律拒绝。139 起也接受 `schemaVersion: 2` 的 Provider 生成任务 draft（`feature: provider-generation`、`taskType: PROVIDER_TTS`，字段为 `provider/voice/input/rights`，见 Core 合同 §3.2）。
 - `observedAt`：规范 UTC 时间。
 
 处理顺序：先完整验证本次输入与 `observedAt`（用旧 `createAudioTaskRecord` + `validateAudioTaskRecord`，内部占位 taskId 绝不写盘/返回），**再查幂等键**。坏日期不能被旧幂等条目掩盖。
@@ -79,7 +79,7 @@ sandbox root 内唯一正式文件：**`audio-task-catalog-v1.json`**，UTF-8 �
 - `record` 为旧完整 16 字段 Task record，经原 `validateAudioTaskRecord`，且 `taskId` 必须严格匹配本 owner 的 `/^task:fixture-[0-9a-f]{32}$/`；
 - 只允许初始 `CREATED` / `BLOCKED_RIGHTS`、无输出、cancel 两 false、delivery `NOT_REQUESTED/null`、lastError null；
 - 用记录字段重建旧 draft 再 create 并严格核对规范 record；
-- `identityHash = SHA256(JSON.stringify(identity))`，小写 64 hex；identity 固定为 `{schemaVersion, feature, taskType, source:{kind,ref}, voiceProfileId, deliveryRequested, rights:{state}}`，`observedAt/taskId/state` 不参与身份；
+- `identityHash = SHA256(JSON.stringify(identity))`，小写 64 hex；v1 identity 固定为 `{schemaVersion, feature, taskType, source:{kind,ref}, voiceProfileId, deliveryRequested, rights:{state}}`，v2（139）为 `{schemaVersion, feature, taskType, provider, voice, input, deliveryRequested, rights:{state}}`，`observedAt/taskId/state` 不参与身份；
 - 读盘逐条重算 hash，查重 taskId（跨 scope）与 `(scopeId,key)`；任何重复/坏 record/hash/未知键/坏 schema/超限整库拒绝，不选择性跳坏条目。
 
 SHA256 仅用于规范身份比较/检测意外变化，**不是签名或防恶意篡改证明**。目录只持久引用/权利/初始记录与 fixture 键，无正文/manifest/请求/音频/凭据。

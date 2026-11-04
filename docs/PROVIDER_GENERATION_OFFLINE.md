@@ -72,6 +72,18 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Formal Provider task (139)
+
+The Core entry now issues a v2 Provider generation task through the same catalog:
+`feature: provider-generation`, `taskType: PROVIDER_TTS`, `provider {providerId, instanceId, model,
+backend}`, `voice {kind:'PRESET', voiceId}`, `input {kind:'TEXT', text}` plus the Fixture
+rights/execution context (`CONFIRMED_FIXTURE`, `mockOnly:true`, `delivery: NOT_REQUESTED`). The
+existing coordinator claim, original owner save path and the same artifact library consume it
+unchanged: the birth task is transitioned to SAVED, the artifact keeps
+`PROVIDER_GENERATION_FIXTURE`, and `status` returns the same provider/voice/input facts after reopen.
+v1 Fixture/Cover tasks and their imports keep their exact v1 shape; this does not enable real
+generation, real model readiness or delivery.
+
 ### Provider generation origin (138)
 
 The provider result is imported into the same Artifact library with
@@ -186,6 +198,10 @@ generation disabled):
   and again after reopen), an ordinary Fixture import still records `FIXTURE_IMPORT`, and an unknown
   origin is rejected at `origin` before any write. On the baseline the first origin assertion fails as
   `undefined` because the provider result was only expressible as `FIXTURE_IMPORT`.
+- 139: the issued task is `schemaVersion: 2` with `feature: provider-generation` and carries the
+  Provider, preset voice, submitted text and Fixture rights (asserted on the persisted catalog record),
+  and `generate`/`status`/reopened status return the same provider/voice/input facts. On the baseline
+  the same test fails as `provider: undefined` because the birth task was a v1 Fixture task.
 
 `test/host-generation.test.mjs` (1 test, isolated Host scope/Connection assembly + real Core entry):
 

@@ -125,17 +125,24 @@ export async function openPresetGenerationApp(options = {}) {
     if (text.length === 0 || text.length > textLimit) return failure(PRESET_GENERATION_APP_ERRORS.TEXT_REJECTED, 'text')
     const language = voice.languages.includes(input.language) ? input.language : voice.languages[0]
     const observedAt = now()
+    const providerFacts = {
+      providerId: 'qwen3-tts',
+      instanceId: 'instance-1',
+      model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
+      backend: 'custom-voice',
+    }
 
     const reserved = await catalogHandle.value.reserve({
       schemaVersion: 1,
       scopeId,
       idempotencyKey: 'key:fixture-preset-' + randomSuffix(),
       draft: {
-        schemaVersion: 1,
-        feature: 'voice-bubbles',
-        taskType: 'TTS',
-        source: { kind: 'TEXT_REF', ref: 'artifact:fixture-text-1' },
-        voiceProfileId: 'voice:demo-hero',
+        schemaVersion: 2,
+        feature: 'provider-generation',
+        taskType: 'PROVIDER_TTS',
+        provider: providerFacts,
+        voice: { kind: 'PRESET', voiceId: voice.id },
+        input: { kind: 'TEXT', text },
         deliveryRequested: false,
         rights: { state: 'CONFIRMED_FIXTURE' },
       },
@@ -152,13 +159,7 @@ export async function openPresetGenerationApp(options = {}) {
       taskId,
       requestKey: 'key:preset-run-' + randomSuffix(),
       rights: { state: 'GRANTED', proofRef: rightsProofRef },
-      provider: {
-        providerId: 'qwen3-tts',
-        instanceId: 'instance-1',
-        model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
-        backend: 'custom-voice',
-        voiceId: voice.id,
-      },
+      provider: { ...providerFacts, voiceId: voice.id },
       request: { text, language, emotion: '', modality: 'preset' },
     })
     if (!prepared.ok) {
@@ -192,7 +193,10 @@ export async function openPresetGenerationApp(options = {}) {
       durationMs: submitted.claim.artifact.durationMs,
       // 138: the saved record's truthful source is the stored Artifact's origin.
       origin: metadata.value.artifact.origin,
-      voiceId: voice.id,
+      // 139: the formal Provider task facts, consistent with the issued task record.
+      provider: { providerId: providerFacts.providerId, model: providerFacts.model },
+      voice: { kind: 'PRESET', voiceId: voice.id },
+      input: { kind: 'TEXT' },
       language,
       fixtureOnly: true,
       realReady: false,
@@ -228,6 +232,9 @@ export async function openPresetGenerationApp(options = {}) {
         ownerState: got.value.ownerState,
         readable: false,
         artifactRef: artifactStatus.value.artifactRef || null,
+        provider: { providerId: got.value.task.provider.providerId, model: got.value.task.provider.model },
+        voice: { kind: got.value.task.voice.kind, voiceId: got.value.task.voice.voiceId },
+        input: { kind: got.value.task.input.kind },
         fixtureOnly: true,
         realReady: false,
       }
@@ -251,6 +258,9 @@ export async function openPresetGenerationApp(options = {}) {
       sha256: bytes ? sha256(bytes) : null,
       byteLength: bytes ? bytes.length : null,
       origin,
+      provider: { providerId: got.value.task.provider.providerId, model: got.value.task.provider.model },
+      voice: { kind: got.value.task.voice.kind, voiceId: got.value.task.voice.voiceId },
+      input: { kind: got.value.task.input.kind },
       fixtureOnly: true,
       realReady: false,
     }

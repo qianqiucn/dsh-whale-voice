@@ -70,6 +70,9 @@ const GET_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId']))
 const DRAFT_KEYS = Object.freeze(
   new Set(['schemaVersion', 'feature', 'taskType', 'source', 'voiceProfileId', 'deliveryRequested', 'rights']),
 )
+const PROVIDER_DRAFT_KEYS = Object.freeze(
+  new Set(['schemaVersion', 'feature', 'taskType', 'provider', 'voice', 'input', 'deliveryRequested', 'rights']),
+)
 const INITIAL_STATES = Object.freeze(new Set(['CREATED', 'BLOCKED_RIGHTS']))
 
 function failure(key, errorPath) {
@@ -103,6 +106,26 @@ function readRootInput(input, allowed) {
 
 function readDraft(payload) {
   if (!isPlainObject(payload)) raise('INVALID_INPUT', 'draft')
+  if (payload.schemaVersion === 2) {
+    for (const key of Reflect.ownKeys(payload)) {
+      if (typeof key !== 'string' || !PROVIDER_DRAFT_KEYS.has(key)) raise('INVALID_INPUT', 'draft')
+    }
+    for (const key of ['schemaVersion', 'feature', 'taskType', 'provider', 'voice', 'input', 'rights']) {
+      if (!hasOwn(payload, key)) raise('INVALID_INPUT', 'draft')
+    }
+    const deliveryRequested = hasOwn(payload, 'deliveryRequested') ? payload.deliveryRequested : false
+    return {
+      schemaVersion: 2,
+      taskId: PLACEHOLDER_TASK_ID,
+      feature: payload.feature,
+      taskType: payload.taskType,
+      provider: payload.provider,
+      voice: payload.voice,
+      input: payload.input,
+      deliveryRequested,
+      rights: payload.rights,
+    }
+  }
   for (const key of Reflect.ownKeys(payload)) {
     if (typeof key !== 'string' || !DRAFT_KEYS.has(key)) raise('INVALID_INPUT', 'draft')
   }
@@ -123,15 +146,26 @@ function readDraft(payload) {
 }
 
 function draftFromRecord(record, taskId) {
-  return {
+  const base = {
     schemaVersion: record.schemaVersion,
     taskId,
     feature: record.feature,
     taskType: record.taskType,
-    source: { kind: record.source.kind, ref: record.source.ref },
-    voiceProfileId: record.voiceProfileId,
     deliveryRequested: record.deliveryRequested,
     rights: { state: record.rights.state },
+  }
+  if (record.schemaVersion === 2) {
+    return {
+      ...base,
+      provider: { ...record.provider },
+      voice: { ...record.voice },
+      input: { ...record.input },
+    }
+  }
+  return {
+    ...base,
+    source: { kind: record.source.kind, ref: record.source.ref },
+    voiceProfileId: record.voiceProfileId,
   }
 }
 

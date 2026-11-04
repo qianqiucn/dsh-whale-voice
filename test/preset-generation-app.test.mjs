@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
+import { CATALOG_FILE_NAME } from '../core/audio/fixture-task-store-internal.mjs'
 import { PRESET_GENERATION_APP_ERRORS, openPresetGenerationApp } from '../core/preset-generation-app.mjs'
 import { createQwenProvider } from '../core/tts/qwen-adapter.mjs'
 import { createQwenSupervisor } from '../core/tts/qwen-supervisor.mjs'
@@ -84,6 +85,29 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.match(first.artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
     assert.match(first.sha256, /^[0-9a-f]{64}$/)
     assert.ok(first.byteLength > 44)
+    assert.deepEqual(first.provider, { providerId: 'qwen3-tts', model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice' })
+    assert.deepEqual(first.voice, { kind: 'PRESET', voiceId: 'demo-voice-a' })
+    assert.deepEqual(first.input, { kind: 'TEXT' })
+
+    // 139: the issued formal task itself carries the Provider, preset voice, submitted text and rights.
+    const catalogBytes = fs.readFileSync(path.join(sandbox.root, CATALOG_FILE_NAME))
+    const catalogSnapshot = JSON.parse(catalogBytes.toString('utf8'))
+    const issued = catalogSnapshot.entries.find((entry) => entry.record.taskId === first.taskId)
+    assert.ok(issued)
+    assert.equal(issued.record.schemaVersion, 2)
+    assert.equal(issued.record.feature, 'provider-generation')
+    assert.equal(issued.record.taskType, 'PROVIDER_TTS')
+    assert.deepEqual(issued.record.provider, {
+      providerId: 'qwen3-tts',
+      instanceId: 'instance-1',
+      model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
+      backend: 'custom-voice',
+    })
+    assert.deepEqual(issued.record.voice, { kind: 'PRESET', voiceId: 'demo-voice-a' })
+    assert.deepEqual(issued.record.input, { kind: 'TEXT', text: '你好，这是正式 Core 的隔离生成。' })
+    assert.equal(issued.record.rights.state, 'CONFIRMED_FIXTURE')
+    assert.equal(issued.record.mockOnly, true)
+    assert.equal(issued.record.realOperationAllowed, false)
 
     const status = await app.status(first.taskId)
     assert.equal(status.ok, true, JSON.stringify(status))
@@ -94,6 +118,9 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.equal(status.sha256, first.sha256)
     assert.equal(status.byteLength, first.byteLength)
     assert.equal(status.origin, 'PROVIDER_GENERATION_FIXTURE')
+    assert.deepEqual(status.provider, { providerId: 'qwen3-tts', model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice' })
+    assert.deepEqual(status.voice, { kind: 'PRESET', voiceId: 'demo-voice-a' })
+    assert.deepEqual(status.input, { kind: 'TEXT' })
 
     // Existing Fixture imports keep their own origin; the Provider generation record does not change it.
     const library = await openFixtureArtifactLibrary({ sandbox })
@@ -143,6 +170,9 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.equal(reopenedStatus.artifactRef, first.artifactRef)
     assert.equal(reopenedStatus.sha256, first.sha256)
     assert.equal(reopenedStatus.origin, 'PROVIDER_GENERATION_FIXTURE')
+    assert.deepEqual(reopenedStatus.provider, { providerId: 'qwen3-tts', model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice' })
+    assert.deepEqual(reopenedStatus.voice, { kind: 'PRESET', voiceId: 'demo-voice-a' })
+    assert.deepEqual(reopenedStatus.input, { kind: 'TEXT' })
 
     // The formal Core entry does not import the UI test bridge or the Fixture worker file.
     const source = fs.readFileSync(coreFile, 'utf8')
