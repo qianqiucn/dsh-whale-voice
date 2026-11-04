@@ -3,7 +3,7 @@
 **Status:** research only. No WeChat message, voice bubble, Hook change, DLL install, service restart or
 production configuration write was performed.
 
-**Scope:** installed WeChatAgent `0.3.9`, public upstream WeChatAgent `0.4.0`, the current Whale Voice
+**Scope:** installed WeChatAgent `0.3.9` (historical snapshot, not re-measured), public upstream WeChatAgent `0.4.2`, the current Whale Voice
 request/authorization design, the existing Voice Sender UI Automation path, and public third-party
 native-voice API documentation. Detailed candidate evidence is in
 [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md).
@@ -16,9 +16,9 @@ native-voice API documentation. Detailed candidate evidence is in
 |---|---|---|
 | Existing Voice Sender UI Automation voice bubble | **SUPPORTED** (for its verified UI path; still requires foreground and a real send test) | `voice-outbox.js` posts `/v1/messages`; sender observes a native bubble |
 | WeChatAgent 0.3.9 native voice bubble | **UNSUPPORTED** | outbound adapter exposes `sendText` and `sendSticker` only |
-| WeChatAgent 0.4.0 native voice bubble | **UNSUPPORTED** | public adapter still has no voice send; text/sticker outbound |
+| WeChatAgent 0.4.2 native voice bubble | **UNSUPPORTED** | public adapter still has no voice send; text/sticker outbound (inbound `record` + `silk-wasm` are receive-side) |
 | OneBot `record` / voice / audio outbound segment | **UNSUPPORTED in this adapter** | protocol is generic; no record send action is implemented |
-| Third-party native voice (`third-party-native`) | **RESEARCH_CANDIDATE** | WeChatPYAPI and PadChat-SDK publish native voice API docs; none is integrated or verified |
+| Third-party native voice (`third-party-native`) | **RESEARCH_CANDIDATE** | WeChatPYAPI and PadChat-SDK publish native voice API docs; refreshed public evidence 2026-11-04, none integrated/verified |
 | Future native backend | **PROTOTYPE_READY only after the admission gates** | no candidate currently satisfies version, license, coexistence, receipt and safety gates |
 | Exact WeChat 4.1.10.27 native voice support | **UNKNOWN / unverified** | current client version is a WeChatAgent baseline; no third-party evidence matches it |
 
@@ -32,12 +32,12 @@ the existing UI Automation path.
 
 ---
 
-## 2. What WeChatAgent actually supports
+## 2. What WeChatAgent actually supports (public 0.4.2, observed 2026-11-04)
 
 Source inspected:
 
 - installed `0.3.9` adapter and bridge source
-- public upstream `0.4.0` adapter and README
+- public upstream `0.4.2` adapter, README and `LICENSES.md` (inbound `packages/voice-codec/silk-wasm` 3.7.1; optional speech-recognition plugin)
 - `components/qq-bridge/src/adapters/wechat/wechat-onebot-adapter.js`
 - `components/qq-bridge/src/adapters/base-adapter.js`
 - `components/qq-bridge/src/core/voice-outbox.js`
