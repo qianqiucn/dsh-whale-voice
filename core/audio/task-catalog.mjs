@@ -229,7 +229,6 @@ async function reserveOnce(state, input) {
     const finalDraft = draftFromRecord(canonical, taskId)
     const finalRecord = createInitialRecord(finalDraft, payload.observedAt)
     if (!INITIAL_STATES.has(finalRecord.state)) raise('DEPENDENCY_FAILURE', '$')
-    if (identityHashOf(finalRecord) !== identityHash) raise('DEPENDENCY_FAILURE', '$')
 
     const entry = {
       scopeId: payload.scopeId,

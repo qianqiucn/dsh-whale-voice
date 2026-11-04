@@ -194,10 +194,6 @@ export function lockStore(state) {
   state.locked = 'UNKNOWN'
 }
 
-export function isStoreLocked(state) {
-  return state.locked !== null
-}
-
 function fileState(state, name) {
   let file = state.files.get(name)
   if (!file) {
