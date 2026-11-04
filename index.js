@@ -3,6 +3,7 @@ import { createDetector, components } from './core/detect.mjs'
 import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilities.mjs'
 import { createConfigSandbox, openConfigStorage, removeConfigSandbox } from './core/config-sandbox.mjs'
 import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
+import { openGenerationSettingsDraft } from './core/settings-draft.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -285,13 +286,26 @@ function generationSettings(config) {
 }
 
 /**
+ * 145: the serializable config may name one explicit settings-draft location. Only a plain value is
+ * read here; the trusted storage context is opened by the plugin itself, never injected by a caller.
+ * The draft is independent from `generation`: it works while generation stays disabled.
+ */
+function settingsDraftRoot(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return undefined
+  const settings = config.settings
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return undefined
+  return settings.draftRoot
+}
+
+/**
  * 142: the Host obtains its own isolated storage context, calls the existing Qwen runtime factory and
  * hands that same Core generation object to the existing Host surface. The worker belongs to this
  * assembly and is closed on dispose. 143: when the serializable config names a `storageRoot`, that
  * explicit location is the storage context instead of a temporary sandbox and is kept on dispose, so
- * a later assembly over the same location reads the same saved tasks and artifacts.
+ * a later assembly over the same location reads the same saved tasks and artifacts. 145: the Host
+ * also receives the settings draft store opened from the serializable config.
  */
-async function assembleGenerationHost(scope, settings) {
+async function assembleGenerationHost(scope, settings, settingsDraft) {
   const { storageRoot, ...runtimeSettings } = settings
   const temporary = storageRoot === undefined
   const sandbox = temporary
@@ -303,7 +317,7 @@ async function assembleGenerationHost(scope, settings) {
     throw new Error('whale-voice generation runtime: ' + (opened.code || 'ASSEMBLY_FAILED'))
   }
   const runtime = opened.value
-  const host = installHostBridge(scope, { env: process.env, generation: runtime.app })
+  const host = installHostBridge(scope, { env: process.env, generation: runtime.app, settingsDraft })
   if (typeof scope.effect === 'function') {
     scope.effect(() => () => {
       host.dispose()
@@ -315,15 +329,19 @@ async function assembleGenerationHost(scope, settings) {
 
 export function apply(ctx, config = undefined) {
   const settings = generationSettings(config)
+  const draftRoot = settingsDraftRoot(config)
   return new Promise((resolve) => {
     ctx.inject(['webServer', 'connection'], (scope) => {
+      const settingsDraft = draftRoot === undefined
+        ? null
+        : openGenerationSettingsDraft({ sandbox: openConfigStorage({ root: draftRoot }) })
       if (!settings) {
-        const host = installHostBridge(scope, { env: process.env })
+        const host = installHostBridge(scope, { env: process.env, settingsDraft })
         if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
         resolve()
         return
       }
-      resolve(assembleGenerationHost(scope, settings))
+      resolve(assembleGenerationHost(scope, settings, settingsDraft))
     })
   })
 }

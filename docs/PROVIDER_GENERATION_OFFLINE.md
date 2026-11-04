@@ -72,6 +72,18 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Formal plugin draft-storage wiring (145)
+
+The formal plugin entry opens the draft store from serializable config: `apply(ctx, config)` reads
+`config.settings.draftRoot` (an absolute location), opens that trusted persistent storage itself
+(never a caller-injected store) with the same `openConfigStorage` capability, and passes the 144 draft
+store to the same Host surface. The draft is independent from `config.generation`: it saves and reads
+while generation stays disabled, a normal dispose keeps the location and its file, and the same
+serialized config and location reopened through the formal entry reads the same value back (still
+"草稿已保存，尚未应用"). Without `settings.draftRoot` the draft route keeps answering
+`503 settings_draft_unavailable`. Nothing is applied: no Worker/model starts, the draft does not
+switch the generation data directory and no historical data is migrated.
+
 ### Generation storage settings draft (144)
 
 The Chinese 语音设置 page records the intended generation data storage location as an isolated
@@ -83,9 +95,9 @@ relative location; the existing loopback/token/connection gate is unchanged). Th
 bridge adds `getGenerationStorageDraft`/`saveGenerationStorageDraft`; the settings card shows the
 saved draft, saves through the Host route and re-reads the same value after a page reload. Success
 means only "草稿已保存，尚未应用": saving never enables generation, starts a Worker or model, writes the
-production config, touches a running generation object or migrates data. In the isolated acceptance
-the Host supplies its own temporary draft storage context; the installed Host is not configured with
-one.
+production config, touches a running generation object or migrates data. The formal plugin now
+supplies this draft store from `config.settings.draftRoot` (145); without that config the route stays
+unavailable.
 
 ### Generation-data storage across plugin reopen (143)
 
@@ -308,8 +320,17 @@ generation disabled):
 - `tests/ui` settings page: the real Host draft route is called from the page; saving a location shows
   "草稿已保存，尚未应用", and a page reload reads the same saved value back (UI **75/75**).
 
-Full suite after this unit: **1166 tests / 1162 pass / 4 platform skips / 0 fail**; UI **75/75**; build
-`client.js` **351,806 bytes** (the 144 settings card is the bundle change).
+`test/plugin-settings-draft.test.mjs` (2 tests, formal plugin entry through `apply(ctx, config)`):
+
+- 145 wiring: a JSON-serialized `{ settings: { draftRoot } }` config makes the formal `apply` open the
+  configured trusted storage itself; the Host draft route saves one location, a normal dispose keeps
+  the marker and file, and the same serialized config reopened through the formal entry reads the same
+  value back. Generation stays explicitly off (`503 generation_not_enabled`) throughout.
+- 145 no config: `undefined`, `{}`, `{ settings: {} }` and a `generation`-only config all leave the
+  draft route at `503 settings_draft_unavailable`.
+
+Full suite after this unit: **1168 tests / 1164 pass / 4 platform skips / 0 fail**; UI **75/75**; build
+`client.js` **351,806 bytes** (144's settings card; 145 did not change the bundle).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
