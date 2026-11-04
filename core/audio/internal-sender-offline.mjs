@@ -74,7 +74,6 @@ export const INTERNAL_SENDER_SCRIPTS = Object.freeze({
 export const INTERNAL_WORKER_ABI = Object.freeze({
   abiVersion: INTERNAL_WORKER_ABI_VERSION,
   serviceVersion: '0.1.0',
-  manifestPreflightSha256: 'a3056dea8965a85a880b0fe5c9a0752e86ce8ab94947ccb3ba77a4f07a595bf4',
   launcher: Object.freeze(['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']),
   scripts: Object.freeze({
     SEND: Object.freeze({
@@ -615,10 +614,6 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     if (frozen.accepted === true) stats.accepted += 1
     if (frozen.cancelled === true) stats.cancelled += 1
     if (frozen.unknown === true) stats.unknown += 1
-    if (typeof claim.resolveTerminal === 'function') {
-      claim.resolveTerminal(frozen)
-      claim.resolveTerminal = null
-    }
     // The submit promise is decided by the verdict itself; it must not wait for an unrelated
     // delivery's lease (147-QUEUED-CANCEL-PROMISE adjacent close-out).
     resolveSubmit(claim, frozen)
@@ -931,11 +926,10 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
         deliveryId: checkedDelivery.deliveryId, factKey, snapshot,
         phase: 'QUEUED', cancelRequested: false, cancelRequestedAt: null, cancelConfirmed: false, cancelStage: null,
         invocation: null, accepted: null, submitResult: null, result: null,
-        promise: null, resolveSubmit: null, terminal: null, resolveTerminal: null,
+        promise: null, resolveSubmit: null,
         leaseReleased: false, releasePromise: null, resolveRelease: null,
       }
       claim.promise = new Promise((resolve) => { claim.resolveSubmit = resolve })
-      claim.terminal = new Promise((resolve) => { claim.resolveTerminal = resolve })
       claim.releasePromise = new Promise((resolve) => { claim.resolveRelease = resolve })
       claims.set(checkedDelivery.deliveryId, claim)
       // 147-UNKNOWN-LEASE: the one execution slot is owned until the claim is *logically* settled

@@ -137,7 +137,7 @@ function validNegotiationValue(value) {
 }
 
 function simulatedMessage(status) {
-  return SIMULATED_MESSAGES[status] || '已返回一次演示模拟结果；尚未生成真实音频，不能试听、保存或发送。'
+  return SIMULATED_MESSAGES[status]
 }
 
 function copyNegotiationValue(value) {

@@ -60,7 +60,6 @@ const TASK_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const KEY_PATTERN = /^[A-Za-z0-9:._-]{1,64}$/
 const PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
 const CLAIM_ID_PATTERN = /^claim:[0-9a-f]{32}$/
-const ARTIFACT_REF_PATTERN = /^artifact:fixture-bytes-[0-9a-f]{32}$/
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 const WAV_LIMITS = Object.freeze({ sampleRate: 24000, channels: 1, bitsPerSample: 16 })
 

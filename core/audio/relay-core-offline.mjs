@@ -68,7 +68,6 @@ export const RELAY_ERRORS = Object.freeze({
 })
 
 const DELIVERY_ID = /^delivery:[0-9a-f]{32}$/
-const INTENT_ID = /^intent:[0-9a-f]{32}$/
 const PERMIT_ID = /^permit:[0-9a-f]{32}$/
 const BACKEND_REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/
 const TASK_ID = /^task:[A-Za-z0-9_-]{1,80}$/
@@ -79,7 +78,6 @@ const TARGET_ID = /^[A-Za-z0-9:_-]{1,64}$/
 const REQUEST_KEY = /^[A-Za-z0-9:_-]{1,128}$/
 const LIVE_SUBMITS = new Map()
 const QUEUES = new Map()
-const MAX_ATTEMPTS = 40
 const HANDOFF_REQUIRED_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'requestKey', 'rights'])
 const HANDOFF_KEYS = Object.freeze([...HANDOFF_REQUIRED_KEYS, 'permitId'])
 const PERMIT_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'rights'])
@@ -107,13 +105,7 @@ function ownKeysOf(value) {
 }
 
 function nowIso(now) {
-  try {
-    const value = typeof now === 'function' ? now() : now
-    const iso = new Date(value).toISOString()
-    return iso
-  } catch {
-    return null
-  }
+  return new Date(now()).toISOString()
 }
 
 function sha256(value) {
@@ -815,7 +807,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (record.state === RELAY_STATES.SUBMITTING && !ownerIsLive(record.owner)) {
         record.state = RELAY_STATES.UNKNOWN
         record.error = { code: RELAY_ERRORS.OWNER_LOST, detail: 'previous submit owner is not live' }
-        record.updatedAt = nowIso(now) || record.updatedAt
+        record.updatedAt = nowIso(now)
         record.owner = null
         recovered.push(record.deliveryId)
         changed = true
@@ -870,7 +862,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
   /** One bounded read of the real artifact bytes plus the parsed WAV facts. */
   async function readFreshArtifact({ scopeId, artifactRef, proofRef }) {
     const at = nowIso(now)
-    if (at === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
     let library = null
     try { library = await openFixtureArtifactLibrary({ sandbox }) } catch { library = null }
     if (!library || library.ok !== true) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
@@ -890,7 +881,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     // The read itself is asynchronous: the clock is sampled again after it so a crossing during the
     // last read cannot be hidden by the timestamp taken before the await.
     const checkedAt = nowIso(now)
-    if (checkedAt === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
     const expiresAt = read.value.artifact.expiresAt
     if (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(checkedAt)) {
       return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'expired')
@@ -937,7 +927,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       const target = trustedTarget(permit.targetId)
       if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
       const at = nowIso(now)
-      if (at === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
       const authority = await readTrustedTaskAuthority({
         sandbox, scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef, rights, at,
       })
@@ -966,7 +955,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         }
         if (store.permits.length >= maxPermits) return { value: fail(RELAY_ERRORS.CAPACITY, 'permits') }
         const permitId = 'permit:' + crypto.randomBytes(16).toString('hex')
-        if (!PERMIT_ID.test(permitId)) return { value: fail(RELAY_ERRORS.INPUT_INVALID) }
         const record = {
           permitId,
           permitKey,
@@ -1012,7 +1000,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
 
       const at = nowIso(now)
-      if (at === null) return fail(RELAY_ERRORS.INPUT_INVALID, 'now')
       const authority = await readTrustedTaskAuthority({
         sandbox, scopeId: handoff.scopeId, taskId: handoff.taskId, artifactRef: handoff.artifactRef,
         rights, at,
@@ -1034,15 +1021,8 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         durationMs: fresh.value.durationMs,
         format: 'WAV',
       }
-      if (!SHA256.test(artifact.sha256)) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
-      if (!Number.isInteger(artifact.byteLength) || artifact.byteLength < 1 || artifact.byteLength > 8 * 1024 * 1024) {
-        return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
-      }
       if (authority.value.masterSha256 && artifact.sha256 !== authority.value.masterSha256) {
         return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact is not the SAVED MASTER')
-      }
-      if (!Number.isInteger(artifact.durationMs) || artifact.durationMs < 1 || artifact.durationMs > 15 * 60 * 1000) {
-        return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'artifact profile')
       }
       const expiresAt = fresh.value.expiresAt
       const permitKey = permitRequired
@@ -1104,9 +1084,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         const deliveryId = 'delivery:' + crypto.randomBytes(16).toString('hex')
         const backendRequestId = 'wv' + crypto.randomBytes(16).toString('hex')
         const intentId = 'intent:' + crypto.randomBytes(16).toString('hex')
-        if (!DELIVERY_ID.test(deliveryId) || !BACKEND_REQUEST_ID.test(backendRequestId) || !INTENT_ID.test(intentId)) {
-          return { value: fail(RELAY_ERRORS.INPUT_INVALID) }
-        }
         const record = {
           deliveryId, taskId: handoff.taskId, taskRecordState: 'SAVED', scopeId: handoff.scopeId,
           artifactRef: artifact.artifactRef, artifactSha256: artifact.sha256,
@@ -1208,9 +1185,6 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         // The accept-time clock is sampled after every await (including the last artifact read), so a
         // crossing that happened during that final read cannot be hidden by an earlier timestamp.
         const acceptAt = nowIso(now)
-        if (acceptAt === null) {
-          return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.INPUT_INVALID, detail: 'accept clock unavailable' })
-        }
         if (!(Date.parse(record.rightsExpiresAt) > Date.parse(acceptAt))) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'rights/artifact expired at accept' })
         }
