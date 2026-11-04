@@ -384,7 +384,7 @@ function GenerationStorageDraftCard({ notify }) {
           'data-testid': 'generation-storage-save',
         }, busy ? '保存中…' : '保存草稿'),
         h('span', { className: 'wv-muted', 'data-testid': 'generation-storage-status' }, statusText)),
-      error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 } },
+      error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'generation-storage-error' },
         h(Icon, { name: 'info', size: 14 }),
         h('span', null, error)) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },

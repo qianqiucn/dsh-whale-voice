@@ -597,12 +597,23 @@ await check('generation storage location draft is saved on the Host and survives
     await assert.doesNotReject(input.waitFor({ timeout: 4000 }))
     assert.equal(await input.inputValue(), '', 'a fresh isolated draft store has no saved value')
     await input.fill(target)
-    await page.getByTestId('generation-storage-save').click()
     await page.waitForFunction(
-      () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
-      null,
+      (value) => document.querySelector('[data-testid="generation-storage-input"]')?.value === value,
+      target,
       { timeout: 4000 },
     )
+    await page.getByTestId('generation-storage-save').click()
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+    } catch (error) {
+      const status = await page.getByTestId('generation-storage-status').innerText().catch(() => '')
+      const note = await page.getByTestId('generation-storage-error').innerText().catch(() => '')
+      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
+    }
     const toast = await page.locator('.wv-toast').innerText()
     assert.match(toast, /草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()

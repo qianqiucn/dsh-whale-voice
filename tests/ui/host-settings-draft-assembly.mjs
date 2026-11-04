@@ -55,6 +55,11 @@ export async function createHostSettingsDraftAssembly() {
       json(res, 404, { ok: false, error: 'not_found' })
       return true
     }
+    const end = res.end.bind(res)
+    res.end = (chunk) => {
+      console.log('[144-debug]', req.method, url.pathname, res.statusCode, String(chunk))
+      return end(chunk)
+    }
     await route.handler(req, res)
     return true
   }
