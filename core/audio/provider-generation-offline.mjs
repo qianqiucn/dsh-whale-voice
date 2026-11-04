@@ -221,7 +221,11 @@ function readPrepare(input) {
     throw failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'request.language')
   }
   if (typeof request.emotion !== 'string' || request.emotion.length > 64) throw failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'request.emotion')
-  if (request.modality !== 'design' && request.modality !== 'clone') throw failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'request.modality')
+  // 133: the wired Qwen CustomVoice preset path is 'preset'; clone/design stay accepted by this
+  // claim contract but are not wired to the public adapter in this task.
+  if (request.modality !== 'preset' && request.modality !== 'design' && request.modality !== 'clone') {
+    throw failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'request.modality')
+  }
   return {
     scopeId: input.scopeId,
     taskId: input.taskId,
@@ -428,15 +432,15 @@ export function createProviderGenerationCoordinator(options = {}) {
 
     let begun
     try {
+      // 133: call the audited provider's real public interface. The Task id is a context fact and the
+      // provider derives the preset modality from the voiceId; claim-only fields (scopeId, taskId,
+      // modality) are not part of the synthesis request schema.
       begun = await provider.beginSynthesis({
-        taskId: entry.taskId,
-        scopeId: entry.scopeId,
         text: entry.request.text,
         voiceId: entry.provider.voiceId,
         language: entry.request.language,
         emotion: entry.request.emotion,
-        modality: entry.request.modality,
-      }, { claimId })
+      }, { claimId, taskId: entry.taskId })
     } catch {
       begun = { ok: false, code: PROVIDER_GENERATION_ERRORS.PROVIDER_UNKNOWN, unknown: true }
     }

@@ -1,11 +1,12 @@
 # Provider Generation → SAVED Candidate (Plan 10-R1, OFFLINE / ISOLATED)
 
-**Status:** `IN PROGRESS` / `OFFLINE` — internal wiring candidate only. No model was loaded, no process
-was spawned, no WeChat/device/window was touched, no production Host route was added, and nothing is
+**Status:** `IN PROGRESS` / `OFFLINE` — internal wiring candidate only. No model was loaded, no real
+inference ran, no WeChat/device/window was touched, no production Host route was added, and nothing is
 merged. `SAVED` means "the isolated coordinator stored provider bytes in the existing Artifact
 library **and** the original task owner recorded that Artifact as the task's SAVED result (132)", not
 that a user can click real generation, not that a Sender can deliver it, and not that a real model
-ran.
+ran. 133 additionally verifies the **real** `createQwenProvider` public interface against the existing
+Fixture worker (a local Node child process, no model).
 
 ## 1. What this unit actually is
 
@@ -19,7 +20,7 @@ Pipeline:
 ```
 prepare(scope, task, requestKey, rights, provider, request)
   → durable claim (claim ledger v1, same trusted sandbox)
-  → submit(claimId) → provider.beginSynthesis(...)
+  → submit(claimId) → provider.beginSynthesis({text,voiceId,language,emotion}, {claimId,taskId})
   → re-measure bytes here (WAV: PCM16 / 24 kHz / mono / 200–20000 ms / ≤1 MiB)
   → artifacts.import(same Artifact authority)
   → artifacts.readBytes readback + SHA256 equality
@@ -59,19 +60,27 @@ synthesis, the already-imported Artifact stays as it is).
   the same `CLAIMED → FINAL SAVED` transaction with the mandatory `SaveProof`; the task record itself
   moves `CREATED → PROCESSING → ARTIFACT_READY → SAVED`. No owner/artifact schema change was needed:
   the v2 SAVED entry and its proof bind Artifact facts, not the fixture engine that produced them.
+- **133 public provider interface:** `request.modality` accepts `preset` (the existing Qwen
+  CustomVoice preset path); `clone`/`design` stay accepted by the claim contract but are not wired in
+  this task. The coordinator calls the audited provider's real public `beginSynthesis(request,
+  context)` with exactly `{text, voiceId, language, emotion}`, and passes the Task id as context
+  (`{claimId, taskId}`) — the provider derives the preset modality from `voiceId` and rejects
+  unknown request keys. The first concrete wiring is `createQwenProvider` + the existing Fixture
+  worker (a local child process; no model, no network).
 - `SAVED` never implies delivery, never allocates a `deliveryId`, and never touches the relay.
 
-## 3. Explicit limits / not done (132 status)
+## 3. Explicit limits / not done (133 status)
 
 1. **Original-task SAVED (132: completed).** `taskOwner.saveArtifact` records the already-imported
    provider Artifact on the birth task; reopen reads the same `SAVED`/`READABLE` artifact from the
    persisted owner and library stores. It does not synthesize and does not create a second task or
    asset store.
-2. **Catalog/owner authority is injected** (and the owner handle is now required). The provider unit
-   tests use a deterministic test authority with a real catalog birth/owner store; the existing owner
-   tests remain the authority for catalog issuance and owner invariants.
-3. **Provider is injected** (the audited `createQwenProvider` in production, a test double here). No
-   model, GPU, interpreter, network or cloud path is started.
+2. **Catalog/owner authority is injected** (and the owner handle is required). The unit tests use a
+   real catalog birth/owner store with a deterministic injected authority; the existing owner tests
+   remain the authority for catalog issuance and owner invariants.
+3. **Provider is injected** and 133 wires the real `createQwenProvider` public interface to the
+   existing Fixture worker (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model,
+   GPU, real inference, network or cloud path is started; clone and VoiceDesign remain unwired.
 4. **No Host/UI route**, no production write, no UI change.
 5. The `expiresAt` window (24 h) is used only for the Artifact library entry, not a delivery/TTL policy.
 
@@ -89,7 +98,14 @@ synthesis, the already-imported Artifact stays as it is).
 - readback mismatch → `SAVE_UNKNOWN` tombstone;
 - closed coordinator rejects new claims.
 
-Full suite after this unit: **1156 tests / 1152 pass / 4 platform skips / 0 fail**; build unchanged
+`test/qwen-generation-wiring.test.mjs` (1 test, real `createQwenProvider` + existing Fixture worker):
+
+- 133: a legal CustomVoice preset request (`modality:'preset'`, `voiceId:'demo-voice-a'`) is accepted,
+  synthesises once through the real public `beginSynthesis`, the bytes match the Fixture worker's
+  deterministic output, the original task is SAVED, and a reopen reads the same artifact. On the
+  baseline the same test fails as `PROVIDER_GENERATION_INPUT_INVALID` / `request.modality`.
+
+Full suite after this unit: **1157 tests / 1153 pass / 4 platform skips / 0 fail**; build unchanged
 (`client.js` 314,687).
 
 ## 5. What a real trial would still need (not executed, not authorized)
