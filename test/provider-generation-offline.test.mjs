@@ -332,3 +332,102 @@ test('provider generation: a closed coordinator rejects new claims without side 
     assert.equal(refused.code, PROVIDER_GENERATION_ERRORS.INPUT_INVALID)
   })
 })
+
+function createDeferredProvider({ bytes = makeWav(), cancelAnswer = { ok: true, ack: 'CANCEL_ACK' }, beginDelay = 20 } = {}) {
+  let pendingResolve = null
+  let beginResolve = null
+  const calls = []
+  return {
+    get calls() {
+      return calls.length
+    },
+    async beginSynthesis(request) {
+      calls.push(request)
+      const requestId = 'qwen-request-' + calls.length
+      const result = new Promise((resolve) => {
+        pendingResolve = resolve
+      })
+      const gate = new Promise((resolve) => {
+        beginResolve = resolve
+      })
+      // The begin promise stays pending for beginDelay ms, modelling a supervisor handshake.
+      await gate
+      return { ok: true, requestId, result, cancel: async () => cancelAnswer }
+    },
+    async cancel() {
+      return cancelAnswer
+    },
+    releaseBegin() {
+      if (beginResolve) beginResolve()
+    },
+    resolve(value) {
+      assert.ok(pendingResolve, 'no pending synthesis')
+      pendingResolve(value)
+    },
+  }
+}
+
+test('provider generation: a cancel that arrives while begin is pending is honoured after the handle appears', async () => {
+  await withSandbox(async ({ sandbox, artifacts }) => {
+    const provider = createDeferredProvider()
+    const coordinator = await open({ sandbox, artifacts, provider })
+    const prepared = await coordinator.prepare(claimInput())
+    const running = coordinator.submit({ claimId: prepared.claim.claimId })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const pending = await coordinator.cancel(prepared.claim.claimId)
+    assert.equal(pending.ok, true, JSON.stringify(pending))
+    assert.equal(pending.claim.cancel.ack, 'PENDING')
+    provider.releaseBegin()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const after = coordinator.status(prepared.claim.claimId)
+    assert.equal(after.claim.cancel.requested, true)
+    assert.equal(after.claim.cancel.ack, 'ACKED')
+    provider.resolve({ ok: false, cancelled: true })
+    const settled = await running
+    assert.equal(settled.outcome, 'CANCELLED')
+    assert.equal(settled.claim.artifact, null)
+  })
+})
+
+test('provider generation: close during begin settles UNKNOWN and never writes a SAVED artifact', async () => {
+  await withSandbox(async ({ sandbox, artifacts }) => {
+    const provider = createDeferredProvider()
+    const coordinator = await open({ sandbox, artifacts, provider })
+    const prepared = await coordinator.prepare(claimInput())
+    const running = coordinator.submit({ claimId: prepared.claim.claimId })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const closed = await coordinator.close()
+    assert.equal(closed.ok, true)
+    assert.ok(closed.settled.includes(prepared.claim.claimId))
+    provider.releaseBegin()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const state = coordinator.status(prepared.claim.claimId)
+    assert.equal(state.claim.state, 'UNKNOWN')
+    assert.equal(state.claim.cancel.requested, true)
+    const late = await running
+    assert.equal(late.ok, false)
+    // The late provider result must not turn the closed claim into SAVED.
+    provider.resolve({ ok: true, bytes: makeWav(), providerId: 'qwen3-tts' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(coordinator.status(prepared.claim.claimId).claim.artifact, null)
+  })
+})
+
+test('provider generation: an unconfirmed cancel and a contradictory cancelled+unknown stay unknown', async () => {
+  await withSandbox(async ({ sandbox, artifacts }) => {
+    const unconfirmed = createDeferredProvider({ cancelAnswer: { ok: false, confirmed: false } })
+    const coordinator = await open({ sandbox, artifacts, provider: unconfirmed })
+    const prepared = await coordinator.prepare(claimInput())
+    const running = coordinator.submit({ claimId: prepared.claim.claimId })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const cancel = await coordinator.cancel(prepared.claim.claimId)
+    assert.equal(cancel.ok, true)
+    unconfirmed.releaseBegin()
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    assert.equal(coordinator.status(prepared.claim.claimId).claim.cancel.ack, 'UNCONFIRMED')
+    unconfirmed.resolve({ ok: false, cancelled: true, unknown: true })
+    const settled = await running
+    assert.equal(settled.outcome, 'UNKNOWN')
+    assert.equal(coordinator.status(prepared.claim.claimId).claim.artifact, null)
+  })
+})

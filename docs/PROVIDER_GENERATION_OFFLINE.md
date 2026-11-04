@@ -41,16 +41,22 @@ prepare(scope, task, requestKey, rights, provider, request)
   returns `EXISTING`; a failed or unknown generation is **never** resynthesised to repair a save.
 - Cancel records `requested` / `ack` / `unknown` as separate facts; a late result may still win the
   race and produce `SAVED`, but it never re-binds a different claim or reopens a terminal one.
+- **121 lifecycle:** a cancel that arrives while `beginSynthesis` is still pending is recorded
+  `PENDING` and applied to the handle once it appears; `close()` settles owned active claims as
+  `UNKNOWN` (attempting a bounded cancel for the owned handle) instead of leaving them `BEGINNING`;
+  an ACK with `confirmed:false` is not a confirmation; a contradictory `cancelled+unknown` result is
+  `UNKNOWN`, not `CANCELLED`.
 - A failed artifact write or a readback mismatch leaves a `SAVE_UNKNOWN` tombstone with no artifact.
 - `SAVED` never implies delivery, never allocates a `deliveryId`, and never touches the relay.
 
-## 3. Explicit limits / not done
+## 3. Explicit limits / not done (121 status)
 
-1. **Owner SAVED entry not written.** The Plan 08 owner snapshot schema (v1/v2) has no provider entry
-   kind; adding one requires a versioned owner-schema extension (`v3`) with mixed-entry parsing, a
-   write path, and regression of every owner invariant. That extension is **not** in this unit. The
-   claim record keeps `taskIdentityHash` and `claimDigest`, so a future owner v3 can bind to the
-   existing claim/artifact without re-synthesis.
+1. **Owner SAVED entry not written (121 status: not completed).** The Plan 08 owner SAVED write is a
+   strict `SaveProof` transaction validated against the artifact store, and the artifact library labels
+   every entry with a fixed fixture origin. A provider entry therefore needs **coordinated schema
+   changes in both stores** (artifact origin/version + owner v3 entry/proof keys) plus full
+   owner-invariant regression — explicitly not completed in this pass. The claim keeps
+   `taskIdentityHash`/`claimDigest` so a later unit can bind without re-synthesis.
 2. **Catalog/owner authority is injected**, not read internally. This keeps the module free of owner
    internals; the existing owner tests remain the authority for catalog issuance and owner invariants,
    and the provider unit tests use a deterministic test authority.

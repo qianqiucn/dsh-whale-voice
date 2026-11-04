@@ -1083,10 +1083,12 @@ snapshot:
 3. cancel, late result, unconfirmed exit, failed artifact write and readback mismatch are separate
    facts; a `SAVE_UNKNOWN` tombstone is never repaired by a second synthesis; `SAVED` never implies
    delivery;
-4. **the Plan 08 owner snapshot is not modified.** Its v1/v2 schema has no provider entry kind; a
-   versioned owner-schema v3 extension (mixed-entry parsing, write path, full owner-invariant
-   regression) is deliberately deferred to its own reviewed unit. The claim record keeps
-   `taskIdentityHash`/`claimDigest` so a future v3 can bind to the same claim without re-synthesis.
+4. **the Plan 08 owner SAVED entry is still missing (121 status: not completed).** The owner’s SAVED
+   write is a strict `SaveProof` transaction validated against the artifact store, and the existing
+   artifact library labels every entry with a fixed fixture origin. A provider entry therefore needs
+   **coordinated schema changes in two stores** (artifact origin/version plus an owner v3 entry and
+   proof keys) with full regression of the owner invariants — a separate, reviewed unit. This is
+   recorded as a concrete gap, not as a silent extension of the plan.
 
 **Reason:** the owner snapshot is a strict, security-critical on-disk contract; bolting a provider
 entry into it in the same unit as the first provider wiring would mix two independent risk domains

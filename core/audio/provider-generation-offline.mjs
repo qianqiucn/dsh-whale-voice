@@ -458,8 +458,26 @@ export function createProviderGenerationCoordinator(options = {}) {
       return Object.freeze({ ok: false, code: unknown ? PROVIDER_GENERATION_ERRORS.PROVIDER_UNKNOWN : PROVIDER_GENERATION_ERRORS.PROVIDER_REJECTED, claim: settled.ok ? project(settled.entry) : null })
     }
 
+    if (closed) {
+      const cancelled = typeof begun.cancel === 'function' ? await begun.cancel().catch(() => ({ ok: false })) : { ok: false }
+      update(claimId, (target) => {
+        if (CLAIM_TERMINAL.has(target.state)) return
+        target.state = 'UNKNOWN'
+        target.cancel = { requested: true, ack: cancelled && cancelled.ok === true ? 'ACKED' : 'UNCONFIRMED', unknown: !(cancelled && cancelled.ok === true) }
+        target.lastError = 'closed during begin'
+      })
+      return failure(PROVIDER_GENERATION_ERRORS.PROVIDER_UNKNOWN, 'closed')
+    }
     const run = { requestId: begun.requestId || null, cancel: typeof begun.cancel === 'function' ? begun.cancel : null }
     running.set(claimId, run)
+    const pendingCancel = find(claimId).entry
+    if (pendingCancel && pendingCancel.cancel.requested === true && pendingCancel.cancel.ack !== 'ACKED') {
+      const acked = run.cancel ? await run.cancel().catch(() => ({ ok: false })) : { ok: false }
+      const acknowledged = Boolean(acked && acked.ok === true && acked.confirmed !== false)
+      update(claimId, (target) => {
+        target.cancel = { requested: true, ack: acknowledged ? 'ACKED' : 'UNCONFIRMED', unknown: !acknowledged }
+      })
+    }
     let answered
     try {
       answered = await begun.result
@@ -471,8 +489,9 @@ export function createProviderGenerationCoordinator(options = {}) {
     if (closed) return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'closed')
 
     if (!answered || answered.ok !== true) {
-      const cancelled = answered && answered.cancelled === true
-      const unknown = !cancelled && answered && (answered.unknown === true || answered.terminal === 'UNKNOWN')
+      const contradictory = Boolean(answered && answered.cancelled === true && answered.unknown === true)
+      const cancelled = Boolean(answered && answered.cancelled === true) && !contradictory
+      const unknown = contradictory || (!cancelled && Boolean(answered && (answered.unknown === true || answered.terminal === 'UNKNOWN')))
       const terminal = cancelled ? 'CANCELLED' : unknown ? 'UNKNOWN' : 'FAILED'
       const settled = update(claimId, (target) => {
         if (CLAIM_TERMINAL.has(target.state)) return
@@ -590,13 +609,20 @@ export function createProviderGenerationCoordinator(options = {}) {
     if (!entry) return failure(PROVIDER_GENERATION_ERRORS.NOT_FOUND, 'claimId')
     if (CLAIM_TERMINAL.has(entry.state)) return Object.freeze({ ok: true, outcome: 'EXISTING', claim: project(entry) })
     const run = running.get(claimId)
+    if (!run && entry.state === 'BEGINNING') {
+      const stored = update(claimId, (target) => {
+        target.cancel = { requested: true, ack: 'PENDING', unknown: false }
+      })
+      if (!stored.ok) return failure(PROVIDER_GENERATION_ERRORS.STORE_INVALID, 'cancel')
+      return Object.freeze({ ok: true, outcome: 'CANCEL_PENDING', claim: project(stored.entry) })
+    }
     let ack = null
     try {
       ack = run && run.requestId ? await provider.cancel(run.requestId) : { ok: false, code: null }
     } catch {
       ack = { ok: false, code: 'CANCEL_THREW' }
     }
-    const acknowledged = Boolean(ack && ack.ok === true)
+    const acknowledged = Boolean(ack && ack.ok === true && ack.confirmed !== false)
     const settled = update(claimId, (target) => {
       target.cancel = { requested: true, ack: acknowledged ? 'ACKED' : 'UNCONFIRMED', unknown: !acknowledged }
     })
@@ -623,7 +649,27 @@ export function createProviderGenerationCoordinator(options = {}) {
 
   async function close() {
     closed = true
-    return { ok: true }
+    const handled = []
+    const ledger = load()
+    if (ledger) {
+      for (const entry of ledger.entries) {
+        if (!CLAIM_ACTIVE.has(entry.state)) continue
+        const run = running.get(entry.claimId)
+        let acked = false
+        if (run && run.cancel) {
+          const ack = await run.cancel().catch(() => ({ ok: false }))
+          acked = Boolean(ack && ack.ok === true && ack.confirmed !== false)
+        }
+        const settled = update(entry.claimId, (target) => {
+          if (CLAIM_TERMINAL.has(target.state)) return
+          target.state = 'UNKNOWN'
+          target.cancel = { requested: true, ack: acked ? 'ACKED' : 'UNCONFIRMED', unknown: !acked }
+          target.lastError = 'closed while active'
+        })
+        if (settled.ok) handled.push(entry.claimId)
+      }
+    }
+    return { ok: true, settled: handled }
   }
 
   return Object.freeze({ ok: true, prepare, submit, status, cancel, get, close })
