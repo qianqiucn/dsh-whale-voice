@@ -763,3 +763,179 @@ test('147-CANCEL-ERROR-RETURN: a failed cancel write still reports a verdict tha
   const after = await backend.status({ deliveryId: DELIVERY.deliveryId })
   assert.equal(after.value.state, 'SENT_LOCAL')
 })
+
+test('148-RESTORE-FAILED-PRESUBMIT: a pre-UI refusal with a failed restore keeps the lease', async () => {
+  const transport = createFixtureTransport({
+    results: [{ status: 'FAILED', reason: 'not_foreground', phases: ['RESTORING'], restore_ok: false }, { status: 'SENT_LOCAL' }],
+  })
+  const backend = backendWith(transport)
+  const first = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  assert.equal(first.preSubmit, true, 'the delivery verdict is still "not recorded/sent"')
+  assert.equal(first.unknown, undefined)
+  const status = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(status.value.state, 'FAILED')
+  assert.equal(status.value.occupancy, 'HELD', 'a failed device restore must keep the execution slot')
+  assert.equal(status.value.recoveryRequired, true)
+  const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+  await sleep(10)
+  assert.equal(transport.invocations.length, 1, 'the next worker must not start on an unrestored device')
+  transport.release(DELIVERY.deliveryId)
+  const released = await backend.status({ deliveryId: DELIVERY.deliveryId })
+  assert.equal(released.value.state, 'FAILED', 'the logical verdict is never rewritten by recovery evidence')
+  assert.equal(released.value.occupancy, 'RELEASED')
+  assert.equal((await second).sentLocal, true)
+  assert.equal(transport.invocations.length, 2)
+
+  // Control: the same pre-UI refusal without negative restore evidence stays compatible and releases.
+  const compatible = createFixtureTransport({ results: [{ status: 'FAILED', reason: 'not_foreground' }, { status: 'SENT_LOCAL' }] })
+  const compatibleBackend = backendWith(compatible)
+  const firstCompatible = await compatibleBackend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  assert.equal(firstCompatible.preSubmit, true)
+  assert.equal((await compatibleBackend.status({ deliveryId: DELIVERY.deliveryId })).value.occupancy, 'RELEASED')
+  assert.equal((await compatibleBackend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })).sentLocal, true)
+  assert.equal(compatible.invocations.length, 2)
+})
+
+test('148-RESTORE-BADTYPE: a provided non-boolean restore_ok is never treated as success', async () => {
+  const badValues = ['false', null, 0, 1, '', [], {}]
+  for (const bad of badValues) {
+    // A trustworthy SENT_LOCAL with an unprovable restore keeps the lease and its facts.
+    const transport = createFixtureTransport({ results: [{ status: 'SENT_LOCAL', restore_ok: bad }, { status: 'SENT_LOCAL' }] })
+    const backend = backendWith(transport)
+    const first = await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    assert.equal(first.sentLocal, true, 'the delivery fact is preserved: ' + JSON.stringify(bad))
+    assert.ok(first.receiptId, 'the receipt is preserved: ' + JSON.stringify(bad))
+    const status = await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal(status.value.state, 'SENT_LOCAL')
+    assert.equal(status.value.receiptId, first.receiptId)
+    assert.equal(status.value.occupancy, 'HELD', 'bad restore evidence must hold: ' + JSON.stringify(bad))
+    assert.equal(status.value.recoveryRequired, true)
+    const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+    await sleep(10)
+    assert.equal(transport.invocations.length, 1, 'no next worker on bad restore evidence: ' + JSON.stringify(bad))
+    transport.release(DELIVERY.deliveryId)
+    await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal((await second).sentLocal, true)
+
+    // The same rule applies to a legal cancellation.
+    const cancelTransport = createFixtureTransport({
+      results: [{ status: 'CANCELLED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false, restore_ok: bad }, { status: 'SENT_LOCAL' }],
+    })
+    const cancelBackend = backendWith(cancelTransport)
+    const cancelled = await cancelBackend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    assert.equal(cancelled.cancelled, true, JSON.stringify(bad))
+    const cancelStatus = await cancelBackend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal(cancelStatus.value.cancel.confirmed, true)
+    assert.equal(cancelStatus.value.occupancy, 'HELD', 'bad restore evidence must hold the cancellation: ' + JSON.stringify(bad))
+    const secondCancel = cancelBackend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+    await sleep(10)
+    assert.equal(cancelTransport.invocations.length, 1)
+    cancelTransport.release(DELIVERY.deliveryId)
+    await cancelBackend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal((await secondCancel).sentLocal, true)
+  }
+  // Positive controls: legal true and the existing compatible omission still release.
+  for (const ok of [true, undefined]) {
+    const transport = createFixtureTransport({ results: [{ status: 'SENT_LOCAL', ...(ok === undefined ? {} : { restore_ok: ok }) }, { status: 'SENT_LOCAL' }] })
+    const backend = backendWith(transport)
+    await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    assert.equal((await backend.status({ deliveryId: DELIVERY.deliveryId })).value.occupancy, 'RELEASED', String(ok))
+    assert.equal((await backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })).sentLocal, true)
+    assert.equal(transport.invocations.length, 2)
+  }
+})
+
+test('148-LATE-EXIT-LEASE: a late clean exit after an observed verdict releases the slot', async () => {
+  const earlyCases = [
+    { late: { status: 'UNKNOWN', reason: 'result_file_lost' }, expected: 'UNKNOWN' },
+    { late: { status: 'SENT_LOCAL' }, expected: 'SENT_LOCAL' },
+    { late: { status: 'CANCELLED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false }, expected: 'CANCELLED' },
+  ]
+  const lateResults = [
+    { status: 'SENT_LOCAL' },
+    { status: 'CANCELLED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false },
+  ]
+  for (const early of earlyCases) {
+    for (const late of lateResults) {
+      const transport = createFixtureTransport({ results: [{ ...late, delayMs: 25 }] })
+      const backend = backendWith(transport)
+      const firstPending = backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+      await sleep(5)
+      transport.resolveLater(DELIVERY.deliveryId, early.late)
+      const observed = await backend.status({ deliveryId: DELIVERY.deliveryId })
+      assert.equal(observed.value.state, early.expected, JSON.stringify(early.late) + ' / ' + JSON.stringify(late))
+      assert.equal(observed.value.occupancy, 'HELD')
+      const first = await firstPending
+      assert.equal(first.unknown === true, early.expected === 'UNKNOWN')
+      assert.equal(first.sentLocal === true, early.expected === 'SENT_LOCAL')
+      assert.equal(first.cancelled === true, early.expected === 'CANCELLED')
+      const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+      await sleep(40)
+      const after = await backend.status({ deliveryId: DELIVERY.deliveryId })
+      assert.equal(after.value.state, early.expected, 'the verdict is write-once')
+      assert.equal(after.value.occupancy, 'RELEASED', 'a late clean exit releases the lease')
+      const secondResult = await second
+      assert.equal(secondResult.sentLocal, true)
+      assert.equal(transport.invocations.length, 2)
+      assert.equal(transport.invocations.filter((item) => item.deliveryId === DELIVERY.deliveryId).length, 1, 'A is never invoked again')
+    }
+  }
+})
+
+test('148-LATE-EXIT-LEASE: late bad or recovery-failed evidence keeps the slot', async () => {
+  const lateCases = [
+    { status: 'SENT_LOCAL', restore_ok: false },
+    { status: 'SENT_LOCAL', restore_ok: 'false' },
+    { status: 'CANCELLED', cancel_stage: 'CANCELLED_CONFIRMED', cancel_bubble_appeared: false, restore_ok: false },
+    { status: 'UNKNOWN', reason: 'worker_lost' },
+    { missing: true },
+  ]
+  for (const late of lateCases) {
+    const transport = createFixtureTransport({ results: [{ ...late, delayMs: 25 }, { status: 'SENT_LOCAL' }] })
+    const backend = backendWith(transport)
+    const firstPending = backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+    await sleep(5)
+    transport.resolveLater(DELIVERY.deliveryId, { status: 'UNKNOWN', reason: 'early' })
+    const observed = await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal(observed.value.state, 'UNKNOWN')
+    await firstPending
+    const second = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+    await sleep(45)
+    const after = await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal(after.value.state, 'UNKNOWN')
+    assert.equal(after.value.occupancy, 'HELD', 'bad late evidence must keep the slot: ' + JSON.stringify(late))
+    assert.equal(transport.invocations.length, 1)
+    transport.release(DELIVERY.deliveryId)
+    await backend.status({ deliveryId: DELIVERY.deliveryId })
+    assert.equal((await second).sentLocal, true)
+    assert.equal(transport.invocations.length, 2)
+  }
+})
+
+test('148-LATE-EXIT-LEASE: concurrent releases are idempotent and never release another delivery', async () => {
+  const transport = createFixtureTransport({ results: [{ dispatchOnly: true }, { dispatchOnly: true }] })
+  const backend = backendWith(transport)
+  await backend.submit({ delivery: DELIVERY, artifact: ARTIFACT, target: CALLER_TARGET })
+  const secondPending = backend.submit({ delivery: DELIVERY_B, artifact: ARTIFACT, target: CALLER_TARGET_B })
+  transport.resolveLater(DELIVERY.deliveryId, { status: 'UNKNOWN', reason: 'x' })
+  await backend.status({ deliveryId: DELIVERY.deliveryId })
+  transport.release(DELIVERY.deliveryId)
+  const [a, b] = await Promise.all([
+    backend.status({ deliveryId: DELIVERY.deliveryId }),
+    backend.status({ deliveryId: DELIVERY.deliveryId }),
+  ])
+  assert.equal(a.value.occupancy, 'RELEASED')
+  assert.equal(b.value.occupancy, 'RELEASED')
+  const secondAccepted = await secondPending
+  assert.equal(secondAccepted.pending, true)
+  assert.equal(transport.invocations.length, 2)
+  // The old delivery's release evidence must never free the new delivery's lease.
+  const bHeld = await backend.status({ deliveryId: DELIVERY_B.deliveryId })
+  assert.equal(bHeld.value.occupancy, 'HELD')
+  transport.release(DELIVERY.deliveryId)
+  const bStillHeld = await backend.status({ deliveryId: DELIVERY_B.deliveryId })
+  assert.equal(bStillHeld.value.occupancy, 'HELD')
+  transport.release(DELIVERY_B.deliveryId)
+  const bReleased = await backend.status({ deliveryId: DELIVERY_B.deliveryId })
+  assert.equal(bReleased.value.occupancy, 'RELEASED')
+})

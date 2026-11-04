@@ -646,12 +646,30 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
   }
 
   /**
+   * Trusted device-recovery evidence from a worker result (148-RESTORE-*).
+   * - `true` is a verified restore and the established fixture positive;
+   * - an omitted field is the existing compatible fixture default (no negative evidence), kept as a
+   *   legal positive for this offline unit only;
+   * - `false` is a failed restore, and any other provided non-boolean value is not a success proof.
+   * Omission or a bad type is never used to *assert* real device recovery; it only avoids a
+   * conservative hold for the fixture contract.
+   */
+  function restoreState(result) {
+    if (!isObject(result)) return 'UNKNOWN'
+    if (result.restore_ok === true) return 'OK'
+    if (result.restore_ok === undefined) return 'OK'
+    if (result.restore_ok === false) return 'FAILED'
+    return 'UNKNOWN'
+  }
+
+  /**
    * Map a worker result into the claim.
    *
    * `source` distinguishes the two evidence classes:
    * - `invoke`: the transport promise settled with this final result, the offline model of the
-   *   worker process ending. A clean pre-UI refusal releases the lease; a clean send/rollback
-   *   releases it unless the result itself reports a failed device restore (`restore_ok:false`).
+   *   worker process ending. A clean verdict releases the lease only when the result does not
+   *   contradict device recovery (`false`/bad `restore_ok` hold it). A pre-UI refusal is a valid
+   *   delivery verdict but does not by itself prove that an already-switched device was restored.
    * - `query`: a later observation is only a logical verdict. It never proves process exit or
    *   device recovery, so it does not release the lease by itself.
    */
@@ -659,12 +677,14 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
     if (claim.phase === 'SETTLED') return claim.result
     const classified = classifyWorkerResult(result)
     const clean = classified.kind === 'SENT_LOCAL' || classified.kind === 'CANCELLED' || classified.kind === 'PRE_SUBMIT'
-    const release = source === 'invoke' && clean
-      && (classified.kind === 'PRE_SUBMIT' || (isObject(result) && result.restore_ok !== false))
+    const restored = restoreState(result) === 'OK'
+    const release = source === 'invoke' && clean && restored
+    const pendingRecovery = source === 'invoke' && clean && !restored
     if (classified.kind === 'SENT_LOCAL') {
       return settle(claim, {
         ok: true, accepted: true, sentLocal: true, backendState: 'SENT_LOCAL',
         receiptId: claim.accepted?.receiptId ?? mintReceipt(),
+        ...(pendingRecovery ? { recoveryRequired: true } : {}),
       }, { release })
     }
     if (classified.kind === 'CANCELLED') {
@@ -673,14 +693,31 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       return settle(claim, {
         ok: true, accepted: false, cancelled: true, cancelStage: classified.cancelStage, backendState: 'CANCELLED',
         receiptId: claim.accepted?.receiptId ?? null,
+        ...(pendingRecovery ? { recoveryRequired: true } : {}),
       }, { release })
     }
     if (classified.kind === 'PRE_SUBMIT') {
       stats.rejected += 1
-      return settle(claim, { ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: classified.detail }, { release })
+      return settle(claim, {
+        ok: false, preSubmit: true, code: INTERNAL_SENDER_ERRORS.FIXTURE_REJECTED, detail: classified.detail,
+        ...(pendingRecovery ? { recoveryRequired: true } : {}),
+      }, { release })
     }
     stats.rejected += 1
     return settle(claim, unknownOutcome(classified.detail, claim), { release: false })
+  }
+
+  /**
+   * 148-LATE-EXIT-LEASE: after an observation already fixed the verdict, a late invoke answer may
+   * still carry trusted exit/recovery evidence. It may only release the lease — the delivery
+   * verdict, cancel flags and receipt stay write-once and are never rewritten or reopened.
+   */
+  function lateExitEvidence(result) {
+    if (!isObject(result)) return false
+    if (result.ok === true && result.dispatched === true) return false
+    const classified = classifyWorkerResult(result)
+    const clean = classified.kind === 'SENT_LOCAL' || classified.kind === 'CANCELLED' || classified.kind === 'PRE_SUBMIT'
+    return clean && restoreState(result) === 'OK'
   }
 
   /** The generic queue/limit exception: classify by whether the worker boundary was crossed. */
@@ -735,8 +772,12 @@ export function createInternalSenderOffline({ targets = [], transport, runRoot =
       return { result: settle(claim, unknownOutcome('worker transport threw before returning a result', claim), { release: false }) }
     }
     // 145-ASYNC-TERMINAL: an observation may have settled the claim while the invoke was awaiting;
-    // a late dispatch acknowledgement must not reopen it into ACCEPTED.
-    if (claim.phase === 'SETTLED') return { result: claim.result }
+    // a late dispatch acknowledgement must not reopen it into ACCEPTED. 148-LATE-EXIT-LEASE: a late
+    // clean exit may still release the lease without touching the already fixed verdict.
+    if (claim.phase === 'SETTLED') {
+      if (lateExitEvidence(result)) releaseLease(claim)
+      return { result: claim.result }
+    }
     if (result && result.ok === true && result.dispatched === true) {
       // The worker process started but has no terminal result yet: accepted, verdict pending, and
       // the single execution slot stays owned until trusted exit/recovery evidence arrives.

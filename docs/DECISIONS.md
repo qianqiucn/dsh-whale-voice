@@ -991,3 +991,37 @@ self-report as exit proof; a second queue/ID owner/retry path; treating a `BEFOR
 despite UI evidence.
 
 **Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+---
+
+## ADR-034 — Recovery evidence is tri-state, and a late exit releases the lease without rewriting the verdict
+
+**Status:** accepted (`13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, 2026-11-04, 117 revision).
+Extends ADR-033.
+**Related:** ADR-001, ADR-024–ADR-033, [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md).
+
+**Decision:**
+
+1. **A pre-UI verdict is not a recovery proof.** The archived worker may switch the capture device and
+   then fail before recording (`voice-sender.ps1` ~416–439, `finally` ~641–668). A `FAILED`/`REJECTED`
+   verdict therefore keeps its "not recorded/sent" meaning but does not release the execution slot on
+   its own; the unrestored resource is held until trusted exit/recovery evidence.
+2. **Tri-state recovery.** `restoreState()` accepts `restore_ok:true` as verified and an omitted field
+   as the established Fixture-compatible positive; `false` and every other provided non-boolean value
+   (`'false'`, `null`, `0`, `1`, `''`, arrays, objects) are failed/unknown and conservatively hold the
+   slot. Omission is never used to assert *real* device recovery.
+3. **Late exit.** After a verdict is fixed, a late invoke answer is inspected independently: a
+   contract-recognised clean result with compatible recovery evidence releases the lease, while the
+   verdict, cancel flags and receipt stay write-once — no reopen, no second invocation of the same id,
+   no extra queue. Bad/missing/recovery-failed late results keep holding; concurrent releases are
+   idempotent and one delivery's release evidence never frees another delivery.
+
+**Reason:** the 0147 review showed a pre-UI `FAILED` with `restore_ok:false` released the slot and
+started the next worker, `restore_ok` bad types (`'false'`, null, 0, 1, empty string, arrays, objects)
+were accepted by `!== false`, and a late clean exit after a query verdict was dropped by the
+`SETTLED` guard, leaving a reachable queue stuck until a manual release.
+
+**Rejected alternatives:** treating any pre-UI verdict as resource release; treating omission/bad
+types as proven recovery; letting a late exit rewrite the verdict; a synthetic release API or a second
+queue.
+
+**Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).

@@ -109,15 +109,29 @@ resource are separate facts:
 - `settle()` fixes the logical delivery state (write-once) and always answers the submit promise;
 - the serial slot is released only by **trusted exit/recovery evidence**:
   - an invoke-returned trustworthy terminal (`SENT_LOCAL`, legal `CANCELLED`, or a pre-UI refusal)
-    represents the offline model of the worker process ending; a clean send/rollback additionally
-    requires the result not to report `restore_ok:false`;
+    represents the offline model of the worker process ending, and it must also not contradict device
+    recovery. The archived worker may switch devices and then fail before recording (`voice-sender.ps1`
+    ~416–439, `finally` ~641–668), so a pre-UI refusal is a valid delivery verdict but **not** proof
+    that an already-switched device was restored;
+  - recovery evidence is tri-state (`restoreState()`): `restore_ok:true` = verified; an omitted field
+    is the established Fixture-compatible positive (never used to assert *real* recovery, and only
+    for this OFFLINE unit); `false` or any other provided non-boolean value (`'false'`, `null`, `0`,
+    `1`, `''`, arrays, objects) is failed/unknown and conservatively holds the slot;
   - a later `query()` observation is a logical verdict only. It releases the slot only when the
     transport reports `released:true` (trusted exit + device recovery); an exit without a usable
     result settles `UNKNOWN` and then releases;
-- `UNKNOWN`, an unconfirmed cancel, a missing/empty/bad result, a thrown transport and a failed
-  device restore therefore keep the slot occupied (`occupancy:'HELD'`, `leaseReleased:false`), while
-  the delivery stays terminal and refuses the same id (`UNKNOWN_NO_RESEND`);
+- `UNKNOWN`, an unconfirmed cancel, a missing/empty/bad result, a thrown transport and a failed/bad
+  device restore therefore keep the slot occupied (`occupancy:'HELD'`, `leaseReleased:false`) while
+  the delivery stays terminal and refuses the same id (`UNKNOWN_NO_RESEND`); the delivery verdict,
+  receipt and accepted facts are never washed by a recovery problem;
 - the static `recover()` descriptor is **not** exit evidence (`executed:false` only).
+
+**Late exit after a fixed verdict (148-LATE-EXIT-LEASE).** When a `query()` observation already fixed
+the verdict, a late invoke answer is still inspected independently: a contract-recognised clean
+`SENT_LOCAL`/`CANCELLED`/pre-UI result with compatible recovery evidence releases the lease, while the
+verdict, cancel flags and receipt stay write-once (no reopen, no second invocation of the same id, no
+extra queue); a late bad/missing/recovery-failed result keeps the slot. Concurrent releases are
+idempotent and one delivery's release evidence never frees another delivery.
 
 ## 4. Results, cancel and recovery (144-RESULT / 145-RESULT-BAD-EVIDENCE / 147-POST-INVOKE-EXCEPTION / 147-CANCEL-EVIDENCE-CONTRADICTION)
 
@@ -192,7 +206,7 @@ zero-synthesis). The bytes are Fixture bytes; real text-to-speech synthesis rema
 
 ## 6. Tests
 
-`test/internal-sender-offline.test.mjs` (24 tests) — source/manifest provenance and the read-only
+`test/internal-sender-offline.test.mjs` (29 tests) — source/manifest provenance and the read-only
 facade boundary (no write/spawn/socket import), the re-derived Worker ABI, the exact
 request/argv/cancel-protocol mapping, the Artifact-only and closed-gate refusals, single execution
 (concurrent/duplicate/after-UNKNOWN), fact binding (artifact/target conflict, frozen queued facts),
@@ -202,7 +216,7 @@ recovery descriptor, the Voice + permitted Singing relay chains (exactly one inv
 close-outs: a verdict observed while `invoke` is awaiting is final, a settled verdict is never
 rewritten by concurrent/late observations, a never-invoked queued delivery cannot consume a worker
 result, the execution slot covers the whole Worker holding period, and malformed/contradictory
-evidence is `UNKNOWN` while a well-formed pre-UI refusal stays `preSubmit`; and the 147 close-outs: a logical `UNKNOWN`/unconfirmed cancel/bad result/failed restore keeps the single execution slot (`occupancy:'HELD'`) until trusted exit/recovery evidence, an exception after the invoke boundary is `UNKNOWN` rather than `preSubmit`, a `CANCELLED_BEFORE_UI` claim contradicting `RECORDING`/`SENDING` evidence is `UNKNOWN`, and a queued cancellation answers its own submit promise immediately.
+evidence is `UNKNOWN` while a well-formed pre-UI refusal stays `preSubmit`; and the 147 close-outs: a logical `UNKNOWN`/unconfirmed cancel/bad result/failed restore keeps the single execution slot (`occupancy:'HELD'`) until trusted exit/recovery evidence, an exception after the invoke boundary is `UNKNOWN` rather than `preSubmit`, a `CANCELLED_BEFORE_UI` claim contradicting `RECORDING`/`SENDING` evidence is `UNKNOWN`, and a queued cancellation answers its own submit promise immediately; and the 148 close-outs: a pre-UI refusal with a failed restore keeps the lease while preserving its "not recorded/sent" verdict, a provided non-boolean `restore_ok` never releases, a late clean exit after a fixed verdict releases the slot without rewriting it, and concurrent/foreign releases stay isolated.
 
 `test/legacy-text-delivery-offline.test.mjs` (8 tests) — one generation/save/delivery/invocation per
 legacy request, replay `EXISTING` everywhere, UNKNOWN never regenerated or resent, cancelled delivery

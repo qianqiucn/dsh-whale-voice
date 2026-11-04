@@ -622,7 +622,7 @@ and recovery stay green.
 
 Evidence: 35 relay tests in 4 files (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), full suite 1107/1103 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
 
-### Plan 13-B / Internal Windows Sender OFFLINE (2026-11-04, 114 revision; 115 close-out; 116 occupancy close-out)
+### Plan 13-B / Internal Windows Sender OFFLINE (2026-11-04, 114 revision; 115 close-out; 116 occupancy close-out; 117 recovery close-out)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`
 (PR #51, not merged). The relay's own Windows delivery module is an Artifact-only backend over the
@@ -661,7 +661,13 @@ descriptor is not such evidence. Exceptions are classified by the invoke boundar
 = `preSubmit`; anything after = `UNKNOWN` with uncertain lease), and a `CANCELLED_BEFORE_UI` claim that
 contradicts `RECORDING`/`SENDING` evidence becomes `UNKNOWN` instead of a confirmed cancel.
 
-Evidence: 24 internal-sender + 8 legacy-text tests, full suite 1139/1135 pass/4 platform skips/0 fail,
+The **117 revision** closes the lease-evidence edges: a pre-UI refusal no longer short-circuits the
+device-recovery check (the archived worker may switch devices before failing), `restore_ok` is
+tri-state (`true` verified, omitted = Fixture-compatible positive, `false`/any other non-boolean =
+held), and a late clean invoke answer after an observed verdict releases the slot without rewriting
+the verdict, flags or receipt.
+
+Evidence: 29 internal-sender + 8 legacy-text tests, full suite 1144/1140 pass/4 platform skips/0 fail,
 UI 72/72 (unchanged product UI), `client.js` 314,687 chars; real process/device/WeChat/window = UNKNOWN.
 Open: the real 13-B runtime (materialise the closure, spawn/observe the Worker, real cancel confirmation,
 device recovery), real TTS synthesis for the legacy text path, and 13-C/Plan14.
