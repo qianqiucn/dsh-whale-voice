@@ -3,12 +3,14 @@ import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import os from 'node:os'
 import path from 'node:path'
 import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
 import { createConfigSandbox } from '../../core/config-sandbox.mjs'
 import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 import { createSingingBridge } from './singing-bridge.mjs'
 import { createHostGenerationAssembly } from './host-generation-assembly.mjs'
+import { createHostSettingsDraftAssembly } from './host-settings-draft-assembly.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -45,9 +47,11 @@ const files = new Map([
 
 const singingBridge = await createSingingBridge()
 const hostGeneration = await createHostGenerationAssembly()
+const hostSettings = await createHostSettingsDraftAssembly()
 
 const server = createServer(async (req, res) => {
   if (await singingBridge.handle(req, res)) return
+  if (await hostSettings.handle(req, res)) return
   if (await hostGeneration.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
@@ -94,7 +98,8 @@ async function withPage(query, fn, setupPage) {
     if (setupPage) await setupPage(page)
     const queryString = query || ''
     const separator = queryString.includes('?') ? '&' : '?'
-    await page.goto(base + queryString + separator + 'hostToken=' + encodeURIComponent(hostGeneration.token), { waitUntil: 'load' })
+    await page.goto(base + queryString + separator + 'hostToken=' + encodeURIComponent(hostGeneration.token)
+      + '&settingsToken=' + encodeURIComponent(hostSettings.token), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
     return await fn(page)
@@ -580,6 +585,42 @@ await check('send & safety groups capabilities and keeps unsupported controls di
     assert.match(componentText, /自动启动本地 TTS 服务/)
     assert.equal(await dialog.getByRole('switch', { name: '自动启动本地 TTS 服务', exact: true }).isDisabled(), true)
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('generation storage location draft is saved on the Host and survives a page reload', async () => {
+  await hostSettings.reset()
+  const target = path.join(os.tmpdir(), 'whale-voice-ui-settings-draft', 'generation-data')
+  await withPage('?bridge=normal', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const input = page.getByTestId('generation-storage-input')
+    await assert.doesNotReject(input.waitFor({ timeout: 4000 }))
+    assert.equal(await input.inputValue(), '', 'a fresh isolated draft store has no saved value')
+    await input.fill(target)
+    await page.getByTestId('generation-storage-save').click()
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
+      null,
+      { timeout: 4000 },
+    )
+    const toast = await page.locator('.wv-toast').innerText()
+    assert.match(toast, /草稿已保存，尚未应用/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /保存成功只代表草稿已写入；尚未应用到生成服务/)
+    assert.match(pageText, /生成数据保存位置/)
+
+    // Reload the page and reopen the settings page: the same saved draft is read again.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-testid="generation-storage-input"]')?.value === value,
+      target,
+      { timeout: 4000 },
+    )
+    const reopenedStatus = await page.getByTestId('generation-storage-status').innerText()
+    assert.ok(reopenedStatus.includes(target), reopenedStatus)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-generation-draft-1440.png') })
   })
 })
 
@@ -2082,5 +2123,6 @@ console.log('Artifacts: ' + artifactDir)
 await browser.close()
 await singingBridge.close()
 await hostGeneration.close()
+await hostSettings.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

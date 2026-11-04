@@ -380,11 +380,14 @@
 
   const fakeBridge = bridge(bridgeMode)
   if (fakeBridge) {
-    // Same client contract as the production bridge script in index.js: the generation calls go to
-    // the formal Host routes with the per-run token; the harness server serves the real 136 handler.
-    const hostToken = new URLSearchParams(window.location.search).get('hostToken') || ''
-    const hostGeneration = async (path, options = {}) => {
-      const headers = { accept: 'application/json', 'x-whale-core-token': hostToken }
+    // Same client contract as the production bridge script in index.js: the generation and settings
+    // draft calls go to the formal Host routes with the per-run tokens; the harness server serves the
+    // real Host handlers.
+    const tokens = new URLSearchParams(window.location.search)
+    const hostToken = tokens.get('hostToken') || ''
+    const hostSettingsToken = tokens.get('settingsToken') || ''
+    const hostFetch = async (token, path, options = {}) => {
+      const headers = { accept: 'application/json', 'x-whale-core-token': token }
       if (typeof options.body === 'string') headers['content-type'] = 'application/json'
       let response
       try {
@@ -397,9 +400,13 @@
       if (payload && typeof payload === 'object') return payload
       return { ok: false, error: 'core_http_' + response.status }
     }
+    const hostGeneration = (path, options) => hostFetch(hostToken, path, options)
+    const hostSettings = (path, options) => hostFetch(hostSettingsToken, path, options)
     fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
     fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
+    fakeBridge.getGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage')
+    fakeBridge.saveGenerationStorageDraft = (request) => hostSettings('/whale-voice/setup/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) })
     window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
   }
 

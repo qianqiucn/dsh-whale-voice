@@ -272,13 +272,132 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       MOCK_ACTIVITIES.slice(0, 4).map((a, i) => h(ActivityMini, { key: a.id, activity: a, onOpen: openActivity, last: i === 3 })))))
 }
 
+const GENERATION_DRAFT_ERRORS = {
+  settings_draft_unavailable: '草稿存储未接入：当前 Host 没有提供草稿位置，前端不会假装已保存。',
+  draft_root_invalid: '请填写生成数据保存位置。',
+  draft_root_not_absolute: '保存位置需要使用绝对路径，例如 D:\\WhaleVoice\\generation。',
+  draft_invalid: '已保存的草稿无法读取，未显示旧值。',
+  invalid_body: '草稿请求无效。',
+  internal_error: '草稿保存失败：Host 内部错误。',
+  core_unreachable: '无法连接 Host 接口。',
+}
+
+function generationDraftError(error) {
+  return GENERATION_DRAFT_ERRORS[error] || ('草稿操作失败：' + (error || '未知'))
+}
+
+/** 144: the generation data storage location is a real Host-side draft, not a frontend demo field. */
+function GenerationStorageDraftCard({ notify }) {
+  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const available = Boolean(host
+    && typeof host.getGenerationStorageDraft === 'function'
+    && typeof host.saveGenerationStorageDraft === 'function')
+  const [value, setValue] = React.useState('')
+  const [savedValue, setSavedValue] = React.useState(null)
+  const [loading, setLoading] = React.useState(available)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
+
+  const applyDraft = (payload) => {
+    setLoading(false)
+    if (!payload || payload.ok !== true) {
+      setError(generationDraftError(payload && payload.error))
+      return
+    }
+    const saved = payload.draft && typeof payload.draft.generationStorageRoot === 'string'
+      ? payload.draft.generationStorageRoot
+      : ''
+    setSavedValue(saved)
+    setValue(saved)
+    setError('')
+  }
+
+  React.useEffect(() => {
+    if (!available) return undefined
+    let alive = true
+    host.getGenerationStorageDraft().then(
+      (payload) => { if (alive) applyDraft(payload) },
+      () => {
+        if (!alive) return
+        setLoading(false)
+        setError(generationDraftError('core_unreachable'))
+      },
+    )
+    return () => { alive = false }
+  }, [])
+
+  const save = async () => {
+    if (!available || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const payload = await host.saveGenerationStorageDraft({ generationStorageRoot: value })
+      setBusy(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('生成数据保存位置草稿未保存。', 'error')
+        return
+      }
+      applyDraft(payload)
+      notify('生成数据保存位置草稿已保存，尚未应用。', 'success')
+    } catch {
+      setBusy(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('生成数据保存位置草稿未保存。', 'error')
+    }
+  }
+
+  const statusText = !available
+    ? '草稿存储未接入'
+    : loading
+      ? '正在读取草稿…'
+      : savedValue
+        ? '已保存草稿：' + savedValue
+        : '尚未保存草稿'
+
+  return h(Card, {
+    title: '生成数据保存位置',
+    desc: '填写生成任务与产物的保存目录；这里只保存配置草稿，不会启用或切换生成服务。',
+    actions: h(Badge, { tone: 'wait' }, '配置草稿'),
+  },
+    h('div', { className: 'wv-settings-group' },
+      h(SettingRow, {
+        title: '保存位置',
+        desc: '对应正式生成配置里的 storageRoot；保存后刷新或关闭重开页面仍会显示。',
+        tip: '只记录位置；不创建目录、不迁移历史数据、不启动 Worker 或模型。',
+      },
+        h('input', {
+          className: 'wv-input',
+          type: 'text',
+          value,
+          placeholder: '例如 D:\\WhaleVoice\\generation',
+          disabled: !available || busy,
+          onChange: (event) => { setValue(event.target.value); setError('') },
+          'aria-label': '生成数据保存位置',
+          'data-testid': 'generation-storage-input',
+        })),
+      h('div', { className: 'wv-row', style: { alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 } },
+        h(Button, {
+          variant: 'primary',
+          onClick: () => { void save() },
+          disabled: !available || busy || loading,
+          'data-testid': 'generation-storage-save',
+        }, busy ? '保存中…' : '保存草稿'),
+        h('span', { className: 'wv-muted', 'data-testid': 'generation-storage-status' }, statusText)),
+      error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 } },
+        h(Icon, { name: 'info', size: 14 }),
+        h('span', null, error)) : null,
+      h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
+        '保存成功只代表草稿已写入；尚未应用到生成服务，也不代表生成已启用。')))
+}
+
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
   const num = (v) => Number(v)
   return h(React.Fragment, null,
     h(PageHead, {
       eyebrow: 'WHALE VOICE / SETTINGS',
       title: '语音设置',
-      description: '日常使用的安全配置。所有修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
+      description: '日常使用的安全配置。除“生成数据保存位置”草稿外，其余修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
       actions: h(React.Fragment, null,
         dirty ? h(Badge, { tone: 'demo' }, '有未保存修改') : h(Badge, { tone: 'backend' }, '已同步演示草稿'),
         h(Button, { onClick: resetSettings, disabled: !dirty }, '恢复默认'),
@@ -286,7 +405,8 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。')),
+      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。“生成数据保存位置”只保存为草稿，不会启用生成服务。')),
+    h(GenerationStorageDraftCard, { notify }),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,

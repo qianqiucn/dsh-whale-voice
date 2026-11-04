@@ -72,6 +72,21 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Generation storage settings draft (144)
+
+The Chinese 语音设置 page records the intended generation data storage location as an isolated
+*draft*: `core/settings-draft.mjs` keeps one fixed `generation-settings-draft.json` (`schemaVersion:1`,
+`generationStorageRoot`, `savedAt`) under a trusted sandbox, and `installHostBridge` exposes
+`GET/PUT /whale-voice/setup/settings/generation-storage` (503 `settings_draft_unavailable` when the
+Host supplies no draft store, 400 `draft_root_invalid`/`draft_root_not_absolute` for an empty or
+relative location; the existing loopback/token/connection gate is unchanged). The production client
+bridge adds `getGenerationStorageDraft`/`saveGenerationStorageDraft`; the settings card shows the
+saved draft, saves through the Host route and re-reads the same value after a page reload. Success
+means only "草稿已保存，尚未应用": saving never enables generation, starts a Worker or model, writes the
+production config, touches a running generation object or migrates data. In the isolated acceptance
+the Host supplies its own temporary draft storage context; the installed Host is not configured with
+one.
+
 ### Generation-data storage across plugin reopen (143)
 
 `config.generation.storageRoot` names one explicit, absolute storage location for the generation
@@ -281,8 +296,20 @@ generation disabled):
   baseline the configured location is never created because the config surface had no storage
   location.
 
-Full suite after this unit: **1164 tests / 1160 pass / 4 platform skips / 0 fail**; UI **74/74**; build
-`client.js` **320,456 bytes** (the 137 page wiring is the bundle change).
+`test/settings-draft.test.mjs` (2 tests):
+
+- 144 store: an empty read, save → a reopened store over the same sandbox reads the same draft, the
+  on-disk shape is the fixed three-key record, and empty/relative/non-string locations are rejected
+  without changing the saved draft.
+- 144 Host route: save/re-read on the same storage context, a new Host assembly over the same sandbox
+  serves the same saved value, 400 for invalid input, 401 for a wrong token, 503
+  `settings_draft_unavailable` without a draft store, and the generation routes still answer
+  `503 generation_not_enabled` (the draft flow starts no generation service/Worker/model).
+- `tests/ui` settings page: the real Host draft route is called from the page; saving a location shows
+  "草稿已保存，尚未应用", and a page reload reads the same saved value back (UI **75/75**).
+
+Full suite after this unit: **1166 tests / 1162 pass / 4 platform skips / 0 fail**; UI **75/75**; build
+`client.js` **351,752 bytes** (the 144 settings card is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

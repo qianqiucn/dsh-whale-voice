@@ -104,6 +104,8 @@ export function bridgeScript(token) {
     getGenerationCatalog: () => generation('/generation/catalog'),
     generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
+    getGenerationStorageDraft: () => generation('/settings/generation-storage'),
+    saveGenerationStorageDraft: (request) => generation('/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) }),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -139,6 +141,7 @@ export function installHostBridge(scope, options = {}) {
   const token = options.token || randomBytes(32).toString('hex')
   const detector = options.detector || createDetector({ env: options.env || process.env, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs })
   const generation = options.generation || null
+  const settingsDraft = options.settingsDraft || null
   const guard = makeGuard(scope)
   const disposers = []
 
@@ -180,6 +183,26 @@ export function installHostBridge(scope, options = {}) {
     if (!components.includes(component)) return send(res, 400, { ok: false, error: 'unsupported_component' })
     return send(res, 200, await detector.detectComponent(component))
   })
+
+  // 144: the Chinese settings page records the generation data storage location as an isolated
+  // settings draft. `options.settingsDraft` is a store over a trusted storage context supplied by the
+  // Host; without it the route explicitly reports that the draft store is unavailable, and saving a
+  // draft never enables generation, starts a worker or touches a running generation object.
+  route(PREFIX + '/settings/generation-storage', async (req, res) => {
+    if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
+    if (String(req.method || '').toUpperCase() === 'PUT') {
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch {
+        return send(res, 400, { ok: false, error: 'invalid_body' })
+      }
+      const result = settingsDraft.save({ generationStorageRoot: body && body.generationStorageRoot })
+      return send(res, result.ok === true ? 200 : 400, result)
+    }
+    const result = settingsDraft.read()
+    return send(res, result.ok === true ? 200 : 500, result)
+  }, ['GET', 'PUT'])
 
   // 136: formal Host call surface for the preset generation Core entry. `options.generation` is an
   // already-opened `openPresetGenerationApp` value supplied by the isolated Host assembly; without it
