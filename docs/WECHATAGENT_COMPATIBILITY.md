@@ -18,8 +18,8 @@ account/group identity and send-result feedback remain planned; installation and
 |---|---|---|
 | Whale Voice `dsh-whale-voice` | **0.1.0** | repository `package.json` |
 | WeChatAgent local runtime | **0.3.9** | local `app/resources/project/package.json` |
-| WeChatAgent native voice send | **UNSUPPORTED** | 0.3.9 and public 0.4.0 outbound adapter expose text/sticker only; no source `SendVoice`/record path |
-| WeChatAgent upstream latest observed | **0.4.0** | public README/adapter on 2026-10-24; **not installed or verified locally** |
+| WeChatAgent native voice send | **UNSUPPORTED** | 0.3.9 and public 0.4.2 outbound adapter expose text/sticker only; inbound `record` + `silk-wasm` + optional speech-recognition are receive/transcribe, not send |
+| WeChatAgent upstream latest observed | **0.4.2** | public `package.json`/README/adapter at `main` @ `38c1060` on 2026-11-04; **not installed or verified locally** |
 | DSH plugin SDK baseline | **0.2.0-rc.2** | supplied development baseline |
 | DSH desktop shell observed | **0.2.1-rc.2** | local executable version; plugin UI loads, but SDK-level compatibility was not re-tested |
 | Windows WeChat client | **4.1.10.27** | verified local client path |

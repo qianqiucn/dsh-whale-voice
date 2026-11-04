@@ -622,7 +622,7 @@ and recovery stay green.
 
 Evidence: 35 relay tests in 4 files (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), full suite 1107/1103 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
 
-### Plan 13-B / Internal Windows Sender OFFLINE (2026-11-04, 114 revision; 115 close-out; 116 occupancy close-out; 117 recovery close-out)
+### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`
 (PR #51, not merged). The relay's own Windows delivery module is an Artifact-only backend over the
@@ -671,3 +671,23 @@ Evidence: 29 internal-sender + 8 legacy-text tests, full suite 1144/1140 pass/4 
 UI 72/72 (unchanged product UI), `client.js` 314,687 chars; real process/device/WeChat/window = UNKNOWN.
 Open: the real 13-B runtime (materialise the closure, spawn/observe the Worker, real cancel confirmation,
 device recovery), real TTS synthesis for the legacy text path, and 13-C/Plan14.
+
+**118-A merge (2026-11-04):** PR #51 was merged with exactly one standard Merge Commit
+`M=135c0256023926815bfe0aa01280c13e9747ec7c` (double parents first `G=4b45ebd`, second `H=4fb8af7`;
+tree `M`=`H`=`T=8e73ae22`; full first-parent diff byte-identical to `G..H`, 41 files `+8588/−17`);
+remote `main`=M and the source branch stays at H. Main CI `41775387252`: the first attempt's build
+failed only on the pre-existing flaky `121-R03` Qwen test (file untouched by this merge) and attempt 2
+build+ui succeeded. 13-B stays `OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED`.
+
+### Plan 13-C / Native voice static admission research (2026-11-04, 118-B)
+
+Branch `docs/plan13c-native-admission-20261104` from M, new research PR (not merged). The public
+first-party evidence for WeChatPYAPI, PadChat-SDK and WeChatAgent(0.4.2) was refreshed on 2026-11-04
+against the 2026-10-24 snapshot, pinned to head commits, and scored against the existing 12 admission
+gates (PASS/FAIL/UNKNOWN per candidate). None is `PROTOTYPE_READY`: WeChatPYAPI has no LICENSE and
+still requires disabling antivirus; PadChat-SDK is a 2024 iPad-protocol service whose SDK
+`package.json` declares ISC but whose external service authorization is unknown; WeChatAgent 0.4.2 has
+no outbound voice API (inbound `record`/`silk-wasm`/speech-recognition are receive-side) and its root
+MIT does not cover the complete third-party Hook/client path required for native voice. The original “two community developers”/`wechat_voice_say`/`wechat_sing` remain
+UNKNOWN (no precise first-party source). Native/auto stay unselectable; no DLL/Hook/SDK was downloaded
+or run; no runner, production route or second queue was created.

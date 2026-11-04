@@ -1025,3 +1025,42 @@ types as proven recovery; letting a late exit rewrite the verdict; a synthetic r
 queue.
 
 **Related:** [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+---
+
+## ADR-035 — Native voice admission stays closed; inbound SILK/transcription is not an outbound capability
+
+**Status:** accepted (`13-C / RESEARCH_CANDIDATE` / `NOT_INTEGRATED`, 2026-11-04, 118-B).
+**Related:** ADR-001, ADR-024–ADR-034, [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md),
+[VOICE_DELIVERY_BACKENDS.md](VOICE_DELIVERY_BACKENDS.md).
+
+**Decision:** the native-voice research was refreshed against public first-party evidence on
+2026-11-04 and the admission conclusion is unchanged:
+
+- WeChatPYAPI (`master` @ `05060fa`, `version.txt` V-9.2.1) publishes `send_voice` (SILK absolute path,
+  ms, boolean) but has **no LICENSE**, still asks users to disable antivirus, and documents only
+  Windows WeChat 3.6.0.18 / 4.1.12.26;
+- PadChat-SDK (`master` @ `f1dd594`, 2024 code) publishes `sendVoice` (SILK base64, ms, `msgId`
+  examples); its `package.json` v0.6.1 declares **ISC** (no separate LICENSE/notice file), but it
+  depends on a separate Windows iPad-protocol login service whose authorization is unpublished — the
+  full path’s license gate is therefore UNKNOWN, not “no license”;
+- WeChatAgent 0.4.2 (`main` @ `38c1060`) has **no outbound voice API**; its `silk-wasm` codec and
+  optional speech-recognition plugin are inbound/transcription features. Its root MIT covers the
+  project’s own code only; `docs/WECHAT_HOOK.md` requires separately licensed third-party Hook source
+  and a matching client build for the complete native path, so that path’s license/component gates are
+  UNKNOWN, not PASS.
+
+All 12 existing admission gates are scored PASS/FAIL/UNKNOWN per candidate; none is
+`PROTOTYPE_READY`. The original plan's “two community developers”, `wechat_voice_say` and
+`wechat_sing` remain UNKNOWN (no precise first-party source). Native/auto stay
+unselectable/unsubmittable; no runner, production route, second queue or retry path is created; no
+DLL/Hook/SDK is downloaded or executed.
+
+**Reason:** the 2026-10-24 snapshot is stale in places (WeChatPYAPI moved to V-9.2.1; WeChatAgent is at
+0.4.2 with inbound SILK), and an unscored “looks like a voice API” claim must not become an enabled
+backend. A message ID, `True`, `status:0` or HTTP 200 is not a native-bubble receipt.
+
+**Rejected alternatives:** treating an API name or `msgId` as admission; bundling an unlicensed
+DLL/service; disabling antivirus; re-labeling inbound `record`/SILK/transcription as outbound voice;
+starting a prototype without license, coexistence and receipt evidence.
+
+**Related:** [NATIVE_VOICE_RESEARCH.md](NATIVE_VOICE_RESEARCH.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
