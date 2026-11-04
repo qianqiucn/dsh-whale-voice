@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
+import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
+import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
 import { PRESET_GENERATION_APP_ERRORS, openPresetGenerationApp } from '../core/preset-generation-app.mjs'
 import { createQwenProvider } from '../core/tts/qwen-adapter.mjs'
 import { createQwenSupervisor } from '../core/tts/qwen-supervisor.mjs'
@@ -77,6 +79,7 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.equal(first.ok, true, JSON.stringify(first))
     assert.equal(first.state, 'SAVED')
     assert.equal(first.ownerState, 'SAVED')
+    assert.equal(first.origin, 'PROVIDER_GENERATION_FIXTURE')
     assert.match(first.taskId, /^task:fixture-[0-9a-f]{32}$/)
     assert.match(first.artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
     assert.match(first.sha256, /^[0-9a-f]{64}$/)
@@ -90,6 +93,34 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.equal(status.artifactRef, first.artifactRef)
     assert.equal(status.sha256, first.sha256)
     assert.equal(status.byteLength, first.byteLength)
+    assert.equal(status.origin, 'PROVIDER_GENERATION_FIXTURE')
+
+    // Existing Fixture imports keep their own origin; the Provider generation record does not change it.
+    const library = await openFixtureArtifactLibrary({ sandbox })
+    assert.equal(library.ok, true, JSON.stringify(library))
+    const imported = await library.value.import({
+      schemaVersion: 1,
+      scopeId: SCOPE,
+      requestKey: 'key:fixture-import-origin',
+      bytes: wavFromSamples([1200, -2200, 32767, -32768], 24000),
+      now: new Date().toISOString(),
+      expiresAt: '2027-01-01T00:00:00.000Z',
+      rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(imported.ok, true, JSON.stringify(imported))
+    assert.equal(imported.value.artifact.origin, 'FIXTURE_IMPORT')
+    const unknownOrigin = await library.value.import({
+      schemaVersion: 1,
+      scopeId: SCOPE,
+      requestKey: 'key:fixture-import-bad-origin',
+      bytes: wavFromSamples([1, 2, 3, 4], 24000),
+      now: new Date().toISOString(),
+      expiresAt: '2027-01-01T00:00:00.000Z',
+      rights: { state: 'GRANTED', proofRef: PROOF },
+      origin: 'NOT_A_REAL_ORIGIN',
+    })
+    assert.equal(unknownOrigin.ok, false)
+    assert.equal(unknownOrigin.errors[0].path, 'origin')
 
     // Invalid requests are rejected; they are not turned into a fixed success result.
     const badVoice = await app.generate({ text: 'x', voiceId: 'not-a-voice' })
@@ -111,6 +142,7 @@ test('135 the Core preset generation entry generates, saves on the original task
     assert.equal(reopenedStatus.readable, true)
     assert.equal(reopenedStatus.artifactRef, first.artifactRef)
     assert.equal(reopenedStatus.sha256, first.sha256)
+    assert.equal(reopenedStatus.origin, 'PROVIDER_GENERATION_FIXTURE')
 
     // The formal Core entry does not import the UI test bridge or the Fixture worker file.
     const source = fs.readFileSync(coreFile, 'utf8')

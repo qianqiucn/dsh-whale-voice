@@ -11,8 +11,9 @@
 - **输入**：调用方提供的人工 WAV 字节（原生 `Uint8Array` / `Buffer`）。
 - **存储**：只管理受信任 cap 根下的唯一文件 `audio-artifacts-v1.json` 及其自身生成的同前缀
   随机 `.tmp`；不读写旧 WAV、Task catalog、Task owner 或任何其他文件。
-- **输出**：安全 metadata（E-A 的 19 键测量投影）与完全独立的可变字节副本；`origin` 固定
-  `FIXTURE_IMPORT`，不会声称模型生成、旧 Fake 引用或 Task 已保存。
+- **输出**：安全 metadata（E-A 的 19 键测量投影）与完全独立的可变字节副本；`origin` 为
+  `FIXTURE_IMPORT`（普通 Fixture 导入）或 `PROVIDER_GENERATION_FIXTURE`（138 的 Provider 生成记录）；
+  两者都不会声称真实模型生成、旧 Fake 引用或 Task 已保存。
 - **隔离**：同一 cap 的旧/新 handle 共享同一 Artifact 队列、confirmed digest 与 UNKNOWN 锁；
   Artifact 域故障不会锁定或改写 Task 域。**不承诺跨进程锁**，也不承诺抵抗被篡改的整个运行时。
 - **删除**：只删除本库当前正式快照里的逻辑条目；**不是 OS 物理擦除**，不撤销此前已返回的
@@ -43,7 +44,7 @@ handle 恰好四个 async 方法：`import`、`get`、`readBytes`、`delete`。
 
 | 方法 | 允许字段 | 成功 outcome |
 |---|---|---|
-| `import` | `schemaVersion, scopeId, requestKey, bytes, now, expiresAt, rights` | `STORED` / `EXISTING` / `DELETED` / `EXPIRED` |
+| `import` | `schemaVersion, scopeId, requestKey, bytes, now, expiresAt, rights`（可选第 8 键 `origin`） | `STORED` / `EXISTING` / `DELETED` / `EXPIRED` |
 | `get` | `schemaVersion, scopeId, artifactRef, now, rights` | `FOUND` / `NOT_FOUND` / `DELETED` / `EXPIRED` |
 | `readBytes` | 同 `get` | 同 `get`，`FOUND` 时额外返回 `bytes` |
 | `delete` | `schemaVersion, scopeId, artifactRef, now` | `DELETED` / `ALREADY_DELETED` / `NOT_FOUND` |
@@ -55,6 +56,9 @@ handle 恰好四个 async 方法：`import`、`get`、`readBytes`、`delete`。
 - `rights`：恰 `{ state, proofRef }`；`state` ∈ `GRANTED` / `DENIED` / `UNKNOWN`；`proofRef` 为
   `null` 或 `fixture-rights:` 前缀的安全标识（总长 ≤ 128）。**`import` 只接受 `GRANTED` 且
   `proofRef` 非空**，否则在读取/排队/写盘前就返回 `RIGHTS_REJECTED`。
+- `origin`（可选，138）：只接受 `FIXTURE_IMPORT`（缺省）或 `PROVIDER_GENERATION_FIXTURE`；其它值
+  在读取/排队/写盘前返回 `INVALID_INPUT`（path `origin`）。条目与包解析都按这两个合法值校验，
+  普通 Fixture 导入和 Cover 导入仍保持 `FIXTURE_IMPORT`。
 
 ## 4. 包格式、预算与事务
 
@@ -305,7 +309,9 @@ foreign 内容/长度不变、旧 handle 与新工厂 `LIBRARY_UNKNOWN`）、ren
 - **导入身份 ≠ Task 关联**：`artifactIdentityHash(scopeId, requestKey, byteSha256, expiresAt, rights)`
   只覆盖这些字段，不含 taskId 或 claim；同字节或同 requestKey 都不证明任何 Task ownership。
 - 候选方案只在 owner 侧用 `record.outputArtifactRef` + 库权威读取（`readStoredForSave`）建立关联；
-  库不新增 Task 字段、不新增 origin、不反向依赖 owner。
+  138 只把“Provider 生成记录”作为第二个合法 `origin` 值（`PROVIDER_GENERATION_FIXTURE`，可由
+  `import` 的可选第 8 键声明），不新增 Task 字段、不反向依赖 owner；`readStoredForSave` 的 proof8
+  不变（不含 origin）。
 
 ## 11. 共享存储 helper 改向 base（08-E-E-B Step 1，已实现）
 

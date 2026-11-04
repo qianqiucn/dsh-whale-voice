@@ -40,6 +40,9 @@ import {
 export const ARTIFACT_FILE_NAME = 'audio-artifacts-v1.json'
 export const ARTIFACT_SCHEMA_VERSION = 1
 export const ARTIFACT_ORIGIN = 'FIXTURE_IMPORT'
+/** 138: a Provider generation record is its own origin; it is not a Fixture import. */
+export const PROVIDER_GENERATION_ARTIFACT_ORIGIN = 'PROVIDER_GENERATION_FIXTURE'
+export const ARTIFACT_ORIGINS = Object.freeze([ARTIFACT_ORIGIN, PROVIDER_GENERATION_ARTIFACT_ORIGIN])
 export const ARTIFACT_MAX_PACK_BYTES = 6291456
 export const ARTIFACT_MAX_ENTRIES = 32
 export const ARTIFACT_MAX_ITEM_BYTES = 1048576
@@ -328,7 +331,7 @@ function parseEntry(raw) {
   if (typeof requestKey !== 'string' || !KEY_PATTERN.test(requestKey)) raiseStore('STORE_INVALID', '$')
   const identityHash = raw.identityHash
   if (typeof identityHash !== 'string' || !HASH_PATTERN.test(identityHash)) raiseStore('STORE_INVALID', '$')
-  if (raw.origin !== ARTIFACT_ORIGIN) raiseStore('STORE_INVALID', '$')
+  if (!ARTIFACT_ORIGINS.includes(raw.origin)) raiseStore('STORE_INVALID', '$')
   const createdMs = canonicalIso(raw.createdAt)
   const expiresMs = canonicalIso(raw.expiresAt)
   if (createdMs === null || expiresMs === null) raiseStore('STORE_INVALID', '$')
@@ -355,7 +358,7 @@ function parseEntry(raw) {
         scopeId,
         requestKey,
         identityHash,
-        origin: ARTIFACT_ORIGIN,
+        origin: raw.origin,
         createdAt: raw.createdAt,
         expiresAt: raw.expiresAt,
         rights,
@@ -378,7 +381,7 @@ function parseEntry(raw) {
       scopeId,
       requestKey,
       identityHash,
-      origin: ARTIFACT_ORIGIN,
+      origin: raw.origin,
       createdAt: raw.createdAt,
       expiresAt: raw.expiresAt,
       rights,
@@ -458,7 +461,7 @@ function canonicalEntry(entry) {
     scopeId: entry.scopeId,
     requestKey: entry.requestKey,
     identityHash: entry.identityHash,
-    origin: ARTIFACT_ORIGIN,
+    origin: entry.origin,
     createdAt: entry.createdAt,
     expiresAt: entry.expiresAt,
     rights: { state: entry.rights.state, proofRef: entry.rights.proofRef },

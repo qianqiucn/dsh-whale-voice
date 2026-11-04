@@ -26,6 +26,7 @@ import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, wr
 import { dirname, join } from 'node:path'
 import { isTrustedSandbox } from '../config-sandbox.mjs'
 import { inspectFixtureWavBytes } from './wav-byte-inspector.mjs'
+import { PROVIDER_GENERATION_ARTIFACT_ORIGIN } from './fixture-artifact-store-internal.mjs'
 
 export const PROVIDER_GENERATION_SCHEMA_VERSION = 1
 
@@ -518,6 +519,8 @@ export function createProviderGenerationCoordinator(options = {}) {
         now: now(),
         expiresAt,
         rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
+        // 138: a Provider generation record is not a Fixture import; record its own origin.
+        origin: PROVIDER_GENERATION_ARTIFACT_ORIGIN,
       })
     } catch {
       stored = { ok: false, errors: [{ code: 'INTERNAL_FAILURE' }] }

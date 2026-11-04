@@ -72,6 +72,16 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Provider generation origin (138)
+
+The provider result is imported into the same Artifact library with
+`origin: PROVIDER_GENERATION_FIXTURE`, not `FIXTURE_IMPORT`. The library accepts exactly the two
+origins (`FIXTURE_IMPORT` remains the default for ordinary Fixture/Cover imports) and the Artifact
+pack parser preserves and validates the recorded origin. The Core `generate` and `status` results
+carry that `origin` read from the stored Artifact, so the original task, its Artifact and the source
+stay consistent after reopen; the Host envelope carries the same field. This is a source category
+only: the results remain `fixtureOnly` / `realReady:false` and never claim a real-model run.
+
 ## 2. Contract (v1, fail-closed)
 
 - `PROVIDER_GENERATION_SCHEMA_VERSION = 1`; any other `schemaVersion` → `UNSUPPORTED_VERSION`.
@@ -172,6 +182,10 @@ generation disabled):
   from the original task, a second generation mints a different task, a reopened Core entry reads the
   first saved result again, and the Core source is asserted to have no test-bridge / Fixture-worker
   imports.
+- 138: the saved generation records `origin: PROVIDER_GENERATION_FIXTURE` (on `generate` and `status`,
+  and again after reopen), an ordinary Fixture import still records `FIXTURE_IMPORT`, and an unknown
+  origin is rejected at `origin` before any write. On the baseline the first origin assertion fails as
+  `undefined` because the provider result was only expressible as `FIXTURE_IMPORT`.
 
 `test/host-generation.test.mjs` (1 test, isolated Host scope/Connection assembly + real Core entry):
 

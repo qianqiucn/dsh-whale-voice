@@ -13,8 +13,9 @@
  *
  * The scope/rights contract here is a Fixture declaration inside a trusted capability. It is not
  * user authentication, not real rights verification, not a Host authorization and not a Task
- * binding: every STORED entry is `origin: FIXTURE_IMPORT`, never a Task SAVED result, never a
- * registered Fake output reference and never a real generation/send proof.
+ * binding: a STORED entry is either `origin: FIXTURE_IMPORT` for a Fixture import or
+ * `origin: PROVIDER_GENERATION_FIXTURE` for a Provider generation record (138); neither is a Task
+ * SAVED result, a registered Fake output reference or a real generation/send proof.
  */
 
 import crypto from 'node:crypto'
@@ -35,6 +36,7 @@ import {
   ARTIFACT_MAX_ITEM_BYTES,
   ARTIFACT_MAX_PACK_BYTES,
   ARTIFACT_ORIGIN,
+  ARTIFACT_ORIGINS,
   ARTIFACT_SCHEMA_VERSION,
   INSPECTION_KEYS,
   artifactIdentityHash,
@@ -309,7 +311,34 @@ function readRights(root) {
 }
 
 function readImport(input) {
-  readRootFields(input, IMPORT_KEYS)
+  if (!isPlainObject(input)) raise('INVALID_INPUT', '$')
+  let keys
+  try {
+    keys = Reflect.ownKeys(input)
+  } catch {
+    raise('INVALID_INPUT', '$')
+  }
+  const withOrigin = keys.length === IMPORT_KEYS.size + 1
+  for (const key of keys) {
+    if (typeof key === 'string' && IMPORT_KEYS.has(key)) continue
+    if (withOrigin && key === 'origin') continue
+    raise('INVALID_INPUT', '<unknown-key>')
+  }
+  if (!withOrigin && keys.length !== IMPORT_KEYS.size) raise('INVALID_INPUT', '$')
+  for (const key of keys) {
+    if (!ownDataField(input, key).ok) raise('INVALID_INPUT', key)
+  }
+  const version = ownDataField(input, 'schemaVersion')
+  if (!version.ok) raise('INVALID_INPUT', '$')
+  if (version.value !== ARTIFACT_LIBRARY_SCHEMA_VERSION) raise('UNSUPPORTED_VERSION', 'schemaVersion')
+  let origin = ARTIFACT_ORIGIN
+  if (withOrigin) {
+    const originField = ownDataField(input, 'origin')
+    if (!originField.ok || typeof originField.value !== 'string' || !ARTIFACT_ORIGINS.includes(originField.value)) {
+      raise('INVALID_INPUT', 'origin')
+    }
+    origin = originField.value
+  }
   const scopeId = readScopeId(input)
   const requestKey = readRequestKey(input)
   const bytesField = ownDataField(input, 'bytes')
@@ -321,7 +350,7 @@ function readImport(input) {
   // Import admission is GRANTED-only: DENIED/UNKNOWN (or GRANTED without a real Fixture proof)
   // is refused before any read, write, id or commit happens.
   if (rights.state !== 'GRANTED' || rights.proofRef === null) raise('RIGHTS_REJECTED', 'rights')
-  return Object.freeze({ scopeId, requestKey, bytes, now, expiresAt, rights })
+  return Object.freeze({ scopeId, requestKey, bytes, now, expiresAt, rights, origin })
 }
 
 function readRead(input) {
@@ -485,7 +514,7 @@ function importOnce(state, request) {
       scopeId: request.scopeId,
       requestKey: request.requestKey,
       identityHash,
-      origin: ARTIFACT_ORIGIN,
+      origin: request.origin,
       createdAt: request.now.iso,
       expiresAt: request.expiresAt.iso,
       rights: Object.freeze({ state: request.rights.state, proofRef: request.rights.proofRef }),

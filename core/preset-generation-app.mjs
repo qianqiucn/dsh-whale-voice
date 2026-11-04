@@ -171,6 +171,16 @@ export async function openPresetGenerationApp(options = {}) {
         (submitted.claim && submitted.claim.lastError) || null,
       )
     }
+    const metadata = await artifactLibrary.value.get({
+      schemaVersion: 1,
+      scopeId,
+      artifactRef: submitted.claim.artifact.artifactRef,
+      now: now(),
+      rights: { state: 'GRANTED', proofRef: rightsProofRef },
+    })
+    if (!metadata.ok || !metadata.value.artifact) {
+      return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'artifact metadata')
+    }
     return {
       ok: true,
       taskId,
@@ -180,6 +190,8 @@ export async function openPresetGenerationApp(options = {}) {
       sha256: submitted.claim.artifact.sha256,
       byteLength: submitted.claim.artifact.byteLength,
       durationMs: submitted.claim.artifact.durationMs,
+      // 138: the saved record's truthful source is the stored Artifact's origin.
+      origin: metadata.value.artifact.origin,
       voiceId: voice.id,
       language,
       fixtureOnly: true,
@@ -228,6 +240,7 @@ export async function openPresetGenerationApp(options = {}) {
       rights: { state: 'GRANTED', proofRef: rightsProofRef },
     })
     const bytes = read.ok && read.value ? read.value.bytes : null
+    const origin = read.ok && read.value && read.value.artifact ? read.value.artifact.origin : null
     return {
       ok: true,
       taskId,
@@ -237,6 +250,7 @@ export async function openPresetGenerationApp(options = {}) {
       artifactRef: artifactStatus.value.artifactRef,
       sha256: bytes ? sha256(bytes) : null,
       byteLength: bytes ? bytes.length : null,
+      origin,
       fixtureOnly: true,
       realReady: false,
     }
