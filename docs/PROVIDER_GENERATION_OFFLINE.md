@@ -31,6 +31,22 @@ prepare(scope, task, requestKey, rights, provider, request)
 A failed original-task save leaves a `SAVE_UNKNOWN` tombstone on the claim (no SAVED claim, no second
 synthesis, the already-imported Artifact stays as it is).
 
+### Application entry (135)
+
+`core/preset-generation-app.mjs` is the formal Core entry for this chain:
+`openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices[, textLimit][, now]})`
+returns `{catalog, generate, status}`.
+
+- `generate({text, voiceId, language})` reserves a real Task birth in the existing catalog, runs the
+  coordinator (133) once against the caller-provided audited provider, and lets the original task
+  owner record SAVED (132). It returns the real Task id plus the Artifact ref / sha / bytes / duration.
+- `status(taskId)` re-reads the original task and Artifact stores (owner `get` + `artifactStatus`, then
+  the library `readBytes`), so a reopened entry returns the same saved Artifact facts.
+- The entry does not import the UI test bridge or the Fixture worker: the caller injects the trusted
+  sandbox and an already started `createQwenProvider`. The test-only
+  `tests/ui/studio-generation-bridge.mjs` now only supplies that controlled execution object and the
+  HTTP surface, and delegates the business flow to this Core entry. No Host route is registered.
+
 ## 2. Contract (v1, fail-closed)
 
 - `PROVIDER_GENERATION_SCHEMA_VERSION = 1`; any other `schemaVersion` → `UNSUPPORTED_VERSION`.
@@ -69,7 +85,7 @@ synthesis, the already-imported Artifact stays as it is).
   worker (a local child process; no model, no network).
 - `SAVED` never implies delivery, never allocates a `deliveryId`, and never touches the relay.
 
-## 3. Explicit limits / not done (133 status)
+## 3. Explicit limits / not done (135 status)
 
 1. **Original-task SAVED (132: completed).** `taskOwner.saveArtifact` records the already-imported
    provider Artifact on the birth task; reopen reads the same `SAVED`/`READABLE` artifact from the
@@ -78,9 +94,10 @@ synthesis, the already-imported Artifact stays as it is).
 2. **Catalog/owner authority is injected** (and the owner handle is required). The unit tests use a
    real catalog birth/owner store with a deterministic injected authority; the existing owner tests
    remain the authority for catalog issuance and owner invariants.
-3. **Provider is injected** and 133 wires the real `createQwenProvider` public interface to the
-   existing Fixture worker (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model,
-   GPU, real inference, network or cloud path is started; clone and VoiceDesign remain unwired.
+3. **Provider is injected** and 135's Core entry receives an already started audited provider; 133
+   wires the real `createQwenProvider` public interface to the existing Fixture worker
+   (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model, GPU, real inference,
+   network or cloud path is started; clone and VoiceDesign remain unwired.
 4. **No production Host/UI generation route.** The only page entry is the test-only `tests/ui`
    harness bridge (134); in an environment without that injected adapter the 音色中心 page keeps the
    disabled generate button and states that production generation is not connected. No production
@@ -111,14 +128,21 @@ synthesis, the already-imported Artifact stays as it is).
 `tests/ui` Studio page harness (134, test-only; the production Host still adds no generation route):
 
 - the existing Chinese 音色中心 page's text/预设音色/生成并保存 controls drive
-  `tests/ui/studio-generation-bridge.mjs`, which runs the real `createQwenProvider` + existing Fixture
-  worker and the 133/132 save chain against a temporary sandbox; the page shows the original task
-  `SAVED`, a browser reload reads the same artifact back from the owner/artifact stores, and a second
-  run mints a different task id (no fixed success value). UI suite **73/73**.
+  `tests/ui/studio-generation-bridge.mjs`, which supplies the controlled Fixture-worker provider and
+  delegates the business flow to the Core entry above; the page shows the original task `SAVED`, a
+  browser reload reads the same artifact back from the owner/artifact stores, and a second run mints a
+  different task id (no fixed success value). UI suite **73/73**.
 
-Full suite after this unit: **1157 tests / 1153 pass / 4 platform skips / 0 fail**; build
-`client.js` **318,823 bytes** (the Studio page wiring is the only bundle change; the unit suite is
-unchanged at 1157/1153/4/0).
+`test/preset-generation-app.test.mjs` (1 test, real `createQwenProvider` + existing Fixture worker):
+
+- 135: the Core entry generates once from a preset voice, `status` reads the same saved Artifact facts
+  from the original task, a second generation mints a different task, a reopened Core entry reads the
+  first saved result again, and the Core source is asserted to have no test-bridge / Fixture-worker
+  imports.
+
+Full suite after this unit: **1158 tests / 1154 pass / 4 platform skips / 0 fail**; UI **73/73**; build
+`client.js` **318,823 bytes** (unchanged by 135 — the page and bundle are not modified; the earlier
+318,823 figure already includes the 134 Studio page wiring).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
