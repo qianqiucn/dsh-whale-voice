@@ -3155,7 +3155,6 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     }
   }
   const selectResult = (item) => {
-    if (!item || !item.taskId) return
     setResult(item)
     setGenError('')
   }

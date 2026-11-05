@@ -331,7 +331,6 @@ function readGet(input) {
 
 function readListSaved(input) {
   readExactRoot(input, LIST_SAVED_KEYS, '$')
-  if (typeof input.scopeId !== 'string' || !SCOPE_PATTERN.test(input.scopeId)) raise('INVALID_INPUT', 'scopeId')
   return { scopeId: input.scopeId }
 }
 
