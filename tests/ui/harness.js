@@ -408,6 +408,8 @@
     fakeBridge.getGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage')
     fakeBridge.saveGenerationStorageDraft = (request) => hostSettings('/whale-voice/setup/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) })
     fakeBridge.applyGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage/apply', { method: 'POST', body: '{}' })
+    fakeBridge.getQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime')
+    fakeBridge.saveQwenRuntimeDraft = (request) => hostSettings('/whale-voice/setup/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) })
     window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
   }
 

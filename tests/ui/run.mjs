@@ -654,6 +654,49 @@ await check('generation storage location draft is saved, applied and survives a 
   })
 })
 
+await check('qwen runtime path draft is saved and survives a page reload', async () => {
+  await hostSettings.reset()
+  const modelDirectory = path.join(os.tmpdir(), 'whale-voice-ui-qwen-model')
+  const pythonPath = path.join(os.tmpdir(), 'whale-voice-ui-python', 'python.exe')
+  await withPage('?bridge=normal', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const modelInput = page.getByTestId('qwen-runtime-model')
+    const pythonInput = page.getByTestId('qwen-runtime-python')
+    await assert.doesNotReject(modelInput.waitFor({ timeout: 4000 }))
+    await modelInput.fill(modelDirectory)
+    await pythonInput.fill(pythonPath)
+    await page.getByTestId('qwen-runtime-save').click()
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="qwen-runtime-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+    } catch (error) {
+      const status = await page.getByTestId('qwen-runtime-status').innerText().catch(() => '')
+      const note = await page.getByTestId('qwen-runtime-error').innerText().catch(() => '')
+      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
+    }
+    assert.match(await page.locator('.wv-toast').innerText(), /运行路径草稿已保存，尚未应用/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /Qwen 运行路径/)
+    assert.match(pageText, /不会读取模型、执行 Python/)
+
+    // Reload the page and reopen the settings page: both saved paths are read back.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-testid="qwen-runtime-model"]')?.value === value,
+      modelDirectory,
+      { timeout: 4000 },
+    )
+    assert.equal(await page.getByTestId('qwen-runtime-python').inputValue(), pythonPath)
+    assert.match(await page.getByTestId('qwen-runtime-status').innerText(), /已保存草稿/)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-qwen-runtime-draft-1440.png') })
+  })
+})
+
 await check('safety page stays disabled when Core is unavailable', async () => {
   await withPage('?bridge=none', async (page) => {
     await page.getByRole('button', { name: '发送与安全', exact: true }).click()

@@ -108,6 +108,8 @@ export function bridgeScript(token) {
     getGenerationStorageDraft: () => generation('/settings/generation-storage'),
     saveGenerationStorageDraft: (request) => generation('/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) }),
     applyGenerationStorageDraft: () => generation('/settings/generation-storage/apply', { method: 'POST', body: '{}' }),
+    getQwenRuntimeDraft: () => generation('/settings/qwen-runtime'),
+    saveQwenRuntimeDraft: (request) => generation('/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) }),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -233,6 +235,28 @@ export function installHostBridge(scope, options = {}) {
     const envelope = settingsDraftEnvelope()
     return send(res, envelope.status, envelope.body)
   }, ['POST'])
+
+  // 148: the Chinese settings page records the Qwen model directory and Python runtime path as an
+  // isolated draft. Saving it never reads a model, executes Python, starts a Worker or generation, or
+  // changes a running generation object; it is not applied as runtime configuration.
+  route(PREFIX + '/settings/qwen-runtime', async (req, res) => {
+    if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
+    if (String(req.method || '').toUpperCase() === 'PUT') {
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch {
+        return send(res, 400, { ok: false, error: 'invalid_body' })
+      }
+      const result = settingsDraft.saveRuntimeDraft({
+        modelDirectory: body && body.modelDirectory,
+        pythonPath: body && body.pythonPath,
+      })
+      return send(res, result.ok === true ? 200 : 400, result)
+    }
+    const result = settingsDraft.readRuntimeDraft()
+    return send(res, result.ok === true ? 200 : 500, result)
+  }, ['GET', 'PUT'])
 
   // 136: formal Host call surface for the preset generation Core entry. `options.generation` is an
   // already-opened `openPresetGenerationApp` value supplied by the isolated Host assembly; without it

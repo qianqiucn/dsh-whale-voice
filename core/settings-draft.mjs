@@ -1,13 +1,13 @@
-/* Whale Voice Core — isolated generation-settings draft store (Plan10-R1 144/146).
+/* Whale Voice Core — isolated generation-settings draft store (Plan10-R1 144/146/148).
  *
- * Two fixed files under a trusted sandbox capability:
- *   - `generation-settings-draft.json`  the saved draft location (144);
- *   - `generation-settings-applied.json` the explicitly applied location (146).
+ * Fixed files under a trusted sandbox capability:
+ *   - `generation-settings-draft.json`   the saved generation data location (144);
+ *   - `generation-settings-applied.json` the explicitly applied location (146);
+ *   - `qwen-runtime-draft.json`          the Qwen model directory and Python runtime path draft (148).
  *
- * Saving a draft never enables generation, starts a worker or model, writes the production config, or
- * touches an already running generation object; applying only records the persisted fact, so the
- * plugin's current runtime keeps its original location and the applied location is used when the
- * plugin is opened again. Reopening a store over the same sandbox reads the same saved values.
+ * Saving a draft never enables generation, starts a worker or model, executes Python, reads a model,
+ * writes the production config, or touches an already running generation object; applying only records
+ * the persisted fact. Reopening a store over the same sandbox reads the same saved values.
  */
 
 import fs from 'node:fs'
@@ -17,10 +17,13 @@ import { isTrustedSandbox } from './config-sandbox.mjs'
 
 export const GENERATION_SETTINGS_DRAFT_FILE = 'generation-settings-draft.json'
 export const GENERATION_SETTINGS_APPLIED_FILE = 'generation-settings-applied.json'
+export const QWEN_RUNTIME_DRAFT_FILE = 'qwen-runtime-draft.json'
 export const GENERATION_SETTINGS_DRAFT_SCHEMA_VERSION = 1
 export const GENERATION_SETTINGS_APPLIED_SCHEMA_VERSION = 1
+export const QWEN_RUNTIME_DRAFT_SCHEMA_VERSION = 1
 
-function readRecord(target, invalidError) {
+/** Read one fixed JSON record; a missing file is `null` and unparseable/non-object content is invalid. */
+function readRecord(target) {
   let text
   try {
     text = fs.readFileSync(target, 'utf8')
@@ -32,37 +35,39 @@ function readRecord(target, invalidError) {
   try {
     parsed = JSON.parse(text)
   } catch {
-    return { invalid: invalidError }
+    return { invalid: true }
   }
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    Array.isArray(parsed) ||
-    typeof parsed.generationStorageRoot !== 'string' ||
-    parsed.generationStorageRoot === ''
-  ) {
-    return { invalid: invalidError }
-  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { invalid: true }
   return parsed
+}
+
+function validPath(value) {
+  return typeof value === 'string' && value !== ''
 }
 
 /**
  * Open the draft/applied store over one trusted sandbox.
  *
  * @param {{sandbox: object}} options
- * @returns {{read: Function, save: Function, readApplied: Function, apply: Function}}
+ * @returns {{read: Function, save: Function, readApplied: Function, apply: Function,
+ *   readRuntimeDraft: Function, saveRuntimeDraft: Function}}
  */
 export function openGenerationSettingsDraft(options = {}) {
   const sandbox = options.sandbox
   if (!isTrustedSandbox(sandbox)) throw new Error('trusted sandbox required')
   const target = path.join(sandbox.root, GENERATION_SETTINGS_DRAFT_FILE)
   const appliedTarget = path.join(sandbox.root, GENERATION_SETTINGS_APPLIED_FILE)
+  const runtimeTarget = path.join(sandbox.root, QWEN_RUNTIME_DRAFT_FILE)
 
   function read() {
-    const parsed = readRecord(target, 'draft_invalid')
+    const parsed = readRecord(target)
     if (parsed === null) return { ok: true, draft: null, savedAt: null }
-    if (parsed.invalid) return { ok: false, error: parsed.invalid }
-    if (parsed.schemaVersion !== GENERATION_SETTINGS_DRAFT_SCHEMA_VERSION || typeof parsed.savedAt !== 'string') {
+    if (
+      parsed.invalid ||
+      parsed.schemaVersion !== GENERATION_SETTINGS_DRAFT_SCHEMA_VERSION ||
+      !validPath(parsed.generationStorageRoot) ||
+      typeof parsed.savedAt !== 'string'
+    ) {
       return { ok: false, error: 'draft_invalid' }
     }
     return {
@@ -88,10 +93,14 @@ export function openGenerationSettingsDraft(options = {}) {
   }
 
   function readApplied() {
-    const parsed = readRecord(appliedTarget, 'applied_invalid')
+    const parsed = readRecord(appliedTarget)
     if (parsed === null) return { ok: true, applied: null, appliedAt: null }
-    if (parsed.invalid) return { ok: false, error: parsed.invalid }
-    if (parsed.schemaVersion !== GENERATION_SETTINGS_APPLIED_SCHEMA_VERSION || typeof parsed.appliedAt !== 'string') {
+    if (
+      parsed.invalid ||
+      parsed.schemaVersion !== GENERATION_SETTINGS_APPLIED_SCHEMA_VERSION ||
+      !validPath(parsed.generationStorageRoot) ||
+      typeof parsed.appliedAt !== 'string'
+    ) {
       return { ok: false, error: 'applied_invalid' }
     }
     return {
@@ -118,5 +127,45 @@ export function openGenerationSettingsDraft(options = {}) {
     }
   }
 
-  return Object.freeze({ read, save, readApplied, apply })
+  function readRuntimeDraft() {
+    const parsed = readRecord(runtimeTarget)
+    if (parsed === null) return { ok: true, runtimeDraft: null, savedAt: null }
+    if (
+      parsed.invalid ||
+      parsed.schemaVersion !== QWEN_RUNTIME_DRAFT_SCHEMA_VERSION ||
+      !validPath(parsed.modelDirectory) ||
+      !validPath(parsed.pythonPath) ||
+      typeof parsed.savedAt !== 'string'
+    ) {
+      return { ok: false, error: 'runtime_draft_invalid' }
+    }
+    return {
+      ok: true,
+      runtimeDraft: { modelDirectory: parsed.modelDirectory, pythonPath: parsed.pythonPath },
+      savedAt: parsed.savedAt,
+    }
+  }
+
+  function saveRuntimeDraft({ modelDirectory, pythonPath } = {}) {
+    if (typeof modelDirectory !== 'string' || modelDirectory.trim() === '') {
+      return { ok: false, error: 'runtime_model_invalid' }
+    }
+    if (typeof pythonPath !== 'string' || pythonPath.trim() === '') {
+      return { ok: false, error: 'runtime_python_invalid' }
+    }
+    const model = modelDirectory.trim()
+    const python = pythonPath.trim()
+    if (!path.isAbsolute(model)) return { ok: false, error: 'runtime_model_not_absolute' }
+    if (!path.isAbsolute(python)) return { ok: false, error: 'runtime_python_not_absolute' }
+    const savedAt = new Date().toISOString()
+    fs.writeFileSync(runtimeTarget, JSON.stringify({
+      schemaVersion: QWEN_RUNTIME_DRAFT_SCHEMA_VERSION,
+      modelDirectory: model,
+      pythonPath: python,
+      savedAt,
+    }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
+    return { ok: true, runtimeDraft: { modelDirectory: model, pythonPath: python }, savedAt }
+  }
+
+  return Object.freeze({ read, save, readApplied, apply, readRuntimeDraft, saveRuntimeDraft })
 }

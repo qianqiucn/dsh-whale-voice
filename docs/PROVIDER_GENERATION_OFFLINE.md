@@ -72,6 +72,18 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Qwen runtime-path settings draft (148)
+
+The Chinese 语音设置 page records the Qwen model directory and the Python runtime program as an isolated
+draft: the settings store keeps `qwen-runtime-draft.json` (`schemaVersion:1`, `modelDirectory`,
+`pythonPath`, `savedAt`), `installHostBridge` exposes `GET/PUT /whale-voice/setup/settings/qwen-runtime`
+(503 `settings_draft_unavailable` without a store; 400 `runtime_model_invalid` /
+`runtime_python_invalid` / `runtime_model_not_absolute` / `runtime_python_not_absolute`), and the client
+bridge adds `getQwenRuntimeDraft`/`saveQwenRuntimeDraft`. Saving the draft never reads or loads a model,
+executes Python, starts a Worker or generation, changes a running generation object or applies the
+paths as runtime configuration; the page says "Qwen 运行路径草稿已保存，尚未应用". Reopening the same
+config reads the same values back, and generation stays `503 generation_not_enabled`.
+
 ### Applied generation storage location (146)
 
 The saved draft can be explicitly applied: the draft store also keeps a fixed
@@ -357,10 +369,22 @@ generation disabled):
 - `tests/ui` settings page: save → 应用保存的位置 → "已应用，下次重开插件生效" → reload reads the saved
   draft and the applied fact back; 147 asserts the applied status is exactly "已应用位置：…" after the
   reload (the old "下次重开插件生效；当前运行仍用原位置" wording fails that check), while the separate
-  operation explanation still says applying does not switch the running component (UI **75/75**).
+  operation explanation still says applying does not switch the running component.
 
-Full suite after this unit: **1170 tests / 1166 pass / 4 platform skips / 0 fail**; UI **75/75**; build
-`client.js` **354,318 bytes** (147's applied-status copy is the bundle change).
+`test/qwen-runtime-draft.test.mjs` (3 tests):
+
+- 148 store: an empty read, save → a reopened store over the same sandbox reads the same model/Python
+  paths, the on-disk shape is the fixed four-key record, and empty/relative values are rejected without
+  changing the saved draft.
+- 148 formal plugin: a serialized `{ settings: { draftRoot } }` config saves both paths through the Host
+  route, a normal dispose keeps the file, and the same config reopened through the formal entry reads
+  the same values back while generation stays `503 generation_not_enabled` (nothing is applied).
+- 148 no store: the route stays `503 settings_draft_unavailable`.
+- `tests/ui` settings page: fill both paths → 保存运行路径草稿 → "Qwen 运行路径草稿已保存，尚未应用" →
+  reload reads both values back (UI **76/76**).
+
+Full suite after this unit: **1173 tests / 1169 pass / 4 platform skips / 0 fail**; UI **76/76**; build
+`client.js` **359,889 bytes** (148's Qwen runtime-path card is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
