@@ -158,6 +158,24 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Read failures are shown as failures (160)
+
+The 音色中心 page no longer turns a failed read into a false status. While the capability request is
+still pending it keeps the real waiting state (检查中 / 正在检查生成能力…). A rejected request (network
+failure or timeout, where the production bridge script does not catch `fetch`) and a server failure
+object (the fixed `{ok:false,error:'core_http_<status>'}` form) both show 「无法读取生成能力：本次请求
+失败或超时。这不代表未启用…」 with a 读取失败 badge, and the page never renders the not-enabled text or
+stays in an endless checking state for that failure. Only the Host's own `generation_not_enabled`
+answer still means 未启用. Restoring the last saved task is treated the same way: a rejected status
+request or a failed status result (including 159's `PRESET_GENERATION_STATUS_REJECTED`) keeps the known
+task id and says 「无法读取上次保存的结果…这不代表没有保存」 instead of showing 还没有生成结果 or a
+download; nothing is generated, saved, downloaded or deleted by that failure. Normal capability reads,
+successful restores, downloads and the true not-enabled flow keep their existing Chinese behaviour.
+The two formal-client failure forms are pinned against the exact production bridge script in
+`test/plugin-generation-read-failure.test.mjs` (resolved failure object / rejected promise), so the
+page's contract is not inferred from the UI harness wrapper; the isolated UI harness covers both forms,
+the pending state and the normal/not-enabled paths.
+
 ### Saved-result status reports a failed read (159)
 
 One saved result's status no longer turns a failed byte read into a successful readable result.

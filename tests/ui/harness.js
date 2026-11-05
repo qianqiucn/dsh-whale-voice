@@ -451,6 +451,23 @@
     fakeBridge.getQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime')
     fakeBridge.saveQwenRuntimeDraft = (request) => hostSettings('/whale-voice/setup/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) })
     fakeBridge.applyQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime/apply', { method: 'POST', body: '{}' })
+    // 160: the two real failure forms of the production client. A network failure or timeout makes
+    // the bridge script's own `fetch` reject (it has no catch), and a non-JSON failure response
+    // resolves the fixed `{ok:false,error:'core_http_<status>'}` object; both are verified with the
+    // production bridge script in test/plugin-generation-read-failure.test.mjs.
+    const generationFault = tokens.get('generationFault')
+    if (generationFault === 'catalog-pending') {
+      fakeBridge.getGenerationCatalog = () => new Promise(() => {})
+    }
+    if (generationFault === 'catalog-reject') {
+      fakeBridge.getGenerationCatalog = () => Promise.reject(new TypeError('Failed to fetch'))
+    }
+    if (generationFault === 'catalog-failed') {
+      fakeBridge.getGenerationCatalog = async () => ({ ok: false, error: 'core_http_500' })
+    }
+    if (generationFault === 'restore-reject') {
+      fakeBridge.getGenerationStatus = () => Promise.reject(new TypeError('Failed to fetch'))
+    }
     window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
   }
 

@@ -1013,6 +1013,8 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const [result, setResult] = React.useState(null)
   const [genError, setGenError] = React.useState('')
   const [genEnabled, setGenEnabled] = React.useState(null)
+  const [catalogError, setCatalogError] = React.useState(false)
+  const [restoreError, setRestoreError] = React.useState('')
   const [savedResults, setSavedResults] = React.useState(null)
   const [resultsError, setResultsError] = React.useState('')
   const [resultsTick, setResultsTick] = React.useState(0)
@@ -1025,9 +1027,14 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     hostBridge.getGenerationCatalog().then((value) => {
       if (!live) return
       if (!value || value.ok !== true) {
-        setGenEnabled(value && value.error === 'generation_not_enabled' ? false : null)
+        // Only the Host's own generation_not_enabled fact means "not enabled"; any other failure is a
+        // failed read of the capability, never a not-enabled or still-checking answer.
+        const notEnabled = Boolean(value && value.error === 'generation_not_enabled')
+        setGenEnabled(notEnabled ? false : null)
+        setCatalogError(!notEnabled)
         return
       }
+      setCatalogError(false)
       setGenEnabled(true)
       setCatalog(value)
       const voices = Array.isArray(value.voices) ? value.voices : []
@@ -1037,18 +1044,26 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
           ? current
           : { ...current, voice: first.id, language: first.languages && first.languages[0] ? first.languages[0] : current.language })
       }
-    }).catch(() => { if (live) setGenEnabled(false) })
+    }).catch(() => {
+      // The production bridge rejects on a network failure or timeout instead of returning an object.
+      if (!live) return
+      setGenEnabled(null)
+      setCatalogError(true)
+    })
     let storedTaskId = ''
     try { storedTaskId = window.localStorage.getItem(STUDIO_TASK_STORAGE_KEY) || '' } catch { storedTaskId = '' }
     if (storedTaskId) {
       hostBridge.getGenerationStatus(storedTaskId).then((value) => {
-        if (!live || !value) return
-        if (value.ok !== true) {
-          if (value.error === 'generation_not_enabled') setGenEnabled(false)
+        if (!live) return
+        if (!value || value.ok !== true) {
+          if (value && value.error === 'generation_not_enabled') { setGenEnabled(false); return }
+          // A rejected status read (159) or any other failure is not "no saved result": keep the known
+          // task id and say that this result could not be read.
+          setRestoreError(storedTaskId)
           return
         }
         setResult(value)
-      }).catch(() => {})
+      }).catch(() => { if (live) setRestoreError(storedTaskId) })
     }
     return () => { live = false }
   }, [hostBridge])
@@ -1160,16 +1175,18 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       title: '音色中心',
       description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产生成与试听仍未接入；下方“预设音色生成”通过正式 Host 接口调用隔离 Core，结果来自 Fixture，不代表真实模型可用。',
       actions: h(React.Fragment, null,
-        h(Badge, { tone: 'demo' }, genEnabled === true ? '隔离模拟' : genEnabled === false ? '未启用' : '检查中'),
+        h(Badge, { tone: 'demo' }, genEnabled === true ? '隔离模拟' : genEnabled === false ? '未启用' : catalogError ? '读取失败' : '检查中'),
         h(Button, { disabled: true, title: '生产播放未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, genEnabled === true
-        ? '隔离模拟：下方生成经正式 Host 接口、既有 Qwen 适配器与 Fixture 执行对象完成一次测试输出并由原任务保存；不加载真实模型、不联网、不播放、不发送。'
-        : genEnabled === false
-          ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
-          : '正在检查生成能力…')),
+      catalogError
+        ? h('span', { 'data-testid': 'studio-generation-catalog-error' }, '无法读取生成能力：本次请求失败或超时。这不代表未启用，页面不会生成或保存；请稍后刷新重试。')
+        : h('span', null, genEnabled === true
+          ? '隔离模拟：下方生成经正式 Host 接口、既有 Qwen 适配器与 Fixture 执行对象完成一次测试输出并由原任务保存；不加载真实模型、不联网、不播放、不发送。'
+          : genEnabled === false
+            ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
+            : '正在检查生成能力…')),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,
@@ -1237,10 +1254,20 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
               h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
               h('strong', null, '生成未启用'),
               h('p', null, '当前 Host 未配置生成运行对象；不会生成、不会调用真实模型。配置由部署方决定，本页不会自行启用。'))
-            : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
-              h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
-              h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
-              h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。')),
+            : restoreError
+              ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-restore-error', style: { minHeight: 96, alignItems: 'flex-start' } },
+                h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
+                h('strong', null, '无法读取上次保存的结果'),
+                h('p', null, '任务 ', h('code', null, restoreError), '：本次请求失败或超时；这不代表没有保存。刷新可重试，不会重新生成或保存。'))
+              : catalogError
+                ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-unavailable', style: { minHeight: 96 } },
+                  h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
+                  h('strong', null, '暂时无法读取生成能力'),
+                  h('p', null, '本次请求失败或超时；这不代表未启用。页面不会生成、保存或删除任何内容，请稍后刷新重试。'))
+                : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
+                  h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+                  h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
+                  h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。')),
         genError
           ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null,
             genError === 'STUDIO_GENERATION_UNCONFIRMED'
