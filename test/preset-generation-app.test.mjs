@@ -257,3 +257,56 @@ test('159 a byte read that fails after the availability check reports a failure,
     removeConfigSandbox(sandbox)
   }
 })
+
+// 161: an explicitly submitted language that the voice does not support is rejected, never silently
+// replaced by the voice's first language; only a request that submits no language uses the default.
+test('161 an explicitly submitted unsupported language is rejected instead of replaced', { skip: spawnSkip }, async () => {
+  const sandbox = createConfigSandbox({ prefix: 'wv-core-preset-language-' })
+  const supervisor = makeSupervisor()
+  let provider = null
+  const catalogEntries = () => {
+    const file = path.join(sandbox.root, CATALOG_FILE_NAME)
+    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).entries.length : 0
+  }
+  try {
+    provider = createQwenProvider({ supervisor, requestTimeoutMs: 5000 })
+    assert.equal(provider.ok, true, JSON.stringify(provider))
+    assert.equal((await provider.start()).ok, true, JSON.stringify(provider))
+    const app = await openApp(sandbox, provider)
+
+    // demo-voice-a supports only zh-CN: an explicit en-US must be rejected, not turned into zh-CN.
+    const rejected = await app.generate({ text: '明确提交不支持的语言。', voiceId: 'demo-voice-a', language: 'en-US' })
+    assert.equal(rejected.ok, false, JSON.stringify(rejected))
+    assert.equal(rejected.code, PRESET_GENERATION_APP_ERRORS.LANGUAGE_REJECTED)
+    assert.equal(rejected.detail, 'language')
+    assert.equal(catalogEntries(), 0, 'a rejected language must not create a generation task')
+
+    // A request that submits no language keeps the voice's original default.
+    const omitted = await app.generate({ text: '没有提交语言时使用音色默认。', voiceId: 'demo-voice-a' })
+    assert.equal(omitted.ok, true, JSON.stringify(omitted))
+    assert.equal(omitted.language, 'zh-CN')
+    assert.equal(catalogEntries(), 1)
+
+    // A supported explicit value is used as submitted, not replaced by the first (zh-CN) language.
+    const english = await app.generate({ text: '明确提交支持的语言。', voiceId: 'demo-voice-b', language: 'en-US' })
+    assert.equal(english.ok, true, JSON.stringify(english))
+    assert.equal(english.language, 'en-US')
+
+    // A language outside this voice's list is rejected as well, and the saved results are unchanged.
+    const otherRejected = await app.generate({ text: '另一个不支持的语言。', voiceId: 'demo-voice-b', language: 'ja-JP' })
+    assert.equal(otherRejected.ok, false, JSON.stringify(otherRejected))
+    assert.equal(otherRejected.code, PRESET_GENERATION_APP_ERRORS.LANGUAGE_REJECTED)
+    assert.equal(catalogEntries(), 2)
+    const listed = await app.results()
+    assert.equal(listed.ok, true, JSON.stringify(listed))
+    assert.deepEqual(listed.results.map((item) => item.taskId), [omitted.taskId, english.taskId])
+    const status = await app.status(english.taskId)
+    assert.equal(status.ok, true, JSON.stringify(status))
+    assert.equal(status.readable, true)
+    assert.equal(status.sha256, english.sha256)
+  } finally {
+    if (provider && provider.ok) await provider.shutdown().catch(() => null)
+    else await supervisor.stop().catch(() => null)
+    removeConfigSandbox(sandbox)
+  }
+})

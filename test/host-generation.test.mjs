@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { installHostBridge } from '../index.js'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openQwenGenerationRuntime } from '../core/qwen-generation-runtime.mjs'
+import { PRESET_GENERATION_APP_ERRORS } from '../core/preset-generation-app.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeRoot = path.join(here, '..', 'test-fixtures')
@@ -195,6 +196,63 @@ test('136 the formal Host surface generates through the Core entry, queries by t
   } finally {
     if (runtime) await runtime.close().catch(() => null)
     if (reopenedRuntime) await reopenedRuntime.close().catch(() => null)
+    removeConfigSandbox(sandbox)
+  }
+})
+
+// 161: the real HTTP request body decides. An explicitly submitted unsupported language is rejected
+// and creates nothing; a body that does not submit a language keeps the voice's original default.
+test('161 the Host rejects an explicitly submitted unsupported language and keeps the omitted default', { skip: spawnSkip }, async () => {
+  const sandbox = createConfigSandbox({ prefix: 'wv-host-preset-language-' })
+  let runtime = null
+  try {
+    runtime = await openRuntime(sandbox)
+    const routes = []
+    const host = installHostBridge(makeScope(routes), { token: TOKEN, generation: runtime.app })
+    const generateRoute = routes.find((route) => route.path === '/whale-voice/setup/generation')
+    const resultsRoute = routes.find((route) => route.path === '/whale-voice/setup/generation/results')
+    assert.ok(generateRoute, 'generation route missing')
+    assert.ok(resultsRoute, 'generation results route missing')
+
+    const rejected = await callRoute(generateRoute, {
+      method: 'POST',
+      url: '/whale-voice/setup/generation',
+      body: { text: '明确提交不支持的语言。', voiceId: 'demo-voice-a', language: 'en-US' },
+    })
+    assert.equal(rejected.status, 200)
+    const rejectedBody = JSON.parse(rejected.body)
+    assert.equal(rejectedBody.ok, false, rejected.body)
+    assert.equal(rejectedBody.code, PRESET_GENERATION_APP_ERRORS.LANGUAGE_REJECTED)
+    assert.equal(rejectedBody.detail, 'language')
+    const empty = JSON.parse((await callRoute(resultsRoute, { method: 'GET', url: '/whale-voice/setup/generation/results' })).body)
+    assert.equal(empty.ok, true, JSON.stringify(empty))
+    assert.deepEqual(empty.results, [], 'a rejected language must not create a generation task')
+
+    const omitted = await callRoute(generateRoute, {
+      method: 'POST',
+      url: '/whale-voice/setup/generation',
+      body: { text: '请求体没有 language。', voiceId: 'demo-voice-a' },
+    })
+    const omittedBody = JSON.parse(omitted.body)
+    assert.equal(omittedBody.ok, true, omitted.body)
+    assert.equal(omittedBody.state, 'SAVED')
+    assert.equal(omittedBody.language, 'zh-CN')
+
+    const supported = await callRoute(generateRoute, {
+      method: 'POST',
+      url: '/whale-voice/setup/generation',
+      body: { text: '明确提交支持的语言。', voiceId: 'demo-voice-b', language: 'en-US' },
+    })
+    const supportedBody = JSON.parse(supported.body)
+    assert.equal(supportedBody.ok, true, supported.body)
+    assert.equal(supportedBody.language, 'en-US')
+
+    const listed = JSON.parse((await callRoute(resultsRoute, { method: 'GET', url: '/whale-voice/setup/generation/results' })).body)
+    assert.equal(listed.ok, true, JSON.stringify(listed))
+    assert.deepEqual(listed.results.map((item) => item.taskId), [omittedBody.taskId, supportedBody.taskId])
+    host.dispose()
+  } finally {
+    if (runtime) await runtime.close().catch(() => null)
     removeConfigSandbox(sandbox)
   }
 })
