@@ -419,7 +419,8 @@ export async function openPresetGenerationApp(options = {}) {
 
   /**
    * 151/155: the saved generation results of this scope across every segment; read-only, oldest
-   * segment first, and nothing is created, changed or deleted.
+   * segment first, and nothing is created, changed or deleted. 158: one segment's artifact pack is
+   * read once for the whole list instead of once per listed result.
    */
   async function results() {
     const items = []
@@ -431,23 +432,28 @@ export async function openPresetGenerationApp(options = {}) {
           listed.errors && listed.errors[0] ? listed.errors[0].code : 'list rejected',
         )
       }
-      for (const entry of listed.value.results) {
-        if (entry.feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION) continue
-        if (entry.taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS) continue
-        const metadata = await segment.artifacts.get({
-          schemaVersion: 1,
-          scopeId,
-          artifactRef: entry.artifactRef,
-          now: now(),
-          rights: { state: 'GRANTED', proofRef: rightsProofRef },
-        })
-        if (!metadata.ok) {
-          return failure(
-            PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
-            metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
-          )
-        }
-        const artifact = metadata.value.outcome === 'FOUND' ? metadata.value.artifact : null
+      const saved = listed.value.results.filter(
+        (entry) =>
+          entry.feature === AUDIO_TASK_FEATURES.PROVIDER_GENERATION && entry.taskType === AUDIO_TASK_TYPES.PROVIDER_TTS,
+      )
+      if (saved.length === 0) continue
+      const metadata = await segment.artifacts.getMany({
+        schemaVersion: 1,
+        scopeId,
+        artifactRefs: saved.map((entry) => entry.artifactRef),
+        now: now(),
+        rights: { state: 'GRANTED', proofRef: rightsProofRef },
+      })
+      if (!metadata.ok) {
+        return failure(
+          PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
+          metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
+        )
+      }
+      const byRef = new Map(metadata.value.results.map((item) => [item.artifactRef, item]))
+      for (const entry of saved) {
+        const read = byRef.get(entry.artifactRef)
+        const artifact = read.outcome === 'FOUND' ? read.artifact : null
         items.push({
           taskId: entry.taskId,
           state: entry.state,

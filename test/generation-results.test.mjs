@@ -11,6 +11,7 @@ import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox
 import { openQwenGenerationRuntime } from '../core/qwen-generation-runtime.mjs'
 import { openFixtureTaskOwner } from '../core/audio/task-owner.mjs'
 import { CATALOG_FILE_NAME } from '../core/audio/fixture-task-store-internal.mjs'
+import { ARTIFACT_FILE_NAME } from '../core/audio/fixture-artifact-store-internal.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeRoot = path.join(here, '..', 'test-fixtures')
@@ -221,5 +222,46 @@ test('151 the saved-result list stays inside the current generation scope', { sk
     assert.deepEqual(other.value.results, [])
   } finally {
     await opened.value.close()
+  }
+})
+
+// 158: the list across segments reads each segment's artifact pack once, so the wait no longer grows
+// with every listed result. The saved results themselves stay the original tasks in their order.
+test('158 the saved-result list reads one artifact pack per segment, not one per result', { skip: spawnSkip }, async (t) => {
+  const sandbox = createConfigSandbox({ prefix: 'wv-generation-results-158-' })
+  t.after(() => removeConfigSandbox(sandbox))
+  const opened = await openQwenGenerationRuntime(runtimeOptions(sandbox))
+  assert.equal(opened.ok, true, JSON.stringify(opened))
+  const runtime = opened.value
+  const realOpenSync = fs.openSync
+  try {
+    const generated = []
+    for (let index = 0; index < 25; index += 1) {
+      const item = await runtime.app.generate({ text: '第' + index + '份已保存的生成结果。', voiceId: 'demo-voice-a', language: 'zh-CN' })
+      assert.equal(item.ok, true, JSON.stringify(item))
+      generated.push(item)
+    }
+    const segments = fs.readdirSync(path.join(sandbox.root, 'segments'), { withFileTypes: true })
+    const segmentCount = 1 + segments.filter((entry) => entry.isDirectory()).length
+    assert.ok(segmentCount > 1, 'the saved results must span more than one segment')
+
+    let packReads = 0
+    fs.openSync = function patchedOpen(target, ...rest) {
+      if (String(target).endsWith(ARTIFACT_FILE_NAME)) packReads += 1
+      return realOpenSync.call(fs, target, ...rest)
+    }
+    const listed = await runtime.app.results()
+    fs.openSync = realOpenSync
+    assert.equal(listed.ok, true, JSON.stringify(listed))
+    assert.equal(packReads, segmentCount, 'each segment artifact pack must be read once for the whole list')
+    assert.deepEqual(listed.results.map((item) => item.taskId), generated.map((item) => item.taskId))
+    for (const [index, item] of listed.results.entries()) {
+      assert.equal(item.readable, true)
+      assert.equal(item.sha256, generated[index].sha256)
+      assert.equal(item.byteLength, generated[index].byteLength)
+    }
+  } finally {
+    fs.openSync = realOpenSync
+    await runtime.close()
   }
 })

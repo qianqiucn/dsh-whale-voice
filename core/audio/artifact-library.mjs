@@ -3,8 +3,8 @@
  * One bounded, single-pack library over a trusted temporary sandbox capability:
  *
  *   trusted sandbox -> private owned copy of the caller bytes -> verified 08-E-A WAV inspection
- *   -> canonical STORED entry in `audio-artifacts-v1.json` -> get/readBytes under the recorded
- *   Fixture scope/rights/expiry -> logical delete with an unrecoverable DELETED tombstone.
+ *   -> canonical STORED entry in `audio-artifacts-v1.json` -> get/readBytes/getMany under the
+ *   recorded Fixture scope/rights/expiry -> logical delete with an unrecoverable DELETED tombstone.
  *
  * This module is the public surface (`ARTIFACT_LIBRARY_SCHEMA_VERSION`, frozen
  * `ARTIFACT_LIBRARY_LIMITS`, frozen `ARTIFACT_LIBRARY_ERRORS`, `openFixtureArtifactLibrary`). The
@@ -104,6 +104,7 @@ const REASONS = Object.freeze({
 
 const IMPORT_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'requestKey', 'bytes', 'now', 'expiresAt', 'rights']))
 const READ_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'artifactRef', 'now', 'rights']))
+const READ_MANY_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'artifactRefs', 'now', 'rights']))
 const DELETE_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'artifactRef', 'now']))
 const RIGHTS_KEYS = Object.freeze(new Set(['state', 'proofRef']))
 const REF_PATTERN = /^artifact:fixture-bytes-[0-9a-f]{32}$/
@@ -363,6 +364,21 @@ function readRead(input) {
   return Object.freeze({ scopeId, artifactRef, now, rights })
 }
 
+function readMany(input) {
+  readRootFields(input, READ_MANY_KEYS)
+  const scopeId = readScopeId(input)
+  const refsField = ownDataField(input, 'artifactRefs')
+  if (!refsField.ok || !Array.isArray(refsField.value)) raise('INVALID_INPUT', 'artifactRefs')
+  const artifactRefs = []
+  for (const artifactRef of refsField.value) {
+    if (typeof artifactRef !== 'string' || !REF_PATTERN.test(artifactRef)) raise('INVALID_INPUT', 'artifactRefs')
+    artifactRefs.push(artifactRef)
+  }
+  const now = readIso(input, 'now')
+  const rights = readRights(input)
+  return Object.freeze({ scopeId, artifactRefs: Object.freeze(artifactRefs), now, rights })
+}
+
 function readDelete(input) {
   readRootFields(input, DELETE_KEYS)
   const scopeId = readScopeId(input)
@@ -580,6 +596,52 @@ function readOnce(state, request, withBytes) {
   }
 }
 
+/**
+ * 158: the metadata of many stored artifacts of one scope from a single pack read. Each requested
+ * reference gets the same outcome as `get` (NOT_FOUND / DELETED / EXPIRED / FOUND + metadata), so the
+ * saved-result list never re-reads and re-inspects the whole pack once per listed entry.
+ */
+function readManyOnce(state, request) {
+  if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
+  try {
+    const current = readArtifactPack(state)
+    const results = []
+    for (const artifactRef of request.artifactRefs) {
+      const found = findEntry(current, request.scopeId, artifactRef)
+      if (!found) {
+        results.push({ artifactRef, outcome: OUTCOMES.NOT_FOUND, artifact: null })
+        continue
+      }
+      if (!found.stored) {
+        results.push({ artifactRef, outcome: OUTCOMES.DELETED, artifact: null })
+        continue
+      }
+      if (request.rights.state !== 'GRANTED' || request.rights.proofRef !== found.entry.rights.proofRef) {
+        return failure('RIGHTS_REJECTED', 'rights')
+      }
+      if (expiredAt(found.entry, request.now.ms)) {
+        results.push({ artifactRef, outcome: OUTCOMES.EXPIRED, artifact: null })
+        continue
+      }
+      results.push({ artifactRef, outcome: OUTCOMES.FOUND, artifact: metadataOf(found.entry) })
+    }
+    return deepFreezeFixtureValue({
+      ok: true,
+      value: {
+        schemaVersion: ARTIFACT_LIBRARY_SCHEMA_VERSION,
+        revision: current.revision,
+        results,
+        mockOnly: true,
+        realOperationAllowed: false,
+        submitAllowed: false,
+        automaticRetryAllowed: false,
+      },
+    })
+  } catch (error) {
+    return toFailure(error)
+  }
+}
+
 function deleteOnce(state, request) {
   if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
   try {
@@ -668,6 +730,16 @@ function createHandle(state) {
       }
       return enqueueArtifact(state, () => readOnce(state, request, true))
     },
+    async getMany(input) {
+      if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
+      let request
+      try {
+        request = readMany(input)
+      } catch (error) {
+        return toFailure(error)
+      }
+      return enqueueArtifact(state, () => readManyOnce(state, request))
+    },
     async delete(input) {
       if (isArtifactLocked(state)) return failure('LIBRARY_UNKNOWN', '$')
       let request
@@ -686,7 +758,7 @@ function createHandle(state) {
  * Open one isolated Fixture artifact library over a trusted temporary sandbox capability.
  * The factory validates the current capability/pack but never creates an empty pack file.
  * @param {{sandbox: object}} options
- * @returns {Promise<{ok:true,value:{import:Function,get:Function,readBytes:Function,delete:Function}}|{ok:false,errors:Array<object>}>}
+ * @returns {Promise<{ok:true,value:{import:Function,get:Function,getMany:Function,readBytes:Function,delete:Function}}|{ok:false,errors:Array<object>}>}
  */
 export async function openFixtureArtifactLibrary(options) {
   let sandbox

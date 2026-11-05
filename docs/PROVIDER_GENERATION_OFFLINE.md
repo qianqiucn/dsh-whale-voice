@@ -143,6 +143,21 @@ entry shows its original task/artifact facts, and selecting one reuses the 150 d
 that result's already-saved WAV bytes. Selecting or downloading never generates, saves or mutates
 anything; a refresh and a same-config reopen list the same entries and return the same bytes.
 
+### Saved-result list reads one pack per segment (158)
+
+The saved-result list no longer re-reads the whole artifact pack for every listed entry. `results()`
+groups the saved results by segment and asks the library once per segment for their metadata, so
+opening the list reads and re-inspects each segment's `audio-artifacts-v1.json` a single time instead
+of once per result. The list keeps the same entries, order, task ids, readable flag, SHA-256, byte
+length, origin and created-at, and still shows an entry whose artifact is missing, deleted or expired
+as not readable instead of hiding it or failing the whole list; a real read failure is still reported
+through the existing `PRESET_GENERATION_RESULTS_REJECTED` exit. The library gains a read-only
+`getMany({schemaVersion, scopeId, artifactRefs, now, rights})` that returns the same per-reference
+outcomes as `get` (NOT_FOUND / DELETED / EXPIRED / FOUND plus metadata) from one pack read. Nothing is
+created, changed or deleted, and no generation is triggered. Measured on the same isolated stores:
+24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
+numbers are this machine's measurements, not a product promise.
+
 ### Recoverable applied settings (154)
 
 A wrong or damaged applied generation setting no longer keeps the plugin from opening. `apply()` now
