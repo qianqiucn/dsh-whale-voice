@@ -968,6 +968,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const [result, setResult] = React.useState(null)
   const [genError, setGenError] = React.useState('')
   const [genEnabled, setGenEnabled] = React.useState(null)
+  const [savedResults, setSavedResults] = React.useState(null)
+  const [resultsError, setResultsError] = React.useState('')
+  const [resultsTick, setResultsTick] = React.useState(0)
   React.useEffect(() => {
     if (!hostBridge) {
       setGenEnabled(false)
@@ -1004,12 +1007,35 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     }
     return () => { live = false }
   }, [hostBridge])
+  React.useEffect(() => {
+    if (!hostBridge || typeof hostBridge.getGenerationResults !== 'function' || genEnabled !== true) {
+      setSavedResults(null)
+      return undefined
+    }
+    let live = true
+    hostBridge.getGenerationResults().then((value) => {
+      if (!live) return
+      if (!value || value.ok !== true) {
+        setSavedResults(null)
+        setResultsError(value && value.error === 'generation_not_enabled' ? '' : 'RESULTS_UNAVAILABLE')
+        return
+      }
+      setResultsError('')
+      setSavedResults(Array.isArray(value.results) ? value.results : [])
+    }).catch(() => {
+      if (!live) return
+      setSavedResults(null)
+      setResultsError('RESULTS_UNAVAILABLE')
+    })
+    return () => { live = false }
+  }, [hostBridge, genEnabled, resultsTick])
   const voices = catalog && Array.isArray(catalog.voices) && catalog.voices.length
     ? catalog.voices
     : [{ id: 'whale-v1', label: 'whale-v1', languages: ['zh-CN'] }]
   const selectedVoice = voices.find((voice) => voice.id === preview.voice) || voices[0]
   const canDownload = Boolean(hostBridge && typeof hostBridge.downloadGenerationResult === 'function')
   const canDownloadResult = canDownload && result && result.readable === true && result.taskId
+  const canListResults = Boolean(hostBridge && typeof hostBridge.getGenerationResults === 'function')
   const languages = genEnabled === true && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
   const textLimit = genEnabled === true && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 200
   const generate = async () => {
@@ -1038,6 +1064,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       const checked = await hostBridge.getGenerationStatus(value.taskId).catch(() => null)
       setResult(checked && checked.ok === true ? checked : value)
       try { window.localStorage.setItem(STUDIO_TASK_STORAGE_KEY, value.taskId) } catch {}
+      setResultsTick((x) => x + 1)
       notify('隔离测试生成已由原任务保存。', 'success')
     } catch {
       setGenError('STUDIO_GENERATION_UNAVAILABLE')
@@ -1069,6 +1096,10 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     } finally {
       setDownloading(false)
     }
+  }
+  const selectResult = (item) => {
+    setResult(item)
+    setGenError('')
   }
   return h(React.Fragment, null,
     h(PageHead, {
@@ -1139,7 +1170,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
             h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
             result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
-            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是原任务的保存事实；刷新页面会按同一 Task ID 重新查询，不代表真实模型可用。'),
+            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是所选原任务的保存事实；下载只读取已保存的字节，不代表真实模型可用。'),
             h('div', { className: 'wv-row', style: { marginTop: 8 } },
               h(Button, {
                 onClick: () => { void download() },
@@ -1162,8 +1193,42 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
           : null,
         h('div', { className: 'wv-row wv-wrap' },
           h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存（隔离模拟）'),
-          h(Button, { variant: 'ghost', onClick: () => notify('这是隔离测试链路：真实模型、播放与发送都未接入。', 'info') }, '了解限制')))
-    ))
+          h(Button, { variant: 'ghost', onClick: () => notify('这是隔离测试链路：真实模型、播放与发送都未接入。', 'info') }, '了解限制')))),
+    canListResults && genEnabled === true
+      ? h('section', { className: 'wv-card pad', style: { marginTop: 14 }, 'data-testid': 'studio-generation-results' },
+        h('div', { className: 'wv-card-title' },
+          h('div', null,
+            h('h2', null, '已保存的生成结果'),
+            h('p', null, '同一当前配置保存位置内、属于当前生成范围的原任务。选择一条可查看并按原字节下载它已保存的 WAV；选择与下载不会重新生成、再次保存或修改原产物。')),
+          h(Badge, { tone: 'wait' }, savedResults === null ? '读取中' : savedResults.length + ' 项')),
+        resultsError
+          ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-results-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null, '无法读取已保存的生成结果；这不代表没有结果，请稍后重试。'))
+          : savedResults === null
+            ? h('div', { className: 'wv-empty', style: { minHeight: 96 }, 'data-testid': 'studio-generation-results-loading' },
+              h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+              h('strong', null, '正在读取已保存的生成结果…'),
+              h('p', null, '通过正式 Host 接口读取同一保存位置内的原任务与产物事实。'))
+            : savedResults.length === 0
+              ? h('div', { className: 'wv-empty', style: { minHeight: 96 }, 'data-testid': 'studio-generation-results-empty' },
+                h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+                h('strong', null, '还没有已保存的生成结果'),
+                h('p', null, '在当前配置的保存位置内完成一次生成后，结果会出现在这里；这里只列出本功能的生成结果，不包含其他范围或翻唱产物。'))
+              : h('div', { className: 'wv-results', 'data-testid': 'studio-generation-result-list' }, savedResults.map((item) => h('button', {
+                key: item.taskId,
+                type: 'button',
+                className: 'wv-result' + (result && result.taskId === item.taskId ? ' on' : ''),
+                'data-testid': 'studio-generation-result-select',
+                'data-task-id': item.taskId,
+                'aria-pressed': Boolean(result && result.taskId === item.taskId),
+                onClick: () => selectResult(item),
+              },
+                h('span', { className: 'wv-result-head' },
+                  h('strong', null, item.state === 'SAVED' ? '原任务已保存' : '原任务状态：' + item.state),
+                  h('span', null, item.readable === true ? '可下载原字节' : '产物当前不可读取')),
+                h('code', null, item.taskId),
+                h('span', null, '产物 ' + (item.artifactRef || '—') + (item.byteLength ? ' · ' + item.byteLength + ' bytes' : '') + (item.createdAt ? ' · 保存于 ' + item.createdAt : ''))))))
+      : null
+  )
 }
 
 function EmotionsPage({ emotion, setEmotion, notify }) {

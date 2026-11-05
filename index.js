@@ -105,6 +105,7 @@ export function bridgeScript(token) {
     getGenerationCatalog: () => generation('/generation/catalog'),
     generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
+    getGenerationResults: () => generation('/generation/results'),
     downloadGenerationResult: async (taskId) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
@@ -336,6 +337,13 @@ export function installHostBridge(scope, options = {}) {
     if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const result = await generation.status(url.searchParams.get('taskId') || '')
+    return send(res, 200, result)
+  })
+  // 151: the saved generation results of the current scope. Read-only: it lists the already-stored
+  // owner facts and their saved artifacts, and creates/regenerates nothing.
+  route(PREFIX + '/generation/results', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    const result = await generation.results()
     return send(res, 200, result)
   })
   // 150: download the already-saved WAV bytes of one original task. The route only reads the stored

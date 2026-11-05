@@ -84,6 +84,24 @@ page shows a 下载已保存音频 action when the current task has a readable s
 blob download. Refreshing the page and restoring the same saved task still downloads the same bytes, and
 the generation request count does not change (no re-synthesis).
 
+### Saved-result selection (151)
+
+The 音色中心 page lists the already-saved generation results of the same current storage location, so a
+second generation no longer hides the first one. The task owner gains a read-only
+`listSaved({schemaVersion, scopeId})`: it re-reads the same owner file through the existing fresh
+birth/owner association gates and returns only that scope's `FINAL SAVED` entries (original task id,
+feature/task type, state, artifact ref, provider/voice projection); it creates, changes or retries
+nothing and does not open the artifact library. The Core generation entry adds `results()`: it keeps
+only the current generation range (`feature: provider-generation`, `taskType: PROVIDER_TTS`), reads each
+stored artifact's metadata through the existing library `get`, and returns the original task id, SAVED
+state, artifact ref, readable flag, SHA-256, byte length, origin and created-at; an empty scope is an
+honest empty list. `installHostBridge` adds `GET /whale-voice/setup/generation/results` (503
+`generation_not_enabled` without a runtime) and the client bridge adds `getGenerationResults`. The
+Studio page shows a 已保存的生成结果 card: 暂无结果 when the scope has no saved generation, otherwise each
+entry shows its original task/artifact facts, and selecting one reuses the 150 download action to read
+that result's already-saved WAV bytes. Selecting or downloading never generates, saves or mutates
+anything; a refresh and a same-config reopen list the same entries and return the same bytes.
+
 ### Applied Qwen runtime paths (149)
 
 The saved runtime paths can be explicitly applied: the settings store also keeps
@@ -421,6 +439,20 @@ generation disabled):
 - `tests/ui` settings page: save → 应用运行路径 → "Qwen 运行路径已应用，下次重开插件生效" → reload shows
   the persisted "已应用运行路径：…" fact and both saved paths (UI **76/76**).
 
+`test/generation-results.test.mjs` (3 tests, existing Fixture Worker):
+
+- 151 Core list: an empty scope lists nothing; two generations are both listed with their original
+  task/artifact/SHA-256/byte length/origin/created-at, each downloads its own saved bytes, no task is
+  added, and the same isolated config reopened lists the same two results and returns the same bytes.
+- 151 Host route: `GET /whale-voice/setup/generation/results` returns the two saved results as JSON
+  without adding a task, 401 for a wrong token, and 503 `generation_not_enabled` without a runtime.
+- 151 scope: the owner's read-only saved-result list returns the app scope's entry and stays empty for
+  another scope.
+- `tests/ui` Studio page: an empty saved-result list first, then two generations appear as two
+  selectable entries; selecting each one and using 下载已保存音频 downloads that result's own bytes;
+  after a page reload both entries are still selectable and the first result's bytes still match; the
+  generation-request count stays 2 (UI **76/76**).
+
 `test/generation-download.test.mjs` (2 tests, existing Fixture Worker):
 
 - 150 Core download: a saved generation downloads the same bytes (SHA-256 and byte length match the saved
@@ -433,8 +465,8 @@ generation disabled):
   a second saved task, a page reload and a second download of the restored task return the same saved
   bytes and the generation-request count stays unchanged (UI **76/76**).
 
-Full suite after this unit: **1177 tests / 1173 pass / 4 platform skips / 0 fail**; UI **76/76**; build
-`client.js` **364,291 bytes** (150's 下载已保存音频 action is the bundle change).
+Full suite after this unit: **1180 tests / 1176 pass / 4 platform skips / 0 fail**; UI **76/76**; build
+`client.js` **369,603 bytes** (151's 已保存的生成结果 selection card is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

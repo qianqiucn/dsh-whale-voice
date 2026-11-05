@@ -12,6 +12,7 @@ import crypto from 'node:crypto'
 import { openFixtureTaskCatalog } from './audio/task-catalog.mjs'
 import { openFixtureTaskOwner } from './audio/task-owner.mjs'
 import { openFixtureArtifactLibrary } from './audio/artifact-library.mjs'
+import { AUDIO_TASK_FEATURES, AUDIO_TASK_TYPES } from './audio/task-contract.mjs'
 import {
   PROVIDER_GENERATION_SCHEMA_VERSION,
   createProviderGenerationCoordinator,
@@ -25,6 +26,7 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
   TEXT_REJECTED: 'PRESET_GENERATION_TEXT_REJECTED',
   GENERATION_REJECTED: 'PRESET_GENERATION_REJECTED',
   STATUS_REJECTED: 'PRESET_GENERATION_STATUS_REJECTED',
+  RESULTS_REJECTED: 'PRESET_GENERATION_RESULTS_REJECTED',
   DOWNLOAD_REJECTED: 'PRESET_GENERATION_DOWNLOAD_REJECTED',
 })
 
@@ -84,7 +86,7 @@ function randomSuffix() {
  *   provider facts written into the task (defaults to the documented example)
  * @param {number} [options.textLimit] max text characters (default 200)
  * @param {Function} [options.now] ISO clock
- * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function}}|{ok:false,code:string,detail?:string}>}
+ * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function,results:Function,download:Function}}|{ok:false,code:string,detail?:string}>}
  */
 export async function openPresetGenerationApp(options = {}) {
   const sandbox = options.sandbox
@@ -292,6 +294,51 @@ export async function openPresetGenerationApp(options = {}) {
   }
 
   /**
+   * 151: the already-saved generation results of this scope. The list comes from the same persisted
+   * owner facts the status/download paths use; it only reads them and reports each stored artifact's
+   * readable state plus its saved facts. It never creates a task, re-synthesises, saves or deletes.
+   */
+  async function results() {
+    const listed = await ownerHandle.value.listSaved({ schemaVersion: 1, scopeId })
+    if (!listed.ok) {
+      return failure(
+        PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
+        listed.errors && listed.errors[0] ? listed.errors[0].code : 'list rejected',
+      )
+    }
+    const items = []
+    for (const entry of listed.value.results) {
+      if (entry.feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION) continue
+      if (entry.taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS) continue
+      const metadata = await artifactLibrary.value.get({
+        schemaVersion: 1,
+        scopeId,
+        artifactRef: entry.artifactRef,
+        now: now(),
+        rights: { state: 'GRANTED', proofRef: rightsProofRef },
+      })
+      if (!metadata.ok) {
+        return failure(
+          PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
+          metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
+        )
+      }
+      const artifact = metadata.value.outcome === 'FOUND' ? metadata.value.artifact : null
+      items.push({
+        taskId: entry.taskId,
+        state: entry.state,
+        artifactRef: entry.artifactRef,
+        readable: artifact !== null,
+        sha256: artifact ? artifact.inspection.sha256 : null,
+        byteLength: artifact ? artifact.inspection.byteLength : null,
+        origin: artifact ? artifact.origin : null,
+        createdAt: artifact ? artifact.createdAt : null,
+      })
+    }
+    return { ok: true, fixtureOnly: true, realReady: false, results: items }
+  }
+
+  /**
    * 150: read the already-saved bytes of one original task. This only reads the persisted artifact;
    * it never creates a task, re-synthesises, changes the saved artifact or triggers playback/delivery.
    */
@@ -350,6 +397,7 @@ export async function openPresetGenerationApp(options = {}) {
       catalog,
       generate,
       status,
+      results,
       download,
     }),
   }

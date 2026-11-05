@@ -405,6 +405,7 @@
     fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
     fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
+    fakeBridge.getGenerationResults = () => hostGeneration('/whale-voice/setup/generation/results')
     fakeBridge.downloadGenerationResult = async (taskId) => {
       let response
       try {
