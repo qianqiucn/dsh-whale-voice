@@ -1015,6 +1015,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const [genEnabled, setGenEnabled] = React.useState(null)
   const [catalogError, setCatalogError] = React.useState(false)
   const [restoreError, setRestoreError] = React.useState('')
+  const [restoreMissing, setRestoreMissing] = React.useState('')
   const [savedResults, setSavedResults] = React.useState(null)
   const [resultsError, setResultsError] = React.useState('')
   const [resultsTick, setResultsTick] = React.useState(0)
@@ -1057,6 +1058,12 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
         if (!live) return
         if (!value || value.ok !== true) {
           if (value && value.error === 'generation_not_enabled') { setGenEnabled(false); return }
+          // 163: the Host explicitly answering "this task is not in the current storage location" is a
+          // definite fact, not a failed request; it must not be shown as a retryable read failure.
+          if (value && value.code === 'PRESET_GENERATION_STATUS_REJECTED' && value.detail === 'not found') {
+            setRestoreMissing(storedTaskId)
+            return
+          }
           // A rejected status read (159) or any other failure is not "no saved result": keep the known
           // task id and say that this result could not be read.
           setRestoreError(storedTaskId)
@@ -1254,20 +1261,25 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
               h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
               h('strong', null, '生成未启用'),
               h('p', null, '当前 Host 未配置生成运行对象；不会生成、不会调用真实模型。配置由部署方决定，本页不会自行启用。'))
-            : restoreError
-              ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-restore-error', style: { minHeight: 96, alignItems: 'flex-start' } },
+            : restoreMissing
+              ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-restore-missing', style: { minHeight: 96, alignItems: 'flex-start' } },
                 h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
-                h('strong', null, '无法读取上次保存的结果'),
-                h('p', null, '任务 ', h('code', null, restoreError), '：本次请求失败或超时；这不代表没有保存。刷新可重试，不会重新生成或保存。'))
-              : catalogError
-                ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-unavailable', style: { minHeight: 96 } },
+                h('strong', null, '当前保存位置未找到这项任务'),
+                h('p', null, '任务 ', h('code', null, restoreMissing), '：当前保存位置与作用域里没有找到这条旧引用。这不代表它从未保存，也不代表其他保存位置没有；本页不会删除产物、不会搜索其他位置，也不会重新生成。'))
+              : restoreError
+                ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-restore-error', style: { minHeight: 96, alignItems: 'flex-start' } },
                   h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
-                  h('strong', null, '暂时无法读取生成能力'),
-                  h('p', null, '本次请求失败或超时；这不代表未启用。页面不会生成、保存或删除任何内容，请稍后刷新重试。'))
-                : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
-                  h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
-                  h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
-                  h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不播放、不发送。')),
+                  h('strong', null, '无法读取上次保存的结果'),
+                  h('p', null, '任务 ', h('code', null, restoreError), '：本次请求失败或超时；这不代表没有保存。刷新可重试，不会重新生成或保存。'))
+                : catalogError
+                  ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-unavailable', style: { minHeight: 96 } },
+                    h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
+                    h('strong', null, '暂时无法读取生成能力'),
+                    h('p', null, '本次请求失败或超时；这不代表未启用。页面不会生成、保存或删除任何内容，请稍后刷新重试。'))
+                  : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
+                    h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+                    h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
+                    h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不播放、不发送。')),
         genError
           ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null,
             genError === 'STUDIO_GENERATION_UNCONFIRMED'
