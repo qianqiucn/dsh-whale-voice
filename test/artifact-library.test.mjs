@@ -140,6 +140,17 @@ function deleteRequest(artifactRef, overrides = {}) {
   }
 }
 
+function readManyRequest(artifactRefs, overrides = {}) {
+  return {
+    schemaVersion: ARTIFACT_LIBRARY_SCHEMA_VERSION,
+    scopeId: 'scope:fixture-a',
+    artifactRefs,
+    now: LATER,
+    rights: { state: 'GRANTED', proofRef: PROOF },
+    ...overrides,
+  }
+}
+
 function expectError(result, key, errorPath) {
   assert.equal(result.ok, false, JSON.stringify(result))
   assert.equal(result.errors.length, 1)
@@ -225,7 +236,7 @@ function injectedError() {
 test('L01 real import/get/readBytes/reopen: one canonical pack, owned bytes, no Task binding', async () => {
   await withSandbox(async (sandbox) => {
     const library = await open(sandbox)
-    assert.deepEqual(Object.keys(library).sort(), ['delete', 'get', 'import', 'readBytes'])
+    assert.deepEqual(Object.keys(library).sort(), ['delete', 'get', 'getMany', 'import', 'readBytes'])
     for (const name of Object.keys(library)) {
       assert.equal(typeof library[name], 'function')
       assert.equal(library[name].constructor.name, 'AsyncFunction', name + ' must be async')
@@ -644,6 +655,67 @@ test('L04 scope/rights/expiry: cross-scope NOT_FOUND, RIGHTS_REJECTED, EXPIRED w
     const deleted = expectOutcome(await library.delete(deleteRequest(ref, { now: AFTER_EXPIRY })), 'DELETED')
     assert.equal(deleted.revision, 2)
     assert.equal(deleted.artifact, null)
+  })
+})
+
+test('L04b getMany: one pack read returns each requested outcome in order', async () => {
+  await withSandbox(async (sandbox) => {
+    const library = await open(sandbox)
+    const first = expectOutcome(await library.import(importRequest({ bytes: wavBytes(16) })), 'STORED')
+    const second = expectOutcome(
+      await library.import(importRequest({ requestKey: 'key:fixture-two', bytes: wavBytes(20) })),
+      'STORED',
+    )
+    const firstRef = first.artifact.artifactRef
+    const secondRef = second.artifact.artifactRef
+    expectOutcome(await library.delete(deleteRequest(secondRef)), 'DELETED')
+    const missingRef = 'artifact:fixture-bytes-' + 'f'.repeat(32)
+    const before = readPackBytes(sandbox)
+
+    let packReads = 0
+    const restore = patchFs({
+      openSync: (original) => function patchedOpen(target, ...rest) {
+        if (String(target).endsWith(PACK)) packReads += 1
+        return original.call(fs, target, ...rest)
+      },
+    })
+    let batch
+    try {
+      batch = await library.getMany(readManyRequest([firstRef, secondRef, missingRef]))
+    } finally {
+      restore()
+    }
+    const value = expectSuccess(batch)
+    assert.equal(packReads, 1, 'the whole batch must come from one pack read')
+    assert.equal(value.revision, 3)
+    assert.deepEqual(
+      value.results.map((item) => [item.artifactRef, item.outcome]),
+      [
+        [firstRef, 'FOUND'],
+        [secondRef, 'DELETED'],
+        [missingRef, 'NOT_FOUND'],
+      ],
+    )
+    const single = expectOutcome(await library.get(readRequest(firstRef)), 'FOUND')
+    assert.deepEqual(value.results[0].artifact, single.artifact)
+    assert.equal(value.results[1].artifact, null)
+    assert.equal(value.results[2].artifact, null)
+    assert.equal(Buffer.compare(readPackBytes(sandbox), before), 0, 'listing must not rewrite the pack')
+
+    // The same scope/rights/expiry gates as get, applied to the whole batch.
+    const expired = expectSuccess(await library.getMany(readManyRequest([firstRef], { now: AFTER_EXPIRY })))
+    assert.equal(expired.results[0].outcome, 'EXPIRED')
+    assert.equal(expired.results[0].artifact, null)
+    const crossScope = expectSuccess(
+      await library.getMany(readManyRequest([firstRef], { scopeId: 'scope:fixture-b' })),
+    )
+    assert.equal(crossScope.results[0].outcome, 'NOT_FOUND')
+    for (const rights of [
+      { state: 'DENIED', proofRef: PROOF },
+      { state: 'GRANTED', proofRef: 'fixture-rights:other' },
+    ]) {
+      expectError(await library.getMany(readManyRequest([firstRef], { rights })), 'RIGHTS_REJECTED', 'rights')
+    }
   })
 })
 
