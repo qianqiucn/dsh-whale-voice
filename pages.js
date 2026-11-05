@@ -1126,14 +1126,14 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
         }
         const code = (value && (value.code || value.error)) || 'STUDIO_GENERATION_REJECTED'
         setGenError(code)
-        notify('隔离测试生成未完成：' + code, 'error')
+        notify('生成未完成：' + code, 'error')
         return
       }
       const checked = await hostBridge.getGenerationStatus(value.taskId).catch(() => null)
       setResult(checked && checked.ok === true ? checked : value)
       try { window.localStorage.setItem(STUDIO_TASK_STORAGE_KEY, value.taskId) } catch {}
       setResultsTick((x) => x + 1)
-      notify('隔离测试生成已由原任务保存。', 'success')
+      notify('生成已由原任务保存；实际执行来源本页无法核实。', 'success')
     } catch {
       setGenError('STUDIO_GENERATION_UNAVAILABLE')
       notify('正式 Host 生成调用异常；未自动重试。', 'error')
@@ -1173,9 +1173,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     h(PageHead, {
       eyebrow: 'WHALE VOICE / STUDIO',
       title: '音色中心',
-      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产生成与试听仍未接入；下方“预设音色生成”通过正式 Host 接口调用隔离 Core，结果来自 Fixture，不代表真实模型可用。',
+      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产播放与微信发送未接入；下方“预设音色生成”经正式 Host 接口提交并由原任务保存。本次实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用。',
       actions: h(React.Fragment, null,
-        h(Badge, { tone: 'demo' }, genEnabled === true ? '隔离模拟' : genEnabled === false ? '未启用' : catalogError ? '读取失败' : '检查中'),
+        h(Badge, { tone: 'demo' }, genEnabled === true ? '来源未确认' : genEnabled === false ? '未启用' : catalogError ? '读取失败' : '检查中'),
         h(Button, { disabled: true, title: '生产播放未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
@@ -1183,7 +1183,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       catalogError
         ? h('span', { 'data-testid': 'studio-generation-catalog-error' }, '无法读取生成能力：本次请求失败或超时。这不代表未启用，页面不会生成或保存；请稍后刷新重试。')
         : h('span', null, genEnabled === true
-          ? '隔离模拟：下方生成经正式 Host 接口、既有 Qwen 适配器与 Fixture 执行对象完成一次测试输出并由原任务保存；不加载真实模型、不联网、不播放、不发送。'
+          ? '来源未确认：本页经正式 Host 接口提交生成，结果由原任务保存。实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用；本页不播放，也不发送微信。'
           : genEnabled === false
             ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
             : '正在检查生成能力…')),
@@ -1217,7 +1217,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       h('section', { className: 'wv-card pad wv-preview' },
         h('div', { className: 'wv-card-title' },
           h('div', null, h('h2', null, '预设音色生成'), h('p', null, genEnabled === true ? '选择已有预设音色并输入短文本；结果由原任务保存，刷新后仍可查询。' : '通过正式 Host 接口提交短文本与已有预设音色。')),
-          h(Badge, { tone: 'wait' }, genEnabled === true ? 'FIXTURE' : genEnabled === false ? '未启用' : '检查中')),
+          h(Badge, { tone: 'wait' }, genEnabled === true ? '来源未确认' : genEnabled === false ? '未启用' : '检查中')),
         h('div', { className: 'wv-field' },
           h('label', null, '试听文本'),
           h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: textLimit, disabled: genEnabled !== true, 'aria-label': '试听文本' }),
@@ -1240,7 +1240,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
             h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
             result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
-            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是所选原任务的保存事实；下载只读取已保存的字节，不代表真实模型可用。'),
+            h('p', null, h(Badge, { tone: 'demo' }, '来源未确认'), ' 这是所选原任务的保存事实；下载只读取已保存的字节；实际模型来源无法核实，不代表真实模型可用。'),
             h('div', { className: 'wv-row', style: { marginTop: 8 } },
               h(Button, {
                 onClick: () => { void download() },
@@ -1267,16 +1267,16 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
                 : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
                   h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
                   h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
-                  h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。')),
+                  h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不播放、不发送。')),
         genError
           ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null,
             genError === 'STUDIO_GENERATION_UNCONFIRMED'
               ? '生成结果未确认：没有收到服务端结果，不能判定成功或失败；不会自动重试。稍后刷新可在「已保存的生成结果」查看。'
-              : '隔离测试生成失败：' + genError + '；未自动重试。'))
+              : '生成失败：' + genError + '；未自动重试。'))
           : null,
         h('div', { className: 'wv-row wv-wrap' },
-          h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存（隔离模拟）'),
-          h(Button, { variant: 'ghost', onClick: () => notify('这是隔离测试链路：真实模型、播放与发送都未接入。', 'info') }, '了解限制')))),
+          h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存'),
+          h(Button, { variant: 'ghost', onClick: () => notify('本页经正式 Host 接口提交生成；实际执行来源本页无法核实，生产播放与微信发送未接入。', 'info') }, '了解限制')))),
     canListResults && genEnabled === true
       ? h('section', { className: 'wv-card pad', style: { marginTop: 14 }, 'data-testid': 'studio-generation-results' },
         h('div', { className: 'wv-card-title' },

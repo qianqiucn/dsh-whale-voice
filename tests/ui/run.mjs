@@ -396,10 +396,12 @@ await check('studio preset generation saves the original task, downloads it and 
     // 156: the page waits for the Host's declared effective limit instead of a fixed short timer.
     const waitLimit = await page.evaluate(() => window.__WHALE_GENERATION_TIMEOUT_MS__)
     assert.equal(Number.isInteger(waitLimit) && waitLimit >= 5000, true, 'generation wait limit: ' + String(waitLimit))
+    // 162: the page states the run/result source honestly instead of claiming Fixture for sure.
     const pageText = await page.locator('body').innerText()
-    assert.match(pageText, /隔离模拟/)
-    assert.match(pageText, /不加载真实模型/)
-    assert.match(pageText, /生产生成与试听仍未接入/)
+    assert.match(pageText, /来源未确认/)
+    assert.match(pageText, /无法核实/)
+    assert.match(pageText, /生产播放与微信发送未接入/)
+    assert.doesNotMatch(pageText, /不加载真实模型|不运行真实模型|结果来自 Fixture/)
     await page.screenshot({ path: path.join(artifactDir, 'studio-generation-1440.png') })
 
     // 150: download the already-saved WAV bytes; the file must match the saved result facts.

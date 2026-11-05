@@ -158,6 +158,22 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Honest run/result source (162)
+
+The 音色中心 generation page no longer claims that a run is Fixture for sure. It used to say
+unconditionally 「隔离模拟…Fixture 执行对象…不加载真实模型、不联网」 and labelled the generate button and
+saved result as Fixture, while the Host assembly may adopt an applied runtime program and model
+directory (149), so those absolute claims had no basis. The page now uses one consistent wording —
+来源未确认 — in the run notice, the page badge, the generate button and success toast, the failure
+notice and the selected saved-result explanation: the run is submitted through the formal Host
+interface and its result is saved on the original task, but whether this run used the isolated
+Fixture or an applied local runtime path and model cannot be verified from this page, and that is not
+a claim that a real model is verified. The page still states what it can verify itself: no audio
+playback and no WeChat sending happen here. Saved-task facts, download, selection, reopen and the F06
+failure/waiting/not-enabled displays keep their behaviour; `fixtureOnly` / `realReady`, the artifact
+origin categories and the 155 expiry exemption are unchanged — these fixed fields are not used as
+proof of the actual execution source.
+
 ### Explicit language is not silently replaced (161)
 
 An explicitly submitted language must be one the chosen preset voice supports. `generate()` used to
