@@ -141,7 +141,9 @@ test('148 the formal plugin persists the Qwen runtime draft across a reopen with
 
   const empty = await callRoute(firstRoute, { method: 'GET', url: ROUTE, token: firstToken })
   assert.equal(empty.status, 200)
-  assert.deepEqual(JSON.parse(empty.body), { ok: true, runtimeDraft: null, savedAt: null })
+  assert.deepEqual(JSON.parse(empty.body), {
+    ok: true, runtimeDraft: null, savedAt: null, applied: null, appliedAt: null,
+  })
 
   const invalid = await callRoute(firstRoute, {
     method: 'PUT', url: ROUTE, token: firstToken, body: { modelDirectory: 'relative/model', pythonPath },

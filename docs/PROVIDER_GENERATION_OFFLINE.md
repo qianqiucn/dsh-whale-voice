@@ -72,6 +72,20 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Applied Qwen runtime paths (149)
+
+The saved runtime paths can be explicitly applied: the settings store also keeps
+`qwen-runtime-applied.json` (`schemaVersion:1`, `modelDirectory`, `pythonPath`, `appliedAt`),
+`installHostBridge` adds `POST /whale-voice/setup/settings/qwen-runtime/apply` (400
+`runtime_draft_missing` when nothing is saved) and the GET/PUT responses carry `applied`/`appliedAt`.
+The settings page's 应用运行路径 button records the fact and says "Qwen 运行路径已应用，下次重开插件生效";
+the card shows the persisted fact "已应用运行路径：…" while the operation note keeps saying that
+applying does not switch the current runtime. Saving alone changes nothing and applying executes
+nothing. On the next formal `apply(ctx, config)` with the same serialized config the applied Python
+program replaces `worker.runtime` and the applied model directory replaces the worker's `--model-dir`
+argument (appended when absent); the trust root and the generation enablement still come from the
+config, so disabled generation starts no Worker/model.
+
 ### Qwen runtime-path settings draft (148)
 
 The Chinese 语音设置 page records the Qwen model directory and the Python runtime program as an isolated
@@ -383,8 +397,20 @@ generation disabled):
 - `tests/ui` settings page: fill both paths → 保存运行路径草稿 → "Qwen 运行路径草稿已保存，尚未应用" →
   reload reads both values back (UI **76/76**).
 
-Full suite after this unit: **1173 tests / 1169 pass / 4 platform skips / 0 fail**; UI **76/76**; build
-`client.js` **359,889 bytes** (148's Qwen runtime-path card is the bundle change).
+`test/plugin-qwen-runtime-applied.test.mjs` (2 tests):
+
+- 149 adoption: a draft-only config saves the runtime paths; reopening with a generation config whose
+  old Python path does not exist still fails (save-only does not change the assembly source); after an
+  explicit apply, the same config assembles the existing Fixture Worker with the applied Python program
+  and the applied `--model-dir` (the worker records its received argv in the test), and one simulated
+  generation is SAVED under the existing owner/artifact save.
+- 149 disabled generation: saving and applying the paths with generation disabled stays
+  `503 generation_not_enabled`, creates no Worker, and the applied fact survives a reopen.
+- `tests/ui` settings page: save → 应用运行路径 → "Qwen 运行路径已应用，下次重开插件生效" → reload shows
+  the persisted "已应用运行路径：…" fact and both saved paths (UI **76/76**).
+
+Full suite after this unit: **1175 tests / 1171 pass / 4 platform skips / 0 fail**; UI **76/76**; build
+`client.js` **362,351 bytes** (149's 应用运行路径 button/copy is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

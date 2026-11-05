@@ -284,6 +284,8 @@ const GENERATION_DRAFT_ERRORS = {
   runtime_python_invalid: '请填写 Python 运行程序位置。',
   runtime_python_not_absolute: 'Python 运行程序位置需要使用绝对路径。',
   runtime_draft_invalid: '已保存的运行路径草稿无法读取，未显示旧值。',
+  runtime_draft_missing: '尚未保存运行路径草稿，请先保存再应用。',
+  runtime_applied_invalid: '已应用的运行路径无法读取，未显示旧值。',
   invalid_body: '草稿请求无效。',
   internal_error: '草稿保存失败：Host 内部错误。',
   core_unreachable: '无法连接 Host 接口。',
@@ -450,12 +452,15 @@ function QwenRuntimeDraftCard({ notify }) {
   const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
   const available = Boolean(host
     && typeof host.getQwenRuntimeDraft === 'function'
-    && typeof host.saveQwenRuntimeDraft === 'function')
+    && typeof host.saveQwenRuntimeDraft === 'function'
+    && typeof host.applyQwenRuntimeDraft === 'function')
   const [modelDirectory, setModelDirectory] = React.useState('')
   const [pythonPath, setPythonPath] = React.useState('')
   const [saved, setSaved] = React.useState(null)
+  const [applied, setApplied] = React.useState(null)
   const [loading, setLoading] = React.useState(available)
   const [busy, setBusy] = React.useState(false)
+  const [applying, setApplying] = React.useState(false)
   const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
 
   const applyPayload = (payload) => {
@@ -474,6 +479,10 @@ function QwenRuntimeDraftCard({ notify }) {
       setModelDirectory('')
       setPythonPath('')
     }
+    setApplied(payload.applied && typeof payload.applied.modelDirectory === 'string'
+      && typeof payload.applied.pythonPath === 'string'
+      ? { modelDirectory: payload.applied.modelDirectory, pythonPath: payload.applied.pythonPath }
+      : null)
     setError('')
   }
 
@@ -512,6 +521,32 @@ function QwenRuntimeDraftCard({ notify }) {
     }
   }
 
+  const applySaved = async () => {
+    if (!available || applying || busy || loading) return
+    if (!saved) { setError(generationDraftError('runtime_draft_missing')); return }
+    if (modelDirectory.trim() !== saved.modelDirectory || pythonPath.trim() !== saved.pythonPath) {
+      setError('请先保存当前修改，再应用已保存的运行路径。')
+      return
+    }
+    setApplying(true)
+    setError('')
+    try {
+      const payload = await host.applyQwenRuntimeDraft()
+      setApplying(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('Qwen 运行路径未应用。', 'error')
+        return
+      }
+      applyPayload(payload)
+      notify('Qwen 运行路径已应用，下次重开插件生效。', 'success')
+    } catch {
+      setApplying(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('Qwen 运行路径未应用。', 'error')
+    }
+  }
+
   const statusText = !available
     ? '草稿存储未接入'
     : loading
@@ -519,10 +554,16 @@ function QwenRuntimeDraftCard({ notify }) {
       : saved
         ? '已保存草稿：' + saved.modelDirectory + ' · ' + saved.pythonPath
         : '尚未保存运行路径草稿'
+  const appliedText = applied
+    ? '已应用运行路径：模型 ' + applied.modelDirectory + '；Python ' + applied.pythonPath
+    : '尚未应用运行路径'
+  const canApply = available && !loading && !busy && !applying && !!saved
+    && modelDirectory.trim() === saved.modelDirectory
+    && pythonPath.trim() === saved.pythonPath
 
   return h(Card, {
     title: 'Qwen 运行路径',
-    desc: '填写本地 Qwen 模型目录与 Python 运行程序位置；这里只保存草稿，不会读取模型、执行 Python 或启动生成服务。',
+    desc: '填写本地 Qwen 模型目录与 Python 运行程序位置；保存后仍需明确应用，应用只决定下次打开时采用的位置，不会立即切换当前运行。',
     actions: h(Badge, { tone: 'wait' }, '运行路径草稿'),
   },
     h('div', { className: 'wv-settings-group' },
@@ -563,12 +604,19 @@ function QwenRuntimeDraftCard({ notify }) {
           disabled: !available || busy || loading,
           'data-testid': 'qwen-runtime-save',
         }, busy ? '保存中…' : '保存运行路径草稿'),
+        h(Button, {
+          onClick: () => { void applySaved() },
+          disabled: !canApply,
+          title: canApply ? '应用已保存的运行路径；下次重开插件生效' : '需要先保存草稿，且当前输入与已保存值一致',
+          'data-testid': 'qwen-runtime-apply',
+        }, applying ? '应用中…' : '应用运行路径'),
         h('span', { className: 'wv-muted', 'data-testid': 'qwen-runtime-status' }, statusText)),
       error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-error' },
         h(Icon, { name: 'info', size: 14 }),
         h('span', null, error)) : null,
+      h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-applied' }, appliedText),
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
-        '保存成功只代表运行路径草稿已写入；尚未应用，也不代表模型或 Python 可用。')))
+        '保存只写入草稿；应用只记录供下次打开使用的运行路径，不会立即切换当前运行，也不会执行 Python 或读取模型。')))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {

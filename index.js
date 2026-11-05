@@ -110,6 +110,7 @@ export function bridgeScript(token) {
     applyGenerationStorageDraft: () => generation('/settings/generation-storage/apply', { method: 'POST', body: '{}' }),
     getQwenRuntimeDraft: () => generation('/settings/qwen-runtime'),
     saveQwenRuntimeDraft: (request) => generation('/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) }),
+    applyQwenRuntimeDraft: () => generation('/settings/qwen-runtime/apply', { method: 'POST', body: '{}' }),
     detect: (component) => {
       const value = String(component || '');
       if (!allowed.has(value)) return Promise.reject(new Error('unsupported_component'));
@@ -236,9 +237,27 @@ export function installHostBridge(scope, options = {}) {
     return send(res, envelope.status, envelope.body)
   }, ['POST'])
 
-  // 148: the Chinese settings page records the Qwen model directory and Python runtime path as an
-  // isolated draft. Saving it never reads a model, executes Python, starts a Worker or generation, or
-  // changes a running generation object; it is not applied as runtime configuration.
+  // 148/149: the Chinese settings page records the Qwen model directory and Python runtime path as an
+  // isolated draft and can explicitly apply the saved paths. Saving or applying them never reads a
+  // model, executes Python, starts a Worker or generation, or changes a running generation object; the
+  // applied fact is used when the plugin opens again.
+  function runtimeDraftEnvelope() {
+    const draft = settingsDraft.readRuntimeDraft()
+    if (draft.ok !== true) return { status: 500, body: draft }
+    const applied = settingsDraft.readAppliedRuntime()
+    if (applied.ok !== true) return { status: 500, body: applied }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        runtimeDraft: draft.runtimeDraft,
+        savedAt: draft.savedAt,
+        applied: applied.applied,
+        appliedAt: applied.appliedAt,
+      },
+    }
+  }
+
   route(PREFIX + '/settings/qwen-runtime', async (req, res) => {
     if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
     if (String(req.method || '').toUpperCase() === 'PUT') {
@@ -252,11 +271,21 @@ export function installHostBridge(scope, options = {}) {
         modelDirectory: body && body.modelDirectory,
         pythonPath: body && body.pythonPath,
       })
-      return send(res, result.ok === true ? 200 : 400, result)
+      if (result.ok !== true) return send(res, 400, result)
+      const envelope = runtimeDraftEnvelope()
+      return send(res, envelope.status, envelope.body)
     }
-    const result = settingsDraft.readRuntimeDraft()
-    return send(res, result.ok === true ? 200 : 500, result)
+    const envelope = runtimeDraftEnvelope()
+    return send(res, envelope.status, envelope.body)
   }, ['GET', 'PUT'])
+
+  route(PREFIX + '/settings/qwen-runtime/apply', async (req, res) => {
+    if (!settingsDraft) return send(res, 503, { ok: false, error: 'settings_draft_unavailable' })
+    const result = settingsDraft.applyRuntime()
+    if (result.ok !== true) return send(res, result.error === 'runtime_draft_missing' ? 400 : 500, result)
+    const envelope = runtimeDraftEnvelope()
+    return send(res, envelope.status, envelope.body)
+  }, ['POST'])
 
   // 136: formal Host call surface for the preset generation Core entry. `options.generation` is an
   // already-opened `openPresetGenerationApp` value supplied by the isolated Host assembly; without it
@@ -351,6 +380,23 @@ function settingsDraftRoot(config) {
 }
 
 /**
+ * 149: the applied Qwen runtime paths replace the corresponding runtime parameters when the plugin
+ * opens: the Python program becomes the worker runtime and the model directory replaces the worker's
+ * `--model-dir` argument (appended when absent). The trust root and the enablement decision still come
+ * from the serializable config; nothing is executed or read here.
+ */
+function withAppliedRuntime(settings, applied) {
+  const worker = settings.worker && typeof settings.worker === 'object' && !Array.isArray(settings.worker)
+    ? settings.worker
+    : {}
+  const args = Array.isArray(worker.args) ? [...worker.args] : []
+  const index = args.lastIndexOf('--model-dir')
+  if (index >= 0 && index + 1 < args.length) args[index + 1] = applied.modelDirectory
+  else args.push('--model-dir', applied.modelDirectory)
+  return { ...settings, worker: { ...worker, runtime: applied.pythonPath, args } }
+}
+
+/**
  * 142: the Host obtains its own isolated storage context, calls the existing Qwen runtime factory and
  * hands that same Core generation object to the existing Host surface. The worker belongs to this
  * assembly and is closed on dispose. 143: when the serializable config names a `storageRoot`, that
@@ -388,13 +434,21 @@ export function apply(ctx, config = undefined) {
       const settingsDraft = draftRoot === undefined
         ? null
         : openGenerationSettingsDraft({ sandbox: openConfigStorage({ root: draftRoot }) })
-      // 146: the applied location (if any) is used when the plugin opens; the current runtime keeps
-      // whatever location it was assembled with until this plugin is closed and opened again.
+      // 146/149: the applied location and runtime paths (if any) are used when the plugin opens; the
+      // current runtime keeps whatever it was assembled with until this plugin is closed and opened again.
       const applied = settingsDraft === null ? null : settingsDraft.readApplied()
       if (applied !== null && applied.ok !== true) throw new Error('whale-voice settings draft: ' + applied.error)
-      const effective = settings !== null && applied !== null && applied.applied
-        ? { ...settings, storageRoot: applied.applied.generationStorageRoot }
-        : settings
+      const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
+      if (appliedRuntime !== null && appliedRuntime.ok !== true) {
+        throw new Error('whale-voice settings draft: ' + appliedRuntime.error)
+      }
+      let effective = settings
+      if (effective !== null && applied !== null && applied.applied) {
+        effective = { ...effective, storageRoot: applied.applied.generationStorageRoot }
+      }
+      if (effective !== null && appliedRuntime !== null && appliedRuntime.applied) {
+        effective = withAppliedRuntime(effective, appliedRuntime.applied)
+      }
       if (!effective) {
         const host = installHostBridge(scope, { env: process.env, settingsDraft })
         if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())

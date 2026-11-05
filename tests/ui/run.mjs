@@ -654,7 +654,7 @@ await check('generation storage location draft is saved, applied and survives a 
   })
 })
 
-await check('qwen runtime path draft is saved and survives a page reload', async () => {
+await check('qwen runtime path draft is saved, applied and survives a page reload', async () => {
   await hostSettings.reset()
   const modelDirectory = path.join(os.tmpdir(), 'whale-voice-ui-qwen-model')
   const pythonPath = path.join(os.tmpdir(), 'whale-voice-ui-python', 'python.exe')
@@ -680,9 +680,23 @@ await check('qwen runtime path draft is saved and survives a page reload', async
     assert.match(await page.locator('.wv-toast').innerText(), /运行路径草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()
     assert.match(pageText, /Qwen 运行路径/)
-    assert.match(pageText, /不会读取模型、执行 Python/)
+    assert.match(pageText, /不会执行 Python 或读取模型/)
+    assert.match(await page.getByTestId('qwen-runtime-applied').innerText(), /尚未应用/)
 
-    // Reload the page and reopen the settings page: both saved paths are read back.
+    // Applying the saved paths records the fact; the current runtime is not switched here.
+    await page.getByTestId('qwen-runtime-apply').click()
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="qwen-runtime-applied"]')?.innerText.includes('已应用运行路径'),
+      null,
+      { timeout: 8000 },
+    )
+    assert.match(await page.locator('.wv-toast').innerText(), /已应用，下次重开插件生效/)
+    const appliedText = await page.getByTestId('qwen-runtime-applied').innerText()
+    assert.ok(appliedText.includes(modelDirectory), appliedText)
+    assert.ok(appliedText.includes(pythonPath), appliedText)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当前运行/)
+
+    // Reload the page and reopen the settings page: both saved paths and the applied fact are read back.
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.getByRole('button', { name: '语音设置', exact: true }).click()
@@ -693,6 +707,10 @@ await check('qwen runtime path draft is saved and survives a page reload', async
     )
     assert.equal(await page.getByTestId('qwen-runtime-python').inputValue(), pythonPath)
     assert.match(await page.getByTestId('qwen-runtime-status').innerText(), /已保存草稿/)
+    const reopenedApplied = await page.getByTestId('qwen-runtime-applied').innerText()
+    assert.ok(reopenedApplied.includes(modelDirectory), reopenedApplied)
+    assert.ok(reopenedApplied.includes(pythonPath), reopenedApplied)
+    assert.match(reopenedApplied, /已应用运行路径/)
     await page.screenshot({ path: path.join(artifactDir, 'settings-qwen-runtime-draft-1440.png') })
   })
 })
