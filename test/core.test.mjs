@@ -476,7 +476,7 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   assert.match(rows[0].text, /getCapabilities: \(\) => call\('\/capabilities'\)/)
   assert.match(rows[0].text, /getCapabilityStatus: \(\) => call\('\/capabilities\/status'\)/)
   assert.match(rows[0].text, /getGenerationCatalog: \(\) => generation\('\/generation\/catalog'\)/)
-  assert.match(rows[0].text, /generatePreset: \(request\) => generation\('\/generation'/)
+  assert.match(rows[0].text, /generatePreset: \(request, options\) => generation\('\/generation'/)
   assert.match(rows[0].text, /getGenerationStatus: \(taskId\) => generation\('\/generation\/status\?taskId='/)
   assert.match(rows[0].text, /getGenerationResults: \(\) => generation\('\/generation\/results'\)/)
   assert.equal(host.scripts.includes('host-token'), true)
