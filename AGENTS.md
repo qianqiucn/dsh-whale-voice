@@ -1,12 +1,34 @@
 # AGENTS.md — Whale Voice Long-Term Development Rules
 
 This file is the operating contract for every coding agent working on Whale Voice. Read it before
-changing code. When a user request conflicts with these rules, stop and ask for explicit permission;
-do not silently weaken a safety boundary.
+changing code. **Two AI collaborators have different responsibilities:** DeepSeek is the principal
+implementation/coding agent; ChatGPT is the planning and GitHub plan-coordination collaborator.
+The plan-dispatch, idea-reordering, and DONE-tagging workflow in
+[EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) applies to ChatGPT **only**, not DeepSeek.
+General engineering quality, Git safety, security and authorization rules in this AGENTS.md
+still apply to both. When a user request conflicts with these safety rules, stop and ask for
+explicit permission; do not silently weaken a safety boundary.
+
+## Permanent product rule: novice-first usability (2026-10-25)
+
+The user explicitly requires that Whale Audio Core, Whale Voice (speech bubbles), Whale Singing (covers), and Whale Relay remain easy for **non-programmers who cannot code**. Read [docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md](docs/plans/NOVICE_FIRST_PRODUCT_STANDARD.md) when implementing any user-facing feature. This is a permanent project-level UX/acceptance requirement, not a request to start new work.
+
+- A normal, already-supported user workflow must not require manually editing JSON/env files, using the command line, installing Python/pip/npm/Git, pasting code, or understanding ports/GPU internals. If a third-party or license constraint makes manual setup unavoidable, show an honest guided explanation and safe alternative; **never silently run untrusted installers**.
+- Prefer simple Chinese labels, safe defaults, visual hardware/dependency checks, clear local/CPU/cloud choices, first-use dialogs per Voice/Singing, only the minimum selected dependencies, and reusable shared assets. Model installation, driver changes, network/paid APIs, config writes, and actual WeChat sends require separate explicit authorization.
+- Every future implementation task should include an appropriate **Novice First DoD**: first-time workflow, clear progress, cancellation, accessible UI, no-GPU/offline states, understandable errors and recovery actions, plus explicit distinctions between Mock/OFFLINE/INTEGRATED/VERIFIED and SAVED/APPLIED/SENT_LOCAL/UNKNOWN.
+- Do not mark real user-facing capability complete based only on green code/unit tests or demo UI. Keep the existing working UI and production voice chain intact; no auto merges, service restarts, or real sending without authorization.
 
 ## 1. Startup workflow (every session)
 
-1. Read this `AGENTS.md`.
+1. Read this `AGENTS.md` before implementing a task or changing repository code.
+   **ChatGPT only**, when doing plan dispatch, task drafting or GitHub plan management: also read
+   [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md),
+   [docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+   [docs/plans/TASK_SPEC_STANDARD.md](docs/plans/TASK_SPEC_STANDARD.md),
+   the plan registry and the relevant plan file. When drafting or revising a task,
+   use [docs/plans/TASK_SPEC_TEMPLATE.md](docs/plans/TASK_SPEC_TEMPLATE.md).
+   DeepSeek is **not** required to perform this planning/memory preflight for ordinary engineering
+   work; its Git/PR safety obligations remain governed by this file.
 2. Read [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) as a recovery summary, not an authority.
 3. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 4. Read [docs/ROADMAP.md](docs/ROADMAP.md); read [docs/DECISIONS.md](docs/DECISIONS.md) for accepted
@@ -21,9 +43,59 @@ do not silently weaken a safety boundary.
 7. Verify that `docs/AI_CONTEXT.md` is not stale relative to Git/HEAD/PRs/tests. Re-read the named
    authoritative docs when it disagrees.
 8. State the current task boundary and whether explicit authorization is required.
-9. Select the highest-priority task that is safe to execute.
+9. **DeepSeek:** implement the currently user-assigned detailed technical task; do not independently
+   select, reprioritize or dispatch the next plan. **ChatGPT:** choose/maintain plan order and
+   dispatch a single execution-ready specification when the user requests it.
 10. If the task requires real WeChat UI/window operations, real sending, driver changes, service
     restarts or production configuration changes, stop and obtain explicit authorization first.
+
+## 1.0.0 ChatGPT new-chat handoff (planning role only)
+
+For any **new ChatGPT conversation** that resumes Whale Voice planning, also read
+[docs/plans/NEXT_CHATGPT_HANDOFF.md](docs/plans/NEXT_CHATGPT_HANDOFF.md) and
+[docs/plans/NEXT_CHATGPT_ACTION_PLAN.md](docs/plans/NEXT_CHATGPT_ACTION_PLAN.md) on the
+current authorized plan branch (if they are not merged into main).
+Their current PR/CI information is a snapshot; verify the latest main and open PRs before
+editing or marking tasks DONE. **This extra planning-handoff requirement does not apply to
+DeepSeek's ordinary engineering tasks.** No handoff is permission to auto-merge, restart,
+write production configuration or send WeChat messages.
+
+## 1.0.1 Two-AI collaboration and role ownership
+
+| Role | Responsible for | Not required to do |
+|---|---|---|
+| **DeepSeek (DSH development agent)** | Implement the user-approved technical task: engineering design within scope, code changes, tests, source PRs, implementation reports and technical handoffs; preserve all safety gates in AGENTS.md. | Independently dispatch the next plan, reorder the master plan, maintain plan `SENT`/`DONE` markers or obey ChatGPT-only plan administration procedures. |
+| **ChatGPT (planning / GitHub coordination AI)** | Maintain [docs/plans/README.md](docs/plans/README.md), author/send one plan at a time, adjust ordering after user ideas, verify reported completion and mark `DONE` where justified, keep plan history and coordinate related GitHub documentation/PR reviews. | Execute production code tasks, restart services, merge PRs or alter production state without the user's separate authorization. |
+
+**Instructions to DeepSeek:** Another AI (ChatGPT) is participating in this project.
+ChatGPT handles the roadmap/plan documents and their GitHub tracking. Treat a plan supplied by
+the user as the requested technical specification and carry out your authorized implementation
+work; report results, relevant commits, PRs and CI normally. **Do not treat the plan-registry
+maintenance instructions as an extra required part of your coding tasks.** You can still use Git,
+commit/push code and create engineering PRs as authorized under §2; ChatGPT's responsibility for
+plan tracking does not prohibit normal developer Git work. If documentation conflicts with
+actual source, tests or GitHub state, flag the discrepancy rather than silently changing the
+plan manager's records.
+
+**Instructions to ChatGPT only:** For plan selection, new ideas, sequence changes, status
+tagging or plan-document PRs, first read [EXECUTION_STANDARD.md](EXECUTION_STANDARD.md),
+[docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+[docs/plans/TASK_SPEC_STANDARD.md](docs/plans/TASK_SPEC_STANDARD.md) and
+[docs/plans/README.md](docs/plans/README.md). **The user requires near implementation-ready
+task specifications: maximize concrete instructions and leave as few product/architecture choices as
+possible for DeepSeek.** Expand roadmap entries using
+[docs/plans/TASK_SPEC_TEMPLATE.md](docs/plans/TASK_SPEC_TEMPLATE.md), verify actual code and PRs
+before specifying changes, and give a single recommended implementation path with explicit
+input/output/error contracts, file lists, ordered steps, tests and acceptance. Dispatch one
+requested plan per message; record new ideas and reordering in
+[docs/plans/CHANGELOG.md](docs/plans/CHANGELOG.md), updating long-term memory when a durable
+user preference changes. Mark `DONE` only with adequate evidence; track PR `MERGED`
+separately from task completion. Do these updates in the active chat using GitHub tools,
+never imply offline background editing.
+
+Both agents must comply with safety/authorization boundaries; neither may treat a plan
+description or a CI pass as permission for production writes, service restart, real WeChat
+sending, Hook/DLL execution, or an unapproved PR merge.
 
 ## 1.1 WeChatAgent dependency rule (permanent)
 
@@ -221,23 +293,23 @@ Before staging or pushing:
 - Run `git diff --cached --check` and a secret scan before committing.
 - Use an existing legitimate Git identity; do not invent an author email.
 
-## 10. What "continue the plan" means
+## 10. What "continue the plan" means — role-aware
 
-When the user says **“继续 Whale Voice 开发计划”** (or equivalent), an agent should:
+For **ChatGPT**, “继续 Whale Voice 开发计划” (or equivalent) means: read
+[EXECUTION_STANDARD.md](EXECUTION_STANDARD.md) and
+[docs/plans/CHATGPT_LONG_TERM_MEMORY.md](docs/plans/CHATGPT_LONG_TERM_MEMORY.md),
+check latest source/Git/CI, select the next task from the ordered registry, expand it to a
+[Level 2 execution-ready specification](docs/plans/TASK_SPEC_STANDARD.md),
+update the plan branch/PR and send **one** complete task to the user.
 
-1. Read the current GitHub `main` state.
-2. Read `AGENTS.md`, roadmap and project status.
-3. Choose the next safe, highest-priority task.
-4. Create a task branch.
-5. Implement a minimal change.
-6. Run the available checks.
-7. Update status/roadmap/changelog.
-8. Commit and push when authorized.
-9. Open a PR when appropriate.
-10. Report exact results and remaining risks.
+For **DeepSeek**, the same message does **not** authorize independently choosing or reordering
+the roadmap. DeepSeek should implement the most recently explicitly assigned detailed technical
+task, using this AGENTS.md safety/engineering process (branch → minimal code → tests → privacy
+scan → PR → handoff). If no concrete execution task has been assigned, request the specific
+task/specification rather than silently starting the next plan or rewriting the plan registry.
 
-There is no autonomous scheduler in this repository. Do not claim GitHub is developing itself or that
-a roadmap automatically executes. The next cycle is triggered by the user's instruction.
+Both roles must preserve the explicit authorization boundaries in §6. There is no autonomous
+scheduler; no GitHub tasks execute in the background without an active request.
 
 ## 11. Stop conditions
 
