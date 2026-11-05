@@ -1,11 +1,14 @@
 /* Self-owned Fake Qwen worker for Plan10 10-A tests.
  *
- * Speaks the narrow NDJSON protocol over stdio. It never loads a model, never touches the network or
- * the filesystem, and produces deterministic synthetic WAV bytes. Fault modes are selected from argv
- * so the supervisor exercises the same process path for success and failure. Identity fields echo the
- * in-flight request by default; `--corrupt=requestId,model,...` deliberately breaks them so tests can
- * prove the adapter no longer relabels someone else's audio.
+ * Speaks the narrow NDJSON protocol over stdio. It never loads a model, never touches the network and
+ * produces deterministic synthetic WAV bytes. Fault modes are selected from argv so the supervisor
+ * exercises the same process path for success and failure. Identity fields echo the in-flight request
+ * by default; `--corrupt=requestId,model,...` deliberately breaks them so tests can prove the adapter
+ * no longer relabels someone else's audio. The optional `--argv-record=<file>` test hook writes the
+ * received argv to that file (149 only) so a test can observe which paths the assembly actually used.
  */
+
+import fs from 'node:fs'
 
 import { produceFixtureWav } from '../core/audio/fixture-wav-producer.mjs'
 
@@ -13,6 +16,10 @@ const argv = new Map(process.argv.slice(2).map((item) => {
   const [key, ...rest] = item.split('=')
   return [key.replace(/^--/, ''), rest.join('=')]
 }))
+const argvRecord = argv.get('argv-record')
+if (typeof argvRecord === 'string' && argvRecord !== '') {
+  fs.writeFileSync(argvRecord, JSON.stringify({ argv: process.argv.slice(2) }))
+}
 const mode = argv.get('mode') || 'ok'
 const backend = argv.get('backend') || 'custom-voice'
 const model = argv.get('model') || (backend === 'base-clone'

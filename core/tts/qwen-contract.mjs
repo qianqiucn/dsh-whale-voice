@@ -73,7 +73,6 @@ export const QWEN_TOKENIZER = Object.freeze({
   version: null,
   versionStatus: 'UNKNOWN',
   licenseStatus: 'UNKNOWN',
-  networkFallback: 'PROHIBITED',
   evidence: 'static upstream reading at the fixed commit; not executed in this batch',
 })
 

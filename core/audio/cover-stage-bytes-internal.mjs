@@ -25,10 +25,6 @@ export const COVER_STAGE_CODES = Object.freeze({
   INVALID_WAV: 'COVER_STAGE_INVALID_WAV',
 })
 
-export const COVER_STAGE_ERRORS = Object.freeze(
-  Object.fromEntries(Object.entries(COVER_STAGE_CODES).map(([key, code]) => [key, code])),
-)
-
 /** Integer permille gain table for every whole dB in -24..12 (`round(1000 * 10^(dB/20))`). */
 export const COVER_GAIN_PERMILLE = Object.freeze({
   '-24': 63, '-23': 71, '-22': 79, '-21': 89, '-20': 100, '-19': 112, '-18': 126,

@@ -235,12 +235,8 @@ function deepFreeze(value) {
 }
 
 function nowIso(now) {
-  if (now instanceof Date) return now.toISOString()
-  if (typeof now === 'function') {
-    const value = now()
-    return new Date(value instanceof Date ? value.getTime() : value).toISOString()
-  }
-  return new Date().toISOString()
+  const value = now()
+  return new Date(value instanceof Date ? value.getTime() : value).toISOString()
 }
 
 function digest(value) {

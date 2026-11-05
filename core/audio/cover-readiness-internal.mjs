@@ -95,8 +95,6 @@ export function computeCoverReadiness(input) {
   if (evidence && evidenceObserved !== null && evidenceExpires !== null && evidence.realReady === false) {
     if (Date.parse(evidenceObserved) > Date.parse(now)) evidenceState = 'UNKNOWN'
     else evidenceState = Date.parse(evidenceExpires) > Date.parse(now) ? 'VALID_FIXTURE' : 'STALE'
-  } else if (evidence && evidence.realReady !== false) {
-    evidenceState = 'UNKNOWN'
   }
   push('evidence', 'FIXTURE', evidenceState === 'VALID_FIXTURE' ? 'OK' : 'UNKNOWN', true)
   if (evidenceState === 'UNKNOWN') blocked.push(issue('EVIDENCE_UNKNOWN', 'evidence'))

@@ -56,7 +56,6 @@ import {
   writeCoverSnapshot,
 } from './cover-store-internal.mjs'
 
-export const COVER_EXECUTION_VERSION = 1
 export const COVER_ATTEMPT_SEQ = 1
 
 export const COVER_EXECUTION_CODES = Object.freeze({
@@ -266,36 +265,6 @@ function compactOf(stage) {
   }
 }
 
-function fullManifest(stage, { intentHash, attemptId, rootSourceIdentityHash, truthLevel, producedByStage, sequence, parentLinks, availability }) {
-  const inspection = stage.inspection || null
-  return {
-    manifestVersion: 1,
-    taskId: null,
-    scopeId: null,
-    intentHash,
-    attemptId,
-    role: stage.role,
-    producedByStage,
-    sequence,
-    parentLinks,
-    rootSourceIdentityHash,
-    rootSourceSha256: null,
-    byteLength: stage.byteLength,
-    byteSha256: stage.byteSha256,
-    inspection,
-    mediaProfile: null,
-    rights: null,
-    expiresAt: null,
-    modelRevision: null,
-    profileRevision: null,
-    backendRevision: null,
-    origin: 'SYNTHETIC_FIXTURE',
-    truthLevel,
-    availability,
-    verification: null,
-  }
-}
-
 /**
  * Rebuild the 7-key attachment from the persisted 14-key owner entry and verify every lineage link.
  * The owner v3 entry shape has no attachment key, so the attachment is a derived proof: it is only
@@ -399,16 +368,14 @@ async function finalizeCoverSaved(state, artifactState, { scopeId, taskId, attem
   next.attempt.finishedAt = finishedAt
   if (next.attempt.lease) next.attempt.lease.releasedAt = finishedAt
   next.manifest.verification = { state: 'PASSED', inspectedAt: requestNow, inspector: 'FIXTURE_WAV_CHECKED', masterSha256: receipt.byteSha256 }
-  if (!next.checkpoints.some((checkpoint) => checkpoint.index === 5)) {
-    next.checkpoints.push({
-      index: 5,
-      stage: 'VERIFIED',
-      at: requestNow,
-      status: 'DONE',
-      tempSummary: { role: 'MASTER', byteSha256: receipt.byteSha256, byteLength: receipt.byteLength },
-      importReceipt: null,
-    })
-  }
+  next.checkpoints.push({
+    index: 5,
+    stage: 'VERIFIED',
+    at: requestNow,
+    status: 'DONE',
+    tempSummary: { role: 'MASTER', byteSha256: receipt.byteSha256, byteLength: receipt.byteLength },
+    importReceipt: null,
+  })
   try {
     writeOwner(state, owner, next, 'increment')
   } catch (error) {
@@ -1269,8 +1236,6 @@ async function cancelNowInQueue(state, entry, requestedAt) {
     value: null,
   })
 }
-
-async function finalizeSaved_removed() {}
 
 /* ------------------------------------------------ status/cancel ----------------------------- */
 

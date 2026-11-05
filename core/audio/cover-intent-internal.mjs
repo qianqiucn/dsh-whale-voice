@@ -9,9 +9,6 @@
  */
 import { sha256 } from './fixture-store-base-internal.mjs'
 
-/** Contract version of the canonical Intent. */
-export const COVER_INTENT_VERSION = 1
-
 /** Exact key order of the canonical Intent (25 keys). */
 export const COVER_INTENT_KEYS = Object.freeze([
   'intentVersion',
@@ -74,17 +71,6 @@ export const COVER_RECIPE_KEYS = Object.freeze([
 
 export const COVER_OUTPUT_PROFILE_KEYS = Object.freeze(['format', 'codec', 'sampleRate', 'channels'])
 
-/** Stable source identity keys (7, fixed order). */
-export const COVER_SOURCE_IDENTITY_KEYS = Object.freeze([
-  'artifactRef',
-  'scopeId',
-  'requestKey',
-  'origin',
-  'createdAt',
-  'byteSha256',
-  'byteLength',
-])
-
 export const COVER_INTENT_LIMITS = Object.freeze({
   minPitchShift: -12,
   maxPitchShift: 12,
@@ -139,7 +125,6 @@ function requireInt(object, key, min, max) {
 }
 
 const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-const HEX64 = /^[0-9a-f]{64}$/
 const PHYSICAL_REF = /^artifact:fixture-bytes-[0-9a-f]{32}$/
 const SCOPE_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
 const TOKEN_PATTERN = /^[A-Za-z0-9:_.:/@-]{1,128}$/

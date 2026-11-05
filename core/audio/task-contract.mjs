@@ -16,6 +16,8 @@
  */
 
 export const AUDIO_TASK_SCHEMA_VERSION = 1
+/** 139: the versioned Provider generation task shape; v1 Fixture tasks stay exactly as before. */
+export const AUDIO_TASK_SCHEMA_VERSION_V2 = 2
 
 export const AUDIO_ERRORS = Object.freeze({
   INVALID_REQUEST: 'AUDIO_INVALID_REQUEST',
@@ -45,9 +47,10 @@ export const AUDIO_TASK_STATE_LIST = Object.freeze(Object.values(AUDIO_TASK_STAT
 export const AUDIO_TASK_FEATURES = Object.freeze({
   VOICE_BUBBLES: 'voice-bubbles',
   SINGING: 'singing',
+  PROVIDER_GENERATION: 'provider-generation',
 })
 
-export const AUDIO_TASK_TYPES = Object.freeze({ TTS: 'TTS', SVC: 'SVC' })
+export const AUDIO_TASK_TYPES = Object.freeze({ TTS: 'TTS', SVC: 'SVC', PROVIDER_TTS: 'PROVIDER_TTS' })
 
 export const AUDIO_SOURCE_KINDS = Object.freeze({ TEXT_REF: 'TEXT_REF', AUDIO_REF: 'AUDIO_REF' })
 
@@ -99,6 +102,44 @@ const TASK_ID_PATTERN = /^task:[A-Za-z0-9_-]{1,64}$/
 const VOICE_PROFILE_PATTERN = /^voice:[A-Za-z0-9_-]{1,64}$/
 const ARTIFACT_REF_PATTERN = /^artifact:[A-Za-z0-9_-]{1,64}$/
 const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/
+
+/* 139: the Provider generation task shape (schemaVersion 2). These facts are legitimate here and are
+ * not accepted by the v1 Fixture draft/record surface. */
+const PROVIDER_DRAFT_KEYS = Object.freeze(
+  new Set(['schemaVersion', 'taskId', 'feature', 'taskType', 'provider', 'voice', 'input', 'deliveryRequested', 'rights']),
+)
+const PROVIDER_RECORD_KEYS = Object.freeze(
+  new Set([
+    'schemaVersion',
+    'taskId',
+    'feature',
+    'taskType',
+    'provider',
+    'voice',
+    'input',
+    'deliveryRequested',
+    'rights',
+    'state',
+    'outputArtifactRef',
+    'cancel',
+    'delivery',
+    'lastError',
+    'observedAt',
+    'mockOnly',
+    'realOperationAllowed',
+  ]),
+)
+const PROVIDER_KEYS = Object.freeze(new Set(['providerId', 'instanceId', 'model', 'backend']))
+const PRESET_VOICE_KEYS = Object.freeze(new Set(['kind', 'voiceId']))
+const PROVIDER_INPUT_KEYS = Object.freeze(new Set(['kind', 'text']))
+const PROVIDER_ID_PATTERN = /^[a-z0-9-]{1,64}$/
+const PROVIDER_INSTANCE_PATTERN = /^[A-Za-z0-9:._-]{1,64}$/
+const PROVIDER_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9. _-]{0,127}$/
+const PROVIDER_BACKEND_PATTERN = /^[a-z0-9-]{1,32}$/
+const PRESET_VOICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const PRESET_VOICE_KINDS = Object.freeze(['PRESET'])
+const PROVIDER_INPUT_KINDS = Object.freeze(['TEXT'])
+const PROVIDER_TEXT_MAX = 200
 
 const DRAFT_KEYS = Object.freeze(
   new Set(['schemaVersion', 'taskId', 'feature', 'taskType', 'source', 'voiceProfileId', 'deliveryRequested', 'rights']),
@@ -429,12 +470,102 @@ function readTimestamp(object, key, prefix, errors) {
   return field.value
 }
 
+function isProviderShape(object) {
+  const version = readField(object, 'schemaVersion')
+  if (!version.present || version.accessor || version.value !== AUDIO_TASK_SCHEMA_VERSION_V2) return false
+  const feature = readField(object, 'feature')
+  return feature.present && !feature.accessor && feature.value === AUDIO_TASK_FEATURES.PROVIDER_GENERATION
+}
+
+function readProviderCoreFields(object, prefix, errors) {
+  const providerAnchor = readObject(object, 'provider', prefix, PROVIDER_KEYS, errors)
+  let provider = null
+  if (providerAnchor) {
+    const providerId = readString(providerAnchor, 'providerId', joinPath(prefix, 'provider'), PROVIDER_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque provider id required', errors)
+    const instanceId = readString(providerAnchor, 'instanceId', joinPath(prefix, 'provider'), PROVIDER_INSTANCE_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque provider instance id required', errors)
+    const model = readString(providerAnchor, 'model', joinPath(prefix, 'provider'), PROVIDER_MODEL_PATTERN, AUDIO_ERRORS.INVALID_REQUEST, 'bounded model identity required', errors)
+    const backend = readString(providerAnchor, 'backend', joinPath(prefix, 'provider'), PROVIDER_BACKEND_PATTERN, AUDIO_ERRORS.INVALID_REQUEST, 'bounded provider backend required', errors)
+    if (providerId && instanceId && model && backend) provider = { providerId, instanceId, model, backend }
+  }
+  const voiceAnchor = readObject(object, 'voice', prefix, PRESET_VOICE_KEYS, errors)
+  let voice = null
+  if (voiceAnchor) {
+    const kind = readEnum(voiceAnchor, 'kind', joinPath(prefix, 'voice'), PRESET_VOICE_KINDS, errors)
+    const voiceId = readString(voiceAnchor, 'voiceId', joinPath(prefix, 'voice'), PRESET_VOICE_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'preset voice id required', errors)
+    if (kind && voiceId) voice = { kind, voiceId }
+  }
+  const inputAnchor = readObject(object, 'input', prefix, PROVIDER_INPUT_KEYS, errors)
+  let input = null
+  if (inputAnchor) {
+    const kind = readEnum(inputAnchor, 'kind', joinPath(prefix, 'input'), PROVIDER_INPUT_KINDS, errors)
+    const textPath = joinPath(joinPath(prefix, 'input'), 'text')
+    const textField = readField(inputAnchor, 'text')
+    let text = null
+    if (!textField.present) {
+      errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, textPath, 'required'))
+    } else if (textField.accessor) {
+      errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, textPath, 'accessor property is not accepted'))
+    } else if (typeof textField.value !== 'string' || textField.value.length < 1 || textField.value.length > PROVIDER_TEXT_MAX) {
+      errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, textPath, 'bounded submitted text required'))
+    } else {
+      text = textField.value
+    }
+    if (kind && text !== null) input = { kind, text }
+  }
+  const deliveryRequested = readBoolean(object, 'deliveryRequested', prefix, false, false, errors)
+  if (deliveryRequested) {
+    errors.push(issue(AUDIO_ERRORS.DELIVERY_FORBIDDEN, joinPath(prefix, 'deliveryRequested'), 'provider generation tasks never request delivery'))
+  }
+  const rightsAnchor = readObject(object, 'rights', prefix, RIGHTS_KEYS, errors)
+  let rights = null
+  if (rightsAnchor) {
+    const state = readEnum(rightsAnchor, 'state', joinPath(prefix, 'rights'), RIGHTS_STATE_LIST, errors)
+    if (state) rights = { state }
+  }
+  const feature = readEnum(object, 'feature', prefix, FEATURE_LIST, errors)
+  if (feature && feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION) {
+    errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, joinPath(prefix, 'feature'), 'only the provider generation feature is accepted here'))
+  }
+  const taskType = readEnum(object, 'taskType', prefix, TASK_TYPE_LIST, errors)
+  if (taskType && taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS) {
+    errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, joinPath(prefix, 'taskType'), 'only the provider TTS task type is accepted here'))
+  }
+  return { feature, taskType, provider, voice, input, deliveryRequested, rights }
+}
+
+function readProviderDraftShape(draft) {
+  const errors = []
+  checkSurface(draft, PROVIDER_DRAFT_KEYS, '', errors)
+  const versionField = readField(draft, 'schemaVersion')
+  if (!versionField.present || versionField.accessor || versionField.value !== AUDIO_TASK_SCHEMA_VERSION_V2) {
+    errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, 'schemaVersion', 'expected 2'))
+  }
+  const taskId = readString(draft, 'taskId', '', TASK_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque task id required', errors)
+  const core = readProviderCoreFields(draft, '', errors)
+  if (errors.length > 0) return failOf(errors)
+  return {
+    ok: true,
+    value: Object.freeze({
+      schemaVersion: AUDIO_TASK_SCHEMA_VERSION_V2,
+      taskId,
+      feature: core.feature,
+      taskType: core.taskType,
+      provider: Object.freeze({ ...core.provider }),
+      voice: Object.freeze({ kind: core.voice.kind, voiceId: core.voice.voiceId }),
+      input: Object.freeze({ kind: core.input.kind, text: core.input.text }),
+      deliveryRequested: false,
+      rights: Object.freeze({ state: core.rights.state }),
+    }),
+  }
+}
+
 function readDraftShape(draft) {
   const errors = []
   if (!isPlainObject(draft)) return failOf([issue(AUDIO_ERRORS.INVALID_REQUEST, '$', 'expected a plain object')])
   if (containsCycle(draft)) {
     return failOf([issue(AUDIO_ERRORS.INVALID_REQUEST, '$', 'cyclic or repeatedly referenced input is not accepted')])
   }
+  if (isProviderShape(draft)) return readProviderDraftShape(draft)
   checkSurface(draft, DRAFT_KEYS, '', errors)
   const schemaVersion = readSchemaVersion(draft, errors, '')
   const taskId = readString(draft, 'taskId', '', TASK_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque task id required', errors)
@@ -514,7 +645,35 @@ function freezeRecord(fields) {
   })
 }
 
+function freezeProviderRecord(fields) {
+  return Object.freeze({
+    schemaVersion: AUDIO_TASK_SCHEMA_VERSION_V2,
+    taskId: fields.taskId,
+    feature: fields.feature,
+    taskType: fields.taskType,
+    provider: Object.freeze({
+      providerId: fields.provider.providerId,
+      instanceId: fields.provider.instanceId,
+      model: fields.provider.model,
+      backend: fields.provider.backend,
+    }),
+    voice: Object.freeze({ kind: 'PRESET', voiceId: fields.voice.voiceId }),
+    input: Object.freeze({ kind: 'TEXT', text: fields.input.text }),
+    deliveryRequested: false,
+    rights: Object.freeze({ state: fields.rights.state }),
+    state: fields.state,
+    outputArtifactRef: fields.outputArtifactRef,
+    cancel: Object.freeze({ requested: fields.cancel.requested, confirmed: fields.cancel.confirmed }),
+    delivery: Object.freeze({ state: fields.delivery.state, deliveryId: fields.delivery.deliveryId }),
+    lastError: fields.lastError ? Object.freeze({ code: fields.lastError.code }) : null,
+    observedAt: fields.observedAt,
+    mockOnly: true,
+    realOperationAllowed: false,
+  })
+}
+
 function cloneRecord(record) {
+  if (record.schemaVersion === AUDIO_TASK_SCHEMA_VERSION_V2) return freezeProviderRecord(record)
   return freezeRecord({
     schemaVersion: record.schemaVersion,
     taskId: record.taskId,
@@ -534,6 +693,18 @@ function cloneRecord(record) {
 }
 
 function withPatch(record, patch) {
+  if (record.schemaVersion === AUDIO_TASK_SCHEMA_VERSION_V2) {
+    return cloneRecord({
+      ...record,
+      ...patch,
+      provider: patch.provider || record.provider,
+      voice: patch.voice || record.voice,
+      input: patch.input || record.input,
+      rights: patch.rights || record.rights,
+      cancel: patch.cancel || record.cancel,
+      lastError: Object.prototype.hasOwnProperty.call(patch, 'lastError') ? patch.lastError : record.lastError,
+    })
+  }
   return cloneRecord({
     ...record,
     ...patch,
@@ -573,22 +744,38 @@ export function createAudioTaskRecord(draft, metadata) {
         : AUDIO_TASK_STATES.BLOCKED_RIGHTS
     return {
       ok: true,
-      value: freezeRecord({
-        schemaVersion: value.schemaVersion,
-        taskId: value.taskId,
-        feature: value.feature,
-        taskType: value.taskType,
-        source: { kind: value.source.kind, ref: value.source.ref },
-        voiceProfileId: value.voiceProfileId,
-        deliveryRequested: value.deliveryRequested,
-        rights: { state: value.rights.state },
-        state,
-        outputArtifactRef: null,
-        cancel: { requested: false, confirmed: false },
-        delivery: { state: 'NOT_REQUESTED', deliveryId: null },
-        lastError: null,
-        observedAt,
-      }),
+      value: value.schemaVersion === AUDIO_TASK_SCHEMA_VERSION_V2
+        ? freezeProviderRecord({
+            taskId: value.taskId,
+            feature: value.feature,
+            taskType: value.taskType,
+            provider: value.provider,
+            voice: value.voice,
+            input: value.input,
+            rights: { state: value.rights.state },
+            state,
+            outputArtifactRef: null,
+            cancel: { requested: false, confirmed: false },
+            delivery: { state: 'NOT_REQUESTED', deliveryId: null },
+            lastError: null,
+            observedAt,
+          })
+        : freezeRecord({
+            schemaVersion: value.schemaVersion,
+            taskId: value.taskId,
+            feature: value.feature,
+            taskType: value.taskType,
+            source: { kind: value.source.kind, ref: value.source.ref },
+            voiceProfileId: value.voiceProfileId,
+            deliveryRequested: value.deliveryRequested,
+            rights: { state: value.rights.state },
+            state,
+            outputArtifactRef: null,
+            cancel: { requested: false, confirmed: false },
+            delivery: { state: 'NOT_REQUESTED', deliveryId: null },
+            lastError: null,
+            observedAt,
+          }),
     }
   })
 }
@@ -909,6 +1096,143 @@ function readRecord(input) {
   }
 }
 
+function readProviderRecordShape(record) {
+  const errors = []
+  checkSurface(record, PROVIDER_RECORD_KEYS, '', errors, AUDIO_ERRORS.DELIVERY_FORBIDDEN)
+  const versionField = readField(record, 'schemaVersion')
+  if (!versionField.present || versionField.accessor || versionField.value !== AUDIO_TASK_SCHEMA_VERSION_V2) {
+    errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, 'schemaVersion', 'expected 2'))
+  }
+  const taskId = readString(record, 'taskId', '', TASK_ID_PATTERN, AUDIO_ERRORS.INVALID_ID, 'opaque task id required', errors)
+  const core = readProviderCoreFields(record, '', errors)
+  const state = readEnum(record, 'state', '', AUDIO_TASK_STATE_LIST, errors)
+  const observedAt = readTimestamp(record, 'observedAt', '', errors)
+
+  const artifactField = readField(record, 'outputArtifactRef')
+  let outputArtifactRef = null
+  if (!artifactField.present) {
+    errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, 'outputArtifactRef', 'required (null when absent)'))
+  } else if (artifactField.accessor) {
+    errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, 'outputArtifactRef', 'accessor property is not accepted'))
+  } else if (artifactField.value !== null) {
+    if (typeof artifactField.value !== 'string') {
+      errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, 'outputArtifactRef', 'expected string or null'))
+    } else if (!ARTIFACT_REF_PATTERN.test(artifactField.value)) {
+      errors.push(issue(AUDIO_ERRORS.INVALID_ID, 'outputArtifactRef', 'opaque artifact reference required'))
+    } else {
+      outputArtifactRef = artifactField.value
+    }
+  }
+
+  const cancelAnchor = readObject(record, 'cancel', '', CANCEL_KEYS, errors)
+  let cancelRequested = false
+  let cancelConfirmed = false
+  if (cancelAnchor) {
+    cancelRequested = readBoolean(cancelAnchor, 'requested', 'cancel', true, false, errors)
+    cancelConfirmed = readBoolean(cancelAnchor, 'confirmed', 'cancel', true, false, errors)
+  }
+
+  const deliveryAnchor = readObject(record, 'delivery', '', DELIVERY_KEYS, errors)
+  if (deliveryAnchor) {
+    const deliveryState = readField(deliveryAnchor, 'state')
+    const deliveryId = readField(deliveryAnchor, 'deliveryId')
+    const clean =
+      deliveryState.present &&
+      !deliveryState.accessor &&
+      deliveryState.value === 'NOT_REQUESTED' &&
+      deliveryId.present &&
+      !deliveryId.accessor &&
+      deliveryId.value === null
+    if (!clean) {
+      errors.push(issue(AUDIO_ERRORS.DELIVERY_FORBIDDEN, 'delivery', 'provider generation records never carry a delivery id or sent state'))
+    }
+  }
+
+  const lastErrorField = readField(record, 'lastError')
+  let lastError = null
+  if (!lastErrorField.present) {
+    errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, 'lastError', 'required (null when absent)'))
+  } else if (lastErrorField.accessor) {
+    errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, 'lastError', 'accessor property is not accepted'))
+  } else if (lastErrorField.value !== null) {
+    if (!isPlainObject(lastErrorField.value)) {
+      errors.push(issue(AUDIO_ERRORS.TYPE_MISMATCH, 'lastError', 'expected object or null'))
+    } else {
+      checkSurface(lastErrorField.value, LAST_ERROR_KEYS, 'lastError', errors)
+      const code = readEnum(lastErrorField.value, 'code', 'lastError', AUDIO_TASK_FAILURE_CODES, errors)
+      if (code) lastError = { code }
+    }
+  }
+
+  const mockOnly = readField(record, 'mockOnly')
+  if (!mockOnly.present || mockOnly.accessor || mockOnly.value !== true) {
+    errors.push(issue(AUDIO_ERRORS.DELIVERY_FORBIDDEN, 'mockOnly', 'mockOnly must stay true in this offline contract'))
+  }
+  const realOperationAllowed = readField(record, 'realOperationAllowed')
+  if (!realOperationAllowed.present || realOperationAllowed.accessor || realOperationAllowed.value !== false) {
+    errors.push(issue(AUDIO_ERRORS.DELIVERY_FORBIDDEN, 'realOperationAllowed', 'real operations are not allowed in this offline contract'))
+  }
+
+  if (core.rights && state) {
+    const blocked = state === AUDIO_TASK_STATES.BLOCKED_RIGHTS
+    const unverified = core.rights.state === AUDIO_RIGHTS_STATES.UNVERIFIED
+    if (unverified !== blocked) {
+      errors.push(issue(AUDIO_ERRORS.RIGHTS_UNCONFIRMED, 'rights.state', 'rights state must match the BLOCKED_RIGHTS task state'))
+    }
+  }
+  if (state) {
+    const needsArtifact = state === AUDIO_TASK_STATES.ARTIFACT_READY || state === AUDIO_TASK_STATES.SAVED
+    const allowsArtifact =
+      needsArtifact ||
+      state === AUDIO_TASK_STATES.CANCEL_REQUESTED ||
+      state === AUDIO_TASK_STATES.CANCELLED ||
+      state === AUDIO_TASK_STATES.FAILED ||
+      state === AUDIO_TASK_STATES.UNKNOWN
+    if (needsArtifact && !outputArtifactRef) {
+      errors.push(issue(AUDIO_ERRORS.ARTIFACT_REQUIRED, 'outputArtifactRef', 'this state needs an output artifact'))
+    }
+    if (!allowsArtifact && outputArtifactRef) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'outputArtifactRef', 'this state cannot hold an output artifact'))
+    }
+    if (state === AUDIO_TASK_STATES.CANCELLED && !(cancelRequested && cancelConfirmed)) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'cancel', 'CANCELLED requires a requested and confirmed cancellation'))
+    }
+    if (state === AUDIO_TASK_STATES.CANCEL_REQUESTED && !(cancelRequested && !cancelConfirmed)) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'cancel', 'CANCEL_REQUESTED requires requested without confirmation'))
+    }
+    if (cancelConfirmed && state !== AUDIO_TASK_STATES.CANCELLED) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'cancel.confirmed', 'only CANCELLED tasks confirm a cancellation'))
+    }
+    if (cancelRequested && !['CANCEL_REQUESTED', 'CANCELLED', 'FAILED', 'UNKNOWN'].includes(state)) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'cancel.requested', 'this state cannot hold a cancellation request'))
+    }
+    if (state === AUDIO_TASK_STATES.FAILED) {
+      if (!lastError) errors.push(issue(AUDIO_ERRORS.INVALID_REQUEST, 'lastError', 'FAILED requires a public failure code'))
+    } else if (lastError) {
+      errors.push(issue(AUDIO_ERRORS.STATE_CONFLICT, 'lastError', 'only FAILED tasks carry a failure code'))
+    }
+  }
+  if (errors.length > 0) return failOf(errors)
+  return {
+    ok: true,
+    value: freezeProviderRecord({
+      taskId,
+      feature: core.feature,
+      taskType: core.taskType,
+      provider: core.provider,
+      voice: core.voice,
+      input: core.input,
+      rights: core.rights,
+      state,
+      outputArtifactRef,
+      cancel: { requested: cancelRequested, confirmed: cancelConfirmed },
+      delivery: { state: 'NOT_REQUESTED', deliveryId: null },
+      lastError,
+      observedAt,
+    }),
+  }
+}
+
 /**
  * Validate a complete task record and return a fresh deep-frozen normalised copy. This is the
  * single authoritative record schema for CoreTask v1: transitionAudioTask, projectAudioTask and
@@ -917,7 +1241,7 @@ function readRecord(input) {
  * @returns {{ok:true,value:object}|{ok:false,errors:Array<{code:string,path:string,reason:string}>}}
  */
 export function validateAudioTaskRecord(record) {
-  return attempt(() => readRecord(record))
+  return attempt(() => (isPlainObject(record) && isProviderShape(record) ? readProviderRecordShape(record) : readRecord(record)))
 }
 
 /**
@@ -952,6 +1276,29 @@ export function projectAudioTask(record) {
     const parsed = validateAudioTaskRecord(record)
     if (!parsed.ok) return parsed
     const value = parsed.value
+    if (value.schemaVersion === AUDIO_TASK_SCHEMA_VERSION_V2) {
+      return {
+        ok: true,
+        value: Object.freeze({
+          schemaVersion: value.schemaVersion,
+          taskId: value.taskId,
+          feature: value.feature,
+          taskType: value.taskType,
+          state: value.state,
+          provider: Object.freeze({ providerId: value.provider.providerId, model: value.provider.model }),
+          voice: Object.freeze({ kind: value.voice.kind, voiceId: value.voice.voiceId }),
+          input: Object.freeze({ kind: value.input.kind }),
+          hasInput: true,
+          hasOutput: value.outputArtifactRef !== null,
+          cancelRequested: value.cancel.requested,
+          cancelConfirmed: value.cancel.confirmed,
+          deliveryRequested: value.deliveryRequested,
+          mockOnly: true,
+          realOperationAllowed: false,
+          userMessageZh: AUDIO_TASK_MESSAGES_ZH[value.state],
+        }),
+      }
+    }
     return {
       ok: true,
       value: Object.freeze({

@@ -7,8 +7,6 @@
  * This module exists only for offline tests. It is not a delivery service, does not persist
  * anything, never selects a backend and never touches WeChat.
  */
-export const FAKE_RELAY_SCHEMA_VERSION = 1
-
 export const FAKE_RELAY_CODES = Object.freeze({
   INPUT_INVALID: 'FAKE_RELAY_INPUT_INVALID',
   UNKNOWN_NO_RESEND: 'FAKE_RELAY_UNKNOWN_NO_RESEND',

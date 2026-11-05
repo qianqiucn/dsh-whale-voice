@@ -272,13 +272,360 @@ function OverviewPage({ settings, setSetting, setPage, notify, openService, open
       MOCK_ACTIVITIES.slice(0, 4).map((a, i) => h(ActivityMini, { key: a.id, activity: a, onOpen: openActivity, last: i === 3 })))))
 }
 
+const GENERATION_DRAFT_ERRORS = {
+  settings_draft_unavailable: '草稿存储未接入：当前 Host 没有提供草稿位置，前端不会假装已保存。',
+  draft_root_invalid: '请填写生成数据保存位置。',
+  draft_root_not_absolute: '保存位置需要使用绝对路径，例如 D:\\WhaleVoice\\generation。',
+  draft_invalid: '已保存的草稿无法读取，未显示旧值。',
+  draft_missing: '尚未保存草稿，请先保存再应用。',
+  applied_invalid: '已应用的位置无法读取，未显示旧值。',
+  runtime_model_invalid: '请填写 Qwen 模型目录。',
+  runtime_model_not_absolute: 'Qwen 模型目录需要使用绝对路径。',
+  runtime_python_invalid: '请填写 Python 运行程序位置。',
+  runtime_python_not_absolute: 'Python 运行程序位置需要使用绝对路径。',
+  runtime_draft_invalid: '已保存的运行路径草稿无法读取，未显示旧值。',
+  runtime_draft_missing: '尚未保存运行路径草稿，请先保存再应用。',
+  runtime_applied_invalid: '已应用的运行路径无法读取，未显示旧值。',
+  invalid_body: '草稿请求无效。',
+  internal_error: '草稿保存失败：Host 内部错误。',
+  core_unreachable: '无法连接 Host 接口。',
+}
+
+function generationDraftError(error) {
+  return GENERATION_DRAFT_ERRORS[error] || ('草稿操作失败：' + (error || '未知'))
+}
+
+/** 144/146: a real Host-side draft plus an explicit applied fact, never a frontend demo field. */
+function GenerationStorageDraftCard({ notify }) {
+  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const available = Boolean(host
+    && typeof host.getGenerationStorageDraft === 'function'
+    && typeof host.saveGenerationStorageDraft === 'function'
+    && typeof host.applyGenerationStorageDraft === 'function')
+  const [value, setValue] = React.useState('')
+  const [savedValue, setSavedValue] = React.useState(null)
+  const [applied, setApplied] = React.useState(null)
+  const [loading, setLoading] = React.useState(available)
+  const [busy, setBusy] = React.useState(false)
+  const [applying, setApplying] = React.useState(false)
+  const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
+
+  const applyPayload = (payload) => {
+    setLoading(false)
+    if (!payload || payload.ok !== true) {
+      setError(generationDraftError(payload && payload.error))
+      return
+    }
+    const saved = payload.draft && typeof payload.draft.generationStorageRoot === 'string'
+      ? payload.draft.generationStorageRoot
+      : ''
+    setSavedValue(saved)
+    setValue(saved)
+    setApplied(payload.applied && typeof payload.applied.generationStorageRoot === 'string'
+      ? { generationStorageRoot: payload.applied.generationStorageRoot }
+      : null)
+    setError('')
+  }
+
+  React.useEffect(() => {
+    if (!available) return undefined
+    let alive = true
+    host.getGenerationStorageDraft().then(
+      (payload) => { if (alive) applyPayload(payload) },
+      () => {
+        if (!alive) return
+        setLoading(false)
+        setError(generationDraftError('core_unreachable'))
+      },
+    )
+    return () => { alive = false }
+  }, [])
+
+  const save = async () => {
+    if (!available || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const payload = await host.saveGenerationStorageDraft({ generationStorageRoot: value })
+      setBusy(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('生成数据保存位置草稿未保存。', 'error')
+        return
+      }
+      applyPayload(payload)
+      const saved = payload.draft && payload.draft.generationStorageRoot
+      const alreadyApplied = !!(payload.applied && payload.applied.generationStorageRoot === saved)
+      notify(alreadyApplied
+        ? '草稿已保存；该位置已应用，下次重开插件生效。'
+        : '生成数据保存位置草稿已保存，尚未应用。', 'success')
+    } catch {
+      setBusy(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('生成数据保存位置草稿未保存。', 'error')
+    }
+  }
+
+  const applySaved = async () => {
+    if (!available || applying || busy || loading) return
+    if (!savedValue) { setError(generationDraftError('draft_missing')); return }
+    if (value.trim() !== savedValue) {
+      setError('请先保存当前修改，再应用已保存的位置。')
+      return
+    }
+    setApplying(true)
+    setError('')
+    try {
+      const payload = await host.applyGenerationStorageDraft()
+      setApplying(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('生成数据保存位置未应用。', 'error')
+        return
+      }
+      applyPayload(payload)
+      notify('生成数据保存位置已应用，下次重开插件生效。', 'success')
+    } catch {
+      setApplying(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('生成数据保存位置未应用。', 'error')
+    }
+  }
+
+  const statusText = !available
+    ? '草稿存储未接入'
+    : loading
+      ? '正在读取草稿…'
+      : savedValue
+        ? '已保存草稿：' + savedValue
+        : '尚未保存草稿'
+  const appliedText = applied
+    ? '已应用位置：' + applied.generationStorageRoot
+    : '尚未应用保存位置'
+  const canApply = available && !loading && !busy && !applying && !!savedValue && value.trim() === savedValue
+
+  return h(Card, {
+    title: '生成数据保存位置',
+    desc: '填写生成任务与产物的保存目录；保存后仍需明确应用，应用只决定下次打开时使用的位置，不会立即切换当前运行。',
+    actions: h(Badge, { tone: 'wait' }, '配置草稿'),
+  },
+    h('div', { className: 'wv-settings-group' },
+      h(SettingRow, {
+        title: '保存位置',
+        desc: '对应正式生成配置里的 storageRoot；保存后刷新或关闭重开页面仍会显示。',
+        tip: '只记录位置；不创建目录、不迁移历史数据、不启动 Worker 或模型。',
+      },
+        h('input', {
+          className: 'wv-input',
+          type: 'text',
+          value,
+          placeholder: '例如 D:\\WhaleVoice\\generation',
+          disabled: !available || busy || loading,
+          onChange: (event) => { setValue(event.target.value); setError('') },
+          'aria-label': '生成数据保存位置',
+          'data-testid': 'generation-storage-input',
+        })),
+      h('div', { className: 'wv-row', style: { alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 } },
+        h(Button, {
+          variant: 'primary',
+          onClick: () => { void save() },
+          disabled: !available || busy || loading,
+          'data-testid': 'generation-storage-save',
+        }, busy ? '保存中…' : '保存草稿'),
+        h(Button, {
+          onClick: () => { void applySaved() },
+          disabled: !canApply,
+          title: canApply ? '应用已保存的位置；下次重开插件生效' : '需要先保存草稿，且当前输入与已保存值一致',
+          'data-testid': 'generation-storage-apply',
+        }, applying ? '应用中…' : '应用保存的位置'),
+        h('span', { className: 'wv-muted', 'data-testid': 'generation-storage-status' }, statusText)),
+      error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'generation-storage-error' },
+        h(Icon, { name: 'info', size: 14 }),
+        h('span', null, error)) : null,
+      h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'generation-storage-applied' }, appliedText),
+      h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
+        '保存只写入草稿；应用只记录供下次打开使用的位置，不会立即切换当时正在运行的组件，也不会启用生成。')))
+}
+
+/** 148: a persisted Qwen runtime-path draft; saving never reads a model, executes Python or starts a Worker. */
+function QwenRuntimeDraftCard({ notify }) {
+  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const available = Boolean(host
+    && typeof host.getQwenRuntimeDraft === 'function'
+    && typeof host.saveQwenRuntimeDraft === 'function'
+    && typeof host.applyQwenRuntimeDraft === 'function')
+  const [modelDirectory, setModelDirectory] = React.useState('')
+  const [pythonPath, setPythonPath] = React.useState('')
+  const [saved, setSaved] = React.useState(null)
+  const [applied, setApplied] = React.useState(null)
+  const [loading, setLoading] = React.useState(available)
+  const [busy, setBusy] = React.useState(false)
+  const [applying, setApplying] = React.useState(false)
+  const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
+
+  const applyPayload = (payload) => {
+    setLoading(false)
+    if (!payload || payload.ok !== true) {
+      setError(generationDraftError(payload && payload.error))
+      return
+    }
+    const draft = payload.runtimeDraft
+    if (draft && typeof draft.modelDirectory === 'string' && typeof draft.pythonPath === 'string') {
+      setSaved({ modelDirectory: draft.modelDirectory, pythonPath: draft.pythonPath })
+      setModelDirectory(draft.modelDirectory)
+      setPythonPath(draft.pythonPath)
+    } else {
+      setSaved(null)
+      setModelDirectory('')
+      setPythonPath('')
+    }
+    setApplied(payload.applied && typeof payload.applied.modelDirectory === 'string'
+      && typeof payload.applied.pythonPath === 'string'
+      ? { modelDirectory: payload.applied.modelDirectory, pythonPath: payload.applied.pythonPath }
+      : null)
+    setError('')
+  }
+
+  React.useEffect(() => {
+    if (!available) return undefined
+    let alive = true
+    host.getQwenRuntimeDraft().then(
+      (payload) => { if (alive) applyPayload(payload) },
+      () => {
+        if (!alive) return
+        setLoading(false)
+        setError(generationDraftError('core_unreachable'))
+      },
+    )
+    return () => { alive = false }
+  }, [])
+
+  const save = async () => {
+    if (!available || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const payload = await host.saveQwenRuntimeDraft({ modelDirectory, pythonPath })
+      setBusy(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('Qwen 运行路径草稿未保存。', 'error')
+        return
+      }
+      applyPayload(payload)
+      notify('Qwen 运行路径草稿已保存，尚未应用。', 'success')
+    } catch {
+      setBusy(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('Qwen 运行路径草稿未保存。', 'error')
+    }
+  }
+
+  const applySaved = async () => {
+    if (!available || applying || busy || loading) return
+    if (!saved) { setError(generationDraftError('runtime_draft_missing')); return }
+    if (modelDirectory.trim() !== saved.modelDirectory || pythonPath.trim() !== saved.pythonPath) {
+      setError('请先保存当前修改，再应用已保存的运行路径。')
+      return
+    }
+    setApplying(true)
+    setError('')
+    try {
+      const payload = await host.applyQwenRuntimeDraft()
+      setApplying(false)
+      if (!payload || payload.ok !== true) {
+        setError(generationDraftError(payload && payload.error))
+        notify('Qwen 运行路径未应用。', 'error')
+        return
+      }
+      applyPayload(payload)
+      notify('Qwen 运行路径已应用，下次重开插件生效。', 'success')
+    } catch {
+      setApplying(false)
+      setError(generationDraftError('core_unreachable'))
+      notify('Qwen 运行路径未应用。', 'error')
+    }
+  }
+
+  const statusText = !available
+    ? '草稿存储未接入'
+    : loading
+      ? '正在读取运行路径草稿…'
+      : saved
+        ? '已保存草稿：' + saved.modelDirectory + ' · ' + saved.pythonPath
+        : '尚未保存运行路径草稿'
+  const appliedText = applied
+    ? '已应用运行路径：模型 ' + applied.modelDirectory + '；Python ' + applied.pythonPath
+    : '尚未应用运行路径'
+  const canApply = available && !loading && !busy && !applying && !!saved
+    && modelDirectory.trim() === saved.modelDirectory
+    && pythonPath.trim() === saved.pythonPath
+
+  return h(Card, {
+    title: 'Qwen 运行路径',
+    desc: '填写本地 Qwen 模型目录与 Python 运行程序位置；保存后仍需明确应用，应用只决定下次打开时采用的位置，不会立即切换当前运行。',
+    actions: h(Badge, { tone: 'wait' }, '运行路径草稿'),
+  },
+    h('div', { className: 'wv-settings-group' },
+      h(SettingRow, {
+        title: 'Qwen 模型目录',
+        desc: '本地模型目录的绝对路径；仅作为草稿记录，尚未应用。',
+        tip: '不会读取或加载模型文件。',
+      },
+        h('input', {
+          className: 'wv-input',
+          type: 'text',
+          value: modelDirectory,
+          placeholder: '例如 D:\\models\\Qwen3-TTS-12Hz-1.7B-CustomVoice',
+          disabled: !available || busy || loading,
+          onChange: (event) => { setModelDirectory(event.target.value); setError('') },
+          'aria-label': 'Qwen 模型目录',
+          'data-testid': 'qwen-runtime-model',
+        })),
+      h(SettingRow, {
+        title: 'Python 运行程序',
+        desc: 'Python 可执行文件的绝对路径；仅作为草稿记录，尚未应用。',
+        tip: '不会执行 Python 程序。',
+      },
+        h('input', {
+          className: 'wv-input',
+          type: 'text',
+          value: pythonPath,
+          placeholder: '例如 C:\\Python311\\python.exe',
+          disabled: !available || busy || loading,
+          onChange: (event) => { setPythonPath(event.target.value); setError('') },
+          'aria-label': 'Python 运行程序',
+          'data-testid': 'qwen-runtime-python',
+        })),
+      h('div', { className: 'wv-row', style: { alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 } },
+        h(Button, {
+          variant: 'primary',
+          onClick: () => { void save() },
+          disabled: !available || busy || loading,
+          'data-testid': 'qwen-runtime-save',
+        }, busy ? '保存中…' : '保存运行路径草稿'),
+        h(Button, {
+          onClick: () => { void applySaved() },
+          disabled: !canApply,
+          title: canApply ? '应用已保存的运行路径；下次重开插件生效' : '需要先保存草稿，且当前输入与已保存值一致',
+          'data-testid': 'qwen-runtime-apply',
+        }, applying ? '应用中…' : '应用运行路径'),
+        h('span', { className: 'wv-muted', 'data-testid': 'qwen-runtime-status' }, statusText)),
+      error ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-error' },
+        h(Icon, { name: 'info', size: 14 }),
+        h('span', null, error)) : null,
+      h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-applied' }, appliedText),
+      h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
+        '保存只写入草稿；应用只记录供下次打开使用的运行路径，不会立即切换当前运行，也不会执行 Python 或读取模型。')))
+}
+
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
   const num = (v) => Number(v)
   return h(React.Fragment, null,
     h(PageHead, {
       eyebrow: 'WHALE VOICE / SETTINGS',
       title: '语音设置',
-      description: '日常使用的安全配置。所有修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
+      description: '日常使用的安全配置。除“生成数据保存位置”草稿外，其余修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
       actions: h(React.Fragment, null,
         dirty ? h(Badge, { tone: 'demo' }, '有未保存修改') : h(Badge, { tone: 'backend' }, '已同步演示草稿'),
         h(Button, { onClick: resetSettings, disabled: !dirty }, '恢复默认'),
@@ -286,7 +633,9 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。')),
+      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。“生成数据保存位置”只保存为草稿，不会启用生成服务。')),
+    h(GenerationStorageDraftCard, { notify }),
+    h(QwenRuntimeDraftCard, { notify }),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,
@@ -602,20 +951,141 @@ function GroupDialog({ form, errors, patchForm, onClose, onSave }) {
         errors.memberCooldown ? h('span', { className: 'wv-error' }, errors.memberCooldown) : h('span', { className: 'wv-hint' }, '0–86400 秒'))))
 }
 
+const STUDIO_TASK_STORAGE_KEY = 'whale-voice:studio:last-task'
+
 function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
+  const hostBridge = typeof window !== 'undefined'
+    && window.__WHALE_SETUP__
+    && typeof window.__WHALE_SETUP__.getGenerationCatalog === 'function'
+    && typeof window.__WHALE_SETUP__.generatePreset === 'function'
+    && typeof window.__WHALE_SETUP__.getGenerationStatus === 'function'
+    ? window.__WHALE_SETUP__
+    : null
+  const [catalog, setCatalog] = React.useState(null)
+  const [busy, setBusy] = React.useState(false)
+  const [downloading, setDownloading] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+  const [genError, setGenError] = React.useState('')
+  const [genEnabled, setGenEnabled] = React.useState(null)
+  React.useEffect(() => {
+    if (!hostBridge) {
+      setGenEnabled(false)
+      return undefined
+    }
+    let live = true
+    hostBridge.getGenerationCatalog().then((value) => {
+      if (!live) return
+      if (!value || value.ok !== true) {
+        setGenEnabled(value && value.error === 'generation_not_enabled' ? false : null)
+        return
+      }
+      setGenEnabled(true)
+      setCatalog(value)
+      const voices = Array.isArray(value.voices) ? value.voices : []
+      const first = voices[0] || null
+      if (first) {
+        setPreview((current) => voices.some((voice) => voice.id === current.voice)
+          ? current
+          : { ...current, voice: first.id, language: first.languages && first.languages[0] ? first.languages[0] : current.language })
+      }
+    }).catch(() => { if (live) setGenEnabled(false) })
+    let storedTaskId = ''
+    try { storedTaskId = window.localStorage.getItem(STUDIO_TASK_STORAGE_KEY) || '' } catch { storedTaskId = '' }
+    if (storedTaskId) {
+      hostBridge.getGenerationStatus(storedTaskId).then((value) => {
+        if (!live || !value) return
+        if (value.ok !== true) {
+          if (value.error === 'generation_not_enabled') setGenEnabled(false)
+          return
+        }
+        setResult(value)
+      }).catch(() => {})
+    }
+    return () => { live = false }
+  }, [hostBridge])
+  const voices = catalog && Array.isArray(catalog.voices) && catalog.voices.length
+    ? catalog.voices
+    : [{ id: 'whale-v1', label: 'whale-v1', languages: ['zh-CN'] }]
+  const selectedVoice = voices.find((voice) => voice.id === preview.voice) || voices[0]
+  const canDownload = Boolean(hostBridge && typeof hostBridge.downloadGenerationResult === 'function')
+  const canDownloadResult = canDownload && result && result.readable === true && result.taskId
+  const languages = genEnabled === true && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
+  const textLimit = genEnabled === true && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 200
+  const generate = async () => {
+    if (!hostBridge || genEnabled !== true || busy) return
+    const text = String(preview.text || '').trim()
+    if (!text) { notify('请先输入要生成的短文本。', 'error'); return }
+    if (text.length > textLimit) { notify('文本超过生成上限（' + textLimit + ' 字）。', 'error'); return }
+    setBusy(true); setGenError('')
+    try {
+      const value = await hostBridge.generatePreset({
+        text,
+        voiceId: selectedVoice.id,
+        language: languages.includes(preview.language) ? preview.language : languages[0],
+      })
+      if (!value || value.ok !== true) {
+        if (value && value.error === 'generation_not_enabled') {
+          setGenEnabled(false)
+          notify('生成未启用：当前 Host 未配置生成运行对象。', 'error')
+          return
+        }
+        const code = (value && (value.code || value.error)) || 'STUDIO_GENERATION_REJECTED'
+        setGenError(code)
+        notify('隔离测试生成未完成：' + code, 'error')
+        return
+      }
+      const checked = await hostBridge.getGenerationStatus(value.taskId).catch(() => null)
+      setResult(checked && checked.ok === true ? checked : value)
+      try { window.localStorage.setItem(STUDIO_TASK_STORAGE_KEY, value.taskId) } catch {}
+      notify('隔离测试生成已由原任务保存。', 'success')
+    } catch {
+      setGenError('STUDIO_GENERATION_UNAVAILABLE')
+      notify('正式 Host 生成调用异常；未自动重试。', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const download = async () => {
+    if (!canDownloadResult || downloading) return
+    setDownloading(true)
+    try {
+      const value = await hostBridge.downloadGenerationResult(result.taskId)
+      if (!value || value.ok !== true || !value.blob) {
+        notify('无法下载：该任务当前没有可读取的已保存结果。', 'error')
+        return
+      }
+      const url = URL.createObjectURL(value.blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = value.fileName || 'whale-voice-result.wav'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      notify('已开始下载原任务保存的音频。', 'success')
+    } catch {
+      notify('下载失败：无法读取该任务已保存的结果。', 'error')
+    } finally {
+      setDownloading(false)
+    }
+  }
   return h(React.Fragment, null,
     h(PageHead, {
       eyebrow: 'WHALE VOICE / STUDIO',
       title: '音色中心',
-      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。试听面板为前端演示，不调用真实 Qwen API。',
+      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产生成与试听仍未接入；下方“预设音色生成”通过正式 Host 接口调用隔离 Core，结果来自 Fixture，不代表真实模型可用。',
       actions: h(React.Fragment, null,
-        h(Badge, { tone: 'demo' }, '试听未接入'),
-        h(Button, { disabled: true, title: '等待语音服务接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
+        h(Badge, { tone: 'demo' }, genEnabled === true ? '隔离模拟' : genEnabled === false ? '未启用' : '检查中'),
+        h(Button, { disabled: true, title: '生产播放未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, '本轮不合成真实音频。生成与播放按钮保持禁用；下方波形为示意，不代表真实音频。')),
+      h('span', null, genEnabled === true
+        ? '隔离模拟：下方生成经正式 Host 接口、既有 Qwen 适配器与 Fixture 执行对象完成一次测试输出并由原任务保存；不加载真实模型、不联网、不播放、不发送。'
+        : genEnabled === false
+          ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
+          : '正在检查生成能力…')),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,
@@ -645,16 +1115,16 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('div', { className: 'wv-version' }, h('div', null, h('strong', null, '自定义音色'), h('span', null, '未来功能')), h(Badge, { tone: 'wait' }, '未接入'))))),
       h('section', { className: 'wv-card pad wv-preview' },
         h('div', { className: 'wv-card-title' },
-          h('div', null, h('h2', null, '试听面板'), h('p', null, '演示文本与参数不会发送到 Qwen')),
-          h(Badge, { tone: 'wait' }, 'Mock')),
+          h('div', null, h('h2', null, '预设音色生成'), h('p', null, genEnabled === true ? '选择已有预设音色并输入短文本；结果由原任务保存，刷新后仍可查询。' : '通过正式 Host 接口提交短文本与已有预设音色。')),
+          h(Badge, { tone: 'wait' }, genEnabled === true ? 'FIXTURE' : genEnabled === false ? '未启用' : '检查中')),
         h('div', { className: 'wv-field' },
           h('label', null, '试听文本'),
-          h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: 300, 'aria-label': '试听文本' }),
-          h('span', { className: 'wv-hint' }, preview.text.length + ' / 300')),
+          h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: textLimit, disabled: genEnabled !== true, 'aria-label': '试听文本' }),
+          h('span', { className: 'wv-hint' }, preview.text.length + ' / ' + textLimit)),
         h('div', { className: 'wv-preview-controls' },
-          h('div', { className: 'wv-field' }, h('label', null, '音色'), h('select', { className: 'wv-select', value: preview.voice, onChange: (e) => patch('voice', e.target.value) }, h('option', { value: 'whale-v1' }, 'whale-v1'))),
-          h('div', { className: 'wv-field' }, h('label', null, '语言'), h('select', { className: 'wv-select', value: preview.language, onChange: (e) => patch('language', e.target.value) }, h('option', { value: 'zh-CN' }, '中文'), h('option', { value: 'en-US' }, 'English'))),
-          h('div', { className: 'wv-field' }, h('label', null, '情绪 ', h(Badge, { tone: 'wait' }, '实验性')), h('select', { className: 'wv-select', value: preview.emotion, onChange: (e) => patch('emotion', e.target.value) }, EMOTIONS.map((x) => h('option', { key: x.id, value: x.id }, x.zh + ' / ' + x.en))))),
+          h('div', { className: 'wv-field' }, h('label', null, '音色'), h('select', { className: 'wv-select', value: preview.voice, onChange: (e) => patch('voice', e.target.value), disabled: genEnabled !== true, 'aria-label': '音色' }, voices.map((voice) => h('option', { key: voice.id, value: voice.id }, voice.label === voice.id ? voice.label : voice.label + ' · ' + voice.id)))),
+          h('div', { className: 'wv-field' }, h('label', null, '语言'), h('select', { className: 'wv-select', value: preview.language, onChange: (e) => patch('language', e.target.value), disabled: genEnabled !== true, 'aria-label': '语言' }, languages.map((code) => h('option', { key: code, value: code }, code === 'zh-CN' ? '中文' : code === 'en-US' ? 'English' : code)))),
+          h('div', { className: 'wv-field' }, h('label', null, '情绪 ', h(Badge, { tone: 'wait' }, '生成固定中性')), h('select', { className: 'wv-select', value: preview.emotion, onChange: (e) => patch('emotion', e.target.value), disabled: true, 'aria-label': '情绪' }, EMOTIONS.map((x) => h('option', { key: x.id, value: x.id }, x.zh + ' / ' + x.en))))),
         h('div', { className: 'wv-player' },
           h('div', { className: 'wv-player-wave', 'aria-label': '示意波形，非真实音频' }, h(WaveBars, { count: 58, seed: 5 }), h('span', { className: 'playhead' })),
           h('div', { className: 'wv-player-controls' },
@@ -662,13 +1132,37 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('div', { className: 'wv-progress', 'aria-hidden': true }, h('i', null)),
             h('span', { className: 'wv-time' }, '0:00 / --:--'),
             h('div', { className: 'wv-volume' }, h(Icon, { name: 'volume', size: 14 }), h('input', { type: 'range', min: 0, max: 100, value: preview.volume, disabled: true, onChange: (e) => patch('volume', Number(e.target.value)), 'aria-label': '音量（未接入）' })))),
-        h('div', { className: 'wv-empty', style: { minHeight: 96 } },
-          h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
-          h('strong', null, '还没有可播放的试听音频'),
-          h('p', null, '本轮不调用 Qwen，也不伪造试听成功。等待语音服务接入后，这里会显示真实音频与进度。')),
+        result
+          ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-result', style: { minHeight: 96, alignItems: 'flex-start' } },
+            h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'check', size: 18 })),
+            h('strong', { 'data-testid': 'studio-generation-state' }, result.state === 'SAVED' ? '原任务已保存' : '原任务状态：' + result.state),
+            h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
+            h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
+            result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
+            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是原任务的保存事实；刷新页面会按同一 Task ID 重新查询，不代表真实模型可用。'),
+            h('div', { className: 'wv-row', style: { marginTop: 8 } },
+              h(Button, {
+                onClick: () => { void download() },
+                disabled: !canDownloadResult || downloading,
+                title: canDownloadResult ? '下载该任务已保存的 WAV 原文件' : '当前没有可读取的已保存结果',
+                'data-testid': 'studio-generation-download',
+              }, h(Icon, { name: 'download', size: 14 }), downloading ? '下载中…' : '下载已保存音频'),
+              canDownloadResult ? null : h('span', { className: 'wv-muted', 'data-testid': 'studio-generation-download-unavailable' }, '当前没有可读取的已保存结果，不能下载。')))
+          : genEnabled === false
+            ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-disabled', style: { minHeight: 96 } },
+              h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
+              h('strong', null, '生成未启用'),
+              h('p', null, '当前 Host 未配置生成运行对象；不会生成、不会调用真实模型。配置由部署方决定，本页不会自行启用。'))
+            : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
+              h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
+              h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
+              h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。')),
+        genError
+          ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null, '隔离测试生成失败：' + genError + '；未自动重试。'))
+          : null,
         h('div', { className: 'wv-row wv-wrap' },
-          h(Button, { disabled: true, title: '等待语音服务接入' }, h(Icon, { name: 'spark', size: 14 }), '生成试听 · 等待语音服务接入'),
-          h(Button, { variant: 'ghost', onClick: () => notify('试听不会在本轮调用真实 Qwen。', 'info') }, '了解限制')))
+          h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存（隔离模拟）'),
+          h(Button, { variant: 'ghost', onClick: () => notify('这是隔离测试链路：真实模型、播放与发送都未接入。', 'info') }, '了解限制')))
     ))
 }
 

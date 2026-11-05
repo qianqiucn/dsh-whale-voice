@@ -19,12 +19,27 @@ GET /whale-voice/setup/config/sources
 GET /whale-voice/setup/config/status
 GET /whale-voice/setup/capabilities
 GET /whale-voice/setup/capabilities/status
+GET  /whale-voice/setup/generation/catalog
+POST /whale-voice/setup/generation
+GET  /whale-voice/setup/generation/status?taskId=...
 ```
+
+The generation routes are the formal Host call surface for the 135 Core entry
+(`core/preset-generation-app.mjs`, `OFFLINE / ISOLATED`). They use the same loopback/Origin/
+connection/token guard; only `/generation` accepts `POST` (JSON `{text, voiceId, language}`), the
+catalog/status routes stay GET-only. The handler runs the generation runtime only when the isolated
+Host assembly supplies an already-opened `openPresetGenerationApp` value as `installHostBridge(...,
+{generation})`; without it every generation route returns `503 {ok:false,error:'generation_not_enabled'}`
+and nothing is generated. The production `apply()` does not configure a runtime, so the installed host
+cannot generate. Responses carry the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, or an
+`ok:false` code); they are isolated Fixture results, not real-model output. No new listener and no
+authentication change.
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
 rejects non-loopback Hosts, cross-site requests, mismatched Origin, missing/wrong
-`x-whale-core-token`, non-GET methods and arbitrary component names. If the host service is absent
-or the bridge is not injected, the UI remains in the No-Core state.
+`x-whale-core-token`, a method other than the route's declared methods (generation POST only where
+declared) and arbitrary component names. If the host service is absent or the bridge is not injected,
+the UI remains in the No-Core state.
 
 Configuration comes only from the Core config file or environment:
 
@@ -53,6 +68,9 @@ window.__WHALE_SETUP__ = {
   getConfigStatus(): Promise<ConfigStatus>,
   getCapabilities(): Promise<CapabilitySnapshot>,
   getCapabilityStatus(): Promise<CapabilityStatus>,
+  getGenerationCatalog(): Promise<GenerationCatalog>,
+  generatePreset({text, voiceId, language}): Promise<GenerationResult>,
+  getGenerationStatus(taskId): Promise<GenerationStatus>,
   detect(component): Promise<ComponentStatus>
 }
 ```
@@ -60,6 +78,15 @@ window.__WHALE_SETUP__ = {
 `getCapabilities` / `getCapabilityStatus` are read-only schema-v3 projections; see
 [CAPABILITY_API.md](CAPABILITY_API.md). They never expose paths, Tokens, whitelist names or target
 maps and never enable a write control.
+
+The generation methods call the 136 Host routes with the same per-process token and same-origin
+rules. `generatePreset` posts `{text, voiceId, language}` to `/whale-voice/setup/generation` and
+returns the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, …); `getGenerationStatus(taskId)`
+queries the returned task. When no runtime is configured the Host answers
+`503 {ok:false,error:'generation_not_enabled'}`, and the bridge returns that JSON envelope rather than
+throwing, so the page can show "生成未启用". The 音色中心 page uses these methods, queries the
+returned Task ID, and remembers that ID locally so a reload re-queries the same saved result; the
+results remain `OFFLINE / ISOLATED` Fixture output, not real-model generation.
 
 The frontend uses `getStatus()`; `detect()` is available for the future per-component action. If the
 bridge is absent, invalid, slow or returns the wrong schema, the wizard shows a failure state and

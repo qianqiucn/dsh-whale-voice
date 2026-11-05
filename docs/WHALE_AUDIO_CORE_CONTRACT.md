@@ -72,13 +72,14 @@ Whale Voice（语音气泡）和 Whale Singing（唱歌）以后共用同一个 
 
 ---
 
-## 3. 模块 A：`core/audio/task-contract.mjs`（CoreTask v1）
+## 3. 模块 A：`core/audio/task-contract.mjs`（CoreTask v1 / v2）
 
 ### 3.1 导出
 
 | 导出 | 说明 |
 |---|---|
-| `AUDIO_TASK_SCHEMA_VERSION` | 固定 `1` |
+| `AUDIO_TASK_SCHEMA_VERSION` | 固定 `1`（Fixture 任务） |
+| `AUDIO_TASK_SCHEMA_VERSION_V2` | 固定 `2`（139：正式 Provider 生成任务） |
 | `AUDIO_TASK_STATES` / `AUDIO_TASK_STATE_LIST` | 冻结状态常量 / 可用于断言的状态数组 |
 | `AUDIO_ERRORS` | 八个冻结错误码 |
 | `AUDIO_TASK_MESSAGES_ZH` | 每个状态对应的固定中文说明（含“演示状态”后缀） |
@@ -103,7 +104,25 @@ Whale Voice（语音气泡）和 Whale Singing（唱歌）以后共用同一个 
 | `deliveryRequested` | 否 | 布尔，缺省 `false`；只是“将来是否想发送”的意图候选，不是授权 |
 | `rights` | 是 | 只有 `{ state: "CONFIRMED_FIXTURE" }` 或 `{ state: "UNVERIFIED" }` |
 
-**明确拒绝的顶层键（示例，不限于此）：** `send`、`wechat`、`targetChatId`、`token`、`apiKey`、`recipient`、`providerId`、`params`、`songId`、`nickname` 等一切未列出的字段。
+**明确拒绝的顶层键（示例，不限于此）：** `send`、`wechat`、`targetChatId`、`token`、`apiKey`、`recipient`、`providerId`、`params`、`songId`、`nickname` 等一切未列出的字段。（v1 仍拒绝 `providerId`；正式 Provider 任务使用下面的 v2。）
+
+### 3.2b `AudioTaskDraft v2`（139，正式 Provider 生成任务）
+
+`schemaVersion: 2` 且 `feature: provider-generation`、`taskType: PROVIDER_TTS`；v1 的 `source/voiceProfileId` 不出现，v1 记录/草稿语义不变。
+
+| 字段 | 必填 | 规则 |
+|---|---|---|
+| `schemaVersion` | 是 | 整数 `2` |
+| `taskId` | 是 | 同 v1 的不透明 `task:` 格式 |
+| `feature` | 是 | 只能是 `provider-generation` |
+| `taskType` | 是 | 只能是 `PROVIDER_TTS` |
+| `provider` | 是 | 恰 `{ providerId, instanceId, model, backend }`：小写 provider id、实例 id、有界模型身份、小写 backend；不接受路径/URL/凭据 |
+| `voice` | 是 | 恰 `{ kind: "PRESET", voiceId }`；只表达已有预设音色，不接克隆 |
+| `input` | 是 | 恰 `{ kind: "TEXT", text }`；`text` 为 1–200 字符的提交文本来源，仍由调用方提供 |
+| `deliveryRequested` | 否 | 缺省 `false`；Provider 生成任务拒绝 `true`（本轮不接投递） |
+| `rights` | 是 | 只有 `{ state: "CONFIRMED_FIXTURE" }` 或 `{ state: "UNVERIFIED" }`；测试权利不等于真实运行许可 |
+
+v2 记录另含 `state/outputArtifactRef/cancel/delivery/lastError/observedAt/mockOnly/realOperationAllowed`，其中 `delivery` 固定 `NOT_REQUESTED/null`、`mockOnly:true`、`realOperationAllowed:false`；投影 v2 额外输出 `provider.providerId/model`、`voice`、`input.kind`，不输出正文。目录、owner、产物与 transition 仍复用同一套存储/保存链。
 
 ### 3.3 错误码
 

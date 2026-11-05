@@ -679,6 +679,16 @@ remote `main`=M and the source branch stays at H. Main CI `41775387252`: the fir
 failed only on the pre-existing flaky `121-R03` Qwen test (file untouched by this merge) and attempt 2
 build+ui succeeded. 13-B stays `OFFLINE / FIXTURE_ONLY / NOT_INTEGRATED`.
 
+### Plan 10-R1 / Provider generation → SAVED candidate (2026-11-04, 120-B)
+
+Branch `feature/plan10-r1-provider-generation`, new PR (not merged). `core/audio/provider-generation-offline.mjs`
+wires an audited provider contract to the existing Artifact library behind a versioned, claim-first
+coordinator: durable claim, fail-closed duplicate/conflict/cross-scope/rights rules, cancel/UNKNOWN/late
+result handling, byte re-measurement, artifact import + readback, and a `SAVE_UNKNOWN` tombstone that never
+resynthesises. 8 new tests; full suite 1152/1148/4/0; no model/process/WeChat/Host route. The Plan 08 owner
+SAVED entry (owner schema v3) and UI/Host wiring remain open; the claim keeps the task birth hash for that
+future binding.
+
 ### Plan 13-C / Native voice static admission research (2026-11-04, 118-B)
 
 Branch `docs/plan13c-native-admission-20261104` from M, new research PR (not merged). The public

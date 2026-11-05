@@ -34,7 +34,7 @@
 | 模块 | 导出/方法 | 关键限制 |
 |---|---|---|
 | `core/audio/task-catalog.mjs` | `openFixtureTaskCatalog({sandbox})` → `{reserve, get}` | 唯一 TaskId 签发者；`reserve` 输入恰 5 键 `schemaVersion(1)/scopeId/idempotencyKey/draft/observedAt`；`get` 输入 3 键；15 个 `TASK_CATALOG_` 错误码；磁盘 `audio-task-catalog-v1.json`，快照 `{schemaVersion, revision, entries}`，当前只接受 `schemaVersion:1` |
-| `core/audio/task-owner.mjs` | `openFixtureTaskOwner({sandbox})` → `{run, get, save, artifactStatus}` | 公开 owner schema 恒 1；磁盘 owner 快照 v1/v2；22 个 `TASK_OWNER_` 错误码 |
+| `core/audio/task-owner.mjs` | `openFixtureTaskOwner({sandbox})` → `{run, get, save, saveArtifact, artifactStatus}` | 公开 owner schema 恒 1；磁盘 owner 快照 v1/v2；22 个 `TASK_OWNER_` 错误码；`saveArtifact` 记录已导入 Artifact 的 SAVED（132，无第二次合成） |
 | `core/audio/artifact-library.mjs` | `openFixtureArtifactLibrary({sandbox})` → `{import, get, readBytes, delete}` | 16 个 `ARTIFACT_LIBRARY_` 错误码；`readBytes` request 恰 5 键 `{schemaVersion:1, scopeId, artifactRef, now, rights:{state:'GRANTED', proofRef}}`，成功须 `ok:true` 且 `value.outcome==='FOUND'`（`value.artifact` 为公有 metadata 8）；`get` 同形但无 bytes；库权利域恰 2 键，`expiresAt` 是 entry 顶层字段；单项 1,048,576 B、解码总量 4,194,304 B、条目 32、pack 6,291,456 B |
 | `core/audio/fixture-artifact-store-internal.mjs` | `readStoredForSave(state, {scopeId, artifactRef, now})`（内部） | 同 capability 原 Artifact 内部 state；`now` 必填（缺失即 `INTERNAL_FAILURE`）；成功 `{ok:true,value:{state:'STORED'|'MISSING'|'DELETED'|'EXPIRED', artifact:<proof8>}}`；proof8 恰 8 键、**不含 scopeId/origin/createdAt** |
 | `core/audio/source-artifacts.mjs` | `resolveFixtureTaskSource(input)` | 输入 4 键；成功 value 恰 10 键；失败 root 恰 `{ok:false,errors:[{code,path,reason}]}` |

@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import os from 'node:os'
 import path from 'node:path'
 import { createConfigCoordinator } from '../../core/config-coordinator.mjs'
 import { createConfigSandbox } from '../../core/config-sandbox.mjs'
 import { createFixtureSource } from '../../test/helpers/config-coordination-fixture.mjs'
 import { createSingingBridge } from './singing-bridge.mjs'
+import { createHostGenerationAssembly } from './host-generation-assembly.mjs'
+import { createHostSettingsDraftAssembly } from './host-settings-draft-assembly.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -43,9 +47,13 @@ const files = new Map([
 ])
 
 const singingBridge = await createSingingBridge()
+const hostGeneration = await createHostGenerationAssembly()
+const hostSettings = await createHostSettingsDraftAssembly()
 
 const server = createServer(async (req, res) => {
   if (await singingBridge.handle(req, res)) return
+  if (await hostSettings.handle(req, res)) return
+  if (await hostGeneration.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
   if (!entry) {
@@ -89,7 +97,10 @@ async function withPage(query, fn, setupPage) {
   })
   try {
     if (setupPage) await setupPage(page)
-    await page.goto(base + (query || ''), { waitUntil: 'load' })
+    const queryString = query || ''
+    const separator = queryString.includes('?') ? '&' : '?'
+    await page.goto(base + queryString + separator + 'hostToken=' + encodeURIComponent(hostGeneration.token)
+      + '&settingsToken=' + encodeURIComponent(hostSettings.token), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
     return await fn(page)
@@ -354,6 +365,111 @@ await check('settings/studio/safety expose surface-specific reload semantics', a
   })
 })
 
+await check('studio preset generation saves the original task, downloads it and survives reload', async () => {
+  const generationCalls = []
+  const trackGeneration = (page) => {
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/whale-voice/setup/generation') {
+        generationCalls.push(request.url())
+      }
+    })
+  }
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
+    await page.waitForFunction(() => {
+      const select = document.querySelector('select[aria-label="音色"]')
+      return select && Array.from(select.options).some((option) => option.value === 'demo-voice-a')
+    }, null, { timeout: 10000 })
+    await page.getByLabel('试听文本').fill('你好，这是隔离预设生成演示。')
+    await page.getByLabel('音色').selectOption('demo-voice-a')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    const state = page.locator('[data-testid="studio-generation-state"]')
+    await state.waitFor({ timeout: 15000 })
+    assert.equal(await state.innerText(), '原任务已保存')
+    const taskId = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    const artifactRef = await page.locator('[data-testid="studio-generation-artifact"]').innerText()
+    assert.match(taskId, /^task:fixture-[0-9a-f]{32}$/)
+    assert.match(artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /隔离模拟/)
+    assert.match(pageText, /不加载真实模型/)
+    assert.match(pageText, /生产生成与试听仍未接入/)
+    await page.screenshot({ path: path.join(artifactDir, 'studio-generation-1440.png') })
+
+    // 150: download the already-saved WAV bytes; the file must match the saved result facts.
+    const firstSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const firstSha = /SHA-256 ([0-9a-f]{64})/.exec(firstSummary)
+    const firstSize = /大小 (\d+) bytes/.exec(firstSummary)
+    assert.ok(firstSha, firstSummary)
+    assert.ok(firstSize, firstSummary)
+    const firstDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const firstDownload = await firstDownloadPromise
+    assert.match(firstDownload.suggestedFilename(), /^whale-voice-[0-9a-f]{32}\.wav$/)
+    const firstBytes = readFileSync(await firstDownload.path())
+    assert.equal(firstBytes.length, Number(firstSize[1]))
+    assert.equal(createHash('sha256').update(firstBytes).digest('hex'), firstSha[1])
+
+    // A second run mints a different original task: the state is not a fixed success value.
+    await page.getByLabel('试听文本').fill('第二个隔离测试生成。')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.waitForFunction(
+      (previous) => {
+        const element = document.querySelector('[data-testid="studio-generation-task"]')
+        return element && element.textContent && element.textContent !== previous
+      },
+      taskId,
+      { timeout: 15000 },
+    )
+    const secondTaskId = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    const secondArtifactRef = await page.locator('[data-testid="studio-generation-artifact"]').innerText()
+    assert.notEqual(secondTaskId, taskId)
+    assert.match(secondTaskId, /^task:fixture-[0-9a-f]{32}$/)
+    assert.match(secondArtifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+    const secondSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const secondSha = /SHA-256 ([0-9a-f]{64})/.exec(secondSummary)
+    assert.ok(secondSha, secondSummary)
+
+    // Reload: the page queries the same saved result back and the same bytes remain downloadable.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.waitForTimeout(500)
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.locator('[data-testid="studio-generation-state"]').waitFor({ timeout: 5000 })
+    assert.equal(await page.locator('[data-testid="studio-generation-state"]').innerText(), '原任务已保存')
+    assert.equal(await page.locator('[data-testid="studio-generation-task"]').innerText(), secondTaskId)
+    assert.equal(await page.locator('[data-testid="studio-generation-artifact"]').innerText(), secondArtifactRef)
+    const reopenedSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const reopenedSha = /SHA-256 ([0-9a-f]{64})/.exec(reopenedSummary)
+    assert.ok(reopenedSha, reopenedSummary)
+    assert.equal(reopenedSha[1], secondSha[1])
+    const secondDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const secondDownload = await secondDownloadPromise
+    const secondBytes = readFileSync(await secondDownload.path())
+    assert.equal(createHash('sha256').update(secondBytes).digest('hex'), secondSha[1])
+    assert.equal(generationCalls.length, 2, 'downloads must not trigger another generation')
+  }, trackGeneration)
+})
+
+await check('studio reports generation not enabled when the Host runtime is absent', async () => {
+  await hostGeneration.setGenerationEnabled(false)
+  try {
+    await withPage('?bridge=normal&generation=off', async (page) => {
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      await page.locator('[data-testid="studio-generation-disabled"]').waitFor({ timeout: 5000 })
+      const text = await page.locator('body').innerText()
+      assert.match(text, /生成未启用/)
+      assert.match(text, /未配置生成运行对象/)
+      assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 0)
+      assert.equal(await page.getByRole('button', { name: /生成并保存/ }).isDisabled(), true)
+    })
+  } finally {
+    await hostGeneration.setGenerationEnabled(true)
+  }
+})
+
 await check('Worker version unknown is displayed without claiming Service version', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '发送与安全', exact: true }).click()
@@ -505,6 +621,133 @@ await check('send & safety groups capabilities and keeps unsupported controls di
     assert.match(componentText, /自动启动本地 TTS 服务/)
     assert.equal(await dialog.getByRole('switch', { name: '自动启动本地 TTS 服务', exact: true }).isDisabled(), true)
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+})
+
+await check('generation storage location draft is saved, applied and survives a page reload', async () => {
+  await hostSettings.reset()
+  const target = path.join(os.tmpdir(), 'whale-voice-ui-settings-draft', 'generation-data')
+  await withPage('?bridge=normal', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const input = page.getByTestId('generation-storage-input')
+    await assert.doesNotReject(input.waitFor({ timeout: 4000 }))
+    assert.equal(await input.inputValue(), '', 'a fresh isolated draft store has no saved value')
+    await input.fill(target)
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-testid="generation-storage-input"]')?.value === value,
+      target,
+      { timeout: 4000 },
+    )
+    await page.getByTestId('generation-storage-save').click()
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+    } catch (error) {
+      const status = await page.getByTestId('generation-storage-status').innerText().catch(() => '')
+      const note = await page.getByTestId('generation-storage-error').innerText().catch(() => '')
+      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
+    }
+    const toast = await page.locator('.wv-toast').innerText()
+    assert.match(toast, /草稿已保存，尚未应用/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /保存只写入草稿/)
+    assert.match(pageText, /下次打开/)
+    assert.match(pageText, /不会立即切换/)
+    assert.match(pageText, /生成数据保存位置/)
+    assert.match(await page.getByTestId('generation-storage-applied').innerText(), /尚未应用/)
+
+    // Applying the saved draft records the persisted fact; the current runtime is not switched here.
+    await page.getByTestId('generation-storage-apply').click()
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="generation-storage-applied"]')?.innerText.includes('已应用位置：'),
+      null,
+      { timeout: 8000 },
+    )
+    const appliedToast = await page.locator('.wv-toast').innerText()
+    assert.match(appliedToast, /已应用，下次重开插件生效/)
+    assert.equal(await page.getByTestId('generation-storage-applied').innerText(), '已应用位置：' + target)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当时正在运行的组件/)
+
+    // Reload the page and reopen the settings page: the saved draft and the applied fact are read again.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-testid="generation-storage-input"]')?.value === value,
+      target,
+      { timeout: 4000 },
+    )
+    const reopenedStatus = await page.getByTestId('generation-storage-status').innerText()
+    assert.ok(reopenedStatus.includes(target), reopenedStatus)
+    const reopenedApplied = await page.getByTestId('generation-storage-applied').innerText()
+    assert.equal(reopenedApplied, '已应用位置：' + target)
+    assert.doesNotMatch(reopenedApplied, /下次重开插件生效|当前运行仍用原位置/)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当时正在运行的组件/)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-generation-draft-1440.png') })
+  })
+})
+
+await check('qwen runtime path draft is saved, applied and survives a page reload', async () => {
+  await hostSettings.reset()
+  const modelDirectory = path.join(os.tmpdir(), 'whale-voice-ui-qwen-model')
+  const pythonPath = path.join(os.tmpdir(), 'whale-voice-ui-python', 'python.exe')
+  await withPage('?bridge=normal', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const modelInput = page.getByTestId('qwen-runtime-model')
+    const pythonInput = page.getByTestId('qwen-runtime-python')
+    await assert.doesNotReject(modelInput.waitFor({ timeout: 4000 }))
+    await modelInput.fill(modelDirectory)
+    await pythonInput.fill(pythonPath)
+    await page.getByTestId('qwen-runtime-save').click()
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="qwen-runtime-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+    } catch (error) {
+      const status = await page.getByTestId('qwen-runtime-status').innerText().catch(() => '')
+      const note = await page.getByTestId('qwen-runtime-error').innerText().catch(() => '')
+      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
+    }
+    assert.match(await page.locator('.wv-toast').innerText(), /运行路径草稿已保存，尚未应用/)
+    const pageText = await page.locator('body').innerText()
+    assert.match(pageText, /Qwen 运行路径/)
+    assert.match(pageText, /不会执行 Python 或读取模型/)
+    assert.match(await page.getByTestId('qwen-runtime-applied').innerText(), /尚未应用/)
+
+    // Applying the saved paths records the fact; the current runtime is not switched here.
+    await page.getByTestId('qwen-runtime-apply').click()
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="qwen-runtime-applied"]')?.innerText.includes('已应用运行路径'),
+      null,
+      { timeout: 8000 },
+    )
+    assert.match(await page.locator('.wv-toast').innerText(), /已应用，下次重开插件生效/)
+    const appliedText = await page.getByTestId('qwen-runtime-applied').innerText()
+    assert.ok(appliedText.includes(modelDirectory), appliedText)
+    assert.ok(appliedText.includes(pythonPath), appliedText)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当前运行/)
+
+    // Reload the page and reopen the settings page: both saved paths and the applied fact are read back.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-testid="qwen-runtime-model"]')?.value === value,
+      modelDirectory,
+      { timeout: 4000 },
+    )
+    assert.equal(await page.getByTestId('qwen-runtime-python').inputValue(), pythonPath)
+    assert.match(await page.getByTestId('qwen-runtime-status').innerText(), /已保存草稿/)
+    const reopenedApplied = await page.getByTestId('qwen-runtime-applied').innerText()
+    assert.ok(reopenedApplied.includes(modelDirectory), reopenedApplied)
+    assert.ok(reopenedApplied.includes(pythonPath), reopenedApplied)
+    assert.match(reopenedApplied, /已应用运行路径/)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-qwen-runtime-draft-1440.png') })
   })
 })
 
@@ -1981,7 +2224,13 @@ await check('plan09 real Coordinator accepts the existing/custom provider mappin
 })
 
 await check('no console errors or failed resources', async () => {
-  const errors = consoleMessages.filter((item) => item.type === 'error' || item.type === 'pageerror')
+  // The single expected console entry is the disabled-generation scene: its deliberate request to the
+  // real Host route returns the 503 `generation_not_enabled` that the page must surface. All other
+  // scenes must stay clean.
+  const expectedDisabled503 = (item) => item.scene === '?bridge=normal&generation=off'
+    && item.type === 'error'
+    && /Failed to load resource: the server responded with a status of 503/.test(item.text)
+  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item))
   assert.deepEqual(errors, [])
   assert.deepEqual(failedRequests, [])
 })
@@ -2000,5 +2249,7 @@ console.log('\n' + results.filter((item) => item.result === 'PASS').length + '/'
 console.log('Artifacts: ' + artifactDir)
 await browser.close()
 await singingBridge.close()
+await hostGeneration.close()
+await hostSettings.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

@@ -379,7 +379,61 @@
   }
 
   const fakeBridge = bridge(bridgeMode)
-  if (fakeBridge) window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
+  if (fakeBridge) {
+    // Same client contract as the production bridge script in index.js: the generation and settings
+    // draft calls go to the formal Host routes with the per-run tokens; the harness server serves the
+    // real Host handlers.
+    const tokens = new URLSearchParams(window.location.search)
+    const hostToken = tokens.get('hostToken') || ''
+    const hostSettingsToken = tokens.get('settingsToken') || ''
+    const hostFetch = async (token, path, options = {}) => {
+      const headers = { accept: 'application/json', 'x-whale-core-token': token }
+      if (typeof options.body === 'string') headers['content-type'] = 'application/json'
+      let response
+      try {
+        response = await fetch(path, { cache: 'no-store', credentials: 'same-origin', ...options, headers })
+      } catch {
+        return { ok: false, error: 'core_unreachable' }
+      }
+      let payload = null
+      try { payload = await response.json() } catch { payload = null }
+      if (payload && typeof payload === 'object') return payload
+      return { ok: false, error: 'core_http_' + response.status }
+    }
+    const hostGeneration = (path, options) => hostFetch(hostToken, path, options)
+    const hostSettings = (path, options) => hostFetch(hostSettingsToken, path, options)
+    fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
+    fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
+    fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
+    fakeBridge.downloadGenerationResult = async (taskId) => {
+      let response
+      try {
+        response = await fetch('/whale-voice/setup/generation/download?taskId=' + encodeURIComponent(String(taskId || '')), {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { accept: 'audio/wav', 'x-whale-core-token': hostToken },
+        })
+      } catch {
+        return { ok: false, error: 'core_unreachable' }
+      }
+      if (!response.ok) {
+        let payload = null
+        try { payload = await response.json() } catch { payload = null }
+        return payload && typeof payload === 'object' ? payload : { ok: false, error: 'core_http_' + response.status }
+      }
+      const blob = await response.blob()
+      const disposition = response.headers.get('content-disposition') || ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      return { ok: true, blob, fileName: match ? match[1] : 'whale-voice-result.wav' }
+    }
+    fakeBridge.getGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage')
+    fakeBridge.saveGenerationStorageDraft = (request) => hostSettings('/whale-voice/setup/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) })
+    fakeBridge.applyGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage/apply', { method: 'POST', body: '{}' })
+    fakeBridge.getQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime')
+    fakeBridge.saveQwenRuntimeDraft = (request) => hostSettings('/whale-voice/setup/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) })
+    fakeBridge.applyQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime/apply', { method: 'POST', body: '{}' })
+    window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
+  }
 
   // Plan 09 test-only adapter. It never touches production config; it records the calls the UI makes
   // and enforces the same confirmation/expiry/consumed/revision semantics as the real Coordinator.
@@ -549,7 +603,6 @@
       reset: () => post('/singing-app/reset', {}),
     }
   })()
-
   const spec = window.__WHALE_VOICE_SPEC__
   if (!spec || typeof spec.factory !== 'function') {
     document.getElementById('wv-harness-root').textContent = 'harness module missing'

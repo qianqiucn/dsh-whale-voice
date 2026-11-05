@@ -149,6 +149,18 @@ const OWNER_NO_EXECUTION_REASONS = Object.freeze([
 const STATES = new WeakMap()
 
 export function identityOf(record) {
+  if (record.schemaVersion === 2) {
+    return {
+      schemaVersion: 2,
+      feature: record.feature,
+      taskType: record.taskType,
+      provider: { ...record.provider },
+      voice: { ...record.voice },
+      input: { ...record.input },
+      deliveryRequested: record.deliveryRequested,
+      rights: { state: record.rights.state },
+    }
+  }
   return {
     schemaVersion: record.schemaVersion,
     feature: record.feature,
@@ -192,10 +204,6 @@ export function enqueue(state, run) {
 
 export function lockStore(state) {
   state.locked = 'UNKNOWN'
-}
-
-export function isStoreLocked(state) {
-  return state.locked !== null
 }
 
 function fileState(state, name) {
@@ -248,16 +256,28 @@ function canonicalInitialRecord(record) {
   if (value.lastError !== null) raiseStore('STORE_INVALID', '$')
   if (value.mockOnly !== true || value.realOperationAllowed !== false) raiseStore('STORE_INVALID', '$')
 
-  const draft = {
-    schemaVersion: value.schemaVersion,
-    taskId: value.taskId,
-    feature: value.feature,
-    taskType: value.taskType,
-    source: { kind: value.source.kind, ref: value.source.ref },
-    voiceProfileId: value.voiceProfileId,
-    deliveryRequested: value.deliveryRequested,
-    rights: { state: value.rights.state },
-  }
+  const draft = value.schemaVersion === 2
+    ? {
+        schemaVersion: 2,
+        taskId: value.taskId,
+        feature: value.feature,
+        taskType: value.taskType,
+        provider: { ...value.provider },
+        voice: { ...value.voice },
+        input: { ...value.input },
+        deliveryRequested: value.deliveryRequested,
+        rights: { state: value.rights.state },
+      }
+    : {
+        schemaVersion: value.schemaVersion,
+        taskId: value.taskId,
+        feature: value.feature,
+        taskType: value.taskType,
+        source: { kind: value.source.kind, ref: value.source.ref },
+        voiceProfileId: value.voiceProfileId,
+        deliveryRequested: value.deliveryRequested,
+        rights: { state: value.rights.state },
+      }
   let recreated
   try {
     recreated = createAudioTaskRecord(draft, { observedAt: value.observedAt })
@@ -449,6 +469,21 @@ export function parseOwnerSnapshot(bytes) {
 /* ------------------------------- owner association gate (08-D-C) ----------------------------- */
 
 function sameImmutable(finalRecord, birthRecord) {
+  if (finalRecord.schemaVersion === 2 || birthRecord.schemaVersion === 2) {
+    return (
+      finalRecord.schemaVersion === 2 &&
+      birthRecord.schemaVersion === 2 &&
+      finalRecord.taskId === birthRecord.taskId &&
+      finalRecord.feature === birthRecord.feature &&
+      finalRecord.taskType === birthRecord.taskType &&
+      stableStringify(finalRecord.provider) === stableStringify(birthRecord.provider) &&
+      stableStringify(finalRecord.voice) === stableStringify(birthRecord.voice) &&
+      stableStringify(finalRecord.input) === stableStringify(birthRecord.input) &&
+      finalRecord.rights.state === birthRecord.rights.state &&
+      finalRecord.deliveryRequested === birthRecord.deliveryRequested &&
+      finalRecord.observedAt === birthRecord.observedAt
+    )
+  }
   return (
     finalRecord.taskId === birthRecord.taskId &&
     finalRecord.feature === birthRecord.feature &&
