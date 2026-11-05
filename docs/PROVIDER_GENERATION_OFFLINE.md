@@ -158,6 +158,21 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Saved-result status reports a failed read (159)
+
+One saved result's status no longer turns a failed byte read into a successful readable result.
+`status(taskId)` asks the task owner whether the saved artifact is available and then reads its bytes;
+when that read failed, the query used to answer `ok:true, readable:true` and only fill `sha256` /
+`byteLength` with `null`, so a damaged or unreadable file looked fine until the user pressed download.
+It now returns `PRESET_GENERATION_STATUS_REJECTED` with detail `read rejected`, which is the same
+honest failure `download()` already returned for that read; a successful query still reports the
+complete artifact facts (SHA-256, byte length, origin) plus the original task's provider/voice/input
+projection. The failed read creates, changes, deletes, regenerates and re-sends nothing: the artifact
+pack bytes and the saved task entries stay identical, and reopening the same location reports the
+original result with its full facts and returns its bytes again. Only the byte read is involved;
+pre-existing rejections from the earlier availability check (missing, deleted, expired rows) and the
+24 h expiration already handled by 155 keep their existing exits.
+
 ### Recoverable applied settings (154)
 
 A wrong or damaged applied generation setting no longer keeps the plugin from opening. `apply()` now

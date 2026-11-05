@@ -5,9 +5,10 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
+import { createConfigSandbox, openConfigStorage, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { openFixtureArtifactLibrary } from '../core/audio/artifact-library.mjs'
 import { wavFromSamples } from '../core/audio/cover-stage-bytes-internal.mjs'
+import { ARTIFACT_FILE_NAME } from '../core/audio/fixture-artifact-store-internal.mjs'
 import { CATALOG_FILE_NAME } from '../core/audio/fixture-task-store-internal.mjs'
 import { PRESET_GENERATION_APP_ERRORS, openPresetGenerationApp } from '../core/preset-generation-app.mjs'
 import { createQwenProvider } from '../core/tts/qwen-adapter.mjs'
@@ -177,6 +178,79 @@ test('135 the Core preset generation entry generates, saves on the original task
     // The formal Core entry does not import the UI test bridge or the Fixture worker file.
     const source = fs.readFileSync(coreFile, 'utf8')
     assert.doesNotMatch(source, /tests\/|fake-qwen-worker|studio-generation-bridge/)
+  } finally {
+    if (provider && provider.ok) await provider.shutdown().catch(() => null)
+    else await supervisor.stop().catch(() => null)
+    removeConfigSandbox(sandbox)
+  }
+})
+
+// 159: the real failure window is a byte read that fails after the owner availability check already
+// said READABLE. The query must report that failure, never a successful readable result with empty
+// artifact facts, and it must not change the saved task or artifact.
+test('159 a byte read that fails after the availability check reports a failure, not a readable result', { skip: spawnSkip }, async () => {
+  const sandbox = createConfigSandbox({ prefix: 'wv-core-preset-status-fault-' })
+  const supervisor = makeSupervisor()
+  let provider = null
+  try {
+    provider = createQwenProvider({ supervisor, requestTimeoutMs: 5000 })
+    assert.equal(provider.ok, true, JSON.stringify(provider))
+    assert.equal((await provider.start()).ok, true, JSON.stringify(provider))
+    const app = await openApp(sandbox, provider)
+    const saved = await app.generate({ text: '读取失败时应当如实报错的隔离生成。', voiceId: 'demo-voice-a', language: 'zh-CN' })
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    assert.equal(saved.state, 'SAVED')
+
+    const packPath = path.join(sandbox.root, ARTIFACT_FILE_NAME)
+    const packBefore = fs.readFileSync(packPath)
+    const entriesBefore = JSON.parse(fs.readFileSync(path.join(sandbox.root, CATALOG_FILE_NAME), 'utf8')).entries.length
+
+    // The owner availability check reads the pack first; every later read in this status call is the
+    // real byte read and fails like a damaged or unreadable file would.
+    const realOpenSync = fs.openSync
+    let packOpens = 0
+    fs.openSync = function patchedOpen(target, ...rest) {
+      if (String(target) === packPath) {
+        packOpens += 1
+        if (packOpens > 1) {
+          const error = new Error('injected artifact read fault')
+          error.code = 'EIO'
+          throw error
+        }
+      }
+      return realOpenSync.call(fs, target, ...rest)
+    }
+    let failed
+    try {
+      failed = await app.status(saved.taskId)
+    } finally {
+      fs.openSync = realOpenSync
+    }
+    assert.ok(packOpens > 1, 'the availability check must have read the pack before the failed byte read')
+    assert.equal(failed.ok, false, JSON.stringify(failed))
+    assert.equal(failed.code, PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED)
+    assert.equal(failed.detail, 'read rejected')
+    assert.equal('readable' in failed, false)
+    assert.equal('sha256' in failed, false)
+    assert.equal('byteLength' in failed, false)
+
+    // The failed read created, changed and deleted nothing in the saved task or the artifact pack.
+    assert.deepEqual(fs.readFileSync(packPath), packBefore)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(sandbox.root, CATALOG_FILE_NAME), 'utf8')).entries.length, entriesBefore)
+
+    // Reopening the same saved location still reports the whole original result and returns its bytes.
+    const reopened = await openApp(openConfigStorage({ root: sandbox.root }), provider)
+    const status = await reopened.status(saved.taskId)
+    assert.equal(status.ok, true, JSON.stringify(status))
+    assert.equal(status.readable, true)
+    assert.equal(status.artifactRef, saved.artifactRef)
+    assert.equal(status.sha256, saved.sha256)
+    assert.equal(status.byteLength, saved.byteLength)
+    assert.equal(status.origin, saved.origin)
+    const download = await reopened.download(saved.taskId)
+    assert.equal(download.ok, true, JSON.stringify(download))
+    assert.equal(download.sha256, saved.sha256)
+    assert.equal(Buffer.from(download.bytes).length, saved.byteLength)
   } finally {
     if (provider && provider.ok) await provider.shutdown().catch(() => null)
     else await supervisor.stop().catch(() => null)
