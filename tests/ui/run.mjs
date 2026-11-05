@@ -393,6 +393,9 @@ await check('studio preset generation saves the original task, downloads it and 
     const artifactRef = await page.locator('[data-testid="studio-generation-artifact"]').innerText()
     assert.match(taskId, /^task:fixture-[0-9a-f]{32}$/)
     assert.match(artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+    // 156: the page waits for the Host's declared effective limit instead of a fixed short timer.
+    const waitLimit = await page.evaluate(() => window.__WHALE_GENERATION_TIMEOUT_MS__)
+    assert.equal(Number.isInteger(waitLimit) && waitLimit >= 5000, true, 'generation wait limit: ' + String(waitLimit))
     const pageText = await page.locator('body').innerText()
     assert.match(pageText, /隔离模拟/)
     assert.match(pageText, /不加载真实模型/)

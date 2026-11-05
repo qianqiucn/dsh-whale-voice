@@ -72,6 +72,19 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Generation wait follows the effective limit (156)
+
+The 音色中心 page waits for the Host's effective generation limit instead of the fixed 15 s. The Core
+catalog publishes `generationTimeoutMs`: the same effective per-request limit the audited Qwen adapter
+enforces (the requested timeout clamped by the worker-advertised `limits.timeoutMs`; the Qwen default
+120 s is not a hard cap). The production client bridge's generation helper takes a per-request timeout
+(other generation routes keep their 15 s) and `generatePreset` waits for the catalog limit plus a 10 s
+grace, so the server's own honest timeout response can arrive first. A client-side abort returns
+`{ok:false,error:'generation_unconfirmed'}` instead of claiming success or a background failure. The
+Studio page keeps the 生成中 state while the server is inside its limit; if the wait really ends without
+a response it shows 「生成结果未确认」 (no auto retry; the result may still appear in 已保存的生成结果),
+while an explicit backend failure shows the returned code and is never treated as SAVED.
+
 ### Persistent generation storage (155)
 
 Generation keeps saving past the old fixed budgets and saved results stay retrievable. The
@@ -530,8 +543,19 @@ generation disabled):
   returns failure instead of SAVED, and after restoring the permission and reopening the earlier
   result is still listed and downloads its original bytes.
 
-Full suite after this unit: **1186 tests / 1182 pass / 4 platform skips / 0 fail**; UI **80/80**; build
-`client.js` unchanged (373,182 bytes; 155 touches Core storage only).
+`test/plugin-generation-wait.test.mjs` (3 tests, existing Fixture Worker; the production client bridge
+script runs over real Host routes):
+
+- 156 slow success: a 16 s Fixture synthesis inside a 30 s effective limit returns SAVED through the
+  production bridge `generatePreset` after more than 15 s, the catalog publishes `generationTimeoutMs`,
+  and exactly one saved result/task exists.
+- 156 backend timeout: a 1 s effective limit with a slower synthesis returns an explicit failure payload
+  (never SAVED) and no saved result is listed.
+- 156 client abort: a request aborted by the client's own wait returns
+  `{ok:false,error:'generation_unconfirmed'}`, not success or a chosen failure.
+
+Full suite after this unit: **1189 tests / 1185 pass / 4 platform skips / 0 fail**; UI **80/80**; build
+`client.js` **374,229 bytes** (156's page wait wiring is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

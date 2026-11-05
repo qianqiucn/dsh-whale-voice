@@ -403,7 +403,10 @@
     const hostGeneration = (path, options) => hostFetch(hostToken, path, options)
     const hostSettings = (path, options) => hostFetch(hostSettingsToken, path, options)
     fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
-    fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
+    fakeBridge.generatePreset = (request, options) => {
+      window.__WHALE_GENERATION_TIMEOUT_MS__ = options && options.timeoutMs
+      return hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
+    }
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
     fakeBridge.getGenerationResults = () => hostGeneration('/whale-voice/setup/generation/results')
     fakeBridge.getGenerationAssemblyStatus = (() => {

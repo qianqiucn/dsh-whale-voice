@@ -12,6 +12,7 @@
 
 import { createQwenSupervisor } from './tts/qwen-supervisor.mjs'
 import { createQwenProvider } from './tts/qwen-adapter.mjs'
+import { QWEN_LIMITS } from './tts/qwen-contract.mjs'
 import { openPresetGenerationApp } from './preset-generation-app.mjs'
 
 export const QWEN_GENERATION_RUNTIME_SCHEMA_VERSION = 1
@@ -97,6 +98,13 @@ export async function openQwenGenerationRuntime(options = {}) {
     languages: [...voice.languages],
   }))
   const textLimit = Math.min(TEXT_LIMIT_MAX, discovery.limits.maxChars)
+  // 156: the same effective per-request timeout the audited adapter enforces, published so the page
+  // waits for the real limit instead of a fixed client-side value (the Qwen default is not a cap).
+  const requestedTimeoutMs = Number.isInteger(options.requestTimeoutMs) ? options.requestTimeoutMs : QWEN_LIMITS.timeoutMs
+  const generationTimeoutMs = Math.max(
+    QWEN_LIMITS.minRequestTimeoutMs,
+    Math.min(requestedTimeoutMs, discovery.limits.timeoutMs),
+  )
 
   const opened = await openPresetGenerationApp({
     sandbox: options.sandbox,
@@ -105,6 +113,7 @@ export async function openQwenGenerationRuntime(options = {}) {
     rightsProofRef: options.rightsProofRef,
     voices,
     textLimit,
+    generationTimeoutMs,
     providerFacts,
     now: options.now,
   })

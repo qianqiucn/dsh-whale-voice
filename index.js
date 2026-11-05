@@ -71,7 +71,8 @@ export function bridgeScript(token) {
   const allowed = new Set(['wechatagent', 'sender', 'qwen']);
   async function generation(path, options) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
+    const timeoutMs = options && Number.isInteger(options.timeoutMs) ? options.timeoutMs : 15000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const init = {
       method: options && options.method ? options.method : 'GET',
       credentials: 'same-origin',
@@ -103,7 +104,17 @@ export function bridgeScript(token) {
     getCapabilities: () => call('/capabilities'),
     getCapabilityStatus: () => call('/capabilities/status'),
     getGenerationCatalog: () => generation('/generation/catalog'),
-    generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
+    // 156: the page passes the effective generation limit from the catalog; the request waits for
+    // that limit plus a grace instead of the old fixed 15 s. A client-side abort reports an
+    // unconfirmed result, never success or a background failure.
+    generatePreset: (request, options) => generation('/generation', {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+      timeoutMs: options && options.timeoutMs,
+    }).catch((error) => {
+      if (error && error.name === 'AbortError') return { ok: false, error: 'generation_unconfirmed' };
+      throw error;
+    }),
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
     getGenerationResults: () => generation('/generation/results'),
     getGenerationAssemblyStatus: () => generation('/generation/assembly'),

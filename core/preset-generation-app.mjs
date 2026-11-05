@@ -117,6 +117,7 @@ function segmentNames(root) {
  * @param {{providerId:string,instanceId:string,model:string,backend:string}} [options.providerFacts]
  *   provider facts written into the task (defaults to the documented example)
  * @param {number} [options.textLimit] max text characters (default 200)
+ * @param {number} [options.generationTimeoutMs] effective generation limit published to the client
  * @param {Function} [options.now] ISO clock
  * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function,results:Function,download:Function}}|{ok:false,code:string,detail?:string}>}
  */
@@ -127,6 +128,7 @@ export async function openPresetGenerationApp(options = {}) {
   const rightsProofRef = options.rightsProofRef
   const voices = options.voices
   const textLimit = Number.isInteger(options.textLimit) ? options.textLimit : DEFAULT_TEXT_LIMIT
+  const generationTimeoutMs = Number.isInteger(options.generationTimeoutMs) ? options.generationTimeoutMs : null
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
   const providerFacts = readProviderFacts(options.providerFacts)
   if (!providerFacts) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'providerFacts')
@@ -236,6 +238,7 @@ export async function openPresetGenerationApp(options = {}) {
       fixtureOnly: true,
       realReady: false,
       textLimit,
+      generationTimeoutMs,
       voices: voices.map((voice) => ({ id: voice.id, label: voice.label, languages: [...voice.languages] })),
     }
   }

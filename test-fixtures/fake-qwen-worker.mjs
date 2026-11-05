@@ -31,6 +31,8 @@ const provider = argv.get('provider') || 'qwen-tts'
 const workerProtocol = Number(argv.get('protocol') || 1)
 const corrupt = new Set(String(argv.get('corrupt') || '').split(',').filter(Boolean))
 const delayMs = Number(argv.get('delay') || (mode === 'late' ? 450 : mode === 'cancel-ack' ? 800 : 800))
+/* Test-only slow synthesis: lets the formal client wait beyond its old 15 s without changing modes. */
+const synthDelayMs = Number(argv.get('synth-delay-ms') || 0)
 const VOICES = [
   { id: 'demo-voice-a', name: '示例音色 A', languages: ['zh-CN'] },
   { id: 'demo-voice-b', name: '示例音色 B', languages: ['zh-CN', 'en-US'] },
@@ -265,7 +267,8 @@ function synthesize(id, payload) {
     })
     if (mode === 'garbage') process.stdout.write('this is not json\n')
   }
-  if (['late', 'cancel-ack', 'cancel-reject', 'cancel-reject-claimed', 'progress-ack', 'wrong-ack-id', 'cancel-ignore', 'tiny-timeout'].includes(mode)) setTimeout(answer, delayMs)
+  if (synthDelayMs > 0) setTimeout(answer, synthDelayMs)
+  else if (['late', 'cancel-ack', 'cancel-reject', 'cancel-reject-claimed', 'progress-ack', 'wrong-ack-id', 'cancel-ignore', 'tiny-timeout'].includes(mode)) setTimeout(answer, delayMs)
   else answer()
 }
 

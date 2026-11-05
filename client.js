@@ -3051,6 +3051,9 @@ function GroupDialog({ form, errors, patchForm, onClose, onSave }) {
 }
 
 const STUDIO_TASK_STORAGE_KEY = 'whale-voice:studio:last-task'
+/* 156: wait for the Host's effective generation limit plus a grace so the server's own timeout
+ * response can arrive; this is not another fixed limit. */
+const STUDIO_GENERATION_GRACE_MS = 10000
 
 function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
@@ -3137,6 +3140,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const canListResults = Boolean(hostBridge && typeof hostBridge.getGenerationResults === 'function')
   const languages = genEnabled === true && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
   const textLimit = genEnabled === true && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 200
+  const generationTimeoutMs = genEnabled === true && catalog && Number.isInteger(catalog.generationTimeoutMs)
+    ? catalog.generationTimeoutMs + STUDIO_GENERATION_GRACE_MS
+    : null
   const generate = async () => {
     if (!hostBridge || genEnabled !== true || busy) return
     const text = String(preview.text || '').trim()
@@ -3148,11 +3154,16 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
         text,
         voiceId: selectedVoice.id,
         language: languages.includes(preview.language) ? preview.language : languages[0],
-      })
+      }, generationTimeoutMs === null ? undefined : { timeoutMs: generationTimeoutMs })
       if (!value || value.ok !== true) {
         if (value && value.error === 'generation_not_enabled') {
           setGenEnabled(false)
           notify('生成未启用：当前 Host 未配置生成运行对象。', 'error')
+          return
+        }
+        if (value && value.error === 'generation_unconfirmed') {
+          setGenError('STUDIO_GENERATION_UNCONFIRMED')
+          notify('生成结果未确认：等待超过当前有效生成时限；不会自动重试。稍后刷新可在「已保存的生成结果」查看是否已保存。', 'error')
           return
         }
         const code = (value && (value.code || value.error)) || 'STUDIO_GENERATION_REJECTED'
@@ -3288,7 +3299,10 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
               h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
               h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不运行真实模型、不播放、不发送。')),
         genError
-          ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null, '隔离测试生成失败：' + genError + '；未自动重试。'))
+          ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null,
+            genError === 'STUDIO_GENERATION_UNCONFIRMED'
+              ? '生成结果未确认：没有收到服务端结果，不能判定成功或失败；不会自动重试。稍后刷新可在「已保存的生成结果」查看。'
+              : '隔离测试生成失败：' + genError + '；未自动重试。'))
           : null,
         h('div', { className: 'wv-row wv-wrap' },
           h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存（隔离模拟）'),
