@@ -891,6 +891,25 @@ await check('narrow viewport remains usable', async () => {
   })
 })
 
+await check('plan09 pages open without the config adapter and show a not-connected notice', async () => {
+  await withPage('?bridge=normal&plan09=none', async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    await page.locator('[data-testid="page-voice-bubbles"]').waitFor({ timeout: 5000 })
+    const voiceNotice = page.locator('[data-testid="plan09-config-adapter-missing"]')
+    await voiceNotice.waitFor({ timeout: 5000 })
+    assert.match(await voiceNotice.innerText(), /未接入配置适配器/)
+    assert.equal(await page.getByTestId('plan09-prepare').isDisabled(), true)
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 0)
+    await page.screenshot({ path: path.join(artifactDir, 'plan09-no-adapter-1440.png') })
+    await page.getByRole('button', { name: '唱歌', exact: true }).click()
+    await page.locator('[data-testid="page-singing"]').waitFor({ timeout: 5000 })
+    assert.match(await page.locator('[data-testid="plan09-config-adapter-missing"]').innerText(), /未接入配置适配器/)
+    assert.equal(await page.getByTestId('plan09-prepare').isDisabled(), true)
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.waitForFunction(() => (document.querySelector('h1')?.textContent || '').includes('小鲸鱼的声音'))
+  })
+})
+
 await check('plan09 entries persist mode/browse and keep independent wizards', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()

@@ -12,7 +12,21 @@ function plan09Adapter() {
   }
 }
 
+/* The pages open without a trusted config adapter: the context reports unknown values, and every
+ * adapter-dependent action stays explicitly unavailable instead of calling the missing adapter. */
+const PLAN09_NO_ADAPTER_CONTEXT = Object.freeze({
+  workspace: null,
+  profile: null,
+  manifestRevision: PLAN09_MANIFEST_REVISION,
+  capabilityRevision: null,
+  senderRevision: null,
+  gpuAvailable: null,
+  cloudAuthorized: null,
+  deliveryAuthorized: null,
+})
+
 function plan09Context(adapter) {
+  if (!adapter) return PLAN09_NO_ADAPTER_CONTEXT
   const context = adapter.getContext()
   return { ...context, manifestRevision: context.manifestRevision || PLAN09_MANIFEST_REVISION }
 }
@@ -618,6 +632,7 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
   const owner = React.useRef('plan09-owner-' + Math.random().toString(36).slice(2))
   const depsSnapshot = React.useRef({ context, mode, engine: 'local' })
   React.useEffect(() => {
+    if (!adapter) { setReminder(false); setWizardOpen(false); return }
     const current = plan09ReadWizard(window.localStorage, key)
     const view = plan09DeriveWizardView({
       stored: current,
@@ -627,7 +642,7 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
     })
     setReminder(view.reminder)
     if (view.shouldOpen) { setWizardContext(current); setWizardOpen(true) }
-  }, [key, globalSetupOpen, capabilityRevision, context.capabilityRevision, context.manifestRevision])
+  }, [adapter, key, globalSetupOpen, capabilityRevision, context.capabilityRevision, context.manifestRevision])
   React.useEffect(() => {
     if (!stored.selectedMode) return
     const switched = plan09SwitchMode(feature.id, stored.selectedMode, feature.id === 'singing' ? plan09DefaultSingingDraft() : plan09DefaultVoiceDraft())
@@ -723,6 +738,9 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
     h('div', { className: 'wv-notice', style: { marginBottom: 14 } },
       h(Icon, { name: 'info', size: 15 }),
       h('span', null, '当前入口是独立页面，但共享同一份音色、Provider、依赖与任务展示来源；不会创建第二套账号或凭据。')),
+    !adapter ? h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'plan09-config-adapter-missing' },
+      h(Icon, { name: 'lock', size: 15 }),
+      h('span', null, '未接入配置适配器：本页只显示草稿与说明，不能查询、准备或保存配置；不会写入真实配置、生成、播放或发送。')) : null,
     reminder ? h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'plan09-reminder' },
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '能力或版本已有更新；请重新打开依赖向导核对，已确认的说明不会被当作新的能力验证。'),
