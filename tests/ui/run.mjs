@@ -814,6 +814,20 @@ await check('settings page shows the real generation assembly failure', async ()
   })
 })
 
+await check('settings page reports an unreadable generation status instead of hiding it', async () => {
+  await withPage('?bridge=normal&assembly=error', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const readError = page.locator('[data-testid="generation-assembly-read-error"]')
+    await readError.waitFor({ timeout: 5000 })
+    const text = await readError.innerText()
+    assert.match(text, /无法读取生成运行状态/)
+    assert.match(text, /不代表生成正常或未启用/)
+    assert.equal(await page.locator('[data-testid="generation-assembly-error"]').count(), 0)
+    assert.equal(await page.getByTestId('generation-storage-input').isEditable(), true)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-assembly-read-error-1440.png') })
+  })
+})
+
 await check('corrupt applied settings are visible and repairable in the settings page', async () => {
   await hostSettings.reset()
   hostSettings.corruptApplied('generation-settings-applied.json')

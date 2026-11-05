@@ -114,9 +114,12 @@ code,messageZh}` (the client bridge adds `getGenerationAssemblyStatus`) and gene
 `503 generation_not_enabled` until the user repairs the values. The two settings cards tolerate a
 damaged applied record: the GET/PUT responses return `appliedError` instead of 500, the card labels
 the applied fact as 「已应用…记录损坏，无法读取」 and the normal 保存草稿 + 应用 actions rewrite the
-record. When the same isolated config is opened again, the corrected storage location and runtime
-paths are adopted, the Fixture generation and original-task save work again, and a damaged record
-with generation disabled keeps the settings page usable without starting anything.
+record. If that status request itself fails (HTTP error, rejection or timeout), the settings page
+says it cannot read the generation state — never silently nothing and never "normal"/"not enabled" —
+and the settings entry remains usable. When the same isolated config is opened again, the corrected
+storage location and runtime paths are adopted, the Fixture generation and original-task save work
+again, and a damaged record with generation disabled keeps the settings page usable without starting
+anything.
 
 ### Applied Qwen runtime paths (149)
 
@@ -496,9 +499,12 @@ generation disabled):
 - 154 damaged runtime record with generation off: a truncated `qwen-runtime-applied.json` keeps the
   plugin and settings page open (`DISABLED`, generation still `503`), the GET returns `appliedError`,
   saving + applying repairs it, and a reopen still starts no generation.
+- `tests/ui` settings page: the assembly failure reason is visible (`FAILED` state), a rejected status
+  request shows 「无法读取生成运行状态…不代表生成正常或未启用」 with the settings entry still usable, and
+  both damaged applied records are repaired through the normal save + apply actions (UI **80/80**).
 
-Full suite after this unit: **1184 tests / 1180 pass / 4 platform skips / 0 fail**; UI **79/79**; build
-`client.js` **372,671 bytes** (154's settings failure/recovery surface is the bundle change).
+Full suite after this unit: **1184 tests / 1180 pass / 4 platform skips / 0 fail**; UI **80/80**; build
+`client.js` **373,182 bytes** (154's settings failure/recovery surface is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

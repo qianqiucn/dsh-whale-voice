@@ -2695,14 +2695,22 @@ function GenerationRuntimeStatusCard() {
   const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
   const available = Boolean(host && typeof host.getGenerationAssemblyStatus === 'function')
   const [failure, setFailure] = React.useState(null)
+  const [readError, setReadError] = React.useState(false)
   React.useEffect(() => {
     if (!available) return undefined
     let alive = true
     host.getGenerationAssemblyStatus().then((payload) => {
-      if (alive && payload && payload.ok === true && payload.state === 'FAILED') setFailure(payload)
-    }, () => {})
+      if (!alive) return
+      if (!payload || payload.ok !== true) { setReadError(true); return }
+      if (payload.state === 'FAILED') setFailure(payload)
+    }, () => { if (alive) setReadError(true) })
     return () => { alive = false }
   }, [])
+  if (readError) {
+    return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'generation-assembly-read-error' },
+      h(Icon, { name: 'alert', size: 15 }),
+      h('span', null, '无法读取生成运行状态：请求失败或超时；这不代表生成正常或未启用。设置仍可修改，刷新页面可重试。'))
+  }
   if (!failure) return null
   return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'generation-assembly-error' },
     h(Icon, { name: 'alert', size: 15 }),
