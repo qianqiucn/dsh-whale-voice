@@ -309,6 +309,7 @@ function GenerationStorageDraftCard({ notify }) {
   const [busy, setBusy] = React.useState(false)
   const [applying, setApplying] = React.useState(false)
   const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
+  const [appliedError, setAppliedError] = React.useState('')
 
   const applyPayload = (payload) => {
     setLoading(false)
@@ -316,6 +317,7 @@ function GenerationStorageDraftCard({ notify }) {
       setError(generationDraftError(payload && payload.error))
       return
     }
+    setAppliedError(typeof payload.appliedError === 'string' ? payload.appliedError : '')
     const saved = payload.draft && typeof payload.draft.generationStorageRoot === 'string'
       ? payload.draft.generationStorageRoot
       : ''
@@ -399,9 +401,11 @@ function GenerationStorageDraftCard({ notify }) {
       : savedValue
         ? '已保存草稿：' + savedValue
         : '尚未保存草稿'
-  const appliedText = applied
-    ? '已应用位置：' + applied.generationStorageRoot
-    : '尚未应用保存位置'
+  const appliedText = appliedError
+    ? '已应用位置：记录损坏，无法读取'
+    : applied
+      ? '已应用位置：' + applied.generationStorageRoot
+      : '尚未应用保存位置'
   const canApply = available && !loading && !busy && !applying && !!savedValue && value.trim() === savedValue
 
   return h(Card, {
@@ -443,6 +447,9 @@ function GenerationStorageDraftCard({ notify }) {
         h(Icon, { name: 'info', size: 14 }),
         h('span', null, error)) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'generation-storage-applied' }, appliedText),
+      appliedError ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'generation-storage-applied-error' },
+        h(Icon, { name: 'alert', size: 14 }),
+        h('span', null, '已应用的保存位置记录损坏，无法读取；重新保存并应用即可修复。')) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
         '保存只写入草稿；应用只记录供下次打开使用的位置，不会立即切换当时正在运行的组件，也不会启用生成。')))
 }
@@ -462,6 +469,7 @@ function QwenRuntimeDraftCard({ notify }) {
   const [busy, setBusy] = React.useState(false)
   const [applying, setApplying] = React.useState(false)
   const [error, setError] = React.useState(available ? '' : generationDraftError('settings_draft_unavailable'))
+  const [appliedError, setAppliedError] = React.useState('')
 
   const applyPayload = (payload) => {
     setLoading(false)
@@ -469,6 +477,7 @@ function QwenRuntimeDraftCard({ notify }) {
       setError(generationDraftError(payload && payload.error))
       return
     }
+    setAppliedError(typeof payload.appliedError === 'string' ? payload.appliedError : '')
     const draft = payload.runtimeDraft
     if (draft && typeof draft.modelDirectory === 'string' && typeof draft.pythonPath === 'string') {
       setSaved({ modelDirectory: draft.modelDirectory, pythonPath: draft.pythonPath })
@@ -554,9 +563,11 @@ function QwenRuntimeDraftCard({ notify }) {
       : saved
         ? '已保存草稿：' + saved.modelDirectory + ' · ' + saved.pythonPath
         : '尚未保存运行路径草稿'
-  const appliedText = applied
-    ? '已应用运行路径：模型 ' + applied.modelDirectory + '；Python ' + applied.pythonPath
-    : '尚未应用运行路径'
+  const appliedText = appliedError
+    ? '已应用运行路径：记录损坏，无法读取'
+    : applied
+      ? '已应用运行路径：模型 ' + applied.modelDirectory + '；Python ' + applied.pythonPath
+      : '尚未应用运行路径'
   const canApply = available && !loading && !busy && !applying && !!saved
     && modelDirectory.trim() === saved.modelDirectory
     && pythonPath.trim() === saved.pythonPath
@@ -615,8 +626,30 @@ function QwenRuntimeDraftCard({ notify }) {
         h(Icon, { name: 'info', size: 14 }),
         h('span', null, error)) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-applied' }, appliedText),
+      appliedError ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'qwen-runtime-applied-error' },
+        h(Icon, { name: 'alert', size: 14 }),
+        h('span', null, '已应用的运行路径记录损坏，无法读取；重新保存并应用即可修复。')) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
         '保存只写入草稿；应用只记录供下次打开使用的运行路径，不会立即切换当前运行，也不会执行 Python 或读取模型。')))
+}
+
+/** 154: a damaged applied record or a failed generation assembly stays visible in the settings page. */
+function GenerationRuntimeStatusCard() {
+  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const available = Boolean(host && typeof host.getGenerationAssemblyStatus === 'function')
+  const [failure, setFailure] = React.useState(null)
+  React.useEffect(() => {
+    if (!available) return undefined
+    let alive = true
+    host.getGenerationAssemblyStatus().then((payload) => {
+      if (alive && payload && payload.ok === true && payload.state === 'FAILED') setFailure(payload)
+    }, () => {})
+    return () => { alive = false }
+  }, [])
+  if (!failure) return null
+  return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'generation-assembly-error' },
+    h(Icon, { name: 'alert', size: 15 }),
+    h('span', null, '生成未能启动：' + (failure.messageZh || failure.code || '原因未知') + ' 修正后请保存并应用，重开插件生效。'))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
@@ -634,6 +667,7 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
       h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。“生成数据保存位置”只保存为草稿，不会启用生成服务。')),
+    h(GenerationRuntimeStatusCard, null),
     h(GenerationStorageDraftCard, { notify }),
     h(QwenRuntimeDraftCard, { notify }),
     h(ConfigReadout, { setup }),

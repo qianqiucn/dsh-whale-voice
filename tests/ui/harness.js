@@ -406,6 +406,14 @@
     fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
     fakeBridge.getGenerationResults = () => hostGeneration('/whale-voice/setup/generation/results')
+    fakeBridge.getGenerationAssemblyStatus = new URLSearchParams(window.location.search).get('assembly') === 'failed'
+      ? async () => ({
+        ok: true,
+        state: 'FAILED',
+        code: 'storage_unavailable',
+        messageZh: '生成数据保存位置不可用：D:\\WhaleVoice\\broken。请在设置页修正后重新保存并应用。',
+      })
+      : () => hostGeneration('/whale-voice/setup/generation/assembly')
     fakeBridge.downloadGenerationResult = async (taskId) => {
       let response
       try {

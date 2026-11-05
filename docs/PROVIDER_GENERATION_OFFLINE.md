@@ -102,6 +102,22 @@ entry shows its original task/artifact facts, and selecting one reuses the 150 d
 that result's already-saved WAV bytes. Selecting or downloading never generates, saves or mutates
 anything; a refresh and a same-config reopen list the same entries and return the same bytes.
 
+### Recoverable applied settings (154)
+
+A wrong or damaged applied generation setting no longer keeps the plugin from opening. `apply()` now
+treats three real failures as visible facts instead of rejecting the plugin: an applied storage
+location that cannot be opened, an applied Qwen runtime program that cannot start the runtime, and a
+truncated `generation-settings-applied.json` / `qwen-runtime-applied.json`. In those states the Host
+installs without a generation object but with the settings draft store, so the 语音设置 page still
+opens; `GET /whale-voice/setup/generation/assembly` returns `{state:'READY'|'DISABLED'|'FAILED',
+code,messageZh}` (the client bridge adds `getGenerationAssemblyStatus`) and generation routes stay
+`503 generation_not_enabled` until the user repairs the values. The two settings cards tolerate a
+damaged applied record: the GET/PUT responses return `appliedError` instead of 500, the card labels
+the applied fact as 「已应用…记录损坏，无法读取」 and the normal 保存草稿 + 应用 actions rewrite the
+record. When the same isolated config is opened again, the corrected storage location and runtime
+paths are adopted, the Fixture generation and original-task save work again, and a damaged record
+with generation disabled keeps the settings page usable without starting anything.
+
 ### Applied Qwen runtime paths (149)
 
 The saved runtime paths can be explicitly applied: the settings store also keeps
@@ -465,8 +481,24 @@ generation disabled):
   a second saved task, a page reload and a second download of the restored task return the same saved
   bytes and the generation-request count stays unchanged (UI **76/76**).
 
-Full suite after this unit: **1180 tests / 1176 pass / 4 platform skips / 0 fail**; UI **76/76**; build
-`client.js` **369,603 bytes** (151's 已保存的生成结果 selection card is the bundle change).
+`test/plugin-applied-settings-recovery.test.mjs` (4 tests, existing Fixture Worker):
+
+- 154 applied runtime: a saved-then-applied runtime program that does not exist makes the reopened
+  plugin install the settings entry, report `FAILED/runtime_unavailable` on the assembly route and keep
+  generation `503`; saving and applying a working program through the page routes, then reopening the
+  same config, reaches `READY` and saves a new original task.
+- 154 applied storage: a saved-then-applied storage sub-directory under a plain file reports
+  `FAILED/storage_unavailable` with the unusable location in the message; correcting it through the
+  page routes and reopening saves the Fixture generation in the corrected location.
+- 154 damaged storage record: a truncated `generation-settings-applied.json` reports
+  `FAILED/applied_storage_invalid`, the settings GET still answers 200 with `appliedError` and the saved
+  draft, and saving + applying repairs the record; the reopened config reaches `READY`.
+- 154 damaged runtime record with generation off: a truncated `qwen-runtime-applied.json` keeps the
+  plugin and settings page open (`DISABLED`, generation still `503`), the GET returns `appliedError`,
+  saving + applying repairs it, and a reopen still starts no generation.
+
+Full suite after this unit: **1184 tests / 1180 pass / 4 platform skips / 0 fail**; UI **79/79**; build
+`client.js` **372,671 bytes** (154's settings failure/recovery surface is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 
