@@ -468,6 +468,10 @@
     if (generationFault === 'restore-reject') {
       fakeBridge.getGenerationStatus = () => Promise.reject(new TypeError('Failed to fetch'))
     }
+    if (generationFault === 'restore-read-failed') {
+      // 159's real read rejection: the Host answers with a failure result, not a missing task.
+      fakeBridge.getGenerationStatus = async () => ({ ok: false, code: 'PRESET_GENERATION_STATUS_REJECTED', detail: 'read rejected' })
+    }
     window.__WHALE_SETUP__ = Object.freeze(fakeBridge)
   }
 

@@ -560,17 +560,51 @@ await check('studio reports a failed capability read instead of not enabled or c
   }
 })
 
-// 160: a failed restore of the last saved task keeps the known task id and never claims that no
-// result exists or offers a fake download.
-await check('studio reports an unreadable saved result instead of no result', async () => {
+// 163: the Host explicitly answering "not in the current storage location" is a definite fact, not a
+// retryable read failure; it stays accurate after a refresh and never claims the task never existed.
+await check('studio says the current storage location has no such saved task', async () => {
   const storedTask = 'task:fixture-' + '0'.repeat(32)
   const seedStoredTask = async (page) => {
     await page.addInitScript((taskId) => {
       try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
     }, storedTask)
   }
-  for (const query of ['?bridge=normal', '?bridge=normal&generationFault=restore-reject']) {
-    await withPage(query, async (page) => {
+  const expectMissing = async (page) => {
+    const block = page.locator('[data-testid="studio-generation-restore-missing"]')
+    await block.waitFor({ timeout: 5000 })
+    const text = await block.innerText()
+    assert.match(text, /当前保存位置未找到这项任务/)
+    assert.ok(text.includes(storedTask), text)
+    assert.match(text, /这不代表它从未保存/)
+    assert.match(text, /不代表其他保存位置没有/)
+    assert.doesNotMatch(text, /请求失败或超时|刷新可重试/)
+    const body = await page.locator('body').innerText()
+    assert.doesNotMatch(body, /无法读取上次保存的结果|还没有生成结果/)
+    assert.equal(await page.locator('[data-testid="studio-generation-restore-error"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="studio-generation-download"]').count(), 0)
+  }
+  await withPage('?bridge=normal', async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await expectMissing(page)
+    // Refresh: the same reference and the same Host answer keep the same definite wording.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await expectMissing(page)
+  }, seedStoredTask)
+})
+
+// 160/163: a rejected request and a real read rejection stay read failures, not "no such task".
+await check('studio keeps a failed saved-result read distinct from a missing task', async () => {
+  const storedTask = 'task:fixture-' + '0'.repeat(32)
+  const seedStoredTask = async (page) => {
+    await page.addInitScript((taskId) => {
+      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
+    }, storedTask)
+  }
+  for (const fault of ['restore-reject', 'restore-read-failed']) {
+    await withPage('?bridge=normal&generationFault=' + fault, async (page) => {
       await page.getByRole('button', { name: '音色中心', exact: true }).click()
       const block = page.locator('[data-testid="studio-generation-restore-error"]')
       await block.waitFor({ timeout: 5000 })
@@ -579,7 +613,8 @@ await check('studio reports an unreadable saved result instead of no result', as
       assert.ok(text.includes(storedTask), text)
       assert.match(text, /这不代表没有保存/)
       const body = await page.locator('body').innerText()
-      assert.doesNotMatch(body, /还没有生成结果/)
+      assert.doesNotMatch(body, /还没有生成结果|当前保存位置未找到这项任务/)
+      assert.equal(await page.locator('[data-testid="studio-generation-restore-missing"]').count(), 0)
       assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 0)
       assert.equal(await page.locator('[data-testid="studio-generation-download"]').count(), 0)
     }, seedStoredTask)

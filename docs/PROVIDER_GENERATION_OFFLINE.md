@@ -158,6 +158,21 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Missing saved task is not a failed read (163)
+
+When the browser still holds a previous task id, the page restores it through the status route. If the
+Host's current storage location and scope have no such task, the Core answers
+`PRESET_GENERATION_STATUS_REJECTED` with detail `not found`; the page used to present that as the F06
+read-failure text (「无法读取上次保存的结果…本次请求失败或超时…刷新可重试」) and kept inviting retries.
+It now shows 「当前保存位置未找到这项任务」 with the known task id: that is the fact for the current
+location and scope only — it does not mean the task was never saved, other storage locations lack it,
+or no generation results exist — and the page deletes nothing, searches no other location and
+regenerates nothing. Refreshing re-queries the same reference and shows the same definite wording when
+the answer is still `not found`, without pretending a retry is a known fix. A rejected request
+(network/timeout), a failed status request and 159's real byte-read rejection (`detail:'read rejected'`)
+keep the F06 read-failure display and are never classified as not found. Normal restore, download,
+selection, listing, the waiting/true-not-enabled displays and the 162 source wording are unchanged.
+
 ### Honest run/result source (162)
 
 The 音色中心 generation page no longer claims that a run is Fixture for sure. It used to say
