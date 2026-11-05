@@ -523,6 +523,67 @@ await check('studio reports generation not enabled when the Host runtime is abse
   }
 })
 
+// 160: while the capability request is still pending the page keeps the real waiting state.
+await check('studio keeps a real waiting state while the capability request is pending', async () => {
+  await withPage('?bridge=normal&generationFault=catalog-pending', async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.waitForFunction(() => document.body.innerText.includes('正在检查生成能力'), null, { timeout: 5000 })
+    const text = await page.locator('body').innerText()
+    assert.match(text, /正在检查生成能力/)
+    assert.equal(await page.locator('[data-testid="studio-generation-catalog-error"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="studio-generation-disabled"]').count(), 0)
+    assert.equal(await page.getByRole('button', { name: /生成并保存/ }).isDisabled(), true)
+  })
+})
+
+// 160: a rejected request and a server failure object are both a failed capability read, never
+// "not enabled" and never an endless "checking" state.
+await check('studio reports a failed capability read instead of not enabled or checking', async () => {
+  for (const fault of ['catalog-reject', 'catalog-failed']) {
+    await withPage('?bridge=normal&generationFault=' + fault, async (page) => {
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      await page.locator('[data-testid="studio-generation-catalog-error"]').waitFor({ timeout: 5000 })
+      await page.locator('[data-testid="studio-generation-unavailable"]').waitFor({ timeout: 5000 })
+      const text = await page.locator('body').innerText()
+      assert.match(text, /无法读取生成能力/)
+      assert.match(text, /这不代表未启用/)
+      assert.match(text, /读取失败/)
+      assert.doesNotMatch(text, /生成未启用/)
+      assert.doesNotMatch(text, /未配置生成运行对象/)
+      assert.doesNotMatch(text, /正在检查生成能力/)
+      assert.doesNotMatch(text, /还没有生成结果/)
+      assert.equal(await page.locator('[data-testid="studio-generation-disabled"]').count(), 0)
+      assert.equal(await page.getByRole('button', { name: /生成并保存/ }).isDisabled(), true)
+    })
+  }
+})
+
+// 160: a failed restore of the last saved task keeps the known task id and never claims that no
+// result exists or offers a fake download.
+await check('studio reports an unreadable saved result instead of no result', async () => {
+  const storedTask = 'task:fixture-' + '0'.repeat(32)
+  const seedStoredTask = async (page) => {
+    await page.addInitScript((taskId) => {
+      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
+    }, storedTask)
+  }
+  for (const query of ['?bridge=normal', '?bridge=normal&generationFault=restore-reject']) {
+    await withPage(query, async (page) => {
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      const block = page.locator('[data-testid="studio-generation-restore-error"]')
+      await block.waitFor({ timeout: 5000 })
+      const text = await block.innerText()
+      assert.match(text, /无法读取上次保存的结果/)
+      assert.ok(text.includes(storedTask), text)
+      assert.match(text, /这不代表没有保存/)
+      const body = await page.locator('body').innerText()
+      assert.doesNotMatch(body, /还没有生成结果/)
+      assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 0)
+      assert.equal(await page.locator('[data-testid="studio-generation-download"]').count(), 0)
+    }, seedStoredTask)
+  }
+})
+
 await check('Worker version unknown is displayed without claiming Service version', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '发送与安全', exact: true }).click()
