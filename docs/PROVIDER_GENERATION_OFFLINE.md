@@ -72,6 +72,17 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Serialized generation at segment boundaries (157)
+
+One generation runs at a time per plugin runtime. Before, two requests arriving together at a storage
+segment boundary both opened the next `segments/NNNN` store, so the same directory was opened twice and
+the current session could fall into `TASK_OWNER_STORE_CHANGED` / `TASK_OWNER_OWNER_UNKNOWN`; only
+reopening the plugin cleared it (the saved data itself was not lost). The application entry now queues
+`generate()` calls: the second request waits for the first to finish instead of rotating again, and the
+audited provider is serial anyway. Queued requests still return their own real SAVED or failure result,
+nothing is retried or duplicated, and `status` / `results` / `download` keep working for old and new
+results in the same session without reopening.
+
 ### Generation wait follows the effective limit (156)
 
 The 音色中心 page waits for the Host's effective generation limit instead of the fixed 15 s. The Core
@@ -554,8 +565,16 @@ script runs over real Host routes):
 - 156 client abort: a request aborted by the client's own wait returns
   `{ok:false,error:'generation_unconfirmed'}`, not success or a chosen failure.
 
-Full suite after this unit: **1189 tests / 1185 pass / 4 platform skips / 0 fail**; UI **80/80**; build
-`client.js` **374,229 bytes** (156's page wait wiring is the bundle change).
+`test/plan10-r1-concurrent-generation.test.mjs` (1 test, existing Fixture Worker):
+
+- 157 boundary concurrency: after 24 saved results, two simultaneous generations at the segment
+  boundary return real results (SAVED or an honest failure), the same-session `results()` lists the old
+  and new tasks, an old result downloads its original bytes, and a later normal generation still
+  succeeds; exactly one new segment exists. The previous revision fails this `results()` call with the
+  owner store error.
+
+Full suite after this unit: **1190 tests / 1186 pass / 4 platform skips / 0 fail**; UI **80/80**; build
+`client.js` unchanged (374,229 bytes; 157 touches Core generation only).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

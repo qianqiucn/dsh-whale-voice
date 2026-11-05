@@ -243,7 +243,20 @@ export async function openPresetGenerationApp(options = {}) {
     }
   }
 
+  /* 157: one plugin runtime runs one generation at a time. A second request that arrives at the same
+   * moment must not open the next segment twice or race the usage counters; the audited provider also
+   * handles one synthesis at a time. Queued requests still return their own real result or failure. */
+  let generationQueue = Promise.resolve()
+  function enqueueGeneration(task) {
+    const next = generationQueue.then(task, task)
+    generationQueue = next.then(() => undefined, () => undefined)
+    return next
+  }
   async function generate(input = {}) {
+    return enqueueGeneration(() => generateOnce(input))
+  }
+
+  async function generateOnce(input = {}) {
     const text = typeof input.text === 'string' ? input.text.trim() : ''
     const voice = voices.find((item) => item.id === input.voiceId) || null
     if (!voice) return failure(PRESET_GENERATION_APP_ERRORS.VOICE_REJECTED, 'voiceId')
