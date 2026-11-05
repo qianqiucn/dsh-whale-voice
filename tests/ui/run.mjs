@@ -618,22 +618,22 @@ await check('generation storage location draft is saved, applied and survives a 
     assert.match(toast, /草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()
     assert.match(pageText, /保存只写入草稿/)
-    assert.match(pageText, /下次重开插件生效/)
+    assert.match(pageText, /下次打开/)
+    assert.match(pageText, /不会立即切换/)
     assert.match(pageText, /生成数据保存位置/)
     assert.match(await page.getByTestId('generation-storage-applied').innerText(), /尚未应用/)
 
-    // Applying the saved draft only records the fact for the next plugin open.
+    // Applying the saved draft records the persisted fact; the current runtime is not switched here.
     await page.getByTestId('generation-storage-apply').click()
     await page.waitForFunction(
-      () => document.querySelector('[data-testid="generation-storage-applied"]')?.innerText.includes('下次重开插件生效'),
+      () => document.querySelector('[data-testid="generation-storage-applied"]')?.innerText.includes('已应用位置：'),
       null,
       { timeout: 8000 },
     )
     const appliedToast = await page.locator('.wv-toast').innerText()
     assert.match(appliedToast, /已应用，下次重开插件生效/)
-    const appliedText = await page.getByTestId('generation-storage-applied').innerText()
-    assert.ok(appliedText.includes(target), appliedText)
-    assert.match(await page.locator('body').innerText(), /当前运行仍用原位置/)
+    assert.equal(await page.getByTestId('generation-storage-applied').innerText(), '已应用位置：' + target)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当时正在运行的组件/)
 
     // Reload the page and reopen the settings page: the saved draft and the applied fact are read again.
     await page.reload({ waitUntil: 'load' })
@@ -647,8 +647,9 @@ await check('generation storage location draft is saved, applied and survives a 
     const reopenedStatus = await page.getByTestId('generation-storage-status').innerText()
     assert.ok(reopenedStatus.includes(target), reopenedStatus)
     const reopenedApplied = await page.getByTestId('generation-storage-applied').innerText()
-    assert.ok(reopenedApplied.includes(target), reopenedApplied)
-    assert.match(reopenedApplied, /下次重开插件生效/)
+    assert.equal(reopenedApplied, '已应用位置：' + target)
+    assert.doesNotMatch(reopenedApplied, /下次重开插件生效|当前运行仍用原位置/)
+    assert.match(await page.locator('body').innerText(), /不会立即切换当时正在运行的组件/)
     await page.screenshot({ path: path.join(artifactDir, 'settings-generation-draft-1440.png') })
   })
 })

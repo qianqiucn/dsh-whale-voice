@@ -79,10 +79,11 @@ The saved draft can be explicitly applied: the draft store also keeps a fixed
 `installHostBridge` adds `POST /whale-voice/setup/settings/generation-storage/apply` (400
 `draft_missing` when nothing is saved) and the GET/PUT responses carry `applied`/`appliedAt`. The
 settings page's 应用保存的位置 button applies the saved draft and says "已应用，下次重开插件生效"; the
-card states that the current runtime still uses its original location. Saving alone changes nothing.
-The normal plugin dispose keeps the current runtime's location and lifecycle; the next formal
-`apply(ctx, config)` with the same serialized config reads the applied fact and opens the generation
-storage at that location (no migration, no deletion of the old location's results, and no
+card shows the persisted fact as "已应用位置：…" (147), while the operation explanation separately says
+that applying only decides the next open and does not switch the running component. Saving alone
+changes nothing. The normal plugin dispose keeps the current runtime's location and lifecycle; the
+next formal `apply(ctx, config)` with the same serialized config reads the applied fact and opens the
+generation storage at that location (no migration, no deletion of the old location's results, and no
 Worker/model when generation is disabled). Applying only records the fact: it does not create the
 location, switch the current service or write the production config.
 
@@ -354,10 +355,12 @@ generation disabled):
   `503 generation_not_enabled`; applying creates no location and reopening the same config reads the
   applied fact back without starting a Worker/model.
 - `tests/ui` settings page: save → 应用保存的位置 → "已应用，下次重开插件生效" → reload reads the saved
-  draft and the applied fact back (UI **75/75**).
+  draft and the applied fact back; 147 asserts the applied status is exactly "已应用位置：…" after the
+  reload (the old "下次重开插件生效；当前运行仍用原位置" wording fails that check), while the separate
+  operation explanation still says applying does not switch the running component (UI **75/75**).
 
 Full suite after this unit: **1170 tests / 1166 pass / 4 platform skips / 0 fail**; UI **75/75**; build
-`client.js` **354,353 bytes** (146's 应用 button/card copy is the bundle change).
+`client.js` **354,318 bytes** (147's applied-status copy is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

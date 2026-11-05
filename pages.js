@@ -393,13 +393,13 @@ function GenerationStorageDraftCard({ notify }) {
         ? '已保存草稿：' + savedValue
         : '尚未保存草稿'
   const appliedText = applied
-    ? '已应用：' + applied.generationStorageRoot + '（下次重开插件生效；当前运行仍用原位置）'
+    ? '已应用位置：' + applied.generationStorageRoot
     : '尚未应用保存位置'
   const canApply = available && !loading && !busy && !applying && !!savedValue && value.trim() === savedValue
 
   return h(Card, {
     title: '生成数据保存位置',
-    desc: '填写生成任务与产物的保存目录；保存后仍需明确应用，应用在下次重开插件时生效，当前运行不会立即切换。',
+    desc: '填写生成任务与产物的保存目录；保存后仍需明确应用，应用只决定下次打开时使用的位置，不会立即切换当前运行。',
     actions: h(Badge, { tone: 'wait' }, '配置草稿'),
   },
     h('div', { className: 'wv-settings-group' },
@@ -437,7 +437,7 @@ function GenerationStorageDraftCard({ notify }) {
         h('span', null, error)) : null,
       h('div', { className: 'wv-muted', style: { marginTop: 8 }, 'data-testid': 'generation-storage-applied' }, appliedText),
       h('div', { className: 'wv-muted', style: { marginTop: 8, fontSize: 11.5 } },
-        '保存只写入草稿；应用只记录“下次重开插件生效”，当前服务不会立即切换，也不会启用生成。')))
+        '保存只写入草稿；应用只记录供下次打开使用的位置，不会立即切换当时正在运行的组件，也不会启用生成。')))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
