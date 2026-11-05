@@ -1946,7 +1946,7 @@ test('D16 public surface, fixed codes and privacy of the JSON envelope', async (
   for (const key of codeKeys) assert.equal(TASK_CATALOG_ERRORS[key], 'TASK_CATALOG_' + key)
 
   await withCatalog(async (sandbox, handle) => {
-    assert.deepEqual(Object.keys(handle).sort(), ['get', 'reserve'])
+    assert.deepEqual(Object.keys(handle).sort(), ['count', 'get', 'reserve'])
     const created = await handle.reserve(reserveInput())
     assert.equal(created.ok, true)
     assert.deepEqual(Object.keys(created.value), [

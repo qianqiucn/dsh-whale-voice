@@ -39,6 +39,7 @@ import {
   ARTIFACT_ORIGINS,
   ARTIFACT_SCHEMA_VERSION,
   INSPECTION_KEYS,
+  PROVIDER_GENERATION_ARTIFACT_ORIGIN,
   artifactIdentityHash,
   enqueueArtifact,
   getArtifactState,
@@ -452,6 +453,9 @@ function findImportIdentity(current, scopeId, requestKey) {
 }
 
 function expiredAt(entry, nowMs) {
+  // 155: saved Provider generation results are retained beyond their recorded 24 h expiration,
+  // including pre-fix records; other origins keep their rights-expiry semantics.
+  if (entry.origin === PROVIDER_GENERATION_ARTIFACT_ORIGIN) return false
   return nowMs >= Date.parse(entry.expiresAt)
 }
 

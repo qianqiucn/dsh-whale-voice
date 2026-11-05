@@ -5,10 +5,20 @@
  * and the provider-generation coordinator; the caller supplies the trusted sandbox and an already
  * started audited provider. It never starts a model, process, device or Host route, and it does not
  * import any test bridge or Fixture worker.
+ *
+ * 155: generation results stay usable beyond the fixed store budgets. The first segment is the given
+ * storage root (so pre-fix results stay where they are); when the current segment approaches the
+ * existing per-file task/artifact budgets, a new `segments/NNNN` store is opened and writes continue
+ * there. Reads (status/results/download) search every segment, nothing is deleted and old results
+ * keep their original task association. Saved Provider generation artifacts are not subject to the
+ * recorded 24 h expiration; other artifact origins keep their expiry contract.
  */
 
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 
+import { openConfigStorage } from './config-sandbox.mjs'
 import { openFixtureTaskCatalog } from './audio/task-catalog.mjs'
 import { openFixtureTaskOwner } from './audio/task-owner.mjs'
 import { openFixtureArtifactLibrary } from './audio/artifact-library.mjs'
@@ -44,6 +54,13 @@ const DEFAULT_PROVIDER_FACTS = Object.freeze({
   model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
   backend: 'custom-voice',
 })
+/* Rotation keeps each segment inside the unchanged store guarantees: the task catalog/owner allow
+ * 32 entries, the artifact pack 32 entries and 4 MiB in total. These thresholds are not product
+ * quotas; they only decide when the next segment starts. */
+const SEGMENTS_DIR_NAME = 'segments'
+const SEGMENT_ROTATE_ENTRIES = 24
+const SEGMENT_ROTATE_AUDIO_BYTES = 3 * 1024 * 1024
+const SEGMENT_NAME_PATTERN = /^\d{4}$/
 
 function failure(code, detail = null) {
   return detail === null ? { ok: false, code } : { ok: false, code, detail }
@@ -71,6 +88,21 @@ function sha256(value) {
 
 function randomSuffix() {
   return crypto.randomBytes(8).toString('hex')
+}
+
+/** The existing `segments/NNNN` directories of one storage root, in creation order. */
+function segmentNames(root) {
+  let items
+  try {
+    items = fs.readdirSync(path.join(root, SEGMENTS_DIR_NAME), { withFileTypes: true })
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return []
+    throw error
+  }
+  return items
+    .filter((item) => item.isDirectory() && SEGMENT_NAME_PATTERN.test(item.name))
+    .map((item) => item.name)
+    .sort()
 }
 
 /**
@@ -117,29 +149,86 @@ export async function openPresetGenerationApp(options = {}) {
     return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'provider')
   }
 
-  const catalogHandle = await openFixtureTaskCatalog({ sandbox })
-  if (!catalogHandle.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
-  const ownerHandle = await openFixtureTaskOwner({ sandbox })
-  if (!ownerHandle.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
-  const artifactLibrary = await openFixtureArtifactLibrary({ sandbox })
-  if (!artifactLibrary.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
-
-  async function authority({ scopeId: requestedScope, taskId }) {
-    if (requestedScope !== scopeId) return { ok: false }
-    const got = await catalogHandle.value.get({ schemaVersion: 1, scopeId, taskId })
-    if (!got.ok) return { ok: false }
-    return { ok: true, birth: { identityHash: sha256(scopeId + '|' + taskId), state: got.value.task.state } }
+  async function openSegment(segmentSandbox) {
+    const catalog = await openFixtureTaskCatalog({ sandbox: segmentSandbox })
+    if (!catalog.ok) return null
+    const owner = await openFixtureTaskOwner({ sandbox: segmentSandbox })
+    if (!owner.ok) return null
+    const artifacts = await openFixtureArtifactLibrary({ sandbox: segmentSandbox })
+    if (!artifacts.ok) return null
+    async function authority({ scopeId: requestedScope, taskId }) {
+      if (requestedScope !== scopeId) return { ok: false }
+      const got = await catalog.value.get({ schemaVersion: 1, scopeId, taskId })
+      if (!got.ok) return { ok: false }
+      return { ok: true, birth: { identityHash: sha256(scopeId + '|' + taskId), state: got.value.task.state } }
+    }
+    const coordinator = createProviderGenerationCoordinator({
+      sandbox: segmentSandbox,
+      artifacts: artifacts.value,
+      provider,
+      authority,
+      taskOwner: owner.value,
+      now,
+    })
+    if (!coordinator.ok) return null
+    return { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator }
   }
 
-  const coordinator = createProviderGenerationCoordinator({
-    sandbox,
-    artifacts: artifactLibrary.value,
-    provider,
-    authority,
-    taskOwner: ownerHandle.value,
-    now,
-  })
-  if (!coordinator.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+  async function measure(segment) {
+    const counted = await segment.catalog.count({ schemaVersion: 1, scopeId })
+    if (!counted.ok) return null
+    const listed = await segment.owner.listSaved({ schemaVersion: 1, scopeId })
+    if (!listed.ok) return null
+    let bytes = 0
+    for (const item of listed.value.results) {
+      const metadata = await segment.artifacts.get({
+        schemaVersion: 1,
+        scopeId,
+        artifactRef: item.artifactRef,
+        now: now(),
+        rights: { state: 'GRANTED', proofRef: rightsProofRef },
+      })
+      if (!metadata.ok) return null
+      if (metadata.value.outcome === 'FOUND') bytes += metadata.value.artifact.inspection.byteLength
+    }
+    return { entries: Math.max(counted.value.count, listed.value.entryCount), bytes }
+  }
+
+  const segments = []
+  try {
+    const base = await openSegment(sandbox)
+    if (!base) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+    segments.push(base)
+    for (const name of segmentNames(sandbox.root)) {
+      const segment = await openSegment(openConfigStorage({ root: path.join(sandbox.root, SEGMENTS_DIR_NAME, name) }))
+      if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+      segments.push(segment)
+    }
+  } catch {
+    return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+  }
+  let current = segments[segments.length - 1]
+  let usage = await measure(current)
+  if (!usage) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+
+  async function rotate() {
+    const name = String(segments.length).padStart(4, '0')
+    const segment = await openSegment(openConfigStorage({ root: path.join(sandbox.root, SEGMENTS_DIR_NAME, name) }))
+    if (!segment) throw new Error('generation segment unavailable')
+    segments.push(segment)
+    current = segment
+    usage = { entries: 0, bytes: 0 }
+  }
+
+  async function segmentForTask(taskId) {
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+      const got = await segments[index].owner.get({ schemaVersion: 1, scopeId, taskId })
+      if (got.ok) return { segment: segments[index] }
+      const code = got.errors && got.errors[0] ? got.errors[0].code : ''
+      if (code !== 'TASK_OWNER_NOT_FOUND') return { error: code || 'owner read rejected' }
+    }
+    return { segment: null }
+  }
 
   function catalog() {
     return {
@@ -159,7 +248,16 @@ export async function openPresetGenerationApp(options = {}) {
     const language = voice.languages.includes(input.language) ? input.language : voice.languages[0]
     const observedAt = now()
 
-    const reserved = await catalogHandle.value.reserve({
+    if (usage.entries >= SEGMENT_ROTATE_ENTRIES || usage.bytes >= SEGMENT_ROTATE_AUDIO_BYTES) {
+      try {
+        await rotate()
+      } catch {
+        return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'capacity')
+      }
+    }
+    const segment = current
+
+    const reserved = await segment.catalog.reserve({
       schemaVersion: 1,
       scopeId,
       idempotencyKey: 'key:fixture-preset-' + randomSuffix(),
@@ -178,9 +276,10 @@ export async function openPresetGenerationApp(options = {}) {
     if (!reserved.ok) {
       return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, reserved.code || 'task birth rejected')
     }
+    usage.entries += 1
     const taskId = reserved.value.task.taskId
 
-    const prepared = await coordinator.prepare({
+    const prepared = await segment.coordinator.prepare({
       schemaVersion: PROVIDER_GENERATION_SCHEMA_VERSION,
       scopeId,
       taskId,
@@ -192,14 +291,14 @@ export async function openPresetGenerationApp(options = {}) {
     if (!prepared.ok) {
       return failure(prepared.code || PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, prepared.detail || null)
     }
-    const submitted = await coordinator.submit({ claimId: prepared.claim.claimId })
+    const submitted = await segment.coordinator.submit({ claimId: prepared.claim.claimId })
     if (!submitted.ok) {
       return failure(
         submitted.code || PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED,
         (submitted.claim && submitted.claim.lastError) || null,
       )
     }
-    const metadata = await artifactLibrary.value.get({
+    const metadata = await segment.artifacts.get({
       schemaVersion: 1,
       scopeId,
       artifactRef: submitted.claim.artifact.artifactRef,
@@ -209,6 +308,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (!metadata.ok || !metadata.value.artifact) {
       return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'artifact metadata')
     }
+    usage.bytes += submitted.claim.artifact.byteLength
     return {
       ok: true,
       taskId,
@@ -234,11 +334,15 @@ export async function openPresetGenerationApp(options = {}) {
     if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) {
       return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'taskId')
     }
-    const got = await ownerHandle.value.get({ schemaVersion: 1, scopeId, taskId })
+    const found = await segmentForTask(taskId)
+    if (found.error) return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, found.error)
+    const segment = found.segment
+    if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'not found')
+    const got = await segment.owner.get({ schemaVersion: 1, scopeId, taskId })
     if (!got.ok) {
       return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, got.errors && got.errors[0] ? got.errors[0].code : 'not found')
     }
-    const artifactStatus = await ownerHandle.value.artifactStatus({
+    const artifactStatus = await segment.owner.artifactStatus({
       schemaVersion: 1,
       scopeId,
       taskId,
@@ -266,7 +370,7 @@ export async function openPresetGenerationApp(options = {}) {
         realReady: false,
       }
     }
-    const read = await artifactLibrary.value.readBytes({
+    const read = await segment.artifacts.readBytes({
       schemaVersion: 1,
       scopeId,
       artifactRef: artifactStatus.value.artifactRef,
@@ -294,63 +398,68 @@ export async function openPresetGenerationApp(options = {}) {
   }
 
   /**
-   * 151: the already-saved generation results of this scope. The list comes from the same persisted
-   * owner facts the status/download paths use; it only reads them and reports each stored artifact's
-   * readable state plus its saved facts. It never creates a task, re-synthesises, saves or deletes.
+   * 151/155: the saved generation results of this scope across every segment; read-only, oldest
+   * segment first, and nothing is created, changed or deleted.
    */
   async function results() {
-    const listed = await ownerHandle.value.listSaved({ schemaVersion: 1, scopeId })
-    if (!listed.ok) {
-      return failure(
-        PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
-        listed.errors && listed.errors[0] ? listed.errors[0].code : 'list rejected',
-      )
-    }
     const items = []
-    for (const entry of listed.value.results) {
-      if (entry.feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION) continue
-      if (entry.taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS) continue
-      const metadata = await artifactLibrary.value.get({
-        schemaVersion: 1,
-        scopeId,
-        artifactRef: entry.artifactRef,
-        now: now(),
-        rights: { state: 'GRANTED', proofRef: rightsProofRef },
-      })
-      if (!metadata.ok) {
+    for (const segment of segments) {
+      const listed = await segment.owner.listSaved({ schemaVersion: 1, scopeId })
+      if (!listed.ok) {
         return failure(
           PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
-          metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
+          listed.errors && listed.errors[0] ? listed.errors[0].code : 'list rejected',
         )
       }
-      const artifact = metadata.value.outcome === 'FOUND' ? metadata.value.artifact : null
-      items.push({
-        taskId: entry.taskId,
-        state: entry.state,
-        artifactRef: entry.artifactRef,
-        readable: artifact !== null,
-        sha256: artifact ? artifact.inspection.sha256 : null,
-        byteLength: artifact ? artifact.inspection.byteLength : null,
-        origin: artifact ? artifact.origin : null,
-        createdAt: artifact ? artifact.createdAt : null,
-      })
+      for (const entry of listed.value.results) {
+        if (entry.feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION) continue
+        if (entry.taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS) continue
+        const metadata = await segment.artifacts.get({
+          schemaVersion: 1,
+          scopeId,
+          artifactRef: entry.artifactRef,
+          now: now(),
+          rights: { state: 'GRANTED', proofRef: rightsProofRef },
+        })
+        if (!metadata.ok) {
+          return failure(
+            PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
+            metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
+          )
+        }
+        const artifact = metadata.value.outcome === 'FOUND' ? metadata.value.artifact : null
+        items.push({
+          taskId: entry.taskId,
+          state: entry.state,
+          artifactRef: entry.artifactRef,
+          readable: artifact !== null,
+          sha256: artifact ? artifact.inspection.sha256 : null,
+          byteLength: artifact ? artifact.inspection.byteLength : null,
+          origin: artifact ? artifact.origin : null,
+          createdAt: artifact ? artifact.createdAt : null,
+        })
+      }
     }
     return { ok: true, fixtureOnly: true, realReady: false, results: items }
   }
 
   /**
-   * 150: read the already-saved bytes of one original task. This only reads the persisted artifact;
-   * it never creates a task, re-synthesises, changes the saved artifact or triggers playback/delivery.
+   * 150: read the already-saved bytes of one original task from whichever segment holds it. This only
+   * reads the persisted artifact; it never creates a task, re-synthesises or mutates the result.
    */
   async function download(taskId) {
     if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) {
       return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'taskId')
     }
-    const got = await ownerHandle.value.get({ schemaVersion: 1, scopeId, taskId })
+    const found = await segmentForTask(taskId)
+    if (found.error) return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, found.error)
+    const segment = found.segment
+    if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'not found')
+    const got = await segment.owner.get({ schemaVersion: 1, scopeId, taskId })
     if (!got.ok) {
       return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, got.errors && got.errors[0] ? got.errors[0].code : 'not found')
     }
-    const artifactStatus = await ownerHandle.value.artifactStatus({
+    const artifactStatus = await segment.owner.artifactStatus({
       schemaVersion: 1,
       scopeId,
       taskId,
@@ -366,7 +475,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (artifactStatus.value.state !== 'READABLE') {
       return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'not readable')
     }
-    const read = await artifactLibrary.value.readBytes({
+    const read = await segment.artifacts.readBytes({
       schemaVersion: 1,
       scopeId,
       artifactRef: artifactStatus.value.artifactRef,
