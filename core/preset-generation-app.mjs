@@ -173,7 +173,7 @@ export async function openPresetGenerationApp(options = {}) {
       now,
     })
     if (!coordinator.ok) return null
-    return { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator }
+    return { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator, usage: { entries: 0, bytes: 0 } }
   }
 
   async function measure(segment) {
@@ -210,8 +210,9 @@ export async function openPresetGenerationApp(options = {}) {
     return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
   }
   let current = segments[segments.length - 1]
-  let usage = await measure(current)
-  if (!usage) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+  const initialUsage = await measure(current)
+  if (!initialUsage) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
+  current.usage = initialUsage
 
   async function rotate() {
     const name = String(segments.length).padStart(4, '0')
@@ -219,7 +220,25 @@ export async function openPresetGenerationApp(options = {}) {
     if (!segment) throw new Error('generation segment unavailable')
     segments.push(segment)
     current = segment
-    usage = { entries: 0, bytes: 0 }
+  }
+
+  /* 157 v1.1: only the segment switch is serialized. Two requests accepted at the same moment run
+   * their own provider request, so a second request gets no hidden queue time outside the client's
+   * declared wait; a provider that cannot run two syntheses rejects the extra request honestly. */
+  let segmentSwitch = Promise.resolve()
+  function enqueueSegmentSwitch(task) {
+    const next = segmentSwitch.then(task, task)
+    segmentSwitch = next.then(() => undefined, () => undefined)
+    return next
+  }
+  async function ensureCurrentSegment() {
+    return enqueueSegmentSwitch(async () => {
+      if (current.usage.entries < SEGMENT_ROTATE_ENTRIES && current.usage.bytes < SEGMENT_ROTATE_AUDIO_BYTES) {
+        return current
+      }
+      await rotate()
+      return current
+    })
   }
 
   async function segmentForTask(taskId) {
@@ -243,20 +262,7 @@ export async function openPresetGenerationApp(options = {}) {
     }
   }
 
-  /* 157: one plugin runtime runs one generation at a time. A second request that arrives at the same
-   * moment must not open the next segment twice or race the usage counters; the audited provider also
-   * handles one synthesis at a time. Queued requests still return their own real result or failure. */
-  let generationQueue = Promise.resolve()
-  function enqueueGeneration(task) {
-    const next = generationQueue.then(task, task)
-    generationQueue = next.then(() => undefined, () => undefined)
-    return next
-  }
   async function generate(input = {}) {
-    return enqueueGeneration(() => generateOnce(input))
-  }
-
-  async function generateOnce(input = {}) {
     const text = typeof input.text === 'string' ? input.text.trim() : ''
     const voice = voices.find((item) => item.id === input.voiceId) || null
     if (!voice) return failure(PRESET_GENERATION_APP_ERRORS.VOICE_REJECTED, 'voiceId')
@@ -264,14 +270,12 @@ export async function openPresetGenerationApp(options = {}) {
     const language = voice.languages.includes(input.language) ? input.language : voice.languages[0]
     const observedAt = now()
 
-    if (usage.entries >= SEGMENT_ROTATE_ENTRIES || usage.bytes >= SEGMENT_ROTATE_AUDIO_BYTES) {
-      try {
-        await rotate()
-      } catch {
-        return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'capacity')
-      }
+    let segment
+    try {
+      segment = await ensureCurrentSegment()
+    } catch {
+      return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'capacity')
     }
-    const segment = current
 
     const reserved = await segment.catalog.reserve({
       schemaVersion: 1,
@@ -292,7 +296,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (!reserved.ok) {
       return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, reserved.code || 'task birth rejected')
     }
-    usage.entries += 1
+    segment.usage.entries += 1
     const taskId = reserved.value.task.taskId
 
     const prepared = await segment.coordinator.prepare({
@@ -324,7 +328,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (!metadata.ok || !metadata.value.artifact) {
       return failure(PRESET_GENERATION_APP_ERRORS.GENERATION_REJECTED, 'artifact metadata')
     }
-    usage.bytes += submitted.claim.artifact.byteLength
+    segment.usage.bytes += submitted.claim.artifact.byteLength
     return {
       ok: true,
       taskId,

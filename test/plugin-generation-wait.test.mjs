@@ -184,3 +184,49 @@ test('156 a client-side abort reports an unconfirmed result, not success or a ch
   assert.equal(result.ok, false)
   assert.equal(result.error, 'generation_unconfirmed')
 })
+
+test('157 v1.1 two slow simultaneous requests get no hidden queue time beyond the client wait', { skip: spawnSkip }, async (t) => {
+  const sandbox = createConfigSandbox({ prefix: 'wv-generation-pair-' })
+  t.after(() => removeConfigSandbox(sandbox))
+  const opened = await openQwenGenerationRuntime(runtimeOptions(sandbox, ['--mode=ok', '--synth-delay-ms=16000'], 20000))
+  assert.equal(opened.ok, true, JSON.stringify(opened))
+  const harness = makeHarness()
+  const host = installHostBridge(harness.scope, { token: TOKEN, generation: opened.value.app })
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    const route = harness.routes.find((item) => item.path === url.pathname)
+    if (!route) {
+      res.writeHead(404, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'not_found' }))
+      return
+    }
+    await route.handler(req, res)
+  })
+  await listen(server)
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve))
+    host.dispose()
+    await opened.value.close()
+  })
+
+  const bridge = createBridge(baseUrl(server))
+  const catalog = await bridge.getGenerationCatalog()
+  assert.equal(catalog.generationTimeoutMs, 20000)
+  const waitMs = catalog.generationTimeoutMs + 10000
+  const started = Date.now()
+  const outcomes = await Promise.all([
+    bridge.generatePreset({ text: '同时慢请求一', voiceId: 'demo-voice-a', language: 'zh-CN' }, { timeoutMs: waitMs }),
+    bridge.generatePreset({ text: '同时慢请求二', voiceId: 'demo-voice-a', language: 'zh-CN' }, { timeoutMs: waitMs }),
+  ])
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < waitMs, 'the pair must finish inside the client wait, not after it: ' + elapsed)
+  for (const outcome of outcomes) {
+    assert.notEqual(outcome.error, 'generation_unconfirmed', 'an accepted request must not be cut off by a hidden queue')
+    if (outcome.ok === true) assert.equal(outcome.state, 'SAVED')
+  }
+  const saved = outcomes.filter((item) => item.ok === true)
+  assert.ok(saved.length >= 1, 'at least one request must be accepted and saved: ' + JSON.stringify(outcomes))
+  const listed = await bridge.getGenerationResults()
+  assert.equal(listed.ok, true, JSON.stringify(listed))
+  assert.equal(listed.results.length, saved.length)
+})
