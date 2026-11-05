@@ -397,14 +397,14 @@ export async function openPresetGenerationApp(options = {}) {
       now: now(),
       rights: { state: 'GRANTED', proofRef: rightsProofRef },
     })
-    // 159: the owner's availability check said READABLE, but the real byte read is what decides
-    // whether this query can report the result. A failed read is the same honest failure download()
-    // reports; it is never a successful readable result with empty artifact facts.
-    if (!read.ok || !read.value || !read.value.bytes) {
+    // 159: the owner said READABLE, but only the actual byte read decides whether this query can
+    // report the result. A successful outcome without bytes (NOT_FOUND / DELETED / EXPIRED) is the
+    // same honest failure download() reports, never a readable result with empty artifact facts.
+    if (!read.ok || !read.value.bytes) {
       return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'read rejected')
     }
     const bytes = read.value.bytes
-    const origin = read.value.artifact ? read.value.artifact.origin : null
+    const origin = read.value.artifact.origin
     return {
       ok: true,
       taskId,
