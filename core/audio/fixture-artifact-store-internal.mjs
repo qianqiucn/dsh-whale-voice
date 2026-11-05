@@ -629,7 +629,11 @@ export function readStoredForSave(state, query) {
     inspection,
   })
   if (!found.stored) return { ok: true, value: { state: 'DELETED', artifact } }
-  if (nowMs >= Date.parse(entry.expiresAt)) return { ok: true, value: { state: 'EXPIRED', artifact } }
+  // 155: a saved Provider generation result is retained; its recorded 24 h expiration is not a
+  // retention limit, and pre-fix records whose expiration already passed stay readable.
+  if (entry.origin !== PROVIDER_GENERATION_ARTIFACT_ORIGIN && nowMs >= Date.parse(entry.expiresAt)) {
+    return { ok: true, value: { state: 'EXPIRED', artifact } }
+  }
   return { ok: true, value: { state: 'STORED', artifact } }
 }
 

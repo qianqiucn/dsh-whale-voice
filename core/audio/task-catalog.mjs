@@ -67,6 +67,7 @@ const PLACEHOLDER_TASK_ID = 'task:fixture-catalog-validation'
 
 const RESERVE_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'idempotencyKey', 'draft', 'observedAt']))
 const GET_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId']))
+const COUNT_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId']))
 const DRAFT_KEYS = Object.freeze(
   new Set(['schemaVersion', 'feature', 'taskType', 'source', 'voiceProfileId', 'deliveryRequested', 'rights']),
 )
@@ -305,6 +306,21 @@ async function getOnce(state, input) {
   }
 }
 
+async function countOnce(state, input) {
+  if (state.locked) return failure('CATALOG_UNKNOWN', '$')
+  try {
+    const payload = readRootInput(input, COUNT_KEYS)
+    if (typeof payload.scopeId !== 'string' || !SCOPE_PATTERN.test(payload.scopeId)) {
+      raise('INVALID_INPUT', 'scopeId')
+    }
+    const catalog = catalogFile(state).read()
+    const count = catalog.entries.filter((entry) => entry.scopeId === payload.scopeId).length
+    return deepFreezeFixtureValue({ ok: true, value: { count, mockOnly: true, realOperationAllowed: false } })
+  } catch (error) {
+    return toFailure(error)
+  }
+}
+
 function readSandboxOption(options) {
   if (!isPlainObject(options)) raise('INVALID_INPUT', '$')
   const keys = Reflect.ownKeys(options)
@@ -322,7 +338,7 @@ function readSandboxOption(options) {
 /**
  * Open one isolated persistent task catalog over a trusted temporary sandbox capability.
  * @param {{sandbox: object}} options
- * @returns {Promise<{ok:true,value:{reserve:Function,get:Function}}|{ok:false,errors:Array<object>}>}
+ * @returns {Promise<{ok:true,value:{reserve:Function,get:Function,count:Function}}|{ok:false,errors:Array<object>}>}
  */
 export async function openFixtureTaskCatalog(options) {
   let sandbox
@@ -341,6 +357,7 @@ export async function openFixtureTaskCatalog(options) {
         const handle = Object.freeze({
           reserve: (input) => enqueue(state, () => reserveOnce(state, input)),
           get: (input) => enqueue(state, () => getOnce(state, input)),
+          count: (input) => enqueue(state, () => countOnce(state, input)),
         })
         return deepFreezeFixtureValue({ ok: true, value: handle })
       } catch (error) {

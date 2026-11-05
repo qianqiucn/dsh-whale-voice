@@ -72,6 +72,21 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Persistent generation storage (155)
+
+Generation keeps saving past the old fixed budgets and saved results stay retrievable. The
+application entry now uses segmented storage: the given storage root stays the first segment (so
+pre-fix results keep their location and task ids), and when the current segment approaches the
+unchanged per-file store limits (24 tasks / 3 MiB audio, below the 32-entry and 4 MiB budgets) a new
+`segments/NNNN` store is opened for new saves. `status`, `results` and `download` search every segment,
+nothing is deleted or replaced, and a reopen over the same location lists the old and the new results.
+The read-only catalog `count` and the `listSaved.entryCount` give the entry usage used for the
+rotation decision. Saved Provider generation artifacts (`PROVIDER_GENERATION_FIXTURE` origin) ignore
+the recorded 24 h expiration in the artifact library and in the owner artifact-status read, so
+pre-fix records whose 24 h already passed are readable again; other artifact origins keep their
+rights-expiry contract. A real write failure is still reported as failure (never `SAVED`) and leaves
+earlier saved results downloadable.
+
 ### Original-task result download (150)
 
 The Core generation entry gains `download(taskId)`: it reads the owner-confirmed saved artifact of that
@@ -503,8 +518,20 @@ generation disabled):
   request shows 「无法读取生成运行状态…不代表生成正常或未启用」 with the settings entry still usable, and
   both damaged applied records are repaired through the normal save + apply actions (UI **80/80**).
 
-Full suite after this unit: **1184 tests / 1180 pass / 4 platform skips / 0 fail**; UI **80/80**; build
-`client.js` **373,182 bytes** (154's settings failure/recovery surface is the bundle change).
+`test/plan10-r1-persistent-generation.test.mjs` (2 tests, existing Fixture Worker):
+
+- 155 continuous use: 66 consecutive generations in one explicit persistent location keep returning
+  SAVED, crossing the old 32/64-record and cumulative 4 MiB budgets; the first, middle and last
+  results download with their stored bytes; a reopen two days later lists all 66 results and still
+  downloads and reports the old ones as readable (the recorded 24 h expiration is not a retention
+  limit for saved generation artifacts), and nothing is re-generated.
+- 155 write failure: after one saved result, the next catalog write is made to fail on the real
+  isolated storage (read-only target on Windows, read-only storage root elsewhere); the generation
+  returns failure instead of SAVED, and after restoring the permission and reopening the earlier
+  result is still listed and downloads its original bytes.
+
+Full suite after this unit: **1186 tests / 1182 pass / 4 platform skips / 0 fail**; UI **80/80**; build
+`client.js` unchanged (373,182 bytes; 155 touches Core storage only).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

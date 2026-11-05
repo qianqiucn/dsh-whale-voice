@@ -657,8 +657,10 @@ async function getOnce(state, input) {
  */
 function listSavedValue(snapshot, scopeId) {
   const results = []
+  let entryCount = 0
   for (const entry of snapshot.entries) {
     if (entry.scopeId !== scopeId) continue
+    entryCount += 1
     if (entry.phase !== 'FINAL' || entry.completion.kind !== 'SAVED') continue
     const task = project(entry.record)
     results.push({
@@ -676,6 +678,7 @@ function listSavedValue(snapshot, scopeId) {
     value: {
       schemaVersion: TASK_OWNER_SCHEMA_VERSION,
       results,
+      entryCount,
       mockOnly: true,
       realOperationAllowed: false,
     },
