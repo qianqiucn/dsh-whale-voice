@@ -583,7 +583,7 @@
     window.__WHALE_PLAN09_ADAPTER_CALLS__ = calls
     return adapter
   }
-  window.__WHALE_PLAN09_CONFIG__ = createPlan09Adapter()
+  window.__WHALE_PLAN09_CONFIG__ = new URLSearchParams(window.location.search).get('plan09') === 'none' ? null : createPlan09Adapter()
   window.__WHALE_SINGING_APP__ = new URLSearchParams(window.location.search).get('singing') === 'none' ? null : (() => {
     const request = async (path, options) => {
       const response = await fetch(path, { cache: 'no-store', ...options })
