@@ -405,6 +405,27 @@
     fakeBridge.getGenerationCatalog = () => hostGeneration('/whale-voice/setup/generation/catalog')
     fakeBridge.generatePreset = (request) => hostGeneration('/whale-voice/setup/generation', { method: 'POST', body: JSON.stringify(request || {}) })
     fakeBridge.getGenerationStatus = (taskId) => hostGeneration('/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(String(taskId || '')))
+    fakeBridge.downloadGenerationResult = async (taskId) => {
+      let response
+      try {
+        response = await fetch('/whale-voice/setup/generation/download?taskId=' + encodeURIComponent(String(taskId || '')), {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { accept: 'audio/wav', 'x-whale-core-token': hostToken },
+        })
+      } catch {
+        return { ok: false, error: 'core_unreachable' }
+      }
+      if (!response.ok) {
+        let payload = null
+        try { payload = await response.json() } catch { payload = null }
+        return payload && typeof payload === 'object' ? payload : { ok: false, error: 'core_http_' + response.status }
+      }
+      const blob = await response.blob()
+      const disposition = response.headers.get('content-disposition') || ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      return { ok: true, blob, fileName: match ? match[1] : 'whale-voice-result.wav' }
+    }
     fakeBridge.getGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage')
     fakeBridge.saveGenerationStorageDraft = (request) => hostSettings('/whale-voice/setup/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) })
     fakeBridge.applyGenerationStorageDraft = () => hostSettings('/whale-voice/setup/settings/generation-storage/apply', { method: 'POST', body: '{}' })

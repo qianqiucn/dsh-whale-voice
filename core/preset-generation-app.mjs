@@ -25,6 +25,7 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
   TEXT_REJECTED: 'PRESET_GENERATION_TEXT_REJECTED',
   GENERATION_REJECTED: 'PRESET_GENERATION_REJECTED',
   STATUS_REJECTED: 'PRESET_GENERATION_STATUS_REJECTED',
+  DOWNLOAD_REJECTED: 'PRESET_GENERATION_DOWNLOAD_REJECTED',
 })
 
 const SCOPE_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
@@ -290,6 +291,58 @@ export async function openPresetGenerationApp(options = {}) {
     }
   }
 
+  /**
+   * 150: read the already-saved bytes of one original task. This only reads the persisted artifact;
+   * it never creates a task, re-synthesises, changes the saved artifact or triggers playback/delivery.
+   */
+  async function download(taskId) {
+    if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) {
+      return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'taskId')
+    }
+    const got = await ownerHandle.value.get({ schemaVersion: 1, scopeId, taskId })
+    if (!got.ok) {
+      return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, got.errors && got.errors[0] ? got.errors[0].code : 'not found')
+    }
+    const artifactStatus = await ownerHandle.value.artifactStatus({
+      schemaVersion: 1,
+      scopeId,
+      taskId,
+      now: now(),
+      rights: { state: 'GRANTED', proofRef: rightsProofRef },
+    })
+    if (!artifactStatus.ok) {
+      return failure(
+        PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED,
+        artifactStatus.errors && artifactStatus.errors[0] ? artifactStatus.errors[0].code : 'artifact status rejected',
+      )
+    }
+    if (artifactStatus.value.state !== 'READABLE') {
+      return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'not readable')
+    }
+    const read = await artifactLibrary.value.readBytes({
+      schemaVersion: 1,
+      scopeId,
+      artifactRef: artifactStatus.value.artifactRef,
+      now: now(),
+      rights: { state: 'GRANTED', proofRef: rightsProofRef },
+    })
+    if (!read.ok || !read.value || !read.value.bytes) {
+      return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'read rejected')
+    }
+    const bytes = read.value.bytes
+    return {
+      ok: true,
+      taskId,
+      state: got.value.task.state,
+      artifactRef: artifactStatus.value.artifactRef,
+      origin: read.value.artifact ? read.value.artifact.origin : null,
+      sha256: sha256(bytes),
+      byteLength: bytes.length,
+      fileName: 'whale-voice-' + taskId.slice('task:fixture-'.length) + '.wav',
+      bytes,
+    }
+  }
+
   return {
     ok: true,
     value: Object.freeze({
@@ -297,6 +350,7 @@ export async function openPresetGenerationApp(options = {}) {
       catalog,
       generate,
       status,
+      download,
     }),
   }
 }

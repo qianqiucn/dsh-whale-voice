@@ -105,6 +105,33 @@ export function bridgeScript(token) {
     getGenerationCatalog: () => generation('/generation/catalog'),
     generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
+    downloadGenerationResult: async (taskId) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(prefix + '/generation/download?taskId=' + encodeURIComponent(String(taskId || '')), {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: { accept: 'audio/wav', 'x-whale-core-token': coreToken },
+        });
+        if (!response.ok) {
+          let payload = null;
+          try { payload = await response.json(); } catch { payload = null; }
+          return payload && typeof payload === 'object' ? payload : { ok: false, error: 'core_http_' + response.status };
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        return { ok: true, blob, fileName: match ? match[1] : 'whale-voice-result.wav' };
+      } catch {
+        return { ok: false, error: 'core_unreachable' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     getGenerationStorageDraft: () => generation('/settings/generation-storage'),
     saveGenerationStorageDraft: (request) => generation('/settings/generation-storage', { method: 'PUT', body: JSON.stringify(request || {}) }),
     applyGenerationStorageDraft: () => generation('/settings/generation-storage/apply', { method: 'POST', body: '{}' }),
@@ -310,6 +337,23 @@ export function installHostBridge(scope, options = {}) {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const result = await generation.status(url.searchParams.get('taskId') || '')
     return send(res, 200, result)
+  })
+  // 150: download the already-saved WAV bytes of one original task. The route only reads the stored
+  // artifact; it never creates a task, re-synthesises, mutates the saved result or plays/delivers it.
+  route(PREFIX + '/generation/download', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    const result = await generation.download(url.searchParams.get('taskId') || '')
+    if (!result || result.ok !== true) return send(res, 404, result)
+    const bytes = Buffer.from(result.bytes)
+    res.writeHead(200, {
+      'content-type': 'audio/wav',
+      'content-length': bytes.length,
+      'content-disposition': 'attachment; filename="' + result.fileName + '"',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    })
+    res.end(bytes)
   })
 
   const script = bridgeScript(token)

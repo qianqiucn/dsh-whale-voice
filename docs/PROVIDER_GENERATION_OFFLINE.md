@@ -72,6 +72,18 @@ queries the returned Task ID through the status route, remembers that Task ID lo
 re-queries the same saved result, and shows "生成未启用" (not a success state) whenever the routes
 answer `generation_not_enabled`.
 
+### Original-task result download (150)
+
+The Core generation entry gains `download(taskId)`: it reads the owner-confirmed saved artifact of that
+original task and returns the stored WAV bytes plus the original artifact ref/origin/SHA-256 and a fixed
+file name; it never creates a task, re-synthesises, mutates the saved artifact or triggers playback or
+delivery. `installHostBridge` adds `GET /whale-voice/setup/generation/download?taskId=…` (503
+`generation_not_enabled` without a runtime, 404 for unknown or unreadable tasks, `audio/wav` +
+`content-disposition: attachment`), and the client bridge adds `downloadGenerationResult`. The 音色中心
+page shows a 下载已保存音频 action when the current task has a readable saved result and builds a local
+blob download. Refreshing the page and restoring the same saved task still downloads the same bytes, and
+the generation request count does not change (no re-synthesis).
+
 ### Applied Qwen runtime paths (149)
 
 The saved runtime paths can be explicitly applied: the settings store also keeps
@@ -409,8 +421,20 @@ generation disabled):
 - `tests/ui` settings page: save → 应用运行路径 → "Qwen 运行路径已应用，下次重开插件生效" → reload shows
   the persisted "已应用运行路径：…" fact and both saved paths (UI **76/76**).
 
-Full suite after this unit: **1175 tests / 1171 pass / 4 platform skips / 0 fail**; UI **76/76**; build
-`client.js` **362,351 bytes** (149's 应用运行路径 button/copy is the bundle change).
+`test/generation-download.test.mjs` (2 tests, existing Fixture Worker):
+
+- 150 Core download: a saved generation downloads the same bytes (SHA-256 and byte length match the saved
+  result), the original artifact ref/origin are kept, a second download returns identical bytes and adds
+  no task, and an unknown task is rejected with `PRESET_GENERATION_DOWNLOAD_REJECTED`.
+- 150 Host route: `GET /whale-voice/setup/generation/download?taskId=…` returns 200 `audio/wav` with an
+  attachment file name and the saved bytes, 404 for an unknown task, 401 for a wrong token, and 503
+  `generation_not_enabled` without a runtime.
+- `tests/ui` Studio page: generate → 下载已保存音频 → downloaded file matches the displayed SHA-256/size;
+  a second saved task, a page reload and a second download of the restored task return the same saved
+  bytes and the generation-request count stays unchanged (UI **76/76**).
+
+Full suite after this unit: **1177 tests / 1173 pass / 4 platform skips / 0 fail**; UI **76/76**; build
+`client.js` **364,291 bytes** (150's 下载已保存音频 action is the bundle change).
 
 ## 5. What a real trial would still need (not executed, not authorized)
 

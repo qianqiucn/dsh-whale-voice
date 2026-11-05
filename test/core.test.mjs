@@ -430,7 +430,7 @@ test('host bridge fails closed without connection and follows replacement', asyn
   connection = { requestRejection() { return null } }
   assert.equal(await call(), 200)
   host.dispose()
-  assert.equal(disposedRoutes, 15)
+  assert.equal(disposedRoutes, 16)
   assert.equal(disposedInject, 1)
 })
 

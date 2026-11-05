@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -364,7 +365,15 @@ await check('settings/studio/safety expose surface-specific reload semantics', a
   })
 })
 
-await check('studio preset generation saves the original task and survives reload', async () => {
+await check('studio preset generation saves the original task, downloads it and survives reload', async () => {
+  const generationCalls = []
+  const trackGeneration = (page) => {
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/whale-voice/setup/generation') {
+        generationCalls.push(request.url())
+      }
+    })
+  }
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '音色中心', exact: true }).click()
     await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
@@ -388,6 +397,20 @@ await check('studio preset generation saves the original task and survives reloa
     assert.match(pageText, /生产生成与试听仍未接入/)
     await page.screenshot({ path: path.join(artifactDir, 'studio-generation-1440.png') })
 
+    // 150: download the already-saved WAV bytes; the file must match the saved result facts.
+    const firstSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const firstSha = /SHA-256 ([0-9a-f]{64})/.exec(firstSummary)
+    const firstSize = /大小 (\d+) bytes/.exec(firstSummary)
+    assert.ok(firstSha, firstSummary)
+    assert.ok(firstSize, firstSummary)
+    const firstDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const firstDownload = await firstDownloadPromise
+    assert.match(firstDownload.suggestedFilename(), /^whale-voice-[0-9a-f]{32}\.wav$/)
+    const firstBytes = readFileSync(await firstDownload.path())
+    assert.equal(firstBytes.length, Number(firstSize[1]))
+    assert.equal(createHash('sha256').update(firstBytes).digest('hex'), firstSha[1])
+
     // A second run mints a different original task: the state is not a fixed success value.
     await page.getByLabel('试听文本').fill('第二个隔离测试生成。')
     await page.getByRole('button', { name: /生成并保存/ }).click()
@@ -404,8 +427,11 @@ await check('studio preset generation saves the original task and survives reloa
     assert.notEqual(secondTaskId, taskId)
     assert.match(secondTaskId, /^task:fixture-[0-9a-f]{32}$/)
     assert.match(secondArtifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
+    const secondSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const secondSha = /SHA-256 ([0-9a-f]{64})/.exec(secondSummary)
+    assert.ok(secondSha, secondSummary)
 
-    // Reload: the page queries the same saved result back through the formal Host status route.
+    // Reload: the page queries the same saved result back and the same bytes remain downloadable.
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(500)
@@ -414,7 +440,17 @@ await check('studio preset generation saves the original task and survives reloa
     assert.equal(await page.locator('[data-testid="studio-generation-state"]').innerText(), '原任务已保存')
     assert.equal(await page.locator('[data-testid="studio-generation-task"]').innerText(), secondTaskId)
     assert.equal(await page.locator('[data-testid="studio-generation-artifact"]').innerText(), secondArtifactRef)
-  })
+    const reopenedSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    const reopenedSha = /SHA-256 ([0-9a-f]{64})/.exec(reopenedSummary)
+    assert.ok(reopenedSha, reopenedSummary)
+    assert.equal(reopenedSha[1], secondSha[1])
+    const secondDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const secondDownload = await secondDownloadPromise
+    const secondBytes = readFileSync(await secondDownload.path())
+    assert.equal(createHash('sha256').update(secondBytes).digest('hex'), secondSha[1])
+    assert.equal(generationCalls.length, 2, 'downloads must not trigger another generation')
+  }, trackGeneration)
 })
 
 await check('studio reports generation not enabled when the Host runtime is absent', async () => {

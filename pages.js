@@ -964,6 +964,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     : null
   const [catalog, setCatalog] = React.useState(null)
   const [busy, setBusy] = React.useState(false)
+  const [downloading, setDownloading] = React.useState(false)
   const [result, setResult] = React.useState(null)
   const [genError, setGenError] = React.useState('')
   const [genEnabled, setGenEnabled] = React.useState(null)
@@ -1007,6 +1008,8 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     ? catalog.voices
     : [{ id: 'whale-v1', label: 'whale-v1', languages: ['zh-CN'] }]
   const selectedVoice = voices.find((voice) => voice.id === preview.voice) || voices[0]
+  const canDownload = Boolean(hostBridge && typeof hostBridge.downloadGenerationResult === 'function')
+  const canDownloadResult = canDownload && result && result.readable === true && result.taskId
   const languages = genEnabled === true && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
   const textLimit = genEnabled === true && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 200
   const generate = async () => {
@@ -1041,6 +1044,30 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       notify('正式 Host 生成调用异常；未自动重试。', 'error')
     } finally {
       setBusy(false)
+    }
+  }
+  const download = async () => {
+    if (!canDownloadResult || downloading) return
+    setDownloading(true)
+    try {
+      const value = await hostBridge.downloadGenerationResult(result.taskId)
+      if (!value || value.ok !== true || !value.blob) {
+        notify('无法下载：该任务当前没有可读取的已保存结果。', 'error')
+        return
+      }
+      const url = URL.createObjectURL(value.blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = value.fileName || 'whale-voice-result.wav'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      notify('已开始下载原任务保存的音频。', 'success')
+    } catch {
+      notify('下载失败：无法读取该任务已保存的结果。', 'error')
+    } finally {
+      setDownloading(false)
     }
   }
   return h(React.Fragment, null,
@@ -1112,7 +1139,15 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
             h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
             result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
-            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是原任务的保存事实；刷新页面会按同一 Task ID 重新查询，不代表真实模型可用。'))
+            h('p', null, h(Badge, { tone: 'demo' }, '隔离模拟'), ' 这是原任务的保存事实；刷新页面会按同一 Task ID 重新查询，不代表真实模型可用。'),
+            h('div', { className: 'wv-row', style: { marginTop: 8 } },
+              h(Button, {
+                onClick: () => { void download() },
+                disabled: !canDownloadResult || downloading,
+                title: canDownloadResult ? '下载该任务已保存的 WAV 原文件' : '当前没有可读取的已保存结果',
+                'data-testid': 'studio-generation-download',
+              }, h(Icon, { name: 'download', size: 14 }), downloading ? '下载中…' : '下载已保存音频'),
+              canDownloadResult ? null : h('span', { className: 'wv-muted', 'data-testid': 'studio-generation-download-unavailable' }, '当前没有可读取的已保存结果，不能下载。')))
           : genEnabled === false
             ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-disabled', style: { minHeight: 96 } },
               h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
