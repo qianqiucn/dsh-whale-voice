@@ -381,6 +381,8 @@ await check('studio preset generation saves the original task, downloads it and 
       const select = document.querySelector('select[aria-label="音色"]')
       return select && Array.from(select.options).some((option) => option.value === 'demo-voice-a')
     }, null, { timeout: 10000 })
+    // 151: an untouched isolated config reports an honest empty saved-result list.
+    await page.locator('[data-testid="studio-generation-results-empty"]').waitFor({ timeout: 10000 })
     await page.getByLabel('试听文本').fill('你好，这是隔离预设生成演示。')
     await page.getByLabel('音色').selectOption('demo-voice-a')
     await page.getByRole('button', { name: /生成并保存/ }).click()
@@ -431,6 +433,38 @@ await check('studio preset generation saves the original task, downloads it and 
     const secondSha = /SHA-256 ([0-9a-f]{64})/.exec(secondSummary)
     assert.ok(secondSha, secondSummary)
 
+    // 151: both saved results are listed from the same storage location and either one can be selected back.
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-testid="studio-generation-result-select"]').length === 2,
+      null,
+      { timeout: 10000 },
+    )
+    const listedIds = await page.locator('[data-testid="studio-generation-result-select"]').evaluateAll(
+      (nodes) => nodes.map((node) => node.getAttribute('data-task-id')),
+    )
+    assert.deepEqual(listedIds, [taskId, secondTaskId])
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + taskId + '"]').click()
+    await page.waitForFunction(
+      (expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected,
+      taskId,
+    )
+    assert.equal(await page.locator('[data-testid="studio-generation-artifact"]').innerText(), artifactRef)
+    const selectedSummary = await page.locator('[data-testid="studio-generation-result"]').innerText()
+    assert.match(selectedSummary, new RegExp('SHA-256 ' + firstSha[1]))
+    const selectedDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const selectedBytes = readFileSync(await (await selectedDownloadPromise).path())
+    assert.equal(createHash('sha256').update(selectedBytes).digest('hex'), firstSha[1])
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + secondTaskId + '"]').click()
+    await page.waitForFunction(
+      (expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected,
+      secondTaskId,
+    )
+    const selectedSecondDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const selectedSecondBytes = readFileSync(await (await selectedSecondDownloadPromise).path())
+    assert.equal(createHash('sha256').update(selectedSecondBytes).digest('hex'), secondSha[1])
+
     // Reload: the page queries the same saved result back and the same bytes remain downloadable.
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
@@ -449,7 +483,23 @@ await check('studio preset generation saves the original task, downloads it and 
     const secondDownload = await secondDownloadPromise
     const secondBytes = readFileSync(await secondDownload.path())
     assert.equal(createHash('sha256').update(secondBytes).digest('hex'), secondSha[1])
-    assert.equal(generationCalls.length, 2, 'downloads must not trigger another generation')
+
+    // 151: after the reload both saved results are still selectable and download their own original bytes.
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-testid="studio-generation-result-select"]').length === 2,
+      null,
+      { timeout: 10000 },
+    )
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + taskId + '"]').click()
+    await page.waitForFunction(
+      (expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected,
+      taskId,
+    )
+    const reopenedFirstDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('studio-generation-download').click()
+    const reopenedFirstBytes = readFileSync(await (await reopenedFirstDownloadPromise).path())
+    assert.equal(createHash('sha256').update(reopenedFirstBytes).digest('hex'), firstSha[1])
+    assert.equal(generationCalls.length, 2, 'listing, selecting and download must not trigger another generation')
   }, trackGeneration)
 })
 

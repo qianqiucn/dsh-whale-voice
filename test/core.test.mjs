@@ -430,7 +430,7 @@ test('host bridge fails closed without connection and follows replacement', asyn
   connection = { requestRejection() { return null } }
   assert.equal(await call(), 200)
   host.dispose()
-  assert.equal(disposedRoutes, 16)
+  assert.equal(disposedRoutes, 17)
   assert.equal(disposedInject, 1)
 })
 
@@ -478,6 +478,7 @@ test('host bridge injects a token-protected bridge and same-origin route', async
   assert.match(rows[0].text, /getGenerationCatalog: \(\) => generation\('\/generation\/catalog'\)/)
   assert.match(rows[0].text, /generatePreset: \(request\) => generation\('\/generation'/)
   assert.match(rows[0].text, /getGenerationStatus: \(taskId\) => generation\('\/generation\/status\?taskId='/)
+  assert.match(rows[0].text, /getGenerationResults: \(\) => generation\('\/generation\/results'\)/)
   assert.equal(host.scripts.includes('host-token'), true)
 
   const route = routes.find((r) => r.path === '/whale-voice/setup/status')
@@ -567,6 +568,10 @@ test('host bridge script calls the formal generation routes with its token', asy
   assert.equal(status.readable, true)
   const statusCall = calls.find((call) => call.url.startsWith('/whale-voice/setup/generation/status'))
   assert.match(statusCall.url, /taskId=task%3Afixture/)
+  const results = await bridge.getGenerationResults()
+  assert.equal(results.ok, true)
+  const resultsCall = calls.find((call) => call.url === '/whale-voice/setup/generation/results')
+  assert.equal(resultsCall.options.headers['x-whale-core-token'], 'generation-token')
 
   // An unconfigured Host answers 503, and the bridge returns that JSON envelope instead of throwing.
   const disabledWindow = {}

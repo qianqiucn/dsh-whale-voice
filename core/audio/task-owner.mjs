@@ -94,6 +94,7 @@ export const TASK_OWNER_ERRORS = Object.freeze(
 
 const RUN_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId', 'input']))
 const GET_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId', 'taskId']))
+const LIST_SAVED_KEYS = Object.freeze(new Set(['schemaVersion', 'scopeId']))
 const INPUT_KEYS = Object.freeze(new Set(['schemaVersion', 'sourceInput', 'readiness', 'context']))
 const SAVE_KEYS = Object.freeze(
   new Set(['schemaVersion', 'scopeId', 'taskId', 'requestKey', 'now', 'expiresAt', 'rights', 'input']),
@@ -326,6 +327,12 @@ function readGet(input) {
   readExactRoot(input, GET_KEYS, '$')
   validateScopeTask(input)
   return { scopeId: input.scopeId, taskId: input.taskId }
+}
+
+function readListSaved(input) {
+  readExactRoot(input, LIST_SAVED_KEYS, '$')
+  if (typeof input.scopeId !== 'string' || !SCOPE_PATTERN.test(input.scopeId)) raise('INVALID_INPUT', 'scopeId')
+  return { scopeId: input.scopeId }
 }
 
 function readOptions(options) {
@@ -637,6 +644,51 @@ async function getOnce(state, input) {
     if (entry.phase === 'CLAIMED') return unknownValue('FOUND', current.owner.revision, entry.record)
     const stateName = finalKind(entry)
     return successValue('FOUND', current.owner.revision, entry.record, stateName, entry.completion.reason)
+  } catch (error) {
+    return toFailure(error)
+  }
+}
+
+/* ------------------------------------ saved result list (151) -------------------------------- */
+
+/**
+ * 151: the persisted SAVED results of one scope, read from the same owner file the get/status paths
+ * use. This is a read-only projection of the stored facts; it never creates, changes or retries a
+ * task, and it never opens the artifact library (the caller reads each artifact it wants to show).
+ */
+function listSavedValue(snapshot, scopeId) {
+  const results = []
+  for (const entry of snapshot.entries) {
+    if (entry.scopeId !== scopeId) continue
+    if (entry.phase !== 'FINAL' || entry.completion.kind !== 'SAVED') continue
+    const task = project(entry.record)
+    results.push({
+      taskId: entry.taskId,
+      feature: task.feature,
+      taskType: task.taskType,
+      state: task.state,
+      artifactRef: entry.record.outputArtifactRef,
+      provider: { providerId: task.provider.providerId, model: task.provider.model },
+      voice: { kind: task.voice.kind, voiceId: task.voice.voiceId },
+    })
+  }
+  return deepFreezeFixtureValue({
+    ok: true,
+    value: {
+      schemaVersion: TASK_OWNER_SCHEMA_VERSION,
+      results,
+      mockOnly: true,
+      realOperationAllowed: false,
+    },
+  })
+}
+
+async function listSavedOnce(state, input) {
+  if (state.locked) return failure('OWNER_UNKNOWN', '$')
+  try {
+    const request = readListSaved(input)
+    const current = freshAssociations(state)
+    return listSavedValue(current.owner.snapshot, request.scopeId)
   } catch (error) {
     return toFailure(error)
   }
@@ -1567,7 +1619,7 @@ async function statusOnce(state, input) {
 /**
  * Open one isolated persistent task owner over a trusted temporary sandbox capability.
  * @param {{sandbox: object}} options
- * @returns {Promise<{ok:true,value:{run:Function,get:Function,save:Function,artifactStatus:Function}}|{ok:false,errors:Array<object>}>}
+ * @returns {Promise<{ok:true,value:{run:Function,get:Function,listSaved:Function,save:Function,artifactStatus:Function}}|{ok:false,errors:Array<object>}>}
  */
 export async function openFixtureTaskOwner(options) {
   let sandbox
@@ -1588,6 +1640,7 @@ export async function openFixtureTaskOwner(options) {
         const handle = Object.freeze({
           run: (input) => enqueue(state, () => runOnce(state, input)),
           get: (input) => enqueue(state, () => getOnce(state, input)),
+          listSaved: (input) => enqueue(state, () => listSavedOnce(state, input)),
           save: (input) => enqueue(state, () => saveOnce(state, input)),
           saveArtifact: (input) => enqueue(state, () => saveArtifactOnce(state, input)),
           artifactStatus: (input) => enqueue(state, () => statusOnce(state, input)),
