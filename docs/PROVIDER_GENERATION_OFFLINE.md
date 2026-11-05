@@ -158,6 +158,20 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Explicit language is not silently replaced (161)
+
+An explicitly submitted language must be one the chosen preset voice supports. `generate()` used to
+map any value outside `voice.languages` to the first supported language, so a request that explicitly
+asked for `en-US` on a zh-CN-only voice produced a zh-CN task and returned SAVED. A request that
+submits a language now either gets exactly that language or `PRESET_GENERATION_LANGUAGE_REJECTED`
+(detail `language`), returned before the catalog reserve, provider prepare and any artifact write, so
+a rejected language creates no task and changes no existing result. Only a request that submits no
+language at all uses the voice's original default (its first supported language); the Host passes an
+absent JSON `language` through as `undefined`, which is that same unchanged case, not an explicit
+unsupported choice. A supported explicit value is kept as submitted (`en-US` stays `en-US` when the
+voice lists it). Nothing else changes: supported languages, voice discovery, the Worker/model
+protocol, the page's language options, saving, status, listing and download keep their behaviour.
+
 ### Read failures are shown as failures (160)
 
 The 音色中心 page no longer turns a failed read into a false status. While the capability request is

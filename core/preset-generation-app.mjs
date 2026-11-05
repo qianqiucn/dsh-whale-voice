@@ -34,6 +34,7 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
   INPUT_INVALID: 'PRESET_GENERATION_INPUT_INVALID',
   VOICE_REJECTED: 'PRESET_GENERATION_VOICE_REJECTED',
   TEXT_REJECTED: 'PRESET_GENERATION_TEXT_REJECTED',
+  LANGUAGE_REJECTED: 'PRESET_GENERATION_LANGUAGE_REJECTED',
   GENERATION_REJECTED: 'PRESET_GENERATION_REJECTED',
   STATUS_REJECTED: 'PRESET_GENERATION_STATUS_REJECTED',
   RESULTS_REJECTED: 'PRESET_GENERATION_RESULTS_REJECTED',
@@ -267,7 +268,12 @@ export async function openPresetGenerationApp(options = {}) {
     const voice = voices.find((item) => item.id === input.voiceId) || null
     if (!voice) return failure(PRESET_GENERATION_APP_ERRORS.VOICE_REJECTED, 'voiceId')
     if (text.length === 0 || text.length > textLimit) return failure(PRESET_GENERATION_APP_ERRORS.TEXT_REJECTED, 'text')
-    const language = voice.languages.includes(input.language) ? input.language : voice.languages[0]
+    // 161: a request that submits a language must get exactly that language or an honest rejection;
+    // only a request that submits no language at all uses the voice's original default.
+    const language = input.language === undefined ? voice.languages[0] : input.language
+    if (!voice.languages.includes(language)) {
+      return failure(PRESET_GENERATION_APP_ERRORS.LANGUAGE_REJECTED, 'language')
+    }
     const observedAt = now()
 
     let segment
