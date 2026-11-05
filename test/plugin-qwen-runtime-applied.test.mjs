@@ -25,6 +25,7 @@ const SPAWN_OK = (() => {
 const spawnSkip = SPAWN_OK ? false : 'child_process spawn is not permitted on this platform'
 
 const GENERATE = '/whale-voice/setup/generation'
+const ASSEMBLY = '/whale-voice/setup/generation/assembly'
 const RUNTIME = '/whale-voice/setup/settings/qwen-runtime'
 const APPLY = '/whale-voice/setup/settings/qwen-runtime/apply'
 const SCOPE = 'scope:fixture-runtime-applied-149'
@@ -173,10 +174,22 @@ test('149 the applied Qwen runtime paths are adopted on the next open and a gene
   await draftOpen.effects[0]()()
 
   // Save-only must not change the assembly source: the old Python path is still taken and fails.
+  // 154: that real failure now keeps the settings entry reachable instead of rejecting the plugin.
   const notApplied = makeHarness()
-  await assert.rejects(apply(notApplied.ctx, JSON.parse(JSON.stringify(
+  await apply(notApplied.ctx, JSON.parse(JSON.stringify(
     generationConfig(draftRoot, storageRoot, pythonOld, ['--mode=ok', '--model-dir', modelOld, '--argv-record=' + recordFile]),
-  ))))
+  )))
+  const notAppliedToken = bridgeToken(notApplied)
+  const assembly = await callRoute(routeOf(notApplied, ASSEMBLY), { method: 'GET', url: ASSEMBLY, token: notAppliedToken })
+  const assemblyBody = JSON.parse(assembly.body)
+  assert.equal(assemblyBody.state, 'FAILED')
+  assert.equal(assemblyBody.code, 'runtime_unavailable')
+  const stillDenied = await callRoute(routeOf(notApplied, GENERATE), {
+    method: 'POST', url: GENERATE, token: notAppliedToken, body: { text: 'x', voiceId: 'demo-voice-a' },
+  })
+  assert.equal(stillDenied.status, 503)
+  assert.equal(fs.existsSync(recordFile), false, 'the old runtime never started a worker')
+  await notApplied.effects[0]()()
 
   // Apply the saved paths through the same Host route the settings page uses.
   const applying = makeHarness()

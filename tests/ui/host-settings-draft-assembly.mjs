@@ -7,6 +7,9 @@
  * model.
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { installHostBridge } from '../../index.js'
 import { createConfigSandbox, removeConfigSandbox } from '../../core/config-sandbox.mjs'
 import { openGenerationSettingsDraft } from '../../core/settings-draft.mjs'
@@ -67,6 +70,11 @@ export async function createHostSettingsDraftAssembly() {
     routes = []
   }
 
+  /** 154: leave one applied record truncated, as an interrupted write would. */
+  function corruptApplied(fileName) {
+    fs.writeFileSync(path.join(sandbox.root, fileName), '{"schemaVersion":1,"truncated"', { encoding: 'utf8', mode: 0o600 })
+  }
+
   open()
-  return { handle, close, reset, token: TOKEN }
+  return { handle, close, reset, corruptApplied, token: TOKEN }
 }

@@ -801,6 +801,97 @@ await check('qwen runtime path draft is saved, applied and survives a page reloa
   })
 })
 
+await check('settings page shows the real generation assembly failure', async () => {
+  await withPage('?bridge=normal&assembly=failed', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const error = page.locator('[data-testid="generation-assembly-error"]')
+    await error.waitFor({ timeout: 5000 })
+    const text = await error.innerText()
+    assert.match(text, /生成未能启动/)
+    assert.match(text, /生成数据保存位置不可用/)
+    assert.match(text, /保存并应用/)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-assembly-failed-1440.png') })
+  })
+})
+
+await check('settings page reports an unreadable generation status instead of hiding it', async () => {
+  await withPage('?bridge=normal&assembly=error', async (page) => {
+    await page.getByRole('button', { name: '语音设置', exact: true }).click()
+    const readError = page.locator('[data-testid="generation-assembly-read-error"]')
+    await readError.waitFor({ timeout: 5000 })
+    const text = await readError.innerText()
+    assert.match(text, /无法读取生成运行状态/)
+    assert.match(text, /不代表生成正常或未启用/)
+    assert.equal(await page.locator('[data-testid="generation-assembly-error"]').count(), 0)
+    await page.waitForFunction(
+      () => {
+        const status = document.querySelector('[data-testid="generation-storage-status"]')
+        return status && !status.innerText.includes('正在读取')
+      },
+      null,
+      { timeout: 8000 },
+    )
+    assert.equal(await page.getByTestId('generation-storage-input').isEditable(), true)
+    await page.screenshot({ path: path.join(artifactDir, 'settings-assembly-read-error-1440.png') })
+  })
+})
+
+await check('corrupt applied settings are visible and repairable in the settings page', async () => {
+  await hostSettings.reset()
+  hostSettings.corruptApplied('generation-settings-applied.json')
+  hostSettings.corruptApplied('qwen-runtime-applied.json')
+  const storageRoot = path.join(os.tmpdir(), 'whale-voice-ui-settings-recovered', 'generation')
+  const modelDirectory = path.join(os.tmpdir(), 'whale-voice-ui-qwen-model-recovered')
+  const pythonPath = path.join(os.tmpdir(), 'whale-voice-ui-python-recovered', 'python.exe')
+  try {
+    await withPage('?bridge=normal', async (page) => {
+      await page.getByRole('button', { name: '语音设置', exact: true }).click()
+      await page.locator('[data-testid="generation-storage-applied-error"]').waitFor({ timeout: 5000 })
+      await page.locator('[data-testid="qwen-runtime-applied-error"]').waitFor({ timeout: 5000 })
+      assert.match(await page.getByTestId('generation-storage-applied').innerText(), /记录损坏/)
+      assert.match(await page.getByTestId('qwen-runtime-applied').innerText(), /记录损坏/)
+
+      // Repair the storage location through the normal page actions.
+      await page.getByTestId('generation-storage-input').fill(storageRoot)
+      await page.getByTestId('generation-storage-save').click()
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+      await page.getByTestId('generation-storage-apply').click()
+      await page.waitForFunction(
+        () => !document.querySelector('[data-testid="generation-storage-applied-error"]'),
+        null,
+        { timeout: 8000 },
+      )
+      assert.equal(await page.getByTestId('generation-storage-applied').innerText(), '已应用位置：' + storageRoot)
+
+      // Repair the runtime paths the same way.
+      await page.getByTestId('qwen-runtime-model').fill(modelDirectory)
+      await page.getByTestId('qwen-runtime-python').fill(pythonPath)
+      await page.getByTestId('qwen-runtime-save').click()
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="qwen-runtime-status"]')?.innerText.includes('已保存草稿'),
+        null,
+        { timeout: 8000 },
+      )
+      await page.getByTestId('qwen-runtime-apply').click()
+      await page.waitForFunction(
+        () => !document.querySelector('[data-testid="qwen-runtime-applied-error"]'),
+        null,
+        { timeout: 8000 },
+      )
+      const appliedText = await page.getByTestId('qwen-runtime-applied').innerText()
+      assert.ok(appliedText.includes(modelDirectory), appliedText)
+      assert.ok(appliedText.includes(pythonPath), appliedText)
+      await page.screenshot({ path: path.join(artifactDir, 'settings-applied-records-repaired-1440.png') })
+    })
+  } finally {
+    await hostSettings.reset()
+  }
+})
+
 await check('safety page stays disabled when Core is unavailable', async () => {
   await withPage('?bridge=none', async (page) => {
     await page.getByRole('button', { name: '发送与安全', exact: true }).click()

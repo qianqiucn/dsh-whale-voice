@@ -106,6 +106,7 @@ export function bridgeScript(token) {
     generatePreset: (request) => generation('/generation', { method: 'POST', body: JSON.stringify(request || {}) }),
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
     getGenerationResults: () => generation('/generation/results'),
+    getGenerationAssemblyStatus: () => generation('/generation/assembly'),
     downloadGenerationResult: async (taskId) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
@@ -175,6 +176,7 @@ export function installHostBridge(scope, options = {}) {
   const detector = options.detector || createDetector({ env: options.env || process.env, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs })
   const generation = options.generation || null
   const settingsDraft = options.settingsDraft || null
+  const generationState = options.generationState || { state: 'DISABLED' }
   const guard = makeGuard(scope)
   const disposers = []
 
@@ -226,7 +228,19 @@ export function installHostBridge(scope, options = {}) {
     const draft = settingsDraft.read()
     if (draft.ok !== true) return { status: 500, body: draft }
     const applied = settingsDraft.readApplied()
-    if (applied.ok !== true) return { status: 500, body: applied }
+    if (applied.ok !== true) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          draft: draft.draft,
+          savedAt: draft.savedAt,
+          applied: null,
+          appliedAt: null,
+          appliedError: applied.error,
+        },
+      }
+    }
     return {
       status: 200,
       body: {
@@ -273,7 +287,19 @@ export function installHostBridge(scope, options = {}) {
     const draft = settingsDraft.readRuntimeDraft()
     if (draft.ok !== true) return { status: 500, body: draft }
     const applied = settingsDraft.readAppliedRuntime()
-    if (applied.ok !== true) return { status: 500, body: applied }
+    if (applied.ok !== true) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          runtimeDraft: draft.runtimeDraft,
+          savedAt: draft.savedAt,
+          applied: null,
+          appliedAt: null,
+          appliedError: applied.error,
+        },
+      }
+    }
     return {
       status: 200,
       body: {
@@ -338,6 +364,11 @@ export function installHostBridge(scope, options = {}) {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const result = await generation.status(url.searchParams.get('taskId') || '')
     return send(res, 200, result)
+  })
+  // 154: why generation is available or not. This route needs no generation object, so the settings
+  // page still opens and names the real failure after a broken applied record or a failed assembly.
+  route(PREFIX + '/generation/assembly', async (req, res) => {
+    return send(res, 200, { ok: true, ...generationState })
   })
   // 151: the saved generation results of the current scope. Read-only: it lists the already-stored
   // owner facts and their saved artifacts, and creates/regenerates nothing.
@@ -454,21 +485,33 @@ function withAppliedRuntime(settings, applied) {
  * assembly and is closed on dispose. 143: when the serializable config names a `storageRoot`, that
  * explicit location is the storage context instead of a temporary sandbox and is kept on dispose, so
  * a later assembly over the same location reads the same saved tasks and artifacts. 145: the Host
- * also receives the settings draft store opened from the serializable config.
+ * also receives the settings draft store opened from the serializable config. 154: a real failure
+ * (unusable storage location or a runtime that cannot start) is returned as a fact instead of
+ * rejecting the plugin, so the settings entry stays reachable.
  */
 async function assembleGenerationHost(scope, settings, settingsDraft) {
   const { storageRoot, ...runtimeSettings } = settings
   const temporary = storageRoot === undefined
-  const sandbox = temporary
-    ? createConfigSandbox({ prefix: 'whale-voice-qwen-runtime-' })
-    : openConfigStorage({ root: storageRoot })
+  let sandbox
+  try {
+    sandbox = temporary
+      ? createConfigSandbox({ prefix: 'whale-voice-qwen-runtime-' })
+      : openConfigStorage({ root: storageRoot })
+  } catch {
+    return { ok: false, code: 'storage_unavailable', storageRoot }
+  }
   const opened = await openQwenGenerationRuntime({ sandbox, ...runtimeSettings })
   if (!opened.ok) {
     if (temporary) removeConfigSandbox(sandbox)
-    throw new Error('whale-voice generation runtime: ' + (opened.code || 'ASSEMBLY_FAILED'))
+    return { ok: false, code: 'runtime_unavailable', detail: opened.code || 'ASSEMBLY_FAILED' }
   }
   const runtime = opened.value
-  const host = installHostBridge(scope, { env: process.env, generation: runtime.app, settingsDraft })
+  const host = installHostBridge(scope, {
+    env: process.env,
+    generation: runtime.app,
+    settingsDraft,
+    generationState: { state: 'READY' },
+  })
   if (typeof scope.effect === 'function') {
     scope.effect(() => () => {
       host.dispose()
@@ -476,38 +519,69 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
       return temporary ? closed.finally(() => removeConfigSandbox(sandbox)) : closed
     })
   }
+  return { ok: true }
+}
+
+/** 154: one page-visible reason for the real failure; it never claims generation works. */
+function generationFailure(outcome) {
+  if (outcome.code === 'applied_storage_invalid') {
+    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的生成数据保存位置记录损坏，无法读取。请在设置页重新保存并应用保存位置。' }
+  }
+  if (outcome.code === 'applied_runtime_invalid') {
+    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的 Qwen 运行路径记录损坏，无法读取。请在设置页重新保存并应用运行路径。' }
+  }
+  if (outcome.code === 'storage_unavailable') {
+    return { state: 'FAILED', code: outcome.code, messageZh: '生成数据保存位置不可用：' + outcome.storageRoot + '。请在设置页修正后重新保存并应用。' }
+  }
+  return { state: 'FAILED', code: outcome.code, messageZh: '生成运行对象未能启动（' + outcome.detail + '）。请检查 Qwen 运行路径并重新保存应用。' }
+}
+
+function installHost(scope, options) {
+  const host = installHostBridge(scope, { env: process.env, ...options })
+  if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
+  return host
 }
 
 export function apply(ctx, config = undefined) {
   const settings = generationSettings(config)
   const draftRoot = settingsDraftRoot(config)
   return new Promise((resolve) => {
-    ctx.inject(['webServer', 'connection'], (scope) => {
+    ctx.inject(['webServer', 'connection'], async (scope) => {
       const settingsDraft = draftRoot === undefined
         ? null
         : openGenerationSettingsDraft({ sandbox: openConfigStorage({ root: draftRoot }) })
-      // 146/149: the applied location and runtime paths (if any) are used when the plugin opens; the
-      // current runtime keeps whatever it was assembled with until this plugin is closed and opened again.
-      const applied = settingsDraft === null ? null : settingsDraft.readApplied()
-      if (applied !== null && applied.ok !== true) throw new Error('whale-voice settings draft: ' + applied.error)
-      const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
-      if (appliedRuntime !== null && appliedRuntime.ok !== true) {
-        throw new Error('whale-voice settings draft: ' + appliedRuntime.error)
-      }
-      let effective = settings
-      if (effective !== null && applied !== null && applied.applied) {
-        effective = { ...effective, storageRoot: applied.applied.generationStorageRoot }
-      }
-      if (effective !== null && appliedRuntime !== null && appliedRuntime.applied) {
-        effective = withAppliedRuntime(effective, appliedRuntime.applied)
-      }
-      if (!effective) {
-        const host = installHostBridge(scope, { env: process.env, settingsDraft })
-        if (typeof scope.effect === 'function') scope.effect(() => () => host.dispose())
+      if (settings === null) {
+        installHost(scope, { settingsDraft, generationState: { state: 'DISABLED' } })
         resolve()
         return
       }
-      resolve(assembleGenerationHost(scope, effective, settingsDraft))
+      // 146/149: the applied location and runtime paths (if any) are used when the plugin opens; the
+      // current runtime keeps whatever it was assembled with until this plugin is closed and opened again.
+      // 154: a damaged applied record keeps the settings entry reachable instead of failing the plugin.
+      const applied = settingsDraft === null ? null : settingsDraft.readApplied()
+      if (applied !== null && applied.ok !== true) {
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }) })
+        resolve()
+        return
+      }
+      const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
+      if (appliedRuntime !== null && appliedRuntime.ok !== true) {
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }) })
+        resolve()
+        return
+      }
+      let effective = settings
+      if (applied !== null && applied.applied) {
+        effective = { ...effective, storageRoot: applied.applied.generationStorageRoot }
+      }
+      if (appliedRuntime !== null && appliedRuntime.applied) {
+        effective = withAppliedRuntime(effective, appliedRuntime.applied)
+      }
+      const assembled = await assembleGenerationHost(scope, effective, settingsDraft)
+      if (assembled.ok !== true) {
+        installHost(scope, { settingsDraft, generationState: generationFailure(assembled) })
+      }
+      resolve()
     })
   })
 }
