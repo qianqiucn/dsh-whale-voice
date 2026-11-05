@@ -823,6 +823,14 @@ await check('settings page reports an unreadable generation status instead of hi
     assert.match(text, /无法读取生成运行状态/)
     assert.match(text, /不代表生成正常或未启用/)
     assert.equal(await page.locator('[data-testid="generation-assembly-error"]').count(), 0)
+    await page.waitForFunction(
+      () => {
+        const status = document.querySelector('[data-testid="generation-storage-status"]')
+        return status && !status.innerText.includes('正在读取')
+      },
+      null,
+      { timeout: 8000 },
+    )
     assert.equal(await page.getByTestId('generation-storage-input').isEditable(), true)
     await page.screenshot({ path: path.join(artifactDir, 'settings-assembly-read-error-1440.png') })
   })
