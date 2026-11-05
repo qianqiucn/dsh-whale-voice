@@ -397,8 +397,14 @@ export async function openPresetGenerationApp(options = {}) {
       now: now(),
       rights: { state: 'GRANTED', proofRef: rightsProofRef },
     })
-    const bytes = read.ok && read.value ? read.value.bytes : null
-    const origin = read.ok && read.value && read.value.artifact ? read.value.artifact.origin : null
+    // 159: the owner said READABLE, but only the actual byte read decides whether this query can
+    // report the result. A successful outcome without bytes (NOT_FOUND / DELETED / EXPIRED) is the
+    // same honest failure download() reports, never a readable result with empty artifact facts.
+    if (!read.ok || !read.value.bytes) {
+      return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'read rejected')
+    }
+    const bytes = read.value.bytes
+    const origin = read.value.artifact.origin
     return {
       ok: true,
       taskId,
@@ -406,8 +412,8 @@ export async function openPresetGenerationApp(options = {}) {
       ownerState: got.value.ownerState,
       readable: true,
       artifactRef: artifactStatus.value.artifactRef,
-      sha256: bytes ? sha256(bytes) : null,
-      byteLength: bytes ? bytes.length : null,
+      sha256: sha256(bytes),
+      byteLength: bytes.length,
       origin,
       provider: { providerId: got.value.task.provider.providerId, model: got.value.task.provider.model },
       voice: { kind: got.value.task.voice.kind, voiceId: got.value.task.voice.voiceId },
