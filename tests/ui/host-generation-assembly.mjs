@@ -33,6 +33,7 @@ export async function createHostGenerationAssembly() {
   let routes = []
   let host = null
   let generationEnabled = true
+  let generationFailure = null
 
   async function reset() {
     if (host) host.dispose()
@@ -43,6 +44,7 @@ export async function createHostGenerationAssembly() {
     routes = []
     host = null
     generationEnabled = true
+    generationFailure = null
 
     sandbox = createConfigSandbox({ prefix: 'wv-ui-host-generation-' })
     const opened = await openQwenGenerationRuntime({
@@ -73,6 +75,16 @@ export async function createHostGenerationAssembly() {
   async function handle(req, res) {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     if (!url.pathname.startsWith('/whale-voice/setup/')) return false
+    // 164: the real Host keeps the assembly route available even when generation is off or failed, so
+    // the page can tell "not configured" from "configured but failed to start".
+    if (url.pathname === '/whale-voice/setup/generation/assembly') {
+      if (generationFailure) {
+        json(res, 200, { ok: true, state: 'FAILED', code: generationFailure.code, messageZh: generationFailure.messageZh })
+        return true
+      }
+      json(res, 200, { ok: true, state: generationEnabled ? 'READY' : 'DISABLED' })
+      return true
+    }
     if (!generationEnabled && url.pathname.startsWith('/whale-voice/setup/generation')) {
       json(res, 503, { ok: false, error: 'generation_not_enabled' })
       return true
@@ -87,7 +99,19 @@ export async function createHostGenerationAssembly() {
   }
 
   function setGenerationEnabled(value) {
-    generationEnabled = value === true
+    generationEnabled = value
+    generationFailure = null
+  }
+
+  /** 164: a configured generation that failed to start (the same state index.js reports as FAILED). */
+  function setGenerationFailure(failure) {
+    generationFailure = failure
+    generationEnabled = false
+  }
+
+  function resetGeneration() {
+    generationEnabled = true
+    generationFailure = null
   }
 
   async function close() {
@@ -101,5 +125,5 @@ export async function createHostGenerationAssembly() {
   }
 
   await reset()
-  return { handle, close, token: TOKEN, setGenerationEnabled }
+  return { handle, close, token: TOKEN, setGenerationEnabled, setGenerationFailure, resetGeneration }
 }

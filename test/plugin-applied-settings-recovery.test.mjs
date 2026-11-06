@@ -365,3 +365,52 @@ test('154 a truncated applied runtime record cannot lock the settings page while
   await generationDenied(reopened, reopenedToken)
   await disposeOf(reopened)
 })
+
+// 164 v1.1: a storage location that cannot be read is described only within the known scope. The
+// confirmed case has no task record at all — only the `segments` entry is a plain file — so the
+// message must not claim damaged/truncated records or a Qwen runtime-path problem.
+test('164 an unreadable storage location is named within the known scope, not as damaged records or a Qwen path', { skip: spawnSkip }, async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-recovery-unreadable-storage-'))
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }))
+  const draftRoot = path.join(parent, 'settings')
+  const storageRoot = path.join(parent, 'generation')
+  fs.mkdirSync(storageRoot, { recursive: true })
+  fs.writeFileSync(path.join(storageRoot, 'segments'), 'not a directory', { encoding: 'utf8' })
+  assert.equal(fs.existsSync(path.join(storageRoot, CATALOG_FILE_NAME)), false)
+
+  const broken = makeHarness()
+  await apply(broken.ctx, JSON.parse(JSON.stringify(generationConfig(draftRoot, storageRoot))))
+  const token = bridgeToken(broken)
+  const state = await assemblyState(broken, token)
+  assert.equal(state.state, 'FAILED')
+  assert.match(state.messageZh, /生成数据保存位置无法读取/)
+  assert.doesNotMatch(state.messageZh, /任务记录|损坏|截断|Qwen 运行路径/)
+  assert.match(state.messageZh, /设置页/)
+  await generationDenied(broken, token)
+  const readable = await callRoute(routeOf(broken, DRAFT), { method: 'GET', url: DRAFT, token })
+  assert.equal(readable.status, 200, readable.body)
+  await disposeOf(broken)
+})
+
+// 164: without a settings draft entry, the failure must not ask for a save/apply this page cannot do.
+test('164 without a settings draft entry the failure points at the deployment configuration', { skip: spawnSkip }, async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-recovery-no-drafts-'))
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }))
+  const blocker = path.join(parent, 'plain-file')
+  fs.writeFileSync(blocker, 'not a directory')
+  const unusable = path.join(blocker, 'generation')
+  const config = generationConfig(path.join(parent, 'unused-settings'), unusable)
+  delete config.settings
+
+  const broken = makeHarness()
+  await apply(broken.ctx, config)
+  const token = bridgeToken(broken)
+  const state = await assemblyState(broken, token)
+  assert.equal(state.state, 'FAILED')
+  assert.equal(state.code, 'storage_unavailable')
+  assert.ok(state.messageZh.includes(unusable))
+  assert.match(state.messageZh, /部署配置/)
+  assert.doesNotMatch(state.messageZh, /保存并应用|设置页/)
+  await generationDenied(broken, token)
+  await disposeOf(broken)
+})
