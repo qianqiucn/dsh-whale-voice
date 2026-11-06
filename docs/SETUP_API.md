@@ -62,8 +62,9 @@ back to a Fake capability. A Core refusal is `200` with `ok:false` and its code/
 never means the delivery was accepted); malformed JSON is `400 invalid_body`, a missing task/target is
 `400 invalid_request`, and a non-declared method is `405`. `POST` returning `outcome:"ACCEPTED"` is the
 isolated Fake acceptance with a fixture receipt (`backendState:"QUEUED"`, `realOperationAllowed:false`),
-not a real send; a request that ends without an answer is only unconfirmed, and the persisted delivery
-stays queryable through `GET`.
+not a real send; a request that ends without an answer — including a timeout that fires while the reply
+body is being read (180 v1.1) — is only unconfirmed, and the persisted delivery stays queryable through
+`GET`.
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
 rejects non-loopback Hosts, cross-site requests, mismatched Origin, missing/wrong

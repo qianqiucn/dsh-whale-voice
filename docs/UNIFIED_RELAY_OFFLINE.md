@@ -107,8 +107,10 @@ object the route answers `503 generation_not_enabled`; with an application witho
 answers `503 PRESET_GENERATION_DELIVERY_UNAVAILABLE` and never falls back to a Fake capability. A Core
 refusal is `200` + `ok:false` with its code/stage/cause, so HTTP success never means acceptance; malformed
 requests are `400` and a non-declared method is `405`. The injected bridge adds the two calls and maps a
-client abort to `{ok:false,error:'delivery_unconfirmed'}`; the persisted record is queried afterwards and
-is never resent. No page button, target picker, real Host or real backend is involved.
+client abort to `{ok:false,error:'delivery_unconfirmed'}` — including a timeout that fires while the reply
+body is being read (180 v1.1, which no longer reports `core_http_200` for that abort); the persisted
+record is queried afterwards and is never resent. No page button, target picker, real Host or real backend
+is involved.
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a

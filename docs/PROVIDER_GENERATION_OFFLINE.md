@@ -195,8 +195,11 @@ fixture receipt, or `ok:false` with the Core code/stage/cause); `GET` is read-on
 persisted state. Malformed JSON / a missing task or target is `400`, a non-declared method is `405`, and
 HTTP 200 never means a real send. The injected bridge adds `confirmSavedResultDelivery` /
 `getSavedResultDeliveryStatus`; a client-side abort answers `{ok:false,error:'delivery_unconfirmed'}` (not
-a failure, cancellation or success) and the persisted record is queried afterwards. No page button, no
-real Host and no real backend are involved; the default qwen runtime still assembles no delivery wiring.
+a failure, cancellation or success) and the persisted record is queried afterwards. 180 v1.1 also
+preserves that result when the timeout fires while the reply body is being read (the confirmation no
+longer answers `core_http_200` for that abort); the other generation reads keep their existing fallback.
+No page button, no real Host and no real backend are involved; the default qwen runtime still assembles
+no delivery wiring.
 
 ### Original-task result download (150)
 

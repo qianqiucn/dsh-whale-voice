@@ -425,3 +425,51 @@ test('180 the injected bridge exposes the delivery calls on the same token contr
   assert.equal(aborted.ok, false)
   assert.equal(aborted.error, 'delivery_unconfirmed')
 })
+
+test('180 v1.1 a timeout while reading the confirmation reply stays delivery_unconfirmed', async () => {
+  const calls = []
+  const window = {}
+  const fakeFetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (options.method === 'POST') {
+      return {
+        ok: true,
+        status: 200,
+        async json() { const error = new Error('aborted'); error.name = 'AbortError'; throw error },
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { ok: true, state: 'ACCEPTED', delivery: { deliveryId: 'delivery:' + 'a'.repeat(32) } } },
+    }
+  }
+  vm.runInNewContext(bridgeScript('host-token'), {
+    window, fetch: fakeFetch, AbortController, setTimeout, clearTimeout, encodeURIComponent, JSON, Set, String,
+  })
+  const bridge = window.__WHALE_SETUP__
+  const request = { taskId: 'task:fixture-' + 'b'.repeat(32), targetId: 'fixture-private-a' }
+  const confirmed = await bridge.confirmSavedResultDelivery(request)
+  assert.equal(confirmed.ok, false)
+  assert.equal(confirmed.error, 'delivery_unconfirmed')
+  assert.equal(calls.filter((call) => call.options.method === 'POST').length, 1)
+  // The request was sent once; the persisted state is still readable afterwards.
+  const status = await bridge.getSavedResultDeliveryStatus(request.taskId, request.targetId)
+  assert.equal(status.ok, true)
+  assert.equal(status.state, 'ACCEPTED')
+  // The fix is scoped to this call: the same reply-read abort on another generation call keeps its
+  // existing result instead of being reinterpreted.
+  const generateWindow = {}
+  vm.runInNewContext(bridgeScript('host-token'), {
+    window: generateWindow,
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      async json() { const error = new Error('aborted'); error.name = 'AbortError'; throw error },
+    }),
+    AbortController, setTimeout, clearTimeout, encodeURIComponent, JSON, Set, String,
+  })
+  const generated = await generateWindow.__WHALE_SETUP__.generatePreset({ text: 'x', voiceId: 'demo-voice-a', language: 'zh-CN' })
+  assert.equal(generated.ok, false)
+  assert.equal(generated.error, 'core_http_200')
+})

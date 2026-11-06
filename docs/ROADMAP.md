@@ -684,6 +684,14 @@ existing route-count assertions updated; full suite 1227/1223 pass/4 platform sk
 `client.js` unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page button or real
 Host/delivery.
 
+180 v1.1 (2026-11-07): a timeout that fires while the confirmation reply body is being read no longer
+surfaces as `core_http_200`. The bridge's confirmation call keeps that abort and returns the existing
+`delivery_unconfirmed`; one request is sent, nothing is resent, and the persisted delivery is queried
+afterwards. The other generation reads keep their previous fallback, and the fetch-stage abort, valid Core
+responses, explicit HTTP rejections and the auth/method guard are unchanged. Evidence: 1 new VM regression
+(`host-delivery` 8 tests); full suite 1228/1224 pass/4 platform skips/0 fail; UI 89/89; `client.js`
+unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

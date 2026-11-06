@@ -1044,3 +1044,26 @@ registered routes, 6→7 generation routes). Full suite **1227 / 1223 pass / 4 p
 1220/1216/4/0); UI **89/89** (Core/Host-only change, no product UI diff); `client.js` unchanged
 (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`: this is an isolated
 transport boundary, not a page/Host integration, and no real Sender/WeChat/model/device ran.
+
+### Plan 13-A 180 v1.1 — a reply-read timeout stays unconfirmed (2026-11-07)
+
+Same branch/PR #107, correction only; nothing else from 180 is redone. The 0221 review reproduced one
+new-boundary defect in a minimal VM: the injected connection sent one confirmation request, `fetch`
+returned HTTP 200, the response body was not finished, and a 5 ms deadline aborted the read — the call
+answered `{ok:false,error:'core_http_200'}` instead of the existing `delivery_unconfirmed`.
+
+- **Fix.** The bridge's generation helper no longer swallows an `AbortError` raised while reading the
+  reply body for the confirmation call; that call keeps its existing mapping, so the result is
+  `{ok:false,error:'delivery_unconfirmed'}` (the request was sent once, nothing is resent). The other
+  generation reads keep their previous fallback, and the fetch-stage abort, valid Core responses,
+  explicit HTTP rejections and the auth/method guard are unchanged.
+- **Kept.** After the unconfirmed result the same original task/target can still be queried through the
+  status call and returns the persisted delivery fact; the record's own ACCEPTED/FAILED/UNKNOWN/QUEUED
+  state is not rewritten. Request-unconfirmed and delivery-UNKNOWN stay distinct.
+
+Evidence: 1 new VM regression in `test/host-delivery.test.mjs` (8 tests) reproduces the
+HTTP-200-then-body-abort path (the previous revision returns `core_http_200`, now `delivery_unconfirmed`),
+asserts one request only, reads the persisted status afterwards, and checks the fix is scoped (another
+generation call keeps its existing fallback). Full suite **1228 / 1224 pass / 4 platform skips / 0 fail**
+(was 1227/1223/4/0); UI **89/89**; `client.js` unchanged (383,622 bytes). Status remains
+`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host or real delivery was verified.

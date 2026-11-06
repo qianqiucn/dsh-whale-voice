@@ -89,7 +89,15 @@ export function bridgeScript(token) {
     try {
       const response = await fetch(prefix + path, init);
       let payload = null;
-      try { payload = await response.json(); } catch { payload = null; }
+      try {
+        payload = await response.json();
+      } catch (error) {
+        // 180 v1.1: a timeout that fires while the reply body is being read is an unanswered request,
+        // not a Core HTTP status. Only callers that opt in keep the abort (the delivery confirmation
+        // maps it to its unconfirmed result); the other generation reads keep their current fallback.
+        if (options && options.rejectOnBodyAbort === true && error && error.name === 'AbortError') throw error;
+        payload = null;
+      }
       if (payload && typeof payload === 'object') return payload;
       return { ok: false, error: 'core_http_' + response.status };
     } finally {
@@ -126,6 +134,7 @@ export function bridgeScript(token) {
       method: 'POST',
       body: JSON.stringify(request || {}),
       timeoutMs: options && options.timeoutMs,
+      rejectOnBodyAbort: true,
     }).catch((error) => {
       if (error && error.name === 'AbortError') return { ok: false, error: 'delivery_unconfirmed' }
       throw error
