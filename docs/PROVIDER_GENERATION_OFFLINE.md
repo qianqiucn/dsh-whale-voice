@@ -71,10 +71,12 @@ Only `/generation` accepts POST; the other routes keep their declared methods, a
 token/Origin/connection gate is unchanged. The handler calls the injected `options.generation` Core
 entry (an already-opened `openPresetGenerationApp` value). The formal plugin assembly (142) supplies
 that runtime when the serializable `config.generation.enabled === true`; a deployment without that
-config installs the read-only surface, so every generation route returns
-`503 {ok:false,error:'generation_not_enabled'}` and nothing is generated. No new listener, no
-authentication change; responses are the Core envelope and remain Fixture/isolated only (no real-model
-verification).
+config answers every generation route with `503 {ok:false,error:'generation_not_enabled'}` and
+generates nothing. That does not make the whole Host read-only: with `config.settings.draftRoot`
+configured the existing settings-draft save/apply routes still write their isolated draft/applied
+files, and without that draft root those routes answer `503` as before; the assembly-status query
+keeps its own `READY`/`DISABLED`/`FAILED` answers. No new listener, no authentication change;
+responses are the Core envelope and remain Fixture/isolated only (no real-model verification).
 
 The production client bridge script (`index.js` `bridgeScript`) exposes
 `getGenerationCatalog()`, `generatePreset({text, voiceId, language})` and
