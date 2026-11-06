@@ -63,8 +63,11 @@ on a fallback).
   state is `PRESET_GENERATION_DELIVERY_NOT_ACCEPTED` with the state and record, never a success. Without
   the wiring both delivery methods answer `PRESET_GENERATION_DELIVERY_UNAVAILABLE`.
 - `deliveryStatus({taskId, targetId})` (179) reads the persisted delivery of that original result and
-  target from the same relay store and returns its current state; an unconfirmed relation answers
-  `PRESET_GENERATION_DELIVERY_NOT_FOUND`. It does not submit, retry or read the source again.
+  target from the same relay store and returns its current state. The lookup is a read-only
+  `deliveryFor({scopeId, taskId, targetId})` bound to this entry's scope (179 v1.1): another scope's
+  record is `PRESET_GENERATION_DELIVERY_NOT_FOUND` even when its taskId/targetId are known, an
+  unconfirmed relation answers the same, and a same-scope record stays readable after the saved result is
+  deleted or unreadable. It does not submit, retry, rewrite the state or read the source again.
 
 - `generate({text, voiceId, language})` reserves a real Task birth in the existing catalog, runs the
   coordinator (133) once against the caller-provided audited provider, and lets the original task
@@ -172,6 +175,11 @@ reports a Fake acceptance (state `ACCEPTED`, backend `QUEUED`, fixture receipt) 
 `deliveryStatus` only reads the persisted record. Generation, save, list and download never deliver
 anything; without the `delivery` wiring they are unaffected while both delivery methods answer
 `DELIVERY_UNAVAILABLE`. No Host route or page uses this entry yet.
+
+179 v1.1 corrects the status query range: the read-back is the relay's read-only
+`deliveryFor({scopeId, taskId, targetId})` over the record's own scope, so another scope/proof cannot
+receive that record's artifactRef/permitId/receipt even when the original taskId and target are known; a
+same-scope record stays readable after the saved result is deleted, and its state is never rewritten.
 
 ### Original-task result download (150)
 

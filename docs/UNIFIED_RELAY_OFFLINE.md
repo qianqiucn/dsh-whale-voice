@@ -93,8 +93,12 @@ reuse the one delivery (no second Fake request); the relay store stays the singl
 rotated segments. The entry returns `outcome:"ACCEPTED"` (state `ACCEPTED`, backend `QUEUED`, fixture
 receipt) only for a Fake-accepted delivery; refusals are `DELIVERY_REFUSED` with a stage/cause, a
 persisted non-accepted state is `DELIVERY_NOT_ACCEPTED` with the exact state, and an unconfirmed relation
-is `DELIVERY_NOT_FOUND`. Without the `delivery` wiring both methods answer `DELIVERY_UNAVAILABLE` and
-generation/save/download are unchanged. No Host route or page uses this entry yet.
+is `DELIVERY_NOT_FOUND`. The status read-back is the relay's read-only
+`deliveryFor({scopeId, taskId, targetId})` over the record's own scope (179 v1.1), so another
+scope/proof cannot receive that record even when its taskId/targetId are known, while a same-scope record
+stays readable after the saved result is deleted. Without the `delivery` wiring both methods answer
+`DELIVERY_UNAVAILABLE` and generation/save/download are unchanged. No Host route or page uses this entry
+yet.
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a
@@ -211,7 +215,7 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Six offline relay files plus the delivery application entry file cover the unit (52 tests), and the
+Six offline relay files plus the delivery application entry file cover the unit (54 tests), and the
 internal Windows delivery module (13-B, 144 revision) is covered by its own two offline files
 (`test/internal-sender-offline.test.mjs` 29 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
 [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
@@ -257,7 +261,7 @@ confirmation, delivery and submit, and never resubmit; a deleted segment artifac
 as `TASK_NOT_SAVED` while a still-readable retained segment result older than its recorded 24 h value is
 accepted; and permit/delivery capacity is one count across segments.
 
-`test/saved-result-delivery-app.test.mjs` (6, 179): the generation application's delivery entry. Without
+`test/saved-result-delivery-app.test.mjs` (8, 179): the generation application's delivery entry. Without
 the `delivery` wiring generation/save/status/download keep working and both delivery methods answer
 `DELIVERY_UNAVAILABLE`; one confirmation reaches `ACCEPTED` once with a fixture receipt, a repeat call and
 a reopened entry reuse the same deliveryId and never ask the Fake backend twice, and `deliveryStatus`
@@ -265,7 +269,10 @@ reads the persisted state back; an unconfirmed relation is `DELIVERY_NOT_FOUND` 
 deleted source and an unauthorized target fail explicitly; an unknown backend result stays
 `DELIVERY_NOT_ACCEPTED`/`UNKNOWN` and is never resent; base and rotated segment results (including a
 retained one) are confirmed through the one entry; confirmation and delivery capacity refusals keep their
-stage/cause.
+stage/cause. The two v1.1 tests bind the status read-back to the entry's scope: another scope/proof with
+the same taskId/target gets `DELIVERY_NOT_FOUND` and never the record's artifactRef/permitId/receipt
+(the previous revision returned it), and a same-scope record stays readable after the saved result is
+deleted without a resubmit.
 
 `test/relay-persist-offline.test.mjs` (12, 137-PERSIST-01/02 plus the retention/enumeration close-out): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
@@ -291,7 +298,7 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1218 tests / 1214 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
+Local: **1220 tests / 1216 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
 (build unchanged by this Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

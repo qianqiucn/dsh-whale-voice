@@ -662,6 +662,15 @@ methods answer `DELIVERY_UNAVAILABLE` while generation/save/download are unchang
 unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real
 Sender/WeChat/model/device.
 
+179 v1.1 (2026-11-06): the delivery status read-back is scope-bound. `deliveryStatus` now uses the relay's
+read-only `deliveryFor({scopeId, taskId, targetId})` over the persisted record's own scope instead of
+scanning the shared store, so another scope/proof gets `DELIVERY_NOT_FOUND` even with the same
+taskId/target and never receives its artifactRef/permitId/receipt. A same-scope record stays readable
+after the saved result is deleted and its state is not rewritten; the rest of 179 is unchanged. Evidence:
+2 new regression tests (cross-scope leak reproduced on the previous revision; same-scope deleted-result
+read); delivery entry 8 tests; full suite 1220/1216 pass/4 platform skips/0 fail; UI 89/89; `client.js`
+unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

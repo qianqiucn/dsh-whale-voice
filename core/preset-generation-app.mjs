@@ -21,7 +21,8 @@
  * optional delivery wiring (trusted target directory + Fake backend) with the saved result and the
  * unified relay. The caller only names the original task and target: the artifact ref comes from this
  * entry's own status read and the rights proof from the assembly. Without that wiring both methods
- * answer DELIVERY_UNAVAILABLE and generation/save/download keep working.
+ * answer DELIVERY_UNAVAILABLE and generation/save/download keep working. The status read-back is bound
+ * to this entry's scope, so another scope's record is never returned (179 v1.1).
  */
 
 import crypto from 'node:crypto'
@@ -37,7 +38,7 @@ import {
   PROVIDER_GENERATION_SCHEMA_VERSION,
   createProviderGenerationCoordinator,
 } from './audio/provider-generation-offline.mjs'
-import { openUnifiedRelay } from './audio/relay-core-offline.mjs'
+import { openUnifiedRelay, RELAY_ERRORS } from './audio/relay-core-offline.mjs'
 
 export const PRESET_GENERATION_APP_SCHEMA_VERSION = 1
 
@@ -648,16 +649,17 @@ export async function openPresetGenerationApp(options = {}) {
     }
     const wired = await deliveryRelayOrFailure()
     if (!wired.ok) return wired
-    const mappings = await wired.relay.mappings()
-    if (mappings.ok !== true) return refused('mappings', mappings.code, mappings.detail)
-    for (const item of mappings.deliveries) {
-      if (item.taskId !== taskId) continue
-      const found = await wired.relay.status(item.deliveryId)
-      if (found.ok === true && found.delivery.targetId === targetId) {
-        return { ok: true, state: found.delivery.state, delivery: deliveryView(found.delivery) }
+    // 179 v1.1: the lookup is bound to this entry's scope, so a record created by another scope can
+    // never be returned (even when its taskId/targetId are known); the saved result's current
+    // readability is not needed because the delivery record is the relay's own persisted fact.
+    const found = await wired.relay.deliveryFor({ scopeId, taskId, targetId })
+    if (found.ok !== true) {
+      if (found.code === RELAY_ERRORS.NOT_FOUND) {
+        return failure(PRESET_GENERATION_APP_ERRORS.DELIVERY_NOT_FOUND, 'delivery')
       }
+      return refused('status', found.code, found.detail)
     }
-    return failure(PRESET_GENERATION_APP_ERRORS.DELIVERY_NOT_FOUND, 'delivery')
+    return { ok: true, state: found.delivery.state, delivery: deliveryView(found.delivery) }
   }
 
   /**

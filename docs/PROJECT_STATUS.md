@@ -986,3 +986,27 @@ entry; confirmation and delivery capacity refusals keep their stage/cause. Full 
 `client.js` unchanged (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`:
 this is a Core application entry, not a page/Host integration, and no real Sender/WeChat/model/device ran;
 Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 179 v1.1 — the delivery status read-back is bound to its own scope (2026-11-06)
+
+Same branch/PR #106, correction only; no new feature PR and nothing else from 179 is redone. The 0219
+review reproduced one new-boundary defect in an isolated Fixture: `deliveryStatus` scanned the shared
+relay store and returned any record with the same taskId/targetId, so an application opened with a
+different scope/proof received that record's artifactRef/permitId/receipt.
+
+- **Fix.** `deliveryStatus` now uses the relay's read-only `deliveryFor({scopeId, taskId, targetId})`,
+  which matches the persisted record's own scope. Another scope/proof with the same taskId/target gets
+  `PRESET_GENERATION_DELIVERY_NOT_FOUND` and no record content; nothing is confirmed or submitted by that
+  query. The lookup is read-only and independent of the saved result's current readability.
+- **Kept.** A same-scope record stays readable after the saved result is deleted or unreadable, its
+  ACCEPTED/FAILED/UNKNOWN/QUEUED facts are not rewritten, and no automatic resend happens. The rest of
+  179 (single delivery across repeats/reopen, cross-segment source, capacity, unavailable wiring,
+  Voice/Cover semantics) is unchanged.
+
+Evidence: 2 new regression tests in `test/saved-result-delivery-app.test.mjs` (8 total): a second scope
+with the same taskId/target gets `DELIVERY_NOT_FOUND` and never the artifactRef/permitId/receipt while the
+store stays at one delivery/one permit (the previous revision returned the record), and a same-scope
+record is still readable after the artifact deletion without a second backend request. Full suite
+**1220 / 1216 pass / 4 platform skips / 0 fail** (was 1218/1214/4/0); UI **89/89**; `client.js` unchanged
+(383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and
+no real Sender/WeChat/model/device ran.

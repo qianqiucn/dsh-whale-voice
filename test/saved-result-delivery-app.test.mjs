@@ -63,12 +63,12 @@ function createMockProvider() {
   }
 }
 
-async function openApp(sandbox, clock, delivery) {
+async function openApp(sandbox, clock, delivery, identity = {}) {
   const opened = await openPresetGenerationApp({
     sandbox,
     provider: createMockProvider(),
-    scopeId: SCOPE,
-    rightsProofRef: PROOF,
+    scopeId: identity.scopeId || SCOPE,
+    rightsProofRef: identity.proofRef || PROOF,
     voices: VOICES,
     textLimit: 200,
     providerFacts: PROVIDER_FACTS,
@@ -284,5 +284,71 @@ test('179 confirmation and delivery capacity refusals stay explicit at the appli
     assert.equal(backend.stats().submitted, 1)
   } finally {
     removeConfigSandbox(deliverySandbox)
+  }
+})
+
+test('179 v1.1 a delivery status query never returns another scope record', async () => {
+  const sandbox = createConfigSandbox()
+  try {
+    const clock = mutableClock(T0)
+    const backendA = createFakeDeliveryBackend({ targets: [TARGET] })
+    const appA = await openApp(sandbox, clock, { backend: backendA, targets: [TARGET] })
+    const savedA = await generateSaved(appA, '第九份隔离生成，范围 A。')
+    const confirmedA = await appA.confirmDelivery({ taskId: savedA.taskId, targetId: TARGET.targetId })
+    assert.equal(confirmedA.ok, true, JSON.stringify(confirmedA))
+    const backendB = createFakeDeliveryBackend({ targets: [TARGET] })
+    const appB = await openApp(sandbox, clock, { backend: backendB, targets: [TARGET] }, {
+      scopeId: 'scope:fixture-delivery-app-b',
+      proofRef: 'fixture-rights:delivery-app-b',
+    })
+    const statusB = await appB.deliveryStatus({ taskId: savedA.taskId, targetId: TARGET.targetId })
+    assert.equal(statusB.ok, false)
+    assert.equal(statusB.code, PRESET_GENERATION_APP_ERRORS.DELIVERY_NOT_FOUND)
+    assert.equal(statusB.delivery, undefined)
+    assert.equal(Object.prototype.hasOwnProperty.call(statusB, 'artifactRef'), false)
+    const readB = await appB.status(savedA.taskId)
+    assert.equal(readB.ok, false)
+    const store = readRelayStore(sandbox.root)
+    assert.equal(store.deliveries.length, 1)
+    assert.equal(store.permits.length, 1)
+    assert.equal(backendB.stats().submitted, 0)
+    const statusA = await appA.deliveryStatus({ taskId: savedA.taskId, targetId: TARGET.targetId })
+    assert.equal(statusA.ok, true, JSON.stringify(statusA))
+    assert.equal(statusA.state, RELAY_STATES.ACCEPTED)
+    assert.equal(statusA.delivery.deliveryId, confirmedA.delivery.deliveryId)
+  } finally {
+    removeConfigSandbox(sandbox)
+  }
+})
+
+test('179 v1.1 the same scope still reads its delivery after the saved result is deleted', async () => {
+  const sandbox = createConfigSandbox()
+  try {
+    const clock = mutableClock(T0)
+    const backend = createFakeDeliveryBackend({ targets: [TARGET] })
+    const app = await openApp(sandbox, clock, { backend, targets: [TARGET] })
+    const saved = await generateSaved(app, '第十份隔离生成，删除后仍可查投递记录。')
+    const confirmed = await app.confirmDelivery({ taskId: saved.taskId, targetId: TARGET.targetId })
+    assert.equal(confirmed.ok, true, JSON.stringify(confirmed))
+    const library = await openFixtureArtifactLibrary({ sandbox })
+    assert.equal(library.ok, true, JSON.stringify(library))
+    const deleted = await library.value.delete({
+      schemaVersion: 1, scopeId: SCOPE, artifactRef: saved.artifactRef, now: clock.now(),
+    })
+    assert.equal(deleted.ok, true, JSON.stringify(deleted))
+    const again = await app.confirmDelivery({ taskId: saved.taskId, targetId: TARGET.targetId })
+    assert.equal(again.ok, false)
+    assert.equal(again.code, PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED)
+    const status = await app.deliveryStatus({ taskId: saved.taskId, targetId: TARGET.targetId })
+    assert.equal(status.ok, true, JSON.stringify(status))
+    assert.equal(status.state, RELAY_STATES.ACCEPTED)
+    assert.equal(status.delivery.deliveryId, confirmed.delivery.deliveryId)
+    const reopened = await openApp(sandbox, clock, { backend, targets: [TARGET] })
+    const reopenedStatus = await reopened.deliveryStatus({ taskId: saved.taskId, targetId: TARGET.targetId })
+    assert.equal(reopenedStatus.ok, true, JSON.stringify(reopenedStatus))
+    assert.equal(reopenedStatus.delivery.deliveryId, confirmed.delivery.deliveryId)
+    assert.equal(backend.stats().submitted, 1)
+  } finally {
+    removeConfigSandbox(sandbox)
   }
 })
