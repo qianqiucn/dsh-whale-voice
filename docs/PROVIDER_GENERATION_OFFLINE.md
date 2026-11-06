@@ -158,6 +158,21 @@ created, changed or deleted, and no generation is triggered. Measured on the sam
 24 saved results 435–444 ms → 22–23 ms, 96 saved results (4 segments) 1.75–2.09 s → 83–84 ms; the
 numbers are this machine's measurements, not a product promise.
 
+### Interrupted generation is settled on reopen (165)
+
+The claim ledger keeps a claim active (`CLAIMED` / `BEGINNING`) while a synthesis is in flight; a
+process that dies before `close()` used to leave that record active forever. Opening the generation
+entry over the same storage location (`openPresetGenerationApp` through the per-segment coordinator)
+now runs `reconcile()` once per segment: any claim still active on disk cannot be running any more, so
+it is settled as `UNKNOWN` with `lastError: interrupted before completion` — never `SAVED` and never a
+definite failure. The provider is not called, no task or artifact is created, the request is not
+replayed or re-saved, artifacts are not deleted and orphan artifacts are not associated; later reopens
+see no active claim and leave the ledger untouched. If the settlement cannot be persisted (for example
+the claims file cannot be written), opening fails instead of pretending success: the app reports the
+`claim-write` detail, the assembly state says the interrupted record could not be updated and that the
+page neither claims completion nor clears the record, and both the claim and the artifacts stay as
+they were. Previously saved results keep listing and downloading with their original bytes.
+
 ### Real reason and usable repair entry for a failed start (164)
 
 The assembly-failure explanation now keeps the reason the lower layer actually knows and only points

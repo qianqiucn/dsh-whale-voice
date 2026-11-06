@@ -705,5 +705,31 @@ export function createProviderGenerationCoordinator(options = {}) {
     return { ok: true, settled: handled }
   }
 
-  return Object.freeze({ ok: true, prepare, submit, status, cancel, get, close })
+  /**
+   * 165: this coordinator is a fresh process over the same storage location, so a claim that is still
+   * active in the ledger cannot be running any more — the process that owned it was interrupted and
+   * never reached `close()`. Such a claim is settled as UNKNOWN (never SAVED and never a definite
+   * failure) with the provider not called and no task, artifact or saved result created, changed or
+   * deleted. If the settlement cannot be persisted it reports failure and leaves the ledger as it was.
+   */
+  function reconcile() {
+    const ledger = load()
+    if (!ledger) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
+    if (!ledger.entries.some((entry) => CLAIM_ACTIVE.has(entry.state))) return { ok: true, settled: [] }
+    const stamp = now()
+    const entries = ledger.entries.map((item) => ({ ...item }))
+    const settled = []
+    for (const target of entries) {
+      if (!CLAIM_ACTIVE.has(target.state)) continue
+      target.state = 'UNKNOWN'
+      target.lastError = 'interrupted before completion'
+      target.updatedAt = stamp
+      settled.push(target.claimId)
+    }
+    const written = writeEntries(entries, ledger.revision)
+    if (!written.ok) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
+    return { ok: true, settled }
+  }
+
+  return Object.freeze({ ok: true, prepare, submit, status, cancel, get, close, reconcile })
 }
