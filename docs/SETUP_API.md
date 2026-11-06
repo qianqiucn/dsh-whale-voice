@@ -122,10 +122,16 @@ current runtime, start a Worker/model or write production config. Their payloads
 
 The frontend uses `getStatus()`; `detect()` is available for the future per-component action. If the
 bridge is absent, invalid, slow or returns the wrong schema, the wizard shows a failure state and
-does not claim completion. The settings-draft saves above are the only write methods that exist
-today; they write only the isolated draft/applied files under the configured draft root and keep the
-same per-process token/same-origin guard. Other write methods (installation, production
-configuration) remain future work behind authentication and request validation.
+does not claim completion. Among the configuration interfaces, the settings-draft saves above are the
+only write methods that exist today; they write only the isolated draft/applied files under the
+configured draft root and keep the same per-process token/same-origin guard. The generation interfaces
+also write, separately from configuration: `POST /whale-voice/setup/generation` reserves a task record
+in the isolated task catalog (`catalog.reserve`), imports the provider bytes into the isolated artifact
+library (`artifacts.import`) and, on success, records the original task's SAVED state
+(`saveArtifact`). A request that is rejected or fails may already have reserved its task record (and,
+if the save step fails, an artifact), so this document does not claim that a failed generation has no
+side effects. Other write methods (installation, production configuration) remain future work behind
+authentication and request validation.
 
 ### SetupStatus shape (v0)
 
