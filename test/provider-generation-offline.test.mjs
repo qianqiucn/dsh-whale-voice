@@ -218,6 +218,15 @@ test('provider generation: prepare → submit → SAVED artifact, original task 
     })
     assert.equal(read.ok, true, JSON.stringify(read))
     assert.equal(sha256(read.value.bytes), sha256(bytes), 'the original task reads exactly the provider bytes')
+
+    // The reopened coordinator still serves the saved bytes through its own exported get();
+    // reading the artifact library directly is not a substitute for that check.
+    const reopenedCoordinator = await open({
+      sandbox, artifacts: reopenedLibrary.value, provider: createMockProvider({ bytes }), taskOwner: reopenedOwner,
+    })
+    const fetched = await reopenedCoordinator.get(prepared.claim.claimId)
+    assert.equal(fetched.ok, true, JSON.stringify(fetched))
+    assert.equal(sha256(fetched.value.bytes), sha256(bytes), 'the reopened coordinator returns exactly the saved bytes')
   })
 })
 
