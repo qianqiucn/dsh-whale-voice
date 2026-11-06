@@ -687,7 +687,10 @@ coordinator: durable claim, fail-closed duplicate/conflict/cross-scope/rights ru
 result handling, byte re-measurement, artifact import + readback, and a `SAVE_UNKNOWN` tombstone that never
 resynthesises. 8 new tests; full suite 1152/1148/4/0; no model/process/WeChat/Host route. The Plan 08 owner
 SAVED entry (owner schema v3) and UI/Host wiring remain open; the claim keeps the task birth hash for that
-future binding.
+future binding. **Later update (2026-11-06):** 132 completed the original-task SAVED entry on the existing
+owner v2 with SaveProof — the previously suggested owner schema v3 was not needed (ADR-036) — and 136/137
+added the Host routes and page wiring; the "remain open" wording above records the state on 2026-11-04, not
+current work.
 
 ### Plan 13-C / Native voice static admission research (2026-11-04, 118-B)
 

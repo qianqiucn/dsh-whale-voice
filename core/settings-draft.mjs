@@ -53,7 +53,8 @@ function validPath(value) {
  *
  * @param {{sandbox: object}} options
  * @returns {{read: Function, save: Function, readApplied: Function, apply: Function,
- *   readRuntimeDraft: Function, saveRuntimeDraft: Function}}
+ *   readRuntimeDraft: Function, saveRuntimeDraft: Function,
+ *   readAppliedRuntime: Function, applyRuntime: Function}}
  */
 export function openGenerationSettingsDraft(options = {}) {
   const sandbox = options.sandbox

@@ -139,7 +139,7 @@ test('133 a preset CustomVoice request runs through the real Qwen public interfa
     })
     assert.equal(coordinator.ok, true, JSON.stringify(coordinator))
 
-    // The legal preset request the current coordinator rejects at request.modality.
+    // The legal preset request is accepted (modality:'preset' and the voiceId-derived preset path).
     const prepared = await coordinator.prepare(claimFrame(taskId))
     assert.equal(prepared.ok, true, JSON.stringify(prepared))
     assert.equal(prepared.outcome, 'CREATED')

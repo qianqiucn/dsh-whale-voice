@@ -1,12 +1,15 @@
 # Provider Generation → SAVED Candidate (Plan 10-R1, OFFLINE / ISOLATED)
 
 **Status:** `IN PROGRESS` / `OFFLINE` — internal wiring candidate only. No model was loaded, no real
-inference ran, no WeChat/device/window was touched, no production Host route was added, and nothing is
-merged. `SAVED` means "the isolated coordinator stored provider bytes in the existing Artifact
+inference ran, no WeChat/device/window was touched, and this is not a production or real-model
+verification. Since 120-B the formal Host routes (136) exist and the formal plugin assembly (142/143/
+146/149) can start this runtime when the serializable config enables it; the module itself still opens
+no route. `SAVED` means "the isolated coordinator stored provider bytes in the existing Artifact
 library **and** the original task owner recorded that Artifact as the task's SAVED result (132)", not
 that a user can click real generation, not that a Sender can deliver it, and not that a real model
 ran. 133 additionally verifies the **real** `createQwenProvider` public interface against the existing
-Fixture worker (a local Node child process, no model).
+Fixture worker (a local Node child process, no model). All evidence below was produced in isolated
+fixtures; no deployment, production Host or real model was exercised.
 
 ## 1. What this unit actually is
 
@@ -58,10 +61,12 @@ token bridge:
 
 Only `/generation` accepts POST; the other routes keep their declared methods, and the existing
 token/Origin/connection gate is unchanged. The handler calls the injected `options.generation` Core
-entry (an already-opened `openPresetGenerationApp` value). The production `apply()` passes no runtime,
-so every generation route returns `503 {ok:false,error:'generation_not_enabled'}` and nothing is
-generated. No new listener, no authentication change; responses are the Core envelope and remain
-Fixture/isolated only.
+entry (an already-opened `openPresetGenerationApp` value). The formal plugin assembly (142) supplies
+that runtime when the serializable `config.generation.enabled === true`; a deployment without that
+config installs the read-only surface, so every generation route returns
+`503 {ok:false,error:'generation_not_enabled'}` and nothing is generated. No new listener, no
+authentication change; responses are the Core envelope and remain Fixture/isolated only (no real-model
+verification).
 
 The production client bridge script (`index.js` `bridgeScript`) exposes
 `getGenerationCatalog()`, `generatePreset({text, voiceId, language})` and
@@ -401,8 +406,9 @@ and `backend` from discovery; `instanceId` is the caller-supplied runtime label)
 fixed example. It returns `{ app, provider, discovery, close }`; `close()` stops exactly the worker
 this runtime created through the existing normal shutdown path, and a second close is a no-op. The
 isolated Host test and the UI Host assembly now use this one entry instead of hand-assembling
-supervisor/provider/app; production `apply()` still receives no generation runtime, so the installed
-Host remains not enabled.
+supervisor/provider/app; the formal plugin assembly (142) also uses this entry when
+`config.generation.enabled === true`, and without that config the installed Host remains not enabled
+(503). This is assembly wiring only: no real model was loaded and no production verification exists.
 
 ### Formal Provider task (139)
 
@@ -477,11 +483,13 @@ only: the results remain `fixtureOnly` / `realReady:false` and never claim a rea
    wires the real `createQwenProvider` public interface to the existing Fixture worker
    (`test-fixtures/fake-qwen-worker.mjs`, a Node child process). No model, GPU, real inference,
    network or cloud path is started; clone and VoiceDesign remain unwired.
-4. **No enabled generation in the installed Host.** The formal routes (136) and the client bridge
-   methods exist, but the production assembly supplies no generation runtime, so the 音色中心 page
-   honestly shows `生成未启用` (`503 generation_not_enabled`) and nothing is generated. The flow only
-   runs in the isolated Host harness below. No production write, no real model and no UI claim of real
-   readiness.
+4. **Generation is enabled only through the formal runtime config.** The formal routes (136) and the
+   client bridge methods exist, and the formal plugin assembly (142/143/146/149) starts this runtime
+   when the serializable config has `generation.enabled === true`; without that config the installed
+   Host supplies no generation runtime, so the 音色中心 page honestly shows `生成未启用`
+   (`503 generation_not_enabled`) and nothing is generated. The flow below only runs in isolated
+   fixtures; no production write, no real model and no UI claim of real readiness. Enabling the
+   runtime does not prove real-model output or production acceptance.
 5. The `expiresAt` window (24 h) is used only for the Artifact library entry, not a delivery/TTL policy.
 
 ## 4. Tests

@@ -2717,7 +2717,7 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     h(PageHead, {
       eyebrow: 'WHALE VOICE / SETTINGS',
       title: '语音设置',
-      description: '日常使用的安全配置。除“生成数据保存位置”草稿外，其余修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
+      description: '日常使用的安全配置。“生成数据保存位置”和“Qwen 运行路径”会保存为真实草稿并可显式应用（下次打开插件生效）；其余修改只存在于当前前端演示状态，不会写入生产 JSON 或触发真实语音。',
       actions: h(React.Fragment, null,
         dirty ? h(Badge, { tone: 'demo' }, '有未保存修改') : h(Badge, { tone: 'backend' }, '已同步演示草稿'),
         h(Button, { onClick: resetSettings, disabled: !dirty }, '恢复默认'),
@@ -2725,7 +2725,7 @@ function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
-      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。“生成数据保存位置”只保存为草稿，不会启用生成服务。')),
+      h('span', null, '演示模式：开关只改变当前页面状态。真实语音开关、白名单与 Bridge 配置均不会被修改。“生成数据保存位置”和“Qwen 运行路径”只保存为草稿，需显式应用且下次重开插件才生效，不会启用生成服务或立即切换当前运行。')),
     h(GenerationRuntimeStatusCard, null),
     h(GenerationStorageDraftCard, { notify }),
     h(QwenRuntimeDraftCard, { notify }),
