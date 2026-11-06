@@ -153,7 +153,7 @@ test('142 without runtime config the generation surface stays explicitly not ena
     assert.equal(runtimeSandboxes(), before)
     const token = bridgeToken(harness)
     const generationRoutes = harness.routes.filter((route) => route.path.startsWith('/whale-voice/setup/generation'))
-    assert.equal(generationRoutes.length, 6)
+    assert.equal(generationRoutes.length, 7)
     const generateRoute = harness.routes.find((route) => route.path === '/whale-voice/setup/generation')
     const denied = await callRoute(generateRoute, {
       method: 'POST',

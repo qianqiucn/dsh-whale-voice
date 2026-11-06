@@ -1,6 +1,6 @@
 # Whale Relay Core · Plan 13-A / OFFLINE
 
-**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-06, 179 revision).
+**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-07, 180 revision).
 This is the first offline owner of delivery persistence for the ADR-001 unified
 `Whale Audio Core → Whale Relay Core → supported target` boundary. It consumes a *persisted* SAVED Audio
 Task (or a persisted SAVED Cover MASTER, or a saved Provider generation result in its real storage
@@ -99,6 +99,18 @@ scope/proof cannot receive that record even when its taskId/targetId are known, 
 stays readable after the saved result is deleted. Without the `delivery` wiring both methods answer
 `DELIVERY_UNAVAILABLE` and generation/save/download are unchanged. No Host route or page uses this entry
 yet.
+
+**Trusted Host surface (180).** `installHostBridge` exposes the entry on the existing
+loopback/Origin/connection/token guard: `POST /whale-voice/setup/generation/delivery` with
+`{taskId, targetId}`, and a read-only `GET .../delivery?taskId=...&targetId=...`. Without an application
+object the route answers `503 generation_not_enabled`; with an application without delivery wiring it
+answers `503 PRESET_GENERATION_DELIVERY_UNAVAILABLE` and never falls back to a Fake capability. A Core
+refusal is `200` + `ok:false` with its code/stage/cause, so HTTP success never means acceptance; malformed
+requests are `400` and a non-declared method is `405`. The injected bridge adds the two calls and maps a
+client abort to `{ok:false,error:'delivery_unconfirmed'}` — including a timeout that fires while the reply
+body is being read (180 v1.1, which no longer reports `core_http_200` for that abort); the persisted
+record is queried afterwards and is never resent. No page button, target picker, real Host or real backend
+is involved.
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a
@@ -215,11 +227,11 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Six offline relay files plus the delivery application entry file cover the unit (54 tests), and the
-internal Windows delivery module (13-B, 144 revision) is covered by its own two offline files
-(`test/internal-sender-offline.test.mjs` 29 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
-[INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
-persistent relay entry, never a second queue or generation registry.
+Six offline relay files, the delivery application entry file and the Host delivery surface file cover the
+unit (61 tests), and the internal Windows delivery module (13-B, 144 revision) is covered by its own two
+offline files (`test/internal-sender-offline.test.mjs` 29 + `test/legacy-text-delivery-offline.test.mjs` 8)
+documented in [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this
+same persistent relay entry, never a second queue or generation registry.
 
 `test/relay-core-offline.test.mjs` (12): real SAVED task + actual Fixture library bytes, stable delivery
 id/alias/intent, safe legacy request id, conflict; a caller-supplied record is never an authority; one submit
@@ -274,6 +286,17 @@ the same taskId/target gets `DELIVERY_NOT_FOUND` and never the record's artifact
 (the previous revision returned it), and a same-scope record stays readable after the saved result is
 deleted without a resubmit.
 
+`test/host-delivery.test.mjs` (7, 180): the same entry through the trusted Host connection. A POST on the
+existing token/loopback/Origin/connection guard confirms one saved result and a GET reads the same
+delivery back (also after a reopened application), while a repeat POST reuses the deliveryId and the Fake
+backend sees one request; missing/wrong token, a non-declared method, malformed JSON and missing fields
+are `401`/`405`/`400` and create no confirmation or store file; no generation object answers
+`generation_not_enabled`, an application without delivery wiring answers
+`DELIVERY_UNAVAILABLE` and generation/status still work; Core refusals keep their code/stage/cause with
+`200` + `ok:false` (HTTP 200 never means accepted) and a scope-B Host cannot read scope-A's record; a
+confirm left without an answer is not success and the persisted state is queryable afterwards; the
+injected bridge calls both routes with its token and maps an abort to `delivery_unconfirmed`.
+
 `test/relay-persist-offline.test.mjs` (12, 137-PERSIST-01/02 plus the retention/enumeration close-out): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
 open at the accept boundary does not recover the live submit (no `OWNER_LOST`); stale reclaim never deletes a
@@ -298,8 +321,8 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1220 tests / 1216 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
-(build unchanged by this Core-only revision).
+Local: **1227 tests / 1223 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
+(build unchanged by this Core/Host-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.
 

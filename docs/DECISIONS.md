@@ -1183,3 +1183,28 @@ and lets a future Host reuse the same object instead of rebuilding permit/handof
 **Rejected alternatives:** a second application object duplicating sandbox/scope/rights wiring, letting
 the caller supply artifactRef/rights/authorization, deriving delivery identity from the backend or from
 time (neither is stable across reopens), and returning a bare success boolean for FAILED/UNKNOWN.
+
+## ADR-040 — The saved-result delivery surface rides the existing trusted Host connection
+
+**Status:** accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-07, 180).
+**Related:** ADR-001, ADR-024–ADR-039, [SETUP_API.md](SETUP_API.md), [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** the confirmation/status surface is one Host path with two declared methods —
+`POST /whale-voice/setup/generation/delivery` (`{taskId, targetId}`) and a read-only
+`GET .../delivery?taskId=...&targetId=...` — on the existing loopback/Origin/connection/token guard,
+not a new listener, route family or auth scheme. The request carries only the original task and the
+confirmed target; the server-side application resolves every other fact. An absent application answers
+`503 generation_not_enabled`; an application without delivery wiring answers `503
+PRESET_GENERATION_DELIVERY_UNAVAILABLE` with no Fake fallback. Core refusals keep `200` + `ok:false`
+with their code/stage/cause (HTTP status is transport, not delivery), malformed requests are `400`, and a
+non-declared method is `405`. The injected bridge adds the two calls; a client abort means only
+"unconfirmed", and the persisted delivery is queried afterwards without resending.
+
+**Reason:** one guarded path with method-discriminated behaviour matches the existing setup surface,
+avoids a second authentication/authorization design, and keeps "HTTP success ≠ delivery success" and
+"no answer ≠ failure or cancellation" explicit. No page target picker exists yet, so this route is the
+only consumer.
+
+**Rejected alternatives:** a new listener or route family, a GET with side effects, returning HTTP 200
+only for acceptance (would hide the Core codes), mapping an aborted client request to failure or
+cancellation, and falling back to a Fake capability when none was assembled.
