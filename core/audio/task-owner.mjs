@@ -657,10 +657,8 @@ async function getOnce(state, input) {
  */
 function listSavedValue(snapshot, scopeId) {
   const results = []
-  let entryCount = 0
   for (const entry of snapshot.entries) {
     if (entry.scopeId !== scopeId) continue
-    entryCount += 1
     if (entry.phase !== 'FINAL' || entry.completion.kind !== 'SAVED') continue
     const task = project(entry.record)
     results.push({
@@ -678,7 +676,6 @@ function listSavedValue(snapshot, scopeId) {
     value: {
       schemaVersion: TASK_OWNER_SCHEMA_VERSION,
       results,
-      entryCount,
       mockOnly: true,
       realOperationAllowed: false,
     },
@@ -781,12 +778,7 @@ function readSave(input) {
 
 function readSaveArtifact(input) {
   if (!isPlainObject(input)) raise('SAVE_INPUT_INVALID', '$')
-  let keys
-  try {
-    keys = Reflect.ownKeys(input)
-  } catch {
-    raise('SAVE_INPUT_INVALID', '$')
-  }
+  const keys = Reflect.ownKeys(input)
   for (const key of keys) {
     if (typeof key !== 'string' || !SAVE_ARTIFACT_KEYS.has(key)) raise('SAVE_INPUT_INVALID', '<unknown-key>')
   }
@@ -1428,13 +1420,11 @@ async function saveArtifactOnce(state, input) {
         existing.completion.kind === 'SAVED' &&
         existing.record.outputArtifactRef === request.artifactRef
       ) {
-        saveArtifactFacts(state, request)
         return saveValue('EXISTING', current.owner.revision, existing.record, 'SAVED', null, null)
       }
       if (existing.phase === 'FINAL') return failure('SAVE_PRECONDITION', 'artifactRef')
       return failure('SAVE_UNKNOWN', '$')
     }
-    if (request.rights.state !== 'GRANTED' || request.rights.proofRef === null) raise('SAVE_RIGHTS_REJECTED', 'rights')
     saveArtifactFacts(state, request)
 
     const claimRevision = current.owner.revision + 1
@@ -1549,19 +1539,11 @@ async function saveArtifactOnce(state, input) {
       lockStore(state)
       return failure('SAVE_UNKNOWN', '$')
     }
-    let confirmedArtifact
-    try {
-      confirmedArtifact = saveArtifactFacts(state, request)
-    } catch (error) {
-      if (!isStoreFailure(error)) throw error
-      lockArtifact(getArtifactState(state.sandbox))
-      return failure(TASK_OWNER_ERRORS[error.key] ? error.key : 'SAVE_ARTIFACT_UNKNOWN', '$')
-    }
     return saveValue('SAVED', finalRevision, settledEntry.record, 'SAVED', null, {
-      artifactRef: confirmedArtifact.artifactRef,
-      byteLength: confirmedArtifact.byteLength,
-      sha256: confirmedArtifact.byteSha256,
-      expiresAt: confirmedArtifact.expiresAt,
+      artifactRef: artifact.artifactRef,
+      byteLength: artifact.byteLength,
+      sha256: artifact.byteSha256,
+      expiresAt: artifact.expiresAt,
     })
   } catch (error) {
     return toFailure(error)

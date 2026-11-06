@@ -31,12 +31,6 @@ function failure(code, detail = null) {
   return detail === null ? { ok: false, code } : { ok: false, code, detail }
 }
 
-function isPlainObject(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
-  const proto = Object.getPrototypeOf(value)
-  return proto === Object.prototype || proto === null
-}
-
 /**
  * Assemble the formal Qwen generation runtime from explicit caller-supplied parameters.
  *
@@ -55,7 +49,6 @@ function isPlainObject(value) {
  * @returns {Promise<{ok:true,value:{app:object,provider:object,discovery:object,close:Function}}|{ok:false,code:string,detail?:string}>}
  */
 export async function openQwenGenerationRuntime(options = {}) {
-  if (!isPlainObject(options)) return failure(QWEN_GENERATION_RUNTIME_ERRORS.INPUT_INVALID, 'options')
   const instanceId = options.instanceId === undefined ? 'instance-1' : options.instanceId
   if (typeof instanceId !== 'string' || !INSTANCE_PATTERN.test(instanceId)) {
     return failure(QWEN_GENERATION_RUNTIME_ERRORS.INPUT_INVALID, 'instanceId')
@@ -72,16 +65,16 @@ export async function openQwenGenerationRuntime(options = {}) {
     supervisor,
     requestTimeoutMs: options.requestTimeoutMs,
   })
-  if (!provider || provider.ok !== true) {
-    return failure(QWEN_GENERATION_RUNTIME_ERRORS.INPUT_INVALID, provider && provider.code ? provider.code : 'provider')
+  if (provider.ok !== true) {
+    return failure(QWEN_GENERATION_RUNTIME_ERRORS.INPUT_INVALID, provider.code || 'provider')
   }
 
   const started = await provider.start()
-  if (!started || started.ok !== true) {
+  if (started.ok !== true) {
     await provider.shutdown()
     return failure(
       QWEN_GENERATION_RUNTIME_ERRORS.WORKER_NOT_STARTED,
-      started && (started.qwenCode || started.code) ? started.qwenCode || started.code : 'worker',
+      started.qwenCode || started.code || 'worker',
     )
   }
 
@@ -100,10 +93,9 @@ export async function openQwenGenerationRuntime(options = {}) {
   const textLimit = Math.min(TEXT_LIMIT_MAX, discovery.limits.maxChars)
   // 156: the same effective per-request timeout the audited adapter enforces, published so the page
   // waits for the real limit instead of a fixed client-side value (the Qwen default is not a cap).
-  const requestedTimeoutMs = Number.isInteger(options.requestTimeoutMs) ? options.requestTimeoutMs : QWEN_LIMITS.timeoutMs
-  const generationTimeoutMs = Math.max(
-    QWEN_LIMITS.minRequestTimeoutMs,
-    Math.min(requestedTimeoutMs, discovery.limits.timeoutMs),
+  const generationTimeoutMs = Math.min(
+    options.requestTimeoutMs ?? QWEN_LIMITS.timeoutMs,
+    discovery.limits.timeoutMs,
   )
 
   const opened = await openPresetGenerationApp({
@@ -121,7 +113,7 @@ export async function openQwenGenerationRuntime(options = {}) {
     await provider.shutdown()
     return failure(
       QWEN_GENERATION_RUNTIME_ERRORS.APP_REJECTED,
-      opened && opened.detail ? opened.detail : opened && opened.code ? opened.code : 'app',
+      opened.detail || opened.code || 'app',
     )
   }
 
@@ -130,8 +122,8 @@ export async function openQwenGenerationRuntime(options = {}) {
     if (closed) return { ok: true }
     closed = true
     const stopped = await provider.shutdown()
-    if (stopped && stopped.ok === true) return { ok: true }
-    return failure(QWEN_GENERATION_RUNTIME_ERRORS.CLOSE_UNCONFIRMED, stopped && stopped.code ? stopped.code : 'shutdown')
+    if (stopped.ok === true) return { ok: true }
+    return failure(QWEN_GENERATION_RUNTIME_ERRORS.CLOSE_UNCONFIRMED, stopped.code || 'shutdown')
   }
 
   return {

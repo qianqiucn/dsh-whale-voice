@@ -44,17 +44,6 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
 const SCOPE_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
 const TASK_PATTERN = /^task:fixture-[0-9a-f]{32}$/
 const PROOF_PATTERN = /^fixture-rights:[A-Za-z0-9:_-]{1,128}$/
-const PROVIDER_ID_PATTERN = /^[a-z0-9-]{1,64}$/
-const PROVIDER_INSTANCE_PATTERN = /^[A-Za-z0-9:._-]{1,64}$/
-const PROVIDER_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9. _-]{0,127}$/
-const PROVIDER_BACKEND_PATTERN = /^[a-z0-9-]{1,32}$/
-const DEFAULT_TEXT_LIMIT = 200
-const DEFAULT_PROVIDER_FACTS = Object.freeze({
-  providerId: 'qwen3-tts',
-  instanceId: 'instance-1',
-  model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
-  backend: 'custom-voice',
-})
 /* Rotation keeps each segment inside the unchanged store guarantees: the task catalog/owner allow
  * 32 entries, the artifact pack 32 entries and 4 MiB in total. These thresholds are not product
  * quotas; they only decide when the next segment starts. */
@@ -65,22 +54,6 @@ const SEGMENT_NAME_PATTERN = /^\d{4}$/
 
 function failure(code, detail = null) {
   return detail === null ? { ok: false, code } : { ok: false, code, detail }
-}
-
-/** The provider facts written into the task: an explicit runtime label or the documented example. */
-function readProviderFacts(value) {
-  const facts = value === undefined ? DEFAULT_PROVIDER_FACTS : value
-  if (!facts || typeof facts !== 'object' || Array.isArray(facts)) return null
-  if (typeof facts.providerId !== 'string' || !PROVIDER_ID_PATTERN.test(facts.providerId)) return null
-  if (typeof facts.instanceId !== 'string' || !PROVIDER_INSTANCE_PATTERN.test(facts.instanceId)) return null
-  if (typeof facts.model !== 'string' || !PROVIDER_MODEL_PATTERN.test(facts.model)) return null
-  if (typeof facts.backend !== 'string' || !PROVIDER_BACKEND_PATTERN.test(facts.backend)) return null
-  return Object.freeze({
-    providerId: facts.providerId,
-    instanceId: facts.instanceId,
-    model: facts.model,
-    backend: facts.backend,
-  })
 }
 
 function sha256(value) {
@@ -115,9 +88,9 @@ function segmentNames(root) {
  * @param {string} options.scopeId application scope
  * @param {string} options.rightsProofRef `fixture-rights:...` proof for generation and reads
  * @param {Array<{id:string,label:string,languages:string[]}>} options.voices existing preset voices
- * @param {{providerId:string,instanceId:string,model:string,backend:string}} [options.providerFacts]
- *   provider facts written into the task (defaults to the documented example)
- * @param {number} [options.textLimit] max text characters (default 200)
+ * @param {{providerId:string,instanceId:string,model:string,backend:string}} options.providerFacts
+ *   provider facts written into the task
+ * @param {number} options.textLimit max text characters
  * @param {number} [options.generationTimeoutMs] effective generation limit published to the client
  * @param {Function} [options.now] ISO clock
  * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function,results:Function,download:Function}}|{ok:false,code:string,detail?:string}>}
@@ -128,28 +101,20 @@ export async function openPresetGenerationApp(options = {}) {
   const scopeId = options.scopeId
   const rightsProofRef = options.rightsProofRef
   const voices = options.voices
-  const textLimit = Number.isInteger(options.textLimit) ? options.textLimit : DEFAULT_TEXT_LIMIT
+  const textLimit = options.textLimit
   const generationTimeoutMs = Number.isInteger(options.generationTimeoutMs) ? options.generationTimeoutMs : null
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
-  const providerFacts = readProviderFacts(options.providerFacts)
-  if (!providerFacts) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'providerFacts')
+  const providerFacts = options.providerFacts
 
   if (typeof scopeId !== 'string' || !SCOPE_PATTERN.test(scopeId)) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'scopeId')
   if (typeof rightsProofRef !== 'string' || !PROOF_PATTERN.test(rightsProofRef)) {
     return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'rightsProofRef')
   }
   if (!Array.isArray(voices) || voices.length === 0) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'voices')
+  // 161/base-clone: a voice whose backend reports no language still refuses here; the adapter already
+  // checked the other voice shapes, so only the empty list is kept.
   for (const voice of voices) {
-    if (!voice || typeof voice.id !== 'string' || voice.id.length === 0) {
-      return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'voices')
-    }
-    if (typeof voice.label !== 'string' || !Array.isArray(voice.languages) || voice.languages.length === 0) {
-      return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'voices')
-    }
-  }
-  if (textLimit < 1 || textLimit > 200) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'textLimit')
-  if (!provider || typeof provider.beginSynthesis !== 'function' || typeof provider.cancel !== 'function') {
-    return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'provider')
+    if (voice.languages.length === 0) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'voices')
   }
 
   async function openSegment(segmentSandbox) {
@@ -200,7 +165,7 @@ export async function openPresetGenerationApp(options = {}) {
       if (!metadata.ok) return null
       if (metadata.value.outcome === 'FOUND') bytes += metadata.value.artifact.inspection.byteLength
     }
-    return { entries: Math.max(counted.value.count, listed.value.entryCount), bytes }
+    return { entries: counted.value.count, bytes }
   }
 
   const segments = []
@@ -234,7 +199,7 @@ export async function openPresetGenerationApp(options = {}) {
    * declared wait; a provider that cannot run two syntheses rejects the extra request honestly. */
   let segmentSwitch = Promise.resolve()
   function enqueueSegmentSwitch(task) {
-    const next = segmentSwitch.then(task, task)
+    const next = segmentSwitch.then(task)
     segmentSwitch = next.then(() => undefined, () => undefined)
     return next
   }
@@ -251,8 +216,8 @@ export async function openPresetGenerationApp(options = {}) {
   async function segmentForTask(taskId) {
     for (let index = segments.length - 1; index >= 0; index -= 1) {
       const got = await segments[index].owner.get({ schemaVersion: 1, scopeId, taskId })
-      if (got.ok) return { segment: segments[index] }
-      const code = got.errors && got.errors[0] ? got.errors[0].code : ''
+      if (got.ok) return { segment: segments[index], got }
+      const code = got.errors[0].code
       if (code !== 'TASK_OWNER_NOT_FOUND') return { error: code || 'owner read rejected' }
     }
     return { segment: null }
@@ -368,12 +333,8 @@ export async function openPresetGenerationApp(options = {}) {
     }
     const found = await segmentForTask(taskId)
     if (found.error) return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, found.error)
-    const segment = found.segment
+    const { segment, got } = found
     if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'not found')
-    const got = await segment.owner.get({ schemaVersion: 1, scopeId, taskId })
-    if (!got.ok) {
-      return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, got.errors && got.errors[0] ? got.errors[0].code : 'not found')
-    }
     const artifactStatus = await segment.owner.artifactStatus({
       schemaVersion: 1,
       scopeId,
@@ -384,7 +345,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (!artifactStatus.ok) {
       return failure(
         PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED,
-        artifactStatus.errors && artifactStatus.errors[0] ? artifactStatus.errors[0].code : 'artifact status rejected',
+        artifactStatus.errors[0].code,
       )
     }
     if (artifactStatus.value.state !== 'READABLE') {
@@ -447,7 +408,7 @@ export async function openPresetGenerationApp(options = {}) {
       if (!listed.ok) {
         return failure(
           PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
-          listed.errors && listed.errors[0] ? listed.errors[0].code : 'list rejected',
+          listed.errors[0].code,
         )
       }
       const saved = listed.value.results.filter(
@@ -465,7 +426,7 @@ export async function openPresetGenerationApp(options = {}) {
       if (!metadata.ok) {
         return failure(
           PRESET_GENERATION_APP_ERRORS.RESULTS_REJECTED,
-          metadata.errors && metadata.errors[0] ? metadata.errors[0].code : 'artifact read rejected',
+          metadata.errors[0].code,
         )
       }
       const byRef = new Map(metadata.value.results.map((item) => [item.artifactRef, item]))
@@ -497,12 +458,8 @@ export async function openPresetGenerationApp(options = {}) {
     }
     const found = await segmentForTask(taskId)
     if (found.error) return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, found.error)
-    const segment = found.segment
+    const { segment, got } = found
     if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, 'not found')
-    const got = await segment.owner.get({ schemaVersion: 1, scopeId, taskId })
-    if (!got.ok) {
-      return failure(PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED, got.errors && got.errors[0] ? got.errors[0].code : 'not found')
-    }
     const artifactStatus = await segment.owner.artifactStatus({
       schemaVersion: 1,
       scopeId,
@@ -513,7 +470,7 @@ export async function openPresetGenerationApp(options = {}) {
     if (!artifactStatus.ok) {
       return failure(
         PRESET_GENERATION_APP_ERRORS.DOWNLOAD_REJECTED,
-        artifactStatus.errors && artifactStatus.errors[0] ? artifactStatus.errors[0].code : 'artifact status rejected',
+        artifactStatus.errors[0].code,
       )
     }
     if (artifactStatus.value.state !== 'READABLE') {
