@@ -636,6 +636,18 @@ result stays `UNKNOWN`. Evidence: 7 new tests (`relay-provider-confirm-offline`,
 relay files 5/42; full suite 1208/1204 pass/4 platform skips/0 fail; UI 89/89; `client.js` unchanged. Still
 `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real Sender/WeChat/model/device.
 
+178 task (2026-11-06): a saved Provider result is delivered from the storage segment that actually holds it.
+`openPresetGenerationApp` exposes `locateTask({scopeId, taskId})` (the segment it already opened for that
+task); `openUnifiedRelay` takes it as an assembly-time dependency — never a handoff field — and each
+operation re-reads that segment's persisted task/artifact. The relay keeps one store/`deliveryId`/permit
+space and one capacity count across the base and rotated segments; a segment holds no relay store. A task
+the locator cannot place stays on the owner sandbox and fails as `TASK_NOT_SAVED` instead of being replaced
+by another result. Reopened app/relay reuse the existing relation and never resubmit; retained results past
+the recorded 24 h stay usable; missing/deleted/revoked sources fail honestly. Evidence: 4 new tests
+(`relay-cross-segment-source`, real base + `segments/0001` saves), relay files 6/46; full suite
+1212/1208 pass/4 platform skips/0 fail; UI 89/89; `client.js` unchanged. Still `13-A/OFFLINE` /
+`FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real Sender/WeChat/model/device.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

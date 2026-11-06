@@ -915,3 +915,36 @@ permit and delivery capacity, UNKNOWN/no-resend); relay files 5 / 42 tests. Full
 `client.js` unchanged (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`:
 this is a Core contract unit, not a page/Host integration, and no real Sender/WeChat/model/device ran;
 Plan14 and every real Plan12/13 DoD remain OPEN.
+
+## Plan 13-A 178 revision — a saved Provider result is delivered from its real storage segment (2026-11-06)
+
+Branch `feature/relay-cross-segment-source` from the reviewed main `190f209b`; a new PR is pending and not
+merged. 155 already rotates generation saves into `segments/NNNN` and 177 made a saved Provider result
+deliverable; this revision connects the two without adding a second owner.
+
+1. **Source locator (178).** `openPresetGenerationApp` keeps each opened segment's trusted sandbox and
+   exposes `locateTask({scopeId, taskId})`, which answers only for a task this entry already opened in that
+   scope (base or a rotated segment); another scope, an unknown task or an unreadable segment answers
+   not-found. `openUnifiedRelay` accepts it as an assembly-time dependency, never as a handoff field.
+2. **One owner across segments.** Each delivery operation asks the locator where the original task is and
+   re-reads that segment's persisted task owner / Artifact library under the same scope/rights. The relay
+   store, `deliveryId`/permit space and capacity stay at the owner sandbox and are shared by base and
+   rotated results; a segment never contains a relay store or a second queue. A task the locator cannot
+   place stays on the owner sandbox, where the same persisted read fails it as `TASK_NOT_SAVED` instead of
+   falling through to another segment's result.
+3. **Reuse and failure behaviour.** A reopened application and relay still locate old-segment results;
+   repeat confirmation/delivery/submit returns `EXISTING` and the Fake backend receives the result once;
+   confirmation/delivery capacity is one count across segments; retained Provider results stay usable past
+   their recorded 24 h value; a missing task or a deleted/revoked segment artifact fails honestly. No
+   page/Host route or real backend is added.
+
+Evidence: 4 new isolated relay tests in `test/relay-cross-segment-source.test.mjs`, which first build 24
+base saves and rotated `segments/0001` saves with the real generation/save chain: both segments delivered by
+one owner (2 deliveries/2 permits, no relay store inside the segment); reopened app + relay returns
+`EXISTING` and never resubmits; a deleted segment artifact and a missing task fail as `TASK_NOT_SAVED` while
+a retained segment result past 24 h is still accepted; permit/delivery capacity counted once across
+segments. Relay files 6 / 46 tests. Full suite **1212 / 1208 pass / 4 platform skips / 0 fail** (was
+1208/1204/4/0); UI **89/89** (Core-only change, no product UI diff); `client.js` unchanged (383,622 bytes).
+Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`: this is a Core application-boundary unit,
+not a page/Host integration, and no real Sender/WeChat/model/device ran; Plan14 and every real Plan12/13 DoD
+remain OPEN.

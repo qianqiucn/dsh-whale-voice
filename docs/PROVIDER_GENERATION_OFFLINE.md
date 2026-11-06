@@ -44,9 +44,15 @@ synthesis, the already-imported Artifact stays as it is).
 
 `core/preset-generation-app.mjs` is the formal Core entry for this chain:
 `openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices, textLimit, providerFacts[, generationTimeoutMs][, now]})`
-returns `{catalog, generate, status}`. `textLimit` and `providerFacts` are required parameters of the
-current entry contract (the formal runtime passes both; the old test-only defaults were removed by
-168, so a caller must supply them rather than rely on a fallback).
+returns `{catalog, generate, status, results, download, locateTask}`. `textLimit` and `providerFacts` are
+required parameters of the current entry contract (the formal runtime passes both; the old test-only
+defaults were removed by 168, so a caller must supply them rather than rely on a fallback).
+
+- `locateTask({scopeId, taskId})` (178) answers with `{ok:true, value:{sandbox}}` for the segment this
+  entry already owns that holds the original task, or `{ok:false}` for another scope / an unknown task /
+  an unreadable segment. It is the trusted source locator for the same-process unified delivery owner
+  (never a Host or browser input): the delivery owner re-reads that segment's persisted task/artifact and
+  keeps its own single store. It never writes, delivers or opens a second queue.
 
 - `generate({text, voiceId, language})` reserves a real Task birth in the existing catalog, runs the
   coordinator (133) once against the caller-provided audited provider, and lets the original task
@@ -127,6 +133,17 @@ the recorded 24 h expiration in the artifact library and in the owner artifact-s
 pre-fix records whose 24 h already passed are readable again; other artifact origins keep their
 rights-expiry contract. A real write failure is still reported as failure (never `SAVED`) and leaves
 earlier saved results downloadable.
+
+### Cross-segment delivery source (178)
+
+The generation entry exposes `locateTask({scopeId, taskId})`: the trusted source locator for the
+same-process unified delivery owner. It answers with the already-opened segment sandbox that holds the
+original saved task (base or `segments/NNNN`), or `{ok:false}` for another scope, an unknown task or an
+unreadable segment. The delivery owner keeps its own single store and re-reads that segment's persisted
+task owner / Artifact library; the caller of a delivery only names the original task and target, never a
+storage path. Nothing is generated, re-saved, copied or moved, and no second delivery queue or store is
+created; a task the locator cannot place is failed by the delivery owner as `TASK_NOT_SAVED` instead of
+being replaced with another segment's result. No page or Host route uses this locator yet.
 
 ### Original-task result download (150)
 
