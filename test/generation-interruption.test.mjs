@@ -69,6 +69,7 @@ function interruptGeneration(root) {
   })
   let stderr = ''
   child.stderr.on('data', (chunk) => { stderr += chunk })
+  child.stdout.resume()
   const exited = new Promise((resolve) => child.once('exit', resolve))
   const deadline = Date.now() + 20000
   let active = null
@@ -169,12 +170,18 @@ test('165 an unwritable claim ledger reports failure without clearing the interr
   const ledgerPath = path.join(blockedRoot, CLAIMS)
   const ledgerBefore = fs.readFileSync(ledgerPath)
   const packBefore = fs.readFileSync(path.join(blockedRoot, ARTIFACT_FILE_NAME))
-  fs.chmodSync(ledgerPath, 0o444)
+  // Windows refuses to replace a read-only file; POSIX only needs the directory to be writable, so the
+  // directory itself is made unwritable there to reach the same real write failure.
+  const blockedDir = path.dirname(ledgerPath)
+  if (process.platform === 'win32') fs.chmodSync(ledgerPath, 0o444)
+  else fs.chmodSync(blockedDir, 0o555)
   let opened
   try {
     opened = await openQwenGenerationRuntime(options(blockedRoot))
   } finally {
-    fs.chmodSync(ledgerPath, 0o644)
+    if (process.platform === 'win32') fs.chmodSync(ledgerPath, 0o644)
+    else fs.chmodSync(blockedDir, 0o755)
+    if (opened && opened.ok === true) await opened.value.close()
   }
   assert.equal(opened.ok, false, JSON.stringify(opened))
   assert.equal(opened.code, 'QWEN_GENERATION_RUNTIME_APP_REJECTED')
