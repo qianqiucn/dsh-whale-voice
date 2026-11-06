@@ -341,7 +341,10 @@
         getStatus: async () => status,
         getCapabilities: () => {
           calls += 1
-          if (calls === 1) return new Promise((resolve) => setTimeout(() => resolve(stale), 2000))
+          if (calls === 1) return new Promise((resolve) => setTimeout(() => {
+            window.__WHALE_CAPABILITY_RACE_RESOLVED__ = true
+            resolve(stale)
+          }, 2000))
           return Promise.resolve(fresh)
         },
         getCapabilityStatus: async () => ({ schemaVersion: 3, ok: true, components: fresh.components, surfaces: [], summary: {} }),

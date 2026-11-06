@@ -1190,6 +1190,27 @@ await check('plan09 pages open without the config adapter and show a not-connect
   })
 })
 
+await check('a manually opened plan09 wizard survives the delayed initial capability read without an adapter', async () => {
+  await withPage('?bridge=capability-race&plan09=none&singing=none', async (page) => {
+    await page.getByRole('button', { name: '语音气泡', exact: true }).click()
+    const missingAdapter = page.getByTestId('plan09-config-adapter-missing')
+    await missingAdapter.waitFor({ timeout: 5000 })
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 0)
+    await page.getByTestId('plan09-reopen').click()
+    await page.getByTestId('plan09-wizard').waitFor({ state: 'visible' })
+    await page.waitForFunction(() => window.__WHALE_CAPABILITY_RACE_RESOLVED__ === true, null, { timeout: 8000 })
+    await page.waitForTimeout(300)
+    await page.getByTestId('plan09-wizard').waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 1)
+    assert.match(await missingAdapter.innerText(), /未接入配置适配器/)
+    assert.equal(await page.getByTestId('plan09-prepare').isDisabled(), true)
+    await page.getByTestId('plan09-wizard-browse').click()
+    await page.getByTestId('plan09-wizard').waitFor({ state: 'hidden' })
+    await page.waitForTimeout(300)
+    assert.equal(await page.locator('[data-testid="plan09-wizard"]').count(), 0)
+  })
+})
+
 await check('plan09 entries persist mode/browse and keep independent wizards', async () => {
   await withPage(normal, async (page) => {
     await page.getByRole('button', { name: '语音气泡', exact: true }).click()
