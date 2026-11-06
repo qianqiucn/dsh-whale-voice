@@ -212,6 +212,29 @@ async function hitTestSelector(page, selector) {
 }
 
 const normal = '?bridge=normal'
+
+/** 176: the page may create an Audio for the saved bytes; the harness never outputs device sound. */
+async function installAudioStub(page) {
+  await page.addInitScript(() => {
+    window.__WHALE_AUDIO__ = { created: [], rejectNext: false }
+    window.Audio = function FakeAudio(url) {
+      const record = { url, plays: 0, pauses: 0, audio: null }
+      window.__WHALE_AUDIO__.created.push(record)
+      this.onended = null
+      this.onerror = null
+      this.play = () => {
+        record.plays += 1
+        if (window.__WHALE_AUDIO__.rejectNext) {
+          window.__WHALE_AUDIO__.rejectNext = false
+          return Promise.reject(new Error('NotAllowedError'))
+        }
+        return Promise.resolve()
+      }
+      this.pause = () => { record.pauses += 1 }
+      record.audio = this
+    }
+  })
+}
 await check('normal page renders the real-config readout', async () => {
   await withPage(normal, async (page) => {
     await assert.doesNotReject(page.getByText('Whale Voice').first().waitFor({ timeout: 6000 }))
@@ -513,6 +536,149 @@ await check('studio preset generation saves the original task, downloads it and 
     assert.equal(createHash('sha256').update(reopenedFirstBytes).digest('hex'), firstSha[1])
     assert.equal(generationCalls.length, 2, 'listing, selecting and download must not trigger another generation')
   }, trackGeneration)
+})
+
+await check('studio auditions the selected saved result and ends the old playback on switch', async () => {
+  const generationCalls = []
+  const setup = async (page) => {
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/whale-voice/setup/generation') generationCalls.push(request.url())
+    })
+    await installAudioStub(page)
+  }
+  await withPage(normal, async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
+    await page.waitForFunction(() => {
+      const select = document.querySelector('select[aria-label="音色"]')
+      return select && Array.from(select.options).some((option) => option.value === 'demo-voice-a')
+    }, null, { timeout: 10000 })
+    await page.getByLabel('试听文本').fill('第一条试听生成。')
+    await page.getByLabel('音色').selectOption('demo-voice-a')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.locator('[data-testid="studio-generation-state"]').waitFor({ timeout: 15000 })
+    const firstTask = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    const callsBefore = generationCalls.length
+
+    assert.equal(await page.getByTestId('studio-generation-audition').isDisabled(), false)
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created.length === 1 && window.__WHALE_AUDIO__.created[0].plays === 1, null, { timeout: 10000 })
+    assert.match(await page.evaluate(() => window.__WHALE_AUDIO__.created[0].url), /^blob:/)
+    assert.equal(await page.getByTestId('studio-generation-audition').innerText(), '停止试听')
+    await page.locator('[data-testid="studio-generation-audition-state"]').waitFor({ timeout: 3000 })
+    await page.screenshot({ path: path.join(artifactDir, 'studio-audition-1440.png') })
+
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created[0].pauses >= 1)
+    assert.equal(await page.getByTestId('studio-generation-audition').innerText(), '试听已保存音频')
+    assert.equal(await page.locator('[data-testid="studio-generation-audition-state"]').count(), 0)
+
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created.length === 2 && window.__WHALE_AUDIO__.created[1].plays === 1, null, { timeout: 10000 })
+
+    // A natural end returns the control to the idle state, so the result can be auditioned again.
+    await page.evaluate(() => {
+      const list = window.__WHALE_AUDIO__.created
+      const last = list[list.length - 1]
+      if (last && last.audio && typeof last.audio.onended === 'function') last.audio.onended()
+    })
+    await page.waitForFunction(() => !document.querySelector('[data-testid="studio-generation-audition-state"]'))
+    assert.equal(await page.getByTestId('studio-generation-audition').innerText(), '试听已保存音频')
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created.length === 3 && window.__WHALE_AUDIO__.created[2].plays === 1, null, { timeout: 10000 })
+
+    // A second generation changes the selected result; the old playback must end with it.
+    await page.getByLabel('试听文本').fill('第二条试听生成。')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.waitForFunction((previous) => {
+      const element = document.querySelector('[data-testid="studio-generation-task"]')
+      return element && element.textContent && element.textContent !== previous
+    }, firstTask, { timeout: 15000 })
+    const secondTask = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created[2].pauses >= 1)
+    await page.waitForFunction(() => !document.querySelector('[data-testid="studio-generation-audition-state"]'))
+
+    // Selecting another saved result stops the audition and never keeps two results playing.
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + firstTask + '"]').waitFor({ timeout: 10000 })
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + secondTask + '"]').waitFor({ timeout: 10000 })
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + firstTask + '"]').click()
+    await page.waitForFunction((expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected, firstTask)
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created.length === 4 && window.__WHALE_AUDIO__.created[3].plays === 1, null, { timeout: 10000 })
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + secondTask + '"]').click()
+    await page.waitForFunction((expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected, secondTask)
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created[3].pauses >= 1)
+    await page.waitForFunction(() => !document.querySelector('[data-testid="studio-generation-audition-state"]'))
+
+    // Leaving the page ends the audition too.
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created.length === 5 && window.__WHALE_AUDIO__.created[4].plays === 1, null, { timeout: 10000 })
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.waitForFunction(() => window.__WHALE_AUDIO__.created[4].pauses >= 1)
+    assert.equal(await page.locator('[data-testid="studio-generation-audition-state"]').count(), 0)
+    assert.equal(generationCalls.length, callsBefore + 1, 'audition must not post another generation; only the explicit second generate counts')
+  }, setup)
+})
+
+await check('studio reports audition failures and ignores a late old response', async () => {
+  const setup = async (page) => { await installAudioStub(page) }
+  await withPage('?bridge=normal&auditionFault=read', async (page) => {
+    await page.getByRole('button', { name: '音色中心', exact: true }).click()
+    await page.getByLabel('试听文本').waitFor({ timeout: 5000 })
+    await page.waitForFunction(() => {
+      const select = document.querySelector('select[aria-label="音色"]')
+      return select && Array.from(select.options).some((option) => option.value === 'demo-voice-a')
+    }, null, { timeout: 10000 })
+    await page.getByLabel('试听文本').fill('失败场景第一条。')
+    await page.getByLabel('音色').selectOption('demo-voice-a')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.locator('[data-testid="studio-generation-state"]').waitFor({ timeout: 15000 })
+    const firstTask = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    await page.getByLabel('试听文本').fill('失败场景第二条。')
+    await page.getByRole('button', { name: /生成并保存/ }).click()
+    await page.waitForFunction((previous) => {
+      const element = document.querySelector('[data-testid="studio-generation-task"]')
+      return element && element.textContent && element.textContent !== previous
+    }, firstTask, { timeout: 15000 })
+    const secondTask = await page.locator('[data-testid="studio-generation-task"]').innerText()
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + firstTask + '"]').waitFor({ timeout: 10000 })
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + secondTask + '"]').waitFor({ timeout: 10000 })
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + firstTask + '"]').click()
+    await page.waitForFunction((expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected, firstTask)
+
+    // The browser refuses to play the saved bytes.
+    await page.evaluate(() => { window.__WHALE_AUDIO__.rejectNext = true })
+    await page.getByTestId('studio-generation-audition').click()
+    const auditionError = page.locator('[data-testid="studio-generation-audition-error"]')
+    await auditionError.waitFor({ timeout: 5000 })
+    assert.match(await auditionError.innerText(), /浏览器无法播放/)
+    assert.equal(await page.locator('[data-testid="studio-generation-audition-state"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="studio-generation-result"]').count(), 1)
+
+    // Reading the saved bytes fails.
+    await page.route('**/whale-voice/setup/generation/download*', (route) => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'not_found' }) }))
+    await page.getByTestId('studio-generation-audition').click()
+    await page.waitForFunction(() => {
+      const element = document.querySelector('[data-testid="studio-generation-audition-error"]')
+      return element && element.innerText.includes('无法读取已保存的音频')
+    }, null, { timeout: 5000 })
+    await page.unroute('**/whale-voice/setup/generation/download*')
+
+    // A late read for the previous task must not start playback after the user switched.
+    const createdBefore = await page.evaluate(() => window.__WHALE_AUDIO__.created.length)
+    await page.route('**/whale-voice/setup/generation/download*', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.continue()
+    })
+    await page.getByTestId('studio-generation-audition').click()
+    await page.locator('[data-testid="studio-generation-result-select"][data-task-id="' + secondTask + '"]').click()
+    await page.waitForFunction((expected) => document.querySelector('[data-testid="studio-generation-task"]')?.textContent === expected, secondTask)
+    await page.waitForTimeout(1200)
+    assert.equal(await page.evaluate(() => window.__WHALE_AUDIO__.created.length), createdBefore, 'a late read for the previous task must not start playback')
+    assert.equal(await page.locator('[data-testid="studio-generation-audition-state"]').count(), 0)
+    assert.equal(await page.locator('[data-testid="studio-generation-task"]').innerText(), secondTask)
+    await page.unroute('**/whale-voice/setup/generation/download*')
+  }, setup)
 })
 
 await check('studio reports generation not enabled when the Host runtime is absent', async () => {
@@ -2585,7 +2751,11 @@ await check('no console errors or failed resources', async () => {
   const expectedDisabled503 = (item) => (item.scene === '?bridge=normal&generation=off' || item.scene === '?bridge=normal&generation=failed')
     && item.type === 'error'
     && /Failed to load resource: the server responded with a status of 503/.test(item.text)
-  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item))
+  // 176: the audition read-failure scene deliberately answers the download route with 404.
+  const expectedAudition404 = (item) => item.scene === '?bridge=normal&auditionFault=read'
+    && item.type === 'error'
+    && /Failed to load resource: the server responded with a status of 404/.test(item.text)
+  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item) && !expectedAudition404(item))
   assert.deepEqual(errors, [])
   assert.deepEqual(failedRequests, [])
 })
