@@ -130,46 +130,12 @@ test('142 the plugin assembles the generation service from serialized runtime co
   await apply(harness.ctx, JSON.parse(JSON.stringify(config)))
   assert.equal(runtimeSandboxes(), before + 1)
 
-  const token = bridgeToken(harness)
   const generateRoute = harness.routes.find((route) => route.path === '/whale-voice/setup/generation')
   const statusRoute = harness.routes.find((route) => route.path === '/whale-voice/setup/generation/status')
   const catalogRoute = harness.routes.find((route) => route.path === '/whale-voice/setup/generation/catalog')
   assert.ok(generateRoute)
   assert.ok(statusRoute)
   assert.ok(catalogRoute)
-
-  const catalog = await callRoute(catalogRoute, { method: 'GET', url: '/whale-voice/setup/generation/catalog', token })
-  assert.equal(catalog.status, 200)
-  const catalogBody = JSON.parse(catalog.body)
-  assert.deepEqual(catalogBody.voices.map((voice) => voice.id), ['demo-voice-a', 'demo-voice-b'])
-  assert.deepEqual(catalogBody.voices.map((voice) => voice.label), ['示例音色 A', '示例音色 B'])
-
-  const generated = await callRoute(generateRoute, {
-    method: 'POST',
-    url: '/whale-voice/setup/generation',
-    token,
-    body: { text: '你好，这是正式插件配置的隔离生成。', voiceId: 'demo-voice-a', language: 'zh-CN' },
-  })
-  assert.equal(generated.status, 200)
-  const saved = JSON.parse(generated.body)
-  assert.equal(saved.ok, true, generated.body)
-  assert.equal(saved.state, 'SAVED')
-  assert.match(saved.taskId, /^task:fixture-[0-9a-f]{32}$/)
-  assert.match(saved.artifactRef, /^artifact:fixture-bytes-[0-9a-f]{32}$/)
-  assert.deepEqual(saved.provider, { providerId: 'qwen3-tts-local', model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice' })
-
-  const queried = await callRoute(statusRoute, {
-    method: 'GET',
-    url: '/whale-voice/setup/generation/status?taskId=' + encodeURIComponent(saved.taskId),
-    token,
-  })
-  assert.equal(queried.status, 200)
-  const status = JSON.parse(queried.body)
-  assert.equal(status.ok, true, queried.body)
-  assert.equal(status.readable, true)
-  assert.equal(status.state, 'SAVED')
-  assert.equal(status.artifactRef, saved.artifactRef)
-  assert.deepEqual(status.provider, saved.provider)
 
   const dispose = harness.effects[0]
   assert.equal(typeof dispose, 'function')

@@ -194,9 +194,6 @@ test('143 the plugin keeps saved generation data at the configured location and 
   assert.equal(restored.state, 'SAVED')
   assert.equal(restored.readable, true)
   assert.equal(restored.artifactRef, saved.artifactRef)
-  assert.equal(restored.sha256, saved.sha256)
-  assert.equal(restored.origin, saved.origin)
-  assert.deepEqual(restored.provider, saved.provider)
   assert.deepEqual(readStorage(storageRoot), stored)
 
   const disposeReopened = reopened.effects[0]

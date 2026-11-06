@@ -19,6 +19,13 @@ const artifactDir = path.join(here, '.artifacts')
 const reactDir = path.join(here, 'node_modules', 'react', 'umd')
 const reactDomDir = path.join(here, 'node_modules', 'react-dom', 'umd')
 const playwrightPackage = path.join(here, 'node_modules', 'playwright', 'package.json')
+const storedTask = 'task:fixture-' + '0'.repeat(32)
+
+async function seedStoredTask(page) {
+  await page.addInitScript((taskId) => {
+    try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
+  }, storedTask)
+}
 
 function failMissing(message) {
   console.error('\nUI harness setup is incomplete:\n' + message + '\n')
@@ -528,13 +535,7 @@ await check('studio reports generation not enabled when the Host runtime is abse
 // 164 v1.2: a restored task's generation_not_enabled answer must not override the assembly state that
 // is still pending; the page keeps its real waiting state until the Host says which state it is.
 await check('studio keeps waiting when a restored task answers not enabled before the assembly state', async () => {
-  const storedTask = 'task:fixture-' + '0'.repeat(32)
   await hostGeneration.setGenerationEnabled(false)
-  const seedStoredTask = async (page) => {
-    await page.addInitScript((taskId) => {
-      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
-    }, storedTask)
-  }
   try {
     await withPage('?bridge=normal&generation=off', async (page) => {
       let release = () => {}
@@ -658,12 +659,6 @@ await check('studio reports a failed capability read instead of not enabled or c
 // 163: the Host explicitly answering "not in the current storage location" is a definite fact, not a
 // retryable read failure; it stays accurate after a refresh and never claims the task never existed.
 await check('studio says the current storage location has no such saved task', async () => {
-  const storedTask = 'task:fixture-' + '0'.repeat(32)
-  const seedStoredTask = async (page) => {
-    await page.addInitScript((taskId) => {
-      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
-    }, storedTask)
-  }
   const expectMissing = async (page) => {
     const block = page.locator('[data-testid="studio-generation-restore-missing"]')
     await block.waitFor({ timeout: 5000 })
@@ -692,12 +687,6 @@ await check('studio says the current storage location has no such saved task', a
 
 // 160/163: a rejected request and a real read rejection stay read failures, not "no such task".
 await check('studio keeps a failed saved-result read distinct from a missing task', async () => {
-  const storedTask = 'task:fixture-' + '0'.repeat(32)
-  const seedStoredTask = async (page) => {
-    await page.addInitScript((taskId) => {
-      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
-    }, storedTask)
-  }
   for (const fault of ['restore-reject', 'restore-read-failed']) {
     await withPage('?bridge=normal&generationFault=' + fault, async (page) => {
       await page.getByRole('button', { name: '音色中心', exact: true }).click()
@@ -885,17 +874,11 @@ await check('generation storage location draft is saved, applied and survives a 
       { timeout: 4000 },
     )
     await page.getByTestId('generation-storage-save').click()
-    try {
-      await page.waitForFunction(
-        () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
-        null,
-        { timeout: 8000 },
-      )
-    } catch (error) {
-      const status = await page.getByTestId('generation-storage-status').innerText().catch(() => '')
-      const note = await page.getByTestId('generation-storage-error').innerText().catch(() => '')
-      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
-    }
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="generation-storage-status"]')?.innerText.includes('已保存草稿'),
+      null,
+      { timeout: 8000 },
+    )
     const toast = await page.locator('.wv-toast').innerText()
     assert.match(toast, /草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()
@@ -948,17 +931,11 @@ await check('qwen runtime path draft is saved, applied and survives a page reloa
     await modelInput.fill(modelDirectory)
     await pythonInput.fill(pythonPath)
     await page.getByTestId('qwen-runtime-save').click()
-    try {
-      await page.waitForFunction(
-        () => document.querySelector('[data-testid="qwen-runtime-status"]')?.innerText.includes('已保存草稿'),
-        null,
-        { timeout: 8000 },
-      )
-    } catch (error) {
-      const status = await page.getByTestId('qwen-runtime-status').innerText().catch(() => '')
-      const note = await page.getByTestId('qwen-runtime-error').innerText().catch(() => '')
-      throw new Error(error.message + ' | status=' + status + ' | note=' + note)
-    }
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="qwen-runtime-status"]')?.innerText.includes('已保存草稿'),
+      null,
+      { timeout: 8000 },
+    )
     assert.match(await page.locator('.wv-toast').innerText(), /运行路径草稿已保存，尚未应用/)
     const pageText = await page.locator('body').innerText()
     assert.match(pageText, /Qwen 运行路径/)

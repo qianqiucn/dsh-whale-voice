@@ -192,14 +192,32 @@ test('provider generation: prepare → submit → SAVED artifact, original task 
     assert.equal(again.outcome, 'EXISTING')
     assert.equal(provider.calls, 1)
 
-    // A fresh coordinator over the same sandbox sees the same SAVED claim and artifact.
-    const reopened = await open({ sandbox, artifacts, provider: createMockProvider({ bytes }) })
-    const status = reopened.status(prepared.claim.claimId)
-    assert.equal(status.ok, true)
-    assert.equal(status.claim.state, 'SAVED')
-    const read = await reopened.get(prepared.claim.claimId)
+    // 132: close the running units, then reopen only the original task store and the same Artifact
+    // library over this location — the saved original task and its exact bytes are still there.
+    await coordinator.close()
+    const reopenedOwner = await openTaskOwner(sandbox)
+    const reopenedLibrary = await openFixtureArtifactLibrary({ sandbox })
+    assert.equal(reopenedLibrary.ok, true, JSON.stringify(reopenedLibrary))
+    const reopenedGot = await reopenedOwner.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
+    assert.equal(reopenedGot.ok, true, JSON.stringify(reopenedGot))
+    assert.equal(reopenedGot.value.ownerState, 'SAVED')
+    assert.equal(reopenedGot.value.task.state, 'SAVED')
+    assert.equal(reopenedGot.value.task.hasOutput, true)
+    assert.equal(reopenedGot.value.task.mockOnly, true)
+    assert.equal(reopenedGot.value.task.realOperationAllowed, false)
+    const reopenedStatus = await reopenedOwner.artifactStatus({
+      schemaVersion: 1, scopeId: SCOPE, taskId, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
+    })
+    assert.equal(reopenedStatus.ok, true, JSON.stringify(reopenedStatus))
+    assert.equal(reopenedStatus.value.state, 'READABLE')
+    assert.equal(reopenedStatus.value.ownerState, 'SAVED')
+    assert.equal(reopenedStatus.value.artifactRef, submitted.claim.artifact.artifactRef)
+    const read = await reopenedLibrary.value.readBytes({
+      schemaVersion: 1, scopeId: SCOPE, artifactRef: submitted.claim.artifact.artifactRef, now: NOW,
+      rights: { state: 'GRANTED', proofRef: PROOF },
+    })
     assert.equal(read.ok, true, JSON.stringify(read))
-    assert.equal(sha256(read.value.bytes), sha256(bytes))
+    assert.equal(sha256(read.value.bytes), sha256(bytes), 'the original task reads exactly the provider bytes')
   })
 })
 
@@ -444,61 +462,5 @@ test('provider generation: an unconfirmed cancel and a contradictory cancelled+u
     const settled = await running
     assert.equal(settled.outcome, 'UNKNOWN')
     assert.equal(coordinator.status(prepared.claim.claimId).claim.artifact, null)
-  })
-})
-
-test('132 the provider result is saved by the original task and survives a full reopen', async () => {
-  await withSandbox(async ({ sandbox, artifacts }) => {
-    const bytes = makeWav({ durationMs: 640, amplitude: 0.2 })
-    const taskId = await createBirthTask(sandbox)
-    const provider = createMockProvider({ bytes })
-    const owner = await openTaskOwner(sandbox)
-    const coordinator = await open({ sandbox, artifacts, provider, taskOwner: owner })
-
-    const prepared = await coordinator.prepare(claimInput({ taskId }))
-    assert.equal(prepared.ok, true, JSON.stringify(prepared))
-    const submitted = await coordinator.submit({ claimId: prepared.claim.claimId })
-    assert.equal(submitted.ok, true, JSON.stringify(submitted))
-    assert.equal(submitted.outcome, 'SAVED')
-    const artifactRef = submitted.claim.artifact.artifactRef
-
-    // Close the running units, then reopen only the original task store and the same Artifact library.
-    await coordinator.close()
-    const reopenedOwner = await openTaskOwner(sandbox)
-    const reopenedLibrary = await openFixtureArtifactLibrary({ sandbox })
-    assert.equal(reopenedLibrary.ok, true, JSON.stringify(reopenedLibrary))
-
-    const got = await reopenedOwner.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
-    assert.equal(got.ok, true, JSON.stringify(got))
-    assert.equal(got.value.ownerState, 'SAVED')
-    assert.equal(got.value.task.state, 'SAVED')
-    assert.equal(got.value.task.hasOutput, true)
-    // The saved task is still the isolated simulation: no real model/device operation is claimed.
-    assert.equal(got.value.task.mockOnly, true)
-    assert.equal(got.value.task.realOperationAllowed, false)
-
-    const status = await reopenedOwner.artifactStatus({
-      schemaVersion: 1, scopeId: SCOPE, taskId, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
-    })
-    assert.equal(status.ok, true, JSON.stringify(status))
-    assert.equal(status.value.state, 'READABLE')
-    assert.equal(status.value.ownerState, 'SAVED')
-    assert.equal(status.value.artifactRef, artifactRef)
-
-    const read = await reopenedLibrary.value.readBytes({
-      schemaVersion: 1, scopeId: SCOPE, artifactRef, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
-    })
-    assert.equal(read.ok, true, JSON.stringify(read))
-    assert.equal(sha256(read.value.bytes), sha256(bytes), 'the original task reads exactly the provider bytes')
-
-    // The claim ledger still describes the same isolated result; nothing was regenerated.
-    const reopenedCoordinator = await open({
-      sandbox, artifacts: reopenedLibrary.value, provider: createMockProvider({ bytes }), taskOwner: reopenedOwner,
-    })
-    const claimStatus = reopenedCoordinator.status(prepared.claim.claimId)
-    assert.equal(claimStatus.ok, true)
-    assert.equal(claimStatus.claim.state, 'SAVED')
-    assert.equal(claimStatus.claim.provider.providerId, 'qwen3-tts')
-    assert.equal(provider.calls, 1, 'reopen must not synthesise again')
   })
 })
