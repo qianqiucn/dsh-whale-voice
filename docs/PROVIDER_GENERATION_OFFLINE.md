@@ -26,10 +26,16 @@ prepare(scope, task, requestKey, rights, provider, request)
   → submit(claimId) → provider.beginSynthesis({text,voiceId,language,emotion}, {claimId,taskId})
   → re-measure bytes here (WAV: PCM16 / 24 kHz / mono / 200–20000 ms / ≤1 MiB)
   → artifacts.import(same Artifact authority)
-  → artifacts.readBytes readback + SHA256 equality
   → taskOwner.saveArtifact(...)  → original task CREATED → PROCESSING → ARTIFACT_READY → SAVED
   → claim SAVED (+ jointProof: claim/request digest, task birth hash, provider binding, artifact ref/hash/length/duration)
 ```
+
+The coordinator no longer re-reads the whole artifact pack after the import: 168 removed that
+readback step (and the readback-mismatch test with it). The same real boundary is now enforced by the
+task owner, which re-reads the stored Artifact inside `saveArtifact` and compares its `byteSha256` /
+`byteLength` with the request as part of the mandatory `SaveProof`; a mismatch returns
+`SAVE_ARTIFACT_REJECTED`, leaves the already-imported Artifact as it is and gives the claim a
+`SAVE_UNKNOWN` tombstone.
 
 A failed original-task save leaves a `SAVE_UNKNOWN` tombstone on the claim (no SAVED claim, no second
 synthesis, the already-imported Artifact stays as it is).
@@ -37,8 +43,10 @@ synthesis, the already-imported Artifact stays as it is).
 ### Application entry (135)
 
 `core/preset-generation-app.mjs` is the formal Core entry for this chain:
-`openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices[, textLimit][, now]})`
-returns `{catalog, generate, status}`.
+`openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices, textLimit, providerFacts[, generationTimeoutMs][, now]})`
+returns `{catalog, generate, status}`. `textLimit` and `providerFacts` are required parameters of the
+current entry contract (the formal runtime passes both; the old test-only defaults were removed by
+168, so a caller must supply them rather than rely on a fallback).
 
 - `generate({text, voiceId, language})` reserves a real Task birth in the existing catalog, runs the
   coordinator (133) once against the caller-provided audited provider, and lets the original task
@@ -453,14 +461,19 @@ only: the results remain `fixtureOnly` / `realReady:false` and never claim a rea
   `UNKNOWN` (attempting a bounded cancel for the owned handle) instead of leaving them `BEGINNING`;
   an ACK with `confirmed:false` is not a confirmation; a contradictory `cancelled+unknown` result is
   `UNKNOWN`, not `CANCELLED`.
-- A failed artifact write or a readback mismatch leaves a `SAVE_UNKNOWN` tombstone with no artifact.
-- **132 original-task save:** `taskOwner` is a required dependency. After the readback, the coordinator
+- A failed artifact write leaves a `SAVE_UNKNOWN` tombstone with no artifact. A stored Artifact whose
+  bytes no longer match the request is refused by the task owner's `byteSha256` / `byteLength`
+  comparison inside `saveArtifact` (`SAVE_ARTIFACT_REJECTED`), leaving a `SAVE_UNKNOWN` claim
+  tombstone while the already-imported Artifact stays.
+- **132 original-task save:** `taskOwner` is a required dependency. After the import, the coordinator
   calls `taskOwner.saveArtifact({scopeId, taskId, now, rights, artifactRef, artifactSha256,
-  artifactByteLength})`; only when that write returns `ownerState:'SAVED'` for the same `artifactRef`
-  does the claim become `SAVED` (the result exposes that owner value as `task`). The owner write is
-  the same `CLAIMED → FINAL SAVED` transaction with the mandatory `SaveProof`; the task record itself
-  moves `CREATED → PROCESSING → ARTIFACT_READY → SAVED`. No owner/artifact schema change was needed:
-  the v2 SAVED entry and its proof bind Artifact facts, not the fixture engine that produced them.
+  artifactByteLength})`; the owner re-reads the stored Artifact and compares its `byteSha256` /
+  `byteLength` with the request (the real boundary the removed coordinator readback covered), and
+  only when that write returns `ownerState:'SAVED'` for the same `artifactRef` does the claim become
+  `SAVED` (the result exposes that owner value as `task`). The owner write is the same
+  `CLAIMED → FINAL SAVED` transaction with the mandatory `SaveProof`; the task record itself moves
+  `CREATED → PROCESSING → ARTIFACT_READY → SAVED`. No owner/artifact schema change was needed: the v2
+  SAVED entry and its proof bind Artifact facts, not the fixture engine that produced them.
 - **133 public provider interface:** `request.modality` accepts `preset` (the existing Qwen
   CustomVoice preset path); `clone`/`design` stay accepted by the claim contract but are not wired in
   this task. The coordinator calls the audited provider's real public `beginSynthesis(request,
@@ -494,17 +507,24 @@ only: the results remain `fixtureOnly` / `realReady:false` and never claim a rea
 
 ## 4. Tests
 
-`test/provider-generation-offline.test.mjs` (12 tests, synthetic WAV in a temporary sandbox):
+`test/provider-generation-offline.test.mjs` (historical snapshot: 12 tests when this section was
+written). After 168 removed the readback-mismatch case and 171 merged the standalone 132 reopen test
+into the first chain, the current source file has 10 top-level `test(` declarations — a static count,
+not a fresh run of this round's changes:
 
 - prepare → submit → SAVED artifact, joint proof, original task SAVED, double-submit no resynthesis;
-- 132: the provider result is saved by the original task and survives a full reopen (the same test
-  fails on the baseline as `TASK_OWNER_NOT_FOUND` when the task owner write is missing);
+- the first chain also closes the coordinator and reopens the original task store and Artifact
+  library over the same location (the 132 evidence, merged into that test by 171; the historical
+  standalone test failed on the baseline as `TASK_OWNER_NOT_FOUND` when the task owner write was
+  missing);
 - unsupported version, denied rights, duplicate/conflict/cross-scope, over-long text, refused authority;
 - invalid or over-limit provider output (sample rate, channels, duration) → FAILED with no artifact;
 - cancel ACK + late result → CANCELLED; unknown result → UNKNOWN and no resynthesis;
 - failed artifact write → `SAVE_UNKNOWN` tombstone, no resynthesis;
-- readback mismatch → `SAVE_UNKNOWN` tombstone;
 - closed coordinator rejects new claims.
+
+The old readback-mismatch case is not a current test (removed with the coordinator readback in 168);
+the equivalent real boundary is the task owner's stored-artifact byte comparison described in §2.
 
 `test/qwen-generation-wiring.test.mjs` (1 test, real `createQwenProvider` + existing Fixture worker):
 
