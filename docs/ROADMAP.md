@@ -648,6 +648,20 @@ the recorded 24 h stay usable; missing/deleted/revoked sources fail honestly. Ev
 1212/1208 pass/4 platform skips/0 fail; UI 89/89; `client.js` unchanged. Still `13-A/OFFLINE` /
 `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real Sender/WeChat/model/device.
 
+179 task (2026-11-06): one Core application entry confirms a saved result and reports its offline delivery.
+`openPresetGenerationApp({..., delivery})` optionally takes the trusted target directory + Fake backend and
+exposes `confirmDelivery({taskId, targetId})` / `deliveryStatus({taskId, targetId})`; the caller names only
+the original task and the confirmed target, the app reads the saved artifact ref itself and the assembly
+supplies the rights proof. A deterministic `saved-delivery:<taskId>:<targetId>` request key plus the
+persisted permit reuse the one delivery across repeats and reopened entries (one Fake request, one relay
+owner across base/rotated segments). `outcome:"ACCEPTED"` is returned only for a Fake-accepted delivery;
+refusals are `DELIVERY_REFUSED` with stage/cause, persisted FAILED/UNKNOWN/QUEUED/CANCELLED is
+`DELIVERY_NOT_ACCEPTED`, an unconfirmed relation is `DELIVERY_NOT_FOUND`, and without the wiring both
+methods answer `DELIVERY_UNAVAILABLE` while generation/save/download are unchanged. Evidence: 6 new tests
+(`saved-result-delivery-app`); full suite 1218/1214 pass/4 platform skips/0 fail; UI 89/89; `client.js`
+unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real
+Sender/WeChat/model/device.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

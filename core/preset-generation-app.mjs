@@ -16,6 +16,12 @@
  * 178: `locateTask({scopeId, taskId})` is the trusted source locator the unified delivery owner uses
  * to re-read the original task/artifact from the segment that actually holds it. The delivery owner
  * keeps one store at its own sandbox; this entry never writes, delivers or opens a second queue.
+ *
+ * 179: `confirmDelivery({taskId, targetId})` / `deliveryStatus({taskId, targetId})` compose the
+ * optional delivery wiring (trusted target directory + Fake backend) with the saved result and the
+ * unified relay. The caller only names the original task and target: the artifact ref comes from this
+ * entry's own status read and the rights proof from the assembly. Without that wiring both methods
+ * answer DELIVERY_UNAVAILABLE and generation/save/download keep working.
  */
 
 import crypto from 'node:crypto'
@@ -31,6 +37,7 @@ import {
   PROVIDER_GENERATION_SCHEMA_VERSION,
   createProviderGenerationCoordinator,
 } from './audio/provider-generation-offline.mjs'
+import { openUnifiedRelay } from './audio/relay-core-offline.mjs'
 
 export const PRESET_GENERATION_APP_SCHEMA_VERSION = 1
 
@@ -43,6 +50,10 @@ export const PRESET_GENERATION_APP_ERRORS = Object.freeze({
   STATUS_REJECTED: 'PRESET_GENERATION_STATUS_REJECTED',
   RESULTS_REJECTED: 'PRESET_GENERATION_RESULTS_REJECTED',
   DOWNLOAD_REJECTED: 'PRESET_GENERATION_DOWNLOAD_REJECTED',
+  DELIVERY_UNAVAILABLE: 'PRESET_GENERATION_DELIVERY_UNAVAILABLE',
+  DELIVERY_REFUSED: 'PRESET_GENERATION_DELIVERY_REFUSED',
+  DELIVERY_NOT_ACCEPTED: 'PRESET_GENERATION_DELIVERY_NOT_ACCEPTED',
+  DELIVERY_NOT_FOUND: 'PRESET_GENERATION_DELIVERY_NOT_FOUND',
 })
 
 const SCOPE_PATTERN = /^[A-Za-z0-9:_-]{1,64}$/
@@ -97,7 +108,11 @@ function segmentNames(root) {
  * @param {number} options.textLimit max text characters
  * @param {number} [options.generationTimeoutMs] effective generation limit published to the client
  * @param {Function} [options.now] ISO clock
- * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function,results:Function,download:Function}}|{ok:false,code:string,detail?:string}>}
+ * @param {{backend:object, targets:Array<object>, maxDeliveries?:number, maxPermits?:number}} [options.delivery]
+ *   optional unified-relay wiring; when present the entry also exposes `confirmDelivery`/
+ *   `deliveryStatus` over the same sandbox, and when absent those methods answer
+ *   `PRESET_GENERATION_DELIVERY_UNAVAILABLE` without affecting generation/save/download
+ * @returns {Promise<{ok:true,value:{catalog:Function,generate:Function,status:Function,results:Function,download:Function,locateTask:Function,confirmDelivery:Function,deliveryStatus:Function}}|{ok:false,code:string,detail?:string}>}
  */
 export async function openPresetGenerationApp(options = {}) {
   const sandbox = options.sandbox
@@ -109,6 +124,7 @@ export async function openPresetGenerationApp(options = {}) {
   const generationTimeoutMs = Number.isInteger(options.generationTimeoutMs) ? options.generationTimeoutMs : null
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
   const providerFacts = options.providerFacts
+  const delivery = options.delivery
 
   if (typeof scopeId !== 'string' || !SCOPE_PATTERN.test(scopeId)) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'scopeId')
   if (typeof rightsProofRef !== 'string' || !PROOF_PATTERN.test(rightsProofRef)) {
@@ -512,6 +528,139 @@ export async function openPresetGenerationApp(options = {}) {
   }
 
   /**
+   * 179: the application entry for one saved result's independent confirmation and offline delivery.
+   * Only the original taskId and an explicitly confirmed trusted target are caller inputs: the saved
+   * artifact ref comes from this entry's own status read, the rights proof from the assembly, and the
+   * trusted target directory/backend from the optional `delivery` wiring. Without that wiring both
+   * methods answer DELIVERY_UNAVAILABLE and every generation/save/download capability stays usable.
+   */
+  let relayPromise = null
+  function deliveryRelay() {
+    if (!delivery) return Promise.resolve(null)
+    if (!relayPromise) {
+      relayPromise = openUnifiedRelay({
+        sandbox,
+        backend: delivery.backend,
+        targets: delivery.targets,
+        now,
+        locateTask,
+        maxDeliveries: delivery.maxDeliveries,
+        maxPermits: delivery.maxPermits,
+      })
+    }
+    return relayPromise
+  }
+
+  function refused(stage, cause, detail = null) {
+    return {
+      ok: false,
+      code: PRESET_GENERATION_APP_ERRORS.DELIVERY_REFUSED,
+      stage,
+      cause: cause || null,
+      detail,
+    }
+  }
+
+  function deliveryView(record) {
+    return {
+      deliveryId: record.deliveryId,
+      taskId: record.taskId,
+      artifactRef: record.artifactRef,
+      targetId: record.targetId,
+      authority: record.authority,
+      permitId: record.permitId || null,
+      state: record.state,
+      backendState: record.backendState || null,
+      receiptId: record.receiptId || null,
+      error: record.error || null,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      mockOnly: true,
+      realOperationAllowed: false,
+    }
+  }
+
+  async function deliveryRelayOrFailure() {
+    const relay = await deliveryRelay()
+    if (!relay) return { ok: false, code: PRESET_GENERATION_APP_ERRORS.DELIVERY_UNAVAILABLE, detail: 'delivery' }
+    if (relay.ok !== true) return refused('open', relay.code, relay.detail)
+    return { ok: true, relay }
+  }
+
+  /** Confirm one saved result for one trusted target and return that delivery's current state. */
+  async function confirmDelivery(input = {}) {
+    const taskId = input.taskId
+    const targetId = input.targetId
+    if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) {
+      return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'taskId')
+    }
+    const wired = await deliveryRelayOrFailure()
+    if (!wired.ok) return wired
+    const saved = await status(taskId)
+    if (!saved.ok) return failure(saved.code, saved.detail === undefined ? null : saved.detail)
+    if (saved.readable !== true || typeof saved.artifactRef !== 'string') {
+      return failure(PRESET_GENERATION_APP_ERRORS.STATUS_REJECTED, 'not readable')
+    }
+    const rights = { state: 'GRANTED', proofRef: rightsProofRef }
+    const permit = await wired.relay.issueDeliveryPermit({
+      permit: { schemaVersion: 1, scopeId, taskId, artifactRef: saved.artifactRef, targetId, rights },
+    })
+    if (!permit.ok) return refused('permit', permit.code, permit.detail)
+    const ensured = await wired.relay.ensureDelivery({
+      handoff: {
+        schemaVersion: 1,
+        scopeId,
+        taskId,
+        artifactRef: saved.artifactRef,
+        targetId,
+        requestKey: 'saved-delivery:' + taskId + ':' + targetId,
+        rights,
+        permitId: permit.permit.permitId,
+      },
+    })
+    if (!ensured.ok) return refused('ensure', ensured.code, ensured.detail)
+    const deliveryId = ensured.delivery.deliveryId
+    const submitted = await wired.relay.submit(deliveryId)
+    if (submitted.ok === true && submitted.delivery.state === 'ACCEPTED') {
+      return { ok: true, outcome: 'ACCEPTED', delivery: deliveryView(submitted.delivery) }
+    }
+    let record = submitted.ok === true ? submitted.delivery : null
+    if (!record) {
+      const current = await wired.relay.status(deliveryId)
+      if (current.ok === true) record = current.delivery
+    }
+    if (!record) return refused('submit', submitted.code, submitted.detail)
+    return {
+      ok: false,
+      code: PRESET_GENERATION_APP_ERRORS.DELIVERY_NOT_ACCEPTED,
+      state: record.state,
+      cause: submitted.ok === true ? null : (submitted.code || null),
+      delivery: deliveryView(record),
+    }
+  }
+
+  /** Read back the persisted delivery of one original result/target relation, if it exists. */
+  async function deliveryStatus(input = {}) {
+    const taskId = input.taskId
+    const targetId = input.targetId
+    if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) {
+      return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'taskId')
+    }
+    const wired = await deliveryRelayOrFailure()
+    if (!wired.ok) return wired
+    const mappings = await wired.relay.mappings()
+    if (mappings.ok !== true) return refused('mappings', mappings.code, mappings.detail)
+    for (const item of mappings.deliveries) {
+      if (item.taskId !== taskId) continue
+      const found = await wired.relay.status(item.deliveryId)
+      if (found.ok === true && found.delivery.targetId === targetId) {
+        return { ok: true, state: found.delivery.state, delivery: deliveryView(found.delivery) }
+      }
+    }
+    return failure(PRESET_GENERATION_APP_ERRORS.DELIVERY_NOT_FOUND, 'delivery')
+  }
+
+  /**
    * 178: trusted source locator for the unified delivery owner. It answers with the segment this
    * entry already owns that holds the original task, so the owner re-reads that task/artifact under
    * its real persisted relation; the caller of a delivery never names a storage path. A task from
@@ -537,6 +686,8 @@ export async function openPresetGenerationApp(options = {}) {
       results,
       download,
       locateTask,
+      confirmDelivery,
+      deliveryStatus,
     }),
   }
 }

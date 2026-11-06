@@ -948,3 +948,41 @@ segments. Relay files 6 / 46 tests. Full suite **1212 / 1208 pass / 4 platform s
 Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`: this is a Core application-boundary unit,
 not a page/Host integration, and no real Sender/WeChat/model/device ran; Plan14 and every real Plan12/13 DoD
 remain OPEN.
+
+## Plan 13-A 179 revision — one application entry confirms a saved result and reports its offline delivery (2026-11-06)
+
+Branch `feature/saved-delivery-app` from the reviewed main `29f0bc4a`; a new PR is pending and not merged.
+177 made a saved Provider result deliverable and 178 let the relay read it from its real storage segment;
+this revision composes both behind one Core application call and adds an honest status read-back.
+
+1. **Optional delivery wiring (179).** `openPresetGenerationApp({..., delivery})` accepts an optional
+   `{backend, targets[, maxDeliveries][, maxPermits]}` and then exposes
+   `confirmDelivery({taskId, targetId})` / `deliveryStatus({taskId, targetId})`. Without the wiring both
+   answer `PRESET_GENERATION_DELIVERY_UNAVAILABLE` and generation/save/status/results/download are
+   unchanged.
+2. **Entry boundary.** The caller names only the original task and the explicitly confirmed target; the
+   entry reads the saved artifact ref itself through `status`, and the assembly supplies the rights proof,
+   trusted target directory and Fake backend. No call hands the app a storage path, artifact fact or
+   per-call authorization.
+3. **One delivery, one owner.** A deterministic `saved-delivery:<taskId>:<targetId>` request key plus the
+   persisted permit make repeat calls and reopened entries reuse the existing `deliveryId`, so the Fake
+   backend receives the result once; the relay owner/store stays single across base and rotated segments
+   (178 locator).
+4. **Honest outcomes.** `confirmDelivery` returns `outcome:"ACCEPTED"` only when the delivery ends
+   `ACCEPTED` (backend `QUEUED` + fixture receipt); a relay refusal is `DELIVERY_REFUSED` with
+   stage/cause; a persisted FAILED/UNKNOWN/QUEUED/CANCELLED delivery is `DELIVERY_NOT_ACCEPTED` with the
+   exact state and record; `deliveryStatus` returns the persisted state and an unconfirmed relation is
+   `DELIVERY_NOT_FOUND`. Capacity/permit/ensure refusals keep their cause; UNKNOWN is never resent.
+
+Evidence: 6 new isolated application-entry tests in `test/saved-result-delivery-app.test.mjs` over the real
+generation/save chain and an explicitly assembled Fake capability: unavailable wiring keeps
+generation/save/download and both delivery methods answer unavailable; one confirmation accepts once with a
+fixture receipt, a repeat call and a reopened entry reuse the same deliveryId without a second backend
+request, and status reads it back; an unconfirmed relation, a missing task, a deleted source and an
+unauthorized target fail explicitly; an unknown backend result stays not-accepted/UNKNOWN and is never
+resent; base and rotated segment results (including a retained one past 24 h) are confirmed through the one
+entry; confirmation and delivery capacity refusals keep their stage/cause. Full suite **1218 / 1214 pass /
+4 platform skips / 0 fail** (was 1212/1208/4/0); UI **89/89** (Core-only change, no product UI diff);
+`client.js` unchanged (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`:
+this is a Core application entry, not a page/Host integration, and no real Sender/WeChat/model/device ran;
+Plan14 and every real Plan12/13 DoD remain OPEN.
