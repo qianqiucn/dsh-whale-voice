@@ -4202,7 +4202,7 @@ function Plan09FeaturePage({ feature, setup, notify, profileKey, globalSetupOpen
   const owner = React.useRef('plan09-owner-' + Math.random().toString(36).slice(2))
   const depsSnapshot = React.useRef({ context, mode, engine: 'local' })
   React.useEffect(() => {
-    if (!adapter) { setReminder(false); setWizardOpen(false); return }
+    if (!adapter) { setReminder(false); return }
     const current = plan09ReadWizard(window.localStorage, key)
     const view = plan09DeriveWizardView({
       stored: current,
