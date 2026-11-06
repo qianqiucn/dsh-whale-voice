@@ -4,6 +4,7 @@ import { buildCapabilitySnapshot, buildCapabilityStatus } from './core/capabilit
 import { createConfigSandbox, openConfigStorage, removeConfigSandbox } from './core/config-sandbox.mjs'
 import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
 import { openGenerationSettingsDraft } from './core/settings-draft.mjs'
+import { PRESET_GENERATION_APP_ERRORS } from './core/preset-generation-app.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -118,6 +119,18 @@ export function bridgeScript(token) {
     getGenerationStatus: (taskId) => generation('/generation/status?taskId=' + encodeURIComponent(String(taskId || ''))),
     getGenerationResults: () => generation('/generation/results'),
     getGenerationAssemblyStatus: () => generation('/generation/assembly'),
+    // 180: one saved result's confirmation and status through the same trusted connection. A request
+    // that ends without an answer only means this request's result is unconfirmed; it never asserts a
+    // background failure, cancellation or success, and the persisted delivery stays queryable below.
+    confirmSavedResultDelivery: (request, options) => generation('/generation/delivery', {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+      timeoutMs: options && options.timeoutMs,
+    }).catch((error) => {
+      if (error && error.name === 'AbortError') return { ok: false, error: 'delivery_unconfirmed' }
+      throw error
+    }),
+    getSavedResultDeliveryStatus: (taskId, targetId) => generation('/generation/delivery?taskId=' + encodeURIComponent(String(taskId || '')) + '&targetId=' + encodeURIComponent(String(targetId || ''))),
     downloadGenerationResult: async (taskId) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
@@ -404,6 +417,40 @@ export function installHostBridge(scope, options = {}) {
     })
     res.end(bytes)
   })
+  // 180: isolated trusted Host surface for one saved result's delivery. `options.generation` must be
+  // the already-opened application entry WITH its delivery wiring; the route never falls back to a
+  // Fake capability, and a request may only name the original task and the confirmed target (never a
+  // storage path, artifact or rights fact). POST confirms and returns that delivery's current state;
+  // GET is a read-only status query that never confirms or submits. A confirm request that ends
+  // without an answer only means the request result is unconfirmed — GET reads the persisted record.
+  route(PREFIX + '/generation/delivery', async (req, res) => {
+    if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
+    if (String(req.method || '').toUpperCase() === 'POST') {
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch {
+        return send(res, 400, { ok: false, error: 'invalid_body' })
+      }
+      const taskId = body && body.taskId
+      const targetId = body && body.targetId
+      if (typeof taskId !== 'string' || taskId === '' || typeof targetId !== 'string' || targetId === '') {
+        return send(res, 400, { ok: false, error: 'invalid_request' })
+      }
+      const result = await generation.confirmDelivery({ taskId, targetId })
+      if (result.code === PRESET_GENERATION_APP_ERRORS.DELIVERY_UNAVAILABLE) return send(res, 503, result)
+      if (result.code === PRESET_GENERATION_APP_ERRORS.INPUT_INVALID) return send(res, 400, result)
+      return send(res, 200, result)
+    }
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    const taskId = url.searchParams.get('taskId')
+    const targetId = url.searchParams.get('targetId')
+    if (!taskId || !targetId) return send(res, 400, { ok: false, error: 'invalid_request' })
+    const result = await generation.deliveryStatus({ taskId, targetId })
+    if (result.code === PRESET_GENERATION_APP_ERRORS.DELIVERY_UNAVAILABLE) return send(res, 503, result)
+    if (result.code === PRESET_GENERATION_APP_ERRORS.INPUT_INVALID) return send(res, 400, result)
+    return send(res, 200, result)
+  }, ['GET', 'POST'])
 
   const script = bridgeScript(token)
   const offInject = typeof scope.on === 'function' ? scope.on('webserver/index-inject', (table) => {

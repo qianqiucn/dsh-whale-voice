@@ -25,6 +25,8 @@ GET  /whale-voice/setup/generation/status?taskId=...
 GET  /whale-voice/setup/generation/results
 GET  /whale-voice/setup/generation/download?taskId=...
 GET  /whale-voice/setup/generation/assembly
+POST /whale-voice/setup/generation/delivery
+GET  /whale-voice/setup/generation/delivery?taskId=...&targetId=...
 GET  /whale-voice/setup/settings/generation-storage
 PUT  /whale-voice/setup/settings/generation-storage
 POST /whale-voice/setup/settings/generation-storage/apply
@@ -48,6 +50,20 @@ configured draft root (`503` without that store); a `PUT`/`POST` never writes pr
 Responses carry the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, or an `ok:false` code);
 generation results are isolated Fixture results, not real-model output. No new listener and no
 authentication change.
+
+The 180 delivery surface is one path with two declared methods: `POST /generation/delivery` with
+`{taskId, targetId}` confirms one saved result, and `GET /generation/delivery?taskId=...&targetId=...`
+is a read-only status query that never confirms or submits. Both use the same
+loopback/Origin/connection/token guard and accept only the original task and the explicitly confirmed
+target — never a storage path, artifact fact or rights fact. When no generation object is supplied the
+route answers `503 {ok:false,error:'generation_not_enabled'}`; when the supplied application has no
+delivery wiring it answers `503 {ok:false,code:'PRESET_GENERATION_DELIVERY_UNAVAILABLE'}` and never falls
+back to a Fake capability. A Core refusal is `200` with `ok:false` and its code/stage/cause (HTTP 200
+never means the delivery was accepted); malformed JSON is `400 invalid_body`, a missing task/target is
+`400 invalid_request`, and a non-declared method is `405`. `POST` returning `outcome:"ACCEPTED"` is the
+isolated Fake acceptance with a fixture receipt (`backendState:"QUEUED"`, `realOperationAllowed:false`),
+not a real send; a request that ends without an answer is only unconfirmed, and the persisted delivery
+stays queryable through `GET`.
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
 rejects non-loopback Hosts, cross-site requests, mismatched Origin, missing/wrong
@@ -88,6 +104,8 @@ window.__WHALE_SETUP__ = {
   getGenerationResults(): Promise<GenerationResults>,
   downloadGenerationResult(taskId): Promise<GenerationDownload>,
   getGenerationAssemblyStatus(): Promise<GenerationAssembly>,
+  confirmSavedResultDelivery({taskId, targetId}): Promise<DeliveryResult>,
+  getSavedResultDeliveryStatus(taskId, targetId): Promise<DeliveryResult>,
   getGenerationStorageDraft(): Promise<SettingsDraftPayload>,
   saveGenerationStorageDraft({generationStorageRoot}): Promise<SettingsDraftPayload>,
   applyGenerationStorageDraft(): Promise<SettingsDraftPayload>,

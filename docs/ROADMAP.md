@@ -671,6 +671,19 @@ after the saved result is deleted and its state is not rewritten; the rest of 17
 read); delivery entry 8 tests; full suite 1220/1216 pass/4 platform skips/0 fail; UI 89/89; `client.js`
 unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`.
 
+180 task (2026-11-07): the saved-result confirmation and status are exposed on the existing trusted Host
+connection. `installHostBridge` adds `POST /whale-voice/setup/generation/delivery` (`{taskId, targetId}`)
+and a read-only `GET .../delivery?taskId=...&targetId=...` behind the same loopback/Origin/connection/
+token guard; the request names only the original task and confirmed target. No application object →
+`503 generation_not_enabled`; no delivery wiring → `503 DELIVERY_UNAVAILABLE` with no Fake fallback;
+malformed requests → `400`, wrong method → `405`; Core refusals keep code/stage/cause in `200`+`ok:false`
+(HTTP 200 never means accepted). The injected bridge adds the two calls; a client abort answers
+`delivery_unconfirmed` and the persisted record is queried without resend. The default qwen runtime still
+has no delivery wiring. Evidence: 7 new tests (`host-delivery`, Fixture app + Fake capability); two
+existing route-count assertions updated; full suite 1227/1223 pass/4 platform skips/0 fail; UI 89/89;
+`client.js` unchanged. Still `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page button or real
+Host/delivery.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

@@ -181,6 +181,23 @@ anything; without the `delivery` wiring they are unaffected while both delivery 
 receive that record's artifactRef/permitId/receipt even when the original taskId and target are known; a
 same-scope record stays readable after the saved result is deleted, and its state is never rewritten.
 
+### Trusted Host call surface (180)
+
+`installHostBridge` exposes the delivery entry on the existing trusted connection: `POST
+/whale-voice/setup/generation/delivery` with JSON `{taskId, targetId}`, and a read-only `GET
+/whale-voice/setup/generation/delivery?taskId=...&targetId=...`. Both keep the existing
+loopback/Origin/connection/token guard and accept only the original task and the confirmed target.
+Without an application object the route answers `503 {ok:false,error:'generation_not_enabled'}`; with an
+application that has no delivery wiring it answers `503
+{ok:false,code:'PRESET_GENERATION_DELIVERY_UNAVAILABLE'}` and never falls back to a Fake capability.
+`POST` returns the entry's result (`outcome:"ACCEPTED"` only for the isolated Fake acceptance with a
+fixture receipt, or `ok:false` with the Core code/stage/cause); `GET` is read-only and returns the
+persisted state. Malformed JSON / a missing task or target is `400`, a non-declared method is `405`, and
+HTTP 200 never means a real send. The injected bridge adds `confirmSavedResultDelivery` /
+`getSavedResultDeliveryStatus`; a client-side abort answers `{ok:false,error:'delivery_unconfirmed'}` (not
+a failure, cancellation or success) and the persisted record is queried afterwards. No page button, no
+real Host and no real backend are involved; the default qwen runtime still assembles no delivery wiring.
+
 ### Original-task result download (150)
 
 The Core generation entry gains `download(taskId)`: it reads the owner-confirmed saved artifact of that

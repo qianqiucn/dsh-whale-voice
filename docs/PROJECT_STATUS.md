@@ -1010,3 +1010,37 @@ record is still readable after the artifact deletion without a second backend re
 **1220 / 1216 pass / 4 platform skips / 0 fail** (was 1218/1214/4/0); UI **89/89**; `client.js` unchanged
 (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and
 no real Sender/WeChat/model/device ran.
+
+## Plan 13-A 180 revision — saved-result delivery on the trusted Host connection (2026-11-07)
+
+Branch `feature/delivery-host-surface` from the reviewed main `b5e44f88`; a new PR is pending and not
+merged. This revision only connects the already-existing confirmation/status entry to the existing
+trusted Host/injected connection; no page, real Host, production auth change or real backend.
+
+1. **Routes (180).** `installHostBridge` registers one path with two declared methods:
+   `POST /whale-voice/setup/generation/delivery` (JSON `{taskId, targetId}`) confirms one saved result and
+   returns the entry's result; `GET .../delivery?taskId=...&targetId=...` is a read-only status query that
+   never confirms or submits. Both keep the existing loopback/Origin/connection/token guard; the request
+   may only name the original task and the confirmed target — never a storage path, artifact fact or
+   rights fact.
+2. **Unavailable and refusals.** No application object → `503 generation_not_enabled`; an application with
+   no delivery wiring → `503 PRESET_GENERATION_DELIVERY_UNAVAILABLE`, never a Fake fallback. Malformed
+   JSON / missing task or target → `400`; a non-declared method → `405`; Core refusals keep their exact
+   code/stage/cause in a `200` + `ok:false` body, so HTTP 200 never means the delivery was accepted.
+3. **Connection contract.** The injected `window.__WHALE_SETUP__` adds `confirmSavedResultDelivery` /
+   `getSavedResultDeliveryStatus` with the same per-process token and same-origin rules. A client abort
+   answers `{ok:false,error:'delivery_unconfirmed'}` — not a failure, cancellation or success — and the
+   persisted delivery is queried afterwards without resending. The default qwen runtime still assembles no
+   delivery wiring, so normal running remains explicitly non-deliverable.
+
+Evidence: 7 new isolated Host tests in `test/host-delivery.test.mjs` over a Fixture application with an
+explicitly assembled Fake capability: confirm → status → repeat → reopen with one Fake request; missing/
+wrong token, wrong method, malformed JSON and missing fields create nothing; unavailable states stay
+explicit while generation/status still work; Core refusals keep code/stage/cause with HTTP 200 and a
+scope-B Host cannot read scope-A's record; an unanswered confirm is not success and the persisted state is
+queryable; the injected bridge calls both routes with its token and maps an abort to
+`delivery_unconfirmed`. Two existing route-count assertions were updated for the added route (18→19
+registered routes, 6→7 generation routes). Full suite **1227 / 1223 pass / 4 platform skips / 0 fail** (was
+1220/1216/4/0); UI **89/89** (Core/Host-only change, no product UI diff); `client.js` unchanged
+(383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`: this is an isolated
+transport boundary, not a page/Host integration, and no real Sender/WeChat/model/device ran.
