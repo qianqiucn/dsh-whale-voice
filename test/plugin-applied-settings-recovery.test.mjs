@@ -414,3 +414,29 @@ test('164 without a settings draft entry the failure points at the deployment co
   await generationDenied(broken, token)
   await disposeOf(broken)
 })
+
+// 167/U02: a deployment field like `scopeId` cannot be applied from the settings page. The real
+// assembly failure must keep that known detail and must not send the user to the settings page; a
+// valid draft store existing does not make the deployment field editable there.
+test('167 a deployment scope failure keeps its known detail and does not point at the settings page', { skip: spawnSkip }, async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-recovery-deployment-field-'))
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }))
+  const draftRoot = path.join(parent, 'settings')
+  const storageRoot = path.join(parent, 'generation')
+  const config = generationConfig(draftRoot, storageRoot)
+  config.generation.scopeId = 'bad scope!'
+
+  const broken = makeHarness()
+  await apply(broken.ctx, config)
+  const token = bridgeToken(broken)
+  const state = await assemblyState(broken, token)
+  assert.equal(state.state, 'FAILED')
+  assert.equal(state.code, 'runtime_unavailable')
+  assert.match(state.messageZh, /QWEN_GENERATION_RUNTIME_APP_REJECTED/)
+  assert.match(state.messageZh, /scopeId/)
+  assert.match(state.messageZh, /部署配置/)
+  assert.match(state.messageZh, /重新打开插件/)
+  assert.doesNotMatch(state.messageZh, /设置页|保存并应用/)
+  await generationDenied(broken, token)
+  await disposeOf(broken)
+})

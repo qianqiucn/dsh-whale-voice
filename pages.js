@@ -1242,7 +1242,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       h('section', { className: 'wv-card pad wv-preview' },
         h('div', { className: 'wv-card-title' },
           h('div', null, h('h2', null, '预设音色生成'), h('p', null, genEnabled === true ? '选择已有预设音色并输入短文本；结果由原任务保存，刷新后仍可查询。' : '通过正式 Host 接口提交短文本与已有预设音色。')),
-          h(Badge, { tone: 'wait' }, genEnabled === true ? '来源未确认' : genEnabled === false ? '未启用' : '检查中')),
+          h(Badge, { tone: 'wait' }, genEnabled === true ? '来源未确认' : genEnabled === false ? (assemblyFailure ? '启动失败' : '未启用') : '检查中')),
         h('div', { className: 'wv-field' },
           h('label', null, '试听文本'),
           h('textarea', { className: 'wv-textarea', value: preview.text, onChange: (e) => patch('text', e.target.value), maxLength: textLimit, disabled: genEnabled !== true, 'aria-label': '试听文本' }),
@@ -1311,7 +1311,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
               : '生成失败：' + genError + '；未自动重试。'))
           : null,
         h('div', { className: 'wv-row wv-wrap' },
-          h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? '生成未启用' : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存'),
+          h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? (assemblyFailure ? '启动失败：生成不可用' : '生成未启用') : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存'),
           h(Button, { variant: 'ghost', onClick: () => notify('本页经正式 Host 接口提交生成；实际执行来源本页无法核实，生产播放与微信发送未接入。', 'info') }, '了解限制')))),
     canListResults && genEnabled === true
       ? h('section', { className: 'wv-card pad', style: { marginTop: 14 }, 'data-testid': 'studio-generation-results' },
