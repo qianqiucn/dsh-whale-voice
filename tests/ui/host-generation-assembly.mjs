@@ -99,16 +99,14 @@ export async function createHostGenerationAssembly() {
   }
 
   function setGenerationEnabled(value) {
-    generationEnabled = value === true
-    if (generationEnabled) generationFailure = null
+    generationEnabled = value
+    generationFailure = null
   }
 
   /** 164: a configured generation that failed to start (the same state index.js reports as FAILED). */
   function setGenerationFailure(failure) {
-    generationFailure = failure && typeof failure === 'object'
-      ? { code: String(failure.code || ''), messageZh: String(failure.messageZh || '') }
-      : null
-    generationEnabled = generationFailure === null
+    generationFailure = failure
+    generationEnabled = false
   }
 
   function resetGeneration() {

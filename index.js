@@ -514,9 +514,9 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
   const opened = await openQwenGenerationRuntime({ sandbox, ...runtimeSettings })
   if (!opened.ok) {
     if (temporary) removeConfigSandbox(sandbox)
-    // 164: keep the reason the lower layer already gave; a broken task record in the storage location
-    // is a storage problem, not a Qwen runtime-path problem.
-    return { ok: false, code: 'runtime_unavailable', reason: opened.code || 'ASSEMBLY_FAILED', detail: opened.detail || null }
+    // 164: keep the reason the lower layer already gave; a storage location that cannot be read is a
+    // storage problem, not a Qwen runtime-path problem.
+    return { ok: false, code: 'runtime_unavailable', reason: opened.code, detail: opened.detail }
   }
   const runtime = opened.value
   const host = installHostBridge(scope, {
@@ -553,26 +553,26 @@ function generationFailure(outcome, hasDrafts) {
   if (outcome.code === 'storage_unavailable') {
     return { state: 'FAILED', code: outcome.code, messageZh: '生成数据保存位置不可用：' + outcome.storageRoot + '。' + repair }
   }
-  // 164: the lower layer already knows a broken task record caused this assembly failure; it must not
-  // be replaced by a generic Qwen runtime-path hint.
+  // 164: the lower layer only proves the storage open/read failed; it does not name a damaged record,
+  // so the message stays inside that known scope and never claims a Qwen runtime-path problem.
   if (outcome.detail === 'sandbox') {
     return {
       state: 'FAILED',
       code: outcome.code,
-      messageZh: '生成运行对象未能启动：生成数据保存位置中的任务记录无法读取（记录可能损坏或被截断）。' + repair,
+      messageZh: '生成运行对象未能启动：生成数据保存位置无法读取（保存位置或其内的存储入口无法打开或读取）。' + repair,
     }
   }
   if (outcome.reason === 'QWEN_GENERATION_RUNTIME_WORKER_NOT_STARTED') {
     return {
       state: 'FAILED',
       code: outcome.code,
-      messageZh: '生成运行对象未能启动：Qwen Worker 未能启动（' + (outcome.detail || 'worker') + '）。请检查 Qwen 运行路径与模型目录；' + repair,
+      messageZh: '生成运行对象未能启动：Qwen Worker 未能启动（' + outcome.detail + '）。请检查 Qwen 运行路径与模型目录；' + repair,
     }
   }
   return {
     state: 'FAILED',
     code: outcome.code,
-    messageZh: '生成运行对象未能启动（' + (outcome.reason || 'ASSEMBLY_FAILED') + '）。请检查部署的生成配置；' + repair,
+    messageZh: '生成运行对象未能启动（' + outcome.reason + '）。请检查部署的生成配置；' + repair,
   }
 }
 

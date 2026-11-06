@@ -162,19 +162,22 @@ numbers are this machine's measurements, not a product promise.
 
 The assembly-failure explanation now keeps the reason the lower layer actually knows and only points
 at a repair entry that exists. `assembleGenerationHost` no longer drops the detail returned by
-`openQwenGenerationRuntime`, so a truncated task record inside an otherwise usable storage location is
-reported as "生成数据保存位置中的任务记录无法读取（记录可能损坏或被截断）" instead of a Qwen
-runtime-path problem; the Qwen runtime-path / model-directory wording is used only for a real
-`QWEN_GENERATION_RUNTIME_WORKER_NOT_STARTED` failure, and other assembly failures are described as a
-generation-配置 problem without guessing a specific setting. The guidance sentence now depends on the
-Host knowing whether a settings draft store exists: with one it says the user can fix it on the
-settings page and save/apply (next reopen); without one it says there is no draft entry here and the
-deployment configuration must be corrected and the plugin reopened — it never tells the user to run a
-save/apply this page cannot perform. The 音色中心 page asks `/generation/assembly` when the generation
-routes answer `generation_not_enabled`: `FAILED` shows 「生成未能启动」 plus the same `messageZh` the
-settings page shows, `DISABLED` still shows 生成未启用, `READY` is untouched and an unreadable assembly
-state keeps the F06 unknown message. Nothing is auto-fixed, saved, applied, started or deleted, and the
-save/apply/next-reopen timing is unchanged.
+`openQwenGenerationRuntime`, so a storage location that cannot be opened or read is reported as
+"生成数据保存位置无法读取（保存位置或其内的存储入口无法打开或读取）" instead of a Qwen runtime-path
+problem. That wording stays inside what `detail: 'sandbox'` actually proves — the storage could not be
+opened or read — so it does not claim a damaged or truncated task record (a plain `segments` entry in
+the location is enough to trigger the same failure). The Qwen runtime-path / model-directory wording is
+used only for a real `QWEN_GENERATION_RUNTIME_WORKER_NOT_STARTED` failure, and other assembly failures
+are described as a generation-配置 problem without guessing a specific setting. The guidance sentence
+depends on the Host knowing whether a settings draft store exists: with one it says the user can fix it
+on the settings page and save/apply (next reopen); without one it says there is no draft entry here and
+the deployment configuration must be corrected and the plugin reopened — it never tells the user to run
+a save/apply this page cannot perform. The 音色中心 page keeps its real waiting state while the
+assembly answer is still pending (it does not claim 未配置 or a failure early) and asks
+`/generation/assembly` when the generation routes answer `generation_not_enabled`: `FAILED` shows
+「生成未能启动」 plus the same `messageZh` the settings page shows, `DISABLED` still shows 生成未启用,
+`READY` is untouched and an unreadable assembly state keeps the F06 unknown message. Nothing is
+auto-fixed, saved, applied, started or deleted, and the save/apply/next-reopen timing is unchanged.
 
 ### Missing saved task is not a failed read (163)
 

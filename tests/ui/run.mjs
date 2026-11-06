@@ -525,25 +525,38 @@ await check('studio reports generation not enabled when the Host runtime is abse
   }
 })
 
-// 164: a configured generation that failed to start must not be shown as "not configured"; the
-// generation page and the settings page must name the same real reason and the usable repair entry.
-await check('studio names a failed generation assembly instead of claiming it is not configured', async () => {
+// 164/164 v1.1: while the assembly answer is still pending the page must not claim "not configured"
+// or a failure; when the real FAILED answer arrives, the generation page and the settings page must
+// name the same known reason and the usable repair entry.
+await check('studio waits for the assembly state and then names the real failure', async () => {
   const failure = {
     code: 'runtime_unavailable',
-    messageZh: '生成运行对象未能启动：生成数据保存位置中的任务记录无法读取（记录可能损坏或被截断）。可在设置页修正后重新保存并应用，下次重开插件生效。',
+    messageZh: '生成运行对象未能启动：生成数据保存位置无法读取（保存位置或其内的存储入口无法打开或读取）。可在设置页修正后重新保存并应用，下次重开插件生效。',
   }
   hostGeneration.setGenerationFailure(failure)
   try {
     await withPage('?bridge=normal&generation=failed', async (page) => {
+      let release = () => {}
+      const held = new Promise((resolve) => { release = resolve })
+      await page.route('**/whale-voice/setup/generation/assembly*', async (route) => {
+        await held
+        await route.continue()
+      })
       await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      // While the assembly query is still unanswered the page keeps its real waiting state.
+      await page.waitForFunction(() => document.body.innerText.includes('正在检查生成能力'), null, { timeout: 5000 })
+      const pendingText = await page.locator('body').innerText()
+      assert.doesNotMatch(pendingText, /未配置生成运行对象|生成未能启动|还没有生成结果/)
+      assert.equal(await page.locator('[data-testid="studio-generation-disabled"]').count(), 0)
+      release()
       const notice = page.locator('[data-testid="studio-generation-assembly-message"]')
       await notice.waitFor({ timeout: 5000 })
       const block = page.locator('[data-testid="studio-generation-assembly-error"]')
       await block.waitFor({ timeout: 5000 })
       const blockText = await block.innerText()
       assert.match(blockText, /生成未能启动/)
-      assert.match(blockText, /生成数据保存位置中的任务记录无法读取/)
-      assert.doesNotMatch(blockText, /Qwen 运行路径/)
+      assert.match(blockText, /生成数据保存位置无法读取/)
+      assert.doesNotMatch(blockText, /任务记录|损坏|截断|Qwen 运行路径/)
       const body = await page.locator('body').innerText()
       assert.doesNotMatch(body, /未配置生成运行对象/)
       assert.doesNotMatch(body, /还没有生成结果/)

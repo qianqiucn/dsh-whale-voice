@@ -366,24 +366,25 @@ test('154 a truncated applied runtime record cannot lock the settings page while
   await disposeOf(reopened)
 })
 
-// 164: the confirmed storage-read failure (a truncated task record) must keep its real reason instead
-// of being reported as a Qwen runtime-path problem; the guidance must point at the real repair entry.
-test('164 a broken task record is reported as a storage-record failure, not a Qwen runtime-path error', { skip: spawnSkip }, async (t) => {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-recovery-broken-records-'))
+// 164 v1.1: a storage location that cannot be read is described only within the known scope. The
+// confirmed case has no task record at all — only the `segments` entry is a plain file — so the
+// message must not claim damaged/truncated records or a Qwen runtime-path problem.
+test('164 an unreadable storage location is named within the known scope, not as damaged records or a Qwen path', { skip: spawnSkip }, async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-recovery-unreadable-storage-'))
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }))
   const draftRoot = path.join(parent, 'settings')
   const storageRoot = path.join(parent, 'generation')
   fs.mkdirSync(storageRoot, { recursive: true })
-  // The storage location itself is usable; only the task record inside it is truncated.
-  fs.writeFileSync(path.join(storageRoot, CATALOG_FILE_NAME), '{"schemaVersion":1,"entries":[', { encoding: 'utf8' })
+  fs.writeFileSync(path.join(storageRoot, 'segments'), 'not a directory', { encoding: 'utf8' })
+  assert.equal(fs.existsSync(path.join(storageRoot, CATALOG_FILE_NAME)), false)
 
   const broken = makeHarness()
   await apply(broken.ctx, JSON.parse(JSON.stringify(generationConfig(draftRoot, storageRoot))))
   const token = bridgeToken(broken)
   const state = await assemblyState(broken, token)
   assert.equal(state.state, 'FAILED')
-  assert.match(state.messageZh, /生成数据保存位置中的任务记录无法读取/)
-  assert.doesNotMatch(state.messageZh, /Qwen 运行路径/)
+  assert.match(state.messageZh, /生成数据保存位置无法读取/)
+  assert.doesNotMatch(state.messageZh, /任务记录|损坏|截断|Qwen 运行路径/)
   assert.match(state.messageZh, /设置页/)
   await generationDenied(broken, token)
   const readable = await callRoute(routeOf(broken, DRAFT), { method: 'GET', url: DRAFT, token })
