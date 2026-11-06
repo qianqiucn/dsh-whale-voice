@@ -87,7 +87,7 @@ export function removeConfigSandbox(sandbox) {
  * reused because a stored Artifact pack is bound to it.
  */
 export function openConfigStorage(options = {}) {
-  const requested = options && typeof options === 'object' && !Array.isArray(options) ? options.root : null
+  const requested = options.root
   if (typeof requested !== 'string' || requested.trim() === '') throw new Error('storage root must be a non-empty path')
   if (!path.isAbsolute(requested)) throw new Error('storage root must be absolute')
   fs.mkdirSync(requested, { recursive: true })
@@ -100,12 +100,12 @@ export function openConfigStorage(options = {}) {
   try {
     markerStat = fs.lstatSync(markerPath)
   } catch (error) {
-    if (!error || error.code !== 'ENOENT') throw error
+    if (error.code !== 'ENOENT') throw error
   }
 
   let id
   if (markerStat !== null) {
-    if (!markerStat.isFile() || markerStat.isSymbolicLink()) throw new Error('storage marker is not a regular file')
+    if (!markerStat.isFile()) throw new Error('storage marker is not a regular file')
     let marker
     try {
       marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'))

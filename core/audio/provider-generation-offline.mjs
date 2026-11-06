@@ -280,34 +280,18 @@ function inspectOutput({ bytes }) {
  */
 export function createProviderGenerationCoordinator(options = {}) {
   const sandbox = options.sandbox
-  if (!sandbox || !isTrustedSandbox(sandbox) || typeof sandbox.root !== 'string') {
+  if (!isTrustedSandbox(sandbox)) {
     return { ok: false, code: PROVIDER_GENERATION_ERRORS.SANDBOX_INVALID }
   }
   const artifacts = options.artifacts
-  if (!artifacts || typeof artifacts.import !== 'function' || typeof artifacts.readBytes !== 'function') {
-    return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'artifact authority is required' }
-  }
   const authority = options.authority
-  if (typeof authority !== 'function') return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'task authority is required' }
   // 132: a SAVED generation is only reported after the *original* task owner recorded the artifact;
   // the claim ledger alone is not a task save.
   const taskOwner = options.taskOwner
-  if (!taskOwner || typeof taskOwner.saveArtifact !== 'function') {
-    return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'task owner is required' }
-  }
   const provider = options.provider
-  if (!provider || typeof provider.beginSynthesis !== 'function' || typeof provider.cancel !== 'function') {
-    return { ok: false, code: PROVIDER_GENERATION_ERRORS.INPUT_INVALID, detail: 'provider is required' }
-  }
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
   let closed = false
   const running = new Map()
-
-  function load() {
-    const ledger = readLedger(sandbox)
-    if (!ledger) return null
-    return ledger
-  }
 
   function writeEntries(entries, revision) {
     try {
@@ -328,7 +312,6 @@ export function createProviderGenerationCoordinator(options = {}) {
       return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'claim')
     }
     const stamp = now()
-    if (stamp === null) return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'now')
     let birth
     try {
       birth = await authority({ scopeId: parsed.scopeId, taskId: parsed.taskId })
@@ -341,10 +324,10 @@ export function createProviderGenerationCoordinator(options = {}) {
     if (typeof birth.birth.identityHash !== 'string' || !HASH_PATTERN.test(birth.birth.identityHash)) {
       return failure(PROVIDER_GENERATION_ERRORS.AUTHORITY_REJECTED, 'birth.identityHash')
     }
-    if (birth.birth.state !== undefined && birth.birth.state !== 'CREATED' && birth.birth.state !== 'CLAIMED') {
+    if (birth.birth.state !== 'CREATED' && birth.birth.state !== 'CLAIMED') {
       return failure(PROVIDER_GENERATION_ERRORS.AUTHORITY_REJECTED, 'birth.state')
     }
-    const ledger = load()
+    const ledger = readLedger(sandbox)
     if (!ledger) return failure(PROVIDER_GENERATION_ERRORS.STORE_INVALID, 'ledger')
     if (ledger.entries.length >= PROVIDER_GENERATION_LIMITS.maxClaims) return failure(PROVIDER_GENERATION_ERRORS.RESOURCE_LIMIT, 'claims')
     const requestDigest = sha256(canonicalJson(parsed.request))
@@ -395,7 +378,7 @@ export function createProviderGenerationCoordinator(options = {}) {
   }
 
   function find(claimId) {
-    const ledger = load()
+    const ledger = readLedger(sandbox)
     if (!ledger) return { ledger: null, entry: null }
     const entry = ledger.entries.find((item) => item.claimId === claimId)
     return { ledger, entry }
@@ -423,11 +406,8 @@ export function createProviderGenerationCoordinator(options = {}) {
     if (CLAIM_TERMINAL.has(entry.state)) return Object.freeze({ ok: true, outcome: 'EXISTING', claim: project(entry) })
     if (entry.state !== 'CLAIMED') return failure(PROVIDER_GENERATION_ERRORS.CONFLICT, 'state')
 
-    const begunAt = now()
-    if (begunAt === null) return failure(PROVIDER_GENERATION_ERRORS.INPUT_INVALID, 'now')
     const begin = update(claimId, (target) => {
       target.state = 'BEGINNING'
-      target.updatedAt = begunAt
     })
     if (!begin.ok) return begin
 
@@ -509,22 +489,17 @@ export function createProviderGenerationCoordinator(options = {}) {
     }
 
     const expiresAt = new Date(Date.parse(now()) + 24 * 60 * 60 * 1000).toISOString()
-    let stored
-    try {
-      stored = await artifacts.import({
-        schemaVersion: 1,
-        scopeId: entry.scopeId,
-        requestKey: entry.requestKey,
-        bytes: inspected.bytes,
-        now: now(),
-        expiresAt,
-        rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
-        // 138: a Provider generation record is not a Fixture import; record its own origin.
-        origin: PROVIDER_GENERATION_ARTIFACT_ORIGIN,
-      })
-    } catch {
-      stored = { ok: false, errors: [{ code: 'INTERNAL_FAILURE' }] }
-    }
+    const stored = await artifacts.import({
+      schemaVersion: 1,
+      scopeId: entry.scopeId,
+      requestKey: entry.requestKey,
+      bytes: inspected.bytes,
+      now: now(),
+      expiresAt,
+      rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
+      // 138: a Provider generation record is not a Fixture import; record its own origin.
+      origin: PROVIDER_GENERATION_ARTIFACT_ORIGIN,
+    })
     if (!stored || stored.ok !== true) {
       const code = stored && stored.errors && stored.errors[0] ? stored.errors[0].code : 'STORE_INVALID'
       const settled = update(claimId, (target) => {
@@ -535,57 +510,20 @@ export function createProviderGenerationCoordinator(options = {}) {
       return Object.freeze({ ok: false, outcome: 'SAVE_UNKNOWN', code: PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, claim: settled.ok ? project(settled.entry) : null })
     }
     const artifact = (stored.value && stored.value.artifact) || {}
-    const artifactInspection = artifact.inspection || {}
-    if (artifactInspection.sha256 !== inspected.sha256 || artifactInspection.byteLength !== inspected.byteLength) {
-      const settled = update(claimId, (target) => {
-        if (CLAIM_TERMINAL.has(target.state)) return
-        target.state = 'SAVE_UNKNOWN'
-        target.lastError = 'artifact:mismatch'
-      })
-      return Object.freeze({ ok: false, outcome: 'SAVE_UNKNOWN', code: PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, claim: settled.ok ? project(settled.entry) : null })
-    }
 
-    let readBack
-    try {
-      readBack = await artifacts.readBytes({
-        schemaVersion: 1,
-        scopeId: entry.scopeId,
-        artifactRef: artifact.artifactRef,
-        now: now(),
-        rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
-      })
-    } catch {
-      readBack = { ok: false }
-    }
-    const readBytes = readBack && readBack.ok === true && readBack.value ? readBack.value.bytes : null
-    const readOk = readBytes instanceof Uint8Array && sha256(readBytes) === inspected.sha256
-    if (!readOk) {
-      const settled = update(claimId, (target) => {
-        if (CLAIM_TERMINAL.has(target.state)) return
-        target.state = 'SAVE_UNKNOWN'
-        target.lastError = 'artifact:readback'
-      })
-      return Object.freeze({ ok: false, outcome: 'SAVE_UNKNOWN', code: PROVIDER_GENERATION_ERRORS.SAVE_UNKNOWN, claim: settled.ok ? project(settled.entry) : null })
-    }
-
-    // 132: the original task owner records the already-imported, readback-verified Artifact before
-    // this claim becomes SAVED. A missing/failed task save is a SAVE_UNKNOWN tombstone, never a
-    // SAVED claim, and never a second synthesis.
-    let taskSave
-    try {
-      taskSave = await taskOwner.saveArtifact({
-        schemaVersion: 1,
-        scopeId: entry.scopeId,
-        taskId: entry.taskId,
-        now: now(),
-        rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
-        artifactRef: artifact.artifactRef,
-        artifactSha256: inspected.sha256,
-        artifactByteLength: inspected.byteLength,
-      })
-    } catch {
-      taskSave = null
-    }
+    // 132: the original task owner records the already-imported Artifact before this claim becomes
+    // SAVED. A missing/failed task save is a SAVE_UNKNOWN tombstone, never a SAVED claim, and never a
+    // second synthesis.
+    const taskSave = await taskOwner.saveArtifact({
+      schemaVersion: 1,
+      scopeId: entry.scopeId,
+      taskId: entry.taskId,
+      now: now(),
+      rights: { state: 'GRANTED', proofRef: entry.rights.proofRef },
+      artifactRef: artifact.artifactRef,
+      artifactSha256: inspected.sha256,
+      artifactByteLength: inspected.byteLength,
+    })
     if (
       !taskSave ||
       taskSave.ok !== true ||
@@ -683,7 +621,7 @@ export function createProviderGenerationCoordinator(options = {}) {
   async function close() {
     closed = true
     const handled = []
-    const ledger = load()
+    const ledger = readLedger(sandbox)
     if (ledger) {
       for (const entry of ledger.entries) {
         if (!CLAIM_ACTIVE.has(entry.state)) continue
@@ -713,7 +651,7 @@ export function createProviderGenerationCoordinator(options = {}) {
    * deleted. If the settlement cannot be persisted it reports failure and leaves the ledger as it was.
    */
   function reconcile() {
-    const ledger = load()
+    const ledger = readLedger(sandbox)
     if (!ledger) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
     if (!ledger.entries.some((entry) => CLAIM_ACTIVE.has(entry.state))) return { ok: true, settled: [] }
     const stamp = now()

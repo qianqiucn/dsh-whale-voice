@@ -53,6 +53,13 @@ async function openApp(sandbox, provider) {
     scopeId: SCOPE,
     rightsProofRef: PROOF,
     voices: VOICES,
+    textLimit: 200,
+    providerFacts: {
+      providerId: 'qwen3-tts',
+      instanceId: 'instance-1',
+      model: 'Qwen3-TTS-12Hz-1.7B-CustomVoice',
+      backend: 'custom-voice',
+    },
     now: () => new Date().toISOString(),
   })
   assert.equal(opened.ok, true, JSON.stringify(opened))

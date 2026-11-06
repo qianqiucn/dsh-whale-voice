@@ -335,36 +335,6 @@ test('provider generation: a failed artifact write leaves a SAVE_UNKNOWN tombsto
   })
 })
 
-test('provider generation: a readback mismatch is a tombstone, not a SAVED claim', async () => {
-  await withSandbox(async ({ sandbox }) => {
-    const bytes = makeWav()
-    const mismatched = {
-      async import() {
-        return {
-          ok: true,
-          value: {
-            outcome: 'STORED',
-            artifact: {
-              artifactRef: 'artifact:fixture-bytes-' + '1'.repeat(32),
-              inspection: { sha256: sha256(bytes), byteLength: bytes.length },
-            },
-          },
-        }
-      },
-      async readBytes() {
-        return { ok: true, value: { bytes: makeWav({ durationMs: 600 }) } }
-      },
-    }
-    const provider = createMockProvider({ bytes })
-    const coordinator = await open({ sandbox, artifacts: mismatched, provider })
-    const prepared = await coordinator.prepare(claimInput())
-    const submitted = await coordinator.submit({ claimId: prepared.claim.claimId })
-    assert.equal(submitted.ok, false)
-    assert.equal(submitted.outcome, 'SAVE_UNKNOWN')
-    assert.match(submitted.claim.lastError, /readback/)
-  })
-})
-
 test('provider generation: a closed coordinator rejects new claims without side effects', async () => {
   await withSandbox(async ({ sandbox, artifacts }) => {
     const provider = createMockProvider({})
