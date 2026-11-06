@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 
 import { openConfigStorage } from '../core/config-sandbox.mjs'
 import { openQwenGenerationRuntime } from '../core/qwen-generation-runtime.mjs'
+import { PROVIDER_GENERATION_ERRORS } from '../core/audio/provider-generation-offline.mjs'
 import { CATALOG_FILE_NAME } from '../core/audio/fixture-task-store-internal.mjs'
 import { ARTIFACT_FILE_NAME } from '../core/audio/fixture-artifact-store-internal.mjs'
 
@@ -188,4 +189,47 @@ test('165 an unwritable claim ledger reports failure without clearing the interr
   assert.equal(opened.detail, 'claim-write')
   assert.deepEqual(fs.readFileSync(ledgerPath), ledgerBefore, 'the interrupted claim must stay as it was')
   assert.deepEqual(fs.readFileSync(path.join(blockedRoot, ARTIFACT_FILE_NAME)), packBefore)
+})
+
+// 169/F14: a claim ledger that cannot be read must not hide the saved result or blame a settlement
+// write. The already-saved task still lists, reports and downloads its original bytes; a new
+// generation is rejected with the real ledger reason, and nothing on disk is rewritten or repaired.
+test('169 an unreadable claim ledger still serves the saved result and rejects a new generation honestly', { skip: spawnSkip }, async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-voice-ledger-read-169-'))
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }))
+  const root = path.join(parent, 'store')
+
+  const saved = await seedSavedResult(root)
+  const ledgerPath = path.join(root, CLAIMS)
+  const corrupt = ledgerOf(root)
+  corrupt.schemaVersion = 99
+  fs.writeFileSync(ledgerPath, JSON.stringify(corrupt), 'utf8')
+  const ledgerBytes = fs.readFileSync(ledgerPath)
+  const packBytes = fs.readFileSync(path.join(root, ARTIFACT_FILE_NAME))
+
+  const reopened = await openQwenGenerationRuntime(options(root))
+  assert.equal(reopened.ok, true, JSON.stringify(reopened))
+  try {
+    const listed = await reopened.value.app.results()
+    assert.equal(listed.ok, true, JSON.stringify(listed))
+    assert.deepEqual(listed.results.map((item) => item.taskId), [saved.taskId])
+    const download = await reopened.value.app.download(saved.taskId)
+    assert.equal(download.ok, true, JSON.stringify(download))
+    assert.equal(download.sha256, saved.sha256)
+    assert.equal(sha256(download.bytes), saved.sha256)
+    const status = await reopened.value.app.status(saved.taskId)
+    assert.equal(status.ok, true, JSON.stringify(status))
+    assert.equal(status.readable, true)
+    assert.equal(status.sha256, saved.sha256)
+
+    const generated = await reopened.value.app.generate({ text: '账本读不懂时的新请求。', voiceId: 'demo-voice-a', language: 'zh-CN' })
+    assert.equal(generated.ok, false, JSON.stringify(generated))
+    assert.equal(generated.code, PROVIDER_GENERATION_ERRORS.STORE_INVALID)
+    assert.equal(generated.detail, 'ledger')
+    assert.equal(generated.taskId, undefined)
+  } finally {
+    await reopened.value.close()
+  }
+  assert.deepEqual(fs.readFileSync(ledgerPath), ledgerBytes, 'the unreadable ledger must not be rewritten')
+  assert.deepEqual(fs.readFileSync(path.join(root, ARTIFACT_FILE_NAME)), packBytes, 'the rejected request saved no artifact')
 })
