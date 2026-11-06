@@ -1305,6 +1305,21 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         return { value: record ? { ok: true, delivery: publicRecord(record) } : fail(RELAY_ERRORS.NOT_FOUND) }
       })
     },
+    /**
+     * 179 v1.1: read-only lookup restricted to the record's own scope. A delivery names the scope it
+     * was created under, so another scope's task/target relation can never be read back through this
+     * entry, while the record stays readable independently of the saved result's current state.
+     */
+    async deliveryFor({ scopeId, taskId, targetId } = {}) {
+      if (typeof scopeId !== 'string' || !SCOPE_ID.test(scopeId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'scopeId')
+      if (typeof taskId !== 'string' || !TASK_ID.test(taskId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'taskId')
+      if (typeof targetId !== 'string' || !TARGET_ID.test(targetId)) return fail(RELAY_ERRORS.INPUT_INVALID, 'targetId')
+      return run((store) => {
+        const record = store.deliveries.find((item) =>
+          item.scopeId === scopeId && item.taskId === taskId && item.targetId === targetId)
+        return { value: record ? { ok: true, delivery: publicRecord(record) } : fail(RELAY_ERRORS.NOT_FOUND) }
+      })
+    },
     async mappings() {
       return run((store) => ({
         value: {

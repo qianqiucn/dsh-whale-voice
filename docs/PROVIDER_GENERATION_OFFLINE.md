@@ -43,16 +43,31 @@ synthesis, the already-imported Artifact stays as it is).
 ### Application entry (135)
 
 `core/preset-generation-app.mjs` is the formal Core entry for this chain:
-`openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices, textLimit, providerFacts[, generationTimeoutMs][, now]})`
-returns `{catalog, generate, status, results, download, locateTask}`. `textLimit` and `providerFacts` are
-required parameters of the current entry contract (the formal runtime passes both; the old test-only
-defaults were removed by 168, so a caller must supply them rather than rely on a fallback).
+`openPresetGenerationApp({sandbox, provider, scopeId, rightsProofRef, voices, textLimit, providerFacts[, generationTimeoutMs][, now][, delivery]})`
+returns `{catalog, generate, status, results, download, locateTask, confirmDelivery, deliveryStatus}`.
+`textLimit` and `providerFacts` are required parameters of the current entry contract (the formal runtime
+passes both; the old test-only defaults were removed by 168, so a caller must supply them rather than rely
+on a fallback).
 
 - `locateTask({scopeId, taskId})` (178) answers with `{ok:true, value:{sandbox}}` for the segment this
   entry already owns that holds the original task, or `{ok:false}` for another scope / an unknown task /
   an unreadable segment. It is the trusted source locator for the same-process unified delivery owner
   (never a Host or browser input): the delivery owner re-reads that segment's persisted task/artifact and
   keeps its own single store. It never writes, delivers or opens a second queue.
+- `confirmDelivery({taskId, targetId})` (179) is the application entry for one saved result: with the
+  optional `delivery: {backend, targets[, maxDeliveries][, maxPermits]}` wiring it reads the saved result
+  through `status`, asks the unified relay for the confirmation permit and delivery, submits once, and
+  returns `{ok:true, outcome:'ACCEPTED', delivery}` only for a Fake-accepted delivery (state
+  `ACCEPTED`, backend `QUEUED`, fixture receipt). A relay refusal is
+  `PRESET_GENERATION_DELIVERY_REFUSED` with `stage`/`cause`; a persisted FAILED/UNKNOWN/QUEUED/CANCELLED
+  state is `PRESET_GENERATION_DELIVERY_NOT_ACCEPTED` with the state and record, never a success. Without
+  the wiring both delivery methods answer `PRESET_GENERATION_DELIVERY_UNAVAILABLE`.
+- `deliveryStatus({taskId, targetId})` (179) reads the persisted delivery of that original result and
+  target from the same relay store and returns its current state. The lookup is a read-only
+  `deliveryFor({scopeId, taskId, targetId})` bound to this entry's scope (179 v1.1): another scope's
+  record is `PRESET_GENERATION_DELIVERY_NOT_FOUND` even when its taskId/targetId are known, an
+  unconfirmed relation answers the same, and a same-scope record stays readable after the saved result is
+  deleted or unreadable. It does not submit, retry, rewrite the state or read the source again.
 
 - `generate({text, voiceId, language})` reserves a real Task birth in the existing catalog, runs the
   coordinator (133) once against the caller-provided audited provider, and lets the original task
@@ -144,6 +159,27 @@ task owner / Artifact library; the caller of a delivery only names the original 
 storage path. Nothing is generated, re-saved, copied or moved, and no second delivery queue or store is
 created; a task the locator cannot place is failed by the delivery owner as `TASK_NOT_SAVED` instead of
 being replaced with another segment's result. No page or Host route uses this locator yet.
+
+### Independent confirmation and offline delivery entry (179)
+
+The entry composes the saved result, the independent confirmation and the unified relay into one
+application call. The caller only names the original `taskId` and the explicitly confirmed `targetId`:
+the artifact ref comes from the entry's own `status` read, the rights proof from the assembly, and the
+trusted target directory / Fake backend from the optional `delivery` wiring. A deterministic request key
+(`saved-delivery:<taskId>:<targetId>`) plus the persisted relay permit make a repeated call or a reopened
+entry reuse the one delivery and never ask the Fake backend twice; the relay owner/store stays the single
+one, so base and rotated segments share the deliveryId/permit space and capacity. `confirmDelivery`
+reports a Fake acceptance (state `ACCEPTED`, backend `QUEUED`, fixture receipt) separately from a refusal
+(`DELIVERY_REFUSED` with stage/cause), a persisted non-accepted state (`DELIVERY_NOT_ACCEPTED` with
+`FAILED`/`UNKNOWN`/`QUEUED`/`CANCELLED`) and a missing relation (`DELIVERY_NOT_FOUND`);
+`deliveryStatus` only reads the persisted record. Generation, save, list and download never deliver
+anything; without the `delivery` wiring they are unaffected while both delivery methods answer
+`DELIVERY_UNAVAILABLE`. No Host route or page uses this entry yet.
+
+179 v1.1 corrects the status query range: the read-back is the relay's read-only
+`deliveryFor({scopeId, taskId, targetId})` over the record's own scope, so another scope/proof cannot
+receive that record's artifactRef/permitId/receipt even when the original taskId and target are known; a
+same-scope record stays readable after the saved result is deleted, and its state is never rewritten.
 
 ### Original-task result download (150)
 

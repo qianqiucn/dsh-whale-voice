@@ -948,3 +948,65 @@ segments. Relay files 6 / 46 tests. Full suite **1212 / 1208 pass / 4 platform s
 Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`: this is a Core application-boundary unit,
 not a page/Host integration, and no real Sender/WeChat/model/device ran; Plan14 and every real Plan12/13 DoD
 remain OPEN.
+
+## Plan 13-A 179 revision — one application entry confirms a saved result and reports its offline delivery (2026-11-06)
+
+Branch `feature/saved-delivery-app` from the reviewed main `29f0bc4a`; a new PR is pending and not merged.
+177 made a saved Provider result deliverable and 178 let the relay read it from its real storage segment;
+this revision composes both behind one Core application call and adds an honest status read-back.
+
+1. **Optional delivery wiring (179).** `openPresetGenerationApp({..., delivery})` accepts an optional
+   `{backend, targets[, maxDeliveries][, maxPermits]}` and then exposes
+   `confirmDelivery({taskId, targetId})` / `deliveryStatus({taskId, targetId})`. Without the wiring both
+   answer `PRESET_GENERATION_DELIVERY_UNAVAILABLE` and generation/save/status/results/download are
+   unchanged.
+2. **Entry boundary.** The caller names only the original task and the explicitly confirmed target; the
+   entry reads the saved artifact ref itself through `status`, and the assembly supplies the rights proof,
+   trusted target directory and Fake backend. No call hands the app a storage path, artifact fact or
+   per-call authorization.
+3. **One delivery, one owner.** A deterministic `saved-delivery:<taskId>:<targetId>` request key plus the
+   persisted permit make repeat calls and reopened entries reuse the existing `deliveryId`, so the Fake
+   backend receives the result once; the relay owner/store stays single across base and rotated segments
+   (178 locator).
+4. **Honest outcomes.** `confirmDelivery` returns `outcome:"ACCEPTED"` only when the delivery ends
+   `ACCEPTED` (backend `QUEUED` + fixture receipt); a relay refusal is `DELIVERY_REFUSED` with
+   stage/cause; a persisted FAILED/UNKNOWN/QUEUED/CANCELLED delivery is `DELIVERY_NOT_ACCEPTED` with the
+   exact state and record; `deliveryStatus` returns the persisted state and an unconfirmed relation is
+   `DELIVERY_NOT_FOUND`. Capacity/permit/ensure refusals keep their cause; UNKNOWN is never resent.
+
+Evidence: 6 new isolated application-entry tests in `test/saved-result-delivery-app.test.mjs` over the real
+generation/save chain and an explicitly assembled Fake capability: unavailable wiring keeps
+generation/save/download and both delivery methods answer unavailable; one confirmation accepts once with a
+fixture receipt, a repeat call and a reopened entry reuse the same deliveryId without a second backend
+request, and status reads it back; an unconfirmed relation, a missing task, a deleted source and an
+unauthorized target fail explicitly; an unknown backend result stays not-accepted/UNKNOWN and is never
+resent; base and rotated segment results (including a retained one past 24 h) are confirmed through the one
+entry; confirmation and delivery capacity refusals keep their stage/cause. Full suite **1218 / 1214 pass /
+4 platform skips / 0 fail** (was 1212/1208/4/0); UI **89/89** (Core-only change, no product UI diff);
+`client.js` unchanged (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`:
+this is a Core application entry, not a page/Host integration, and no real Sender/WeChat/model/device ran;
+Plan14 and every real Plan12/13 DoD remain OPEN.
+
+### Plan 13-A 179 v1.1 — the delivery status read-back is bound to its own scope (2026-11-06)
+
+Same branch/PR #106, correction only; no new feature PR and nothing else from 179 is redone. The 0219
+review reproduced one new-boundary defect in an isolated Fixture: `deliveryStatus` scanned the shared
+relay store and returned any record with the same taskId/targetId, so an application opened with a
+different scope/proof received that record's artifactRef/permitId/receipt.
+
+- **Fix.** `deliveryStatus` now uses the relay's read-only `deliveryFor({scopeId, taskId, targetId})`,
+  which matches the persisted record's own scope. Another scope/proof with the same taskId/target gets
+  `PRESET_GENERATION_DELIVERY_NOT_FOUND` and no record content; nothing is confirmed or submitted by that
+  query. The lookup is read-only and independent of the saved result's current readability.
+- **Kept.** A same-scope record stays readable after the saved result is deleted or unreadable, its
+  ACCEPTED/FAILED/UNKNOWN/QUEUED facts are not rewritten, and no automatic resend happens. The rest of
+  179 (single delivery across repeats/reopen, cross-segment source, capacity, unavailable wiring,
+  Voice/Cover semantics) is unchanged.
+
+Evidence: 2 new regression tests in `test/saved-result-delivery-app.test.mjs` (8 total): a second scope
+with the same taskId/target gets `DELIVERY_NOT_FOUND` and never the artifactRef/permitId/receipt while the
+store stays at one delivery/one permit (the previous revision returned the record), and a same-scope
+record is still readable after the artifact deletion without a second backend request. Full suite
+**1220 / 1216 pass / 4 platform skips / 0 fail** (was 1218/1214/4/0); UI **89/89**; `client.js` unchanged
+(383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and
+no real Sender/WeChat/model/device ran.

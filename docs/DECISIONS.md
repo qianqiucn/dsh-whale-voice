@@ -1159,3 +1159,27 @@ location or letting the relay scan arbitrary directories.
 **Rejected alternatives:** passing a storage path/sandbox in the handoff (caller-controlled location), a
 relay store per segment, copying or moving saved results between segments, and a global directory scan by
 the relay.
+
+## ADR-039 — The generation application entry owns the saved-result confirmation/delivery composition
+
+**Status:** accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-06, 179).
+**Related:** ADR-001, ADR-024–ADR-038, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** the confirmation/delivery entry is composed on the existing generation application
+(`openPresetGenerationApp({..., delivery})`) instead of a second application object that would duplicate
+sandbox/scope/rights wiring. The caller supplies only `taskId` + `targetId`; the entry reads the saved
+artifact ref through its own `status`, derives the request key from the same relation
+(`saved-delivery:<taskId>:<targetId>`), and the assembly supplies the rights proof, trusted target
+directory and Fake backend. The delivery capability is optional: without it both delivery methods answer
+`DELIVERY_UNAVAILABLE` and generation/save/list/download are untouched. The entry returns
+`outcome:"ACCEPTED"` only for a Fake-accepted delivery; refusals, persisted non-accepted states
+(FAILED/UNKNOWN/QUEUED/CANCELLED) and an unconfirmed relation are separate codes with the exact state.
+
+**Reason:** the storage segment, artifact ref and rights proof are application facts, so the application
+is the only place that can turn them into a relay confirmation without trusting a caller. One entry keeps
+the "saved is not delivered" boundary in one place, gives repeat calls a stable identity across reopens,
+and lets a future Host reuse the same object instead of rebuilding permit/handoff code.
+
+**Rejected alternatives:** a second application object duplicating sandbox/scope/rights wiring, letting
+the caller supply artifactRef/rights/authorization, deriving delivery identity from the backend or from
+time (neither is stable across reopens), and returning a bare success boolean for FAILED/UNKNOWN.
