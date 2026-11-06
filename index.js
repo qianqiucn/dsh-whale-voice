@@ -562,6 +562,13 @@ function generationFailure(outcome, hasDrafts) {
       messageZh: '生成运行对象未能启动：生成数据保存位置无法读取（保存位置或其内的存储入口无法打开或读取）。' + repair,
     }
   }
+  if (outcome.detail === 'claim-write') {
+    return {
+      state: 'FAILED',
+      code: outcome.code,
+      messageZh: '生成运行对象未能启动：上次中断留下的进行中记录无法更新（保存位置当前可能不可写）。本页不会冒充已完成，也不会清除原记录或产物；' + repair,
+    }
+  }
   if (outcome.reason === 'QWEN_GENERATION_RUNTIME_WORKER_NOT_STARTED') {
     return {
       state: 'FAILED',

@@ -154,11 +154,11 @@ export async function openPresetGenerationApp(options = {}) {
 
   async function openSegment(segmentSandbox) {
     const catalog = await openFixtureTaskCatalog({ sandbox: segmentSandbox })
-    if (!catalog.ok) return null
+    if (!catalog.ok) return { ok: false, detail: 'sandbox' }
     const owner = await openFixtureTaskOwner({ sandbox: segmentSandbox })
-    if (!owner.ok) return null
+    if (!owner.ok) return { ok: false, detail: 'sandbox' }
     const artifacts = await openFixtureArtifactLibrary({ sandbox: segmentSandbox })
-    if (!artifacts.ok) return null
+    if (!artifacts.ok) return { ok: false, detail: 'sandbox' }
     async function authority({ scopeId: requestedScope, taskId }) {
       if (requestedScope !== scopeId) return { ok: false }
       const got = await catalog.value.get({ schemaVersion: 1, scopeId, taskId })
@@ -173,8 +173,14 @@ export async function openPresetGenerationApp(options = {}) {
       taskOwner: owner.value,
       now,
     })
-    if (!coordinator.ok) return null
-    return { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator, usage: { entries: 0, bytes: 0 } }
+    if (!coordinator.ok) return { ok: false, detail: 'sandbox' }
+    // 165: a claim left active by an interrupted process is settled before this location is used.
+    const reconciled = coordinator.reconcile()
+    if (!reconciled.ok) return { ok: false, detail: 'claim-write' }
+    return {
+      ok: true,
+      value: { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator, usage: { entries: 0, bytes: 0 } },
+    }
   }
 
   async function measure(segment) {
@@ -200,12 +206,12 @@ export async function openPresetGenerationApp(options = {}) {
   const segments = []
   try {
     const base = await openSegment(sandbox)
-    if (!base) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
-    segments.push(base)
+    if (!base.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, base.detail)
+    segments.push(base.value)
     for (const name of segmentNames(sandbox.root)) {
       const segment = await openSegment(openConfigStorage({ root: path.join(sandbox.root, SEGMENTS_DIR_NAME, name) }))
-      if (!segment) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
-      segments.push(segment)
+      if (!segment.ok) return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, segment.detail)
+      segments.push(segment.value)
     }
   } catch {
     return failure(PRESET_GENERATION_APP_ERRORS.INPUT_INVALID, 'sandbox')
@@ -218,9 +224,9 @@ export async function openPresetGenerationApp(options = {}) {
   async function rotate() {
     const name = String(segments.length).padStart(4, '0')
     const segment = await openSegment(openConfigStorage({ root: path.join(sandbox.root, SEGMENTS_DIR_NAME, name) }))
-    if (!segment) throw new Error('generation segment unavailable')
-    segments.push(segment)
-    current = segment
+    if (!segment.ok) throw new Error('generation segment unavailable')
+    segments.push(segment.value)
+    current = segment.value
   }
 
   /* 157 v1.1: only the segment switch is serialized. Two requests accepted at the same moment run
