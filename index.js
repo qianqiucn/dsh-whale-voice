@@ -26,7 +26,7 @@ function readJsonBody(req) {
       size += chunk.length
       if (size > MAX_BODY_BYTES) {
         reject(new Error('body too large'))
-        if (typeof req.destroy === 'function') req.destroy()
+        req.destroy()
         return
       }
       chunks.push(chunk)
@@ -188,7 +188,6 @@ export function installHostBridge(scope, options = {}) {
   const generation = options.generation || null
   const settingsDraft = options.settingsDraft || null
   const generationState = options.generationState || { state: 'DISABLED' }
-  const guard = makeGuard(scope)
   const disposers = []
 
   function route(pathname, handler, methods = ['GET']) {
@@ -394,7 +393,7 @@ export function installHostBridge(scope, options = {}) {
     if (!generation) return send(res, 503, { ok: false, error: 'generation_not_enabled' })
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const result = await generation.download(url.searchParams.get('taskId') || '')
-    if (!result || result.ok !== true) return send(res, 404, result)
+    if (result.ok !== true) return send(res, 404, result)
     const bytes = Buffer.from(result.bytes)
     res.writeHead(200, {
       'content-type': 'audio/wav',
@@ -612,13 +611,13 @@ export function apply(ctx, config = undefined) {
       // 154: a damaged applied record keeps the settings entry reachable instead of failing the plugin.
       const applied = settingsDraft === null ? null : settingsDraft.readApplied()
       if (applied !== null && applied.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }, settingsDraft !== null) })
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }, true) })
         resolve()
         return
       }
       const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
       if (appliedRuntime !== null && appliedRuntime.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }, settingsDraft !== null) })
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }, true) })
         resolve()
         return
       }
