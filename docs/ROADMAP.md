@@ -622,6 +622,20 @@ and recovery stay green.
 
 Evidence: 35 relay tests in 4 files (12 core + 9 TRUST + 12 PERSIST + 2 real three-process races), full suite 1107/1103 pass/4 platform skips/0 fail, UI 72/72 (unchanged product UI), `client.js` 314,687 chars. Status `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; 13-B/C, real WeChat/Sender identity/send, Plan14 and all real Plan12/13 DoD remain OPEN.
 
+177 task (2026-11-06): a saved Provider generation result becomes a deliverable source only through the existing
+`issueDeliveryPermit({permit})` confirmation. `readTrustedTaskAuthority` reports `PROVIDER_OWNER_SAVED_V2`
+(`permitRequired:true`) for the saved `provider-generation`/`PROVIDER_TTS` task, whose record keeps
+`deliveryRequested:false`; every other saved task without the persisted intent stays non-deliverable. The permit is
+bound to scope/task/artifact/target/rights (idempotent, bounded) and `ensureDelivery` requires the `permitId`, keeps the
+original taskId and the deliveryId/`QUEUED`→`ACCEPTED`/receipt model, and records
+`authorizedBy:PERSISTED_PROVIDER_DELIVERY_PERMIT`. A still-readable retained Provider result older than its recorded
+24 h value is confirmed and accepted (that value is retention, not a delivery deadline), while Fixture/Cover expiry is
+unchanged. Unconfirmed / other task/target / unauthorized or revoked target / revoked rights / missing result fail with
+zero Fake submit; repeats and a reopened store reuse the single delivery; capacity fails closed and an unknown backend
+result stays `UNKNOWN`. Evidence: 7 new tests (`relay-provider-confirm-offline`, real Provider generation/save chain),
+relay files 5/42; full suite 1208/1204 pass/4 platform skips/0 fail; UI 89/89; `client.js` unchanged. Still
+`13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host route and no real Sender/WeChat/model/device.
+
 ### Plan 13-B / Internal Windows Sender — OFFLINE, merged to main (2026-11-04, 114–117 revisions; 118-A merge)
 
 From the verified Plan13-A merge `M=4b45ebd` on branch `feature/plan13b-internal-sender-offline`

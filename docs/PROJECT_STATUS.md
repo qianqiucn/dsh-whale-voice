@@ -876,3 +876,42 @@ new unit; +7); UI **72/72** (no product UI change; CI ui job); `client.js` 314,6
 Status: 13-A merged; the internal Sender unit is `13-B/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`, its
 new PR is **not merged**. Real process/device/WeChat/window path, real host visual, 13-B runtime,
 13-C, Plan14 and every real Plan12/13 DoD remain OPEN.
+
+## Plan 13-A 177 revision — a saved Provider generation result needs an independent confirmation (2026-11-06)
+
+Branch `feature/relay-confirm-provider-saved` from the reviewed main `b2770e20`; a new PR is pending and
+not merged. The saved Provider generation result (Plan 10-R1) is now a deliverable source for the offline
+unified relay through one explicit confirmation gate, without rewriting the frozen saved record or adding
+a page/Host route.
+
+1. **Source authority (177).** The provider task contract deliberately refuses `deliveryRequested:true`, so
+   `readTrustedTaskAuthority` reports the new `PROVIDER_OWNER_SAVED_V2` authority with `permitRequired:true`
+   — only for the saved `provider-generation` / `PROVIDER_TTS` pair, and only after the persisted owner state
+   and `artifactStatus` are `SAVED`/`READABLE` at the requested artifactRef. Every other saved task without
+   the persisted intent (for example a Voice task saved `deliveryRequested:false`) still fails with
+   `TASK_NOT_SAVED` / `delivery intent`.
+2. **Confirmation permit.** The existing `issueDeliveryPermit({permit})` boundary now accepts this source: it
+   re-reads the persisted task/artifact relation, resolves the target from the trusted directory and persists
+   a versioned, idempotent confirmation (`authorityKind:PROVIDER_OWNER_SAVED_V2`, bounded capacity) bound to
+   scope/task/artifact/target/rights. `ensureDelivery` requires the `permitId`, checks the permit key, task
+   identity and expiry, keeps the original taskId and the existing deliveryId/issuance model, and records
+   `authorizedBy:PERSISTED_PROVIDER_DELIVERY_PERMIT`. The saved record itself is never edited.
+3. **Retention vs. delivery deadline (155 overlap).** A retained `PROVIDER_GENERATION_FIXTURE` artifact is not
+   refused by its recorded 24 h value at issue, ensure or accept, so a still-readable result older than that
+   value can still be confirmed and delivered; Fixture-import and Cover sources keep their exact expiry
+   boundary. Delete/rights/target revocation checks are unchanged at ensure, preflight and accept.
+4. **Fail-closed relations.** Unconfirmed, a confirmation issued for another task or target, an unauthorized
+   or revoked target, a revoked rights proof and a missing saved result all fail
+   (`RELAY_CORE_PERMIT_REQUIRED` / `TARGET_REJECTED` / `TASK_NOT_SAVED`) with zero Fake backend submit. Repeat
+   confirmation/submit, a new request-key alias and a reopened store reuse the single delivery and receipt;
+   bounded permit/delivery capacity fails closed; an unknown/thrown backend result stays `UNKNOWN` with no resend.
+
+Evidence: 7 new isolated relay tests in `test/relay-provider-confirm-offline.test.mjs`, every positive case
+starting from a real saved Provider generation result produced by the existing generation/save chain in a
+temporary Fixture sandbox (unconfirmed refusal, confirmation → one accepted delivery with QUEUED/ACCEPTED and
+receipt, task/target/rights binding, caller-record refusal, >24 h retention plus a Fixture-expiry control,
+permit and delivery capacity, UNKNOWN/no-resend); relay files 5 / 42 tests. Full suite **1208 / 1204 pass /
+4 platform skips / 0 fail** (was 1201/1197/4/0); UI **89/89** (Core-only change, no product UI diff);
+`client.js` unchanged (383,622 bytes). Status remains `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`:
+this is a Core contract unit, not a page/Host integration, and no real Sender/WeChat/model/device ran;
+Plan14 and every real Plan12/13 DoD remain OPEN.
