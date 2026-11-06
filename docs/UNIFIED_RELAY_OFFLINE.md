@@ -1,14 +1,14 @@
 # Whale Relay Core · Plan 13-A / OFFLINE
 
-**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-06, 177 revision).
+**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-06, 178 revision).
 This is the first offline owner of delivery persistence for the ADR-001 unified
 `Whale Audio Core → Whale Relay Core → supported target` boundary. It consumes a *persisted* SAVED Audio
-Task (or a persisted SAVED Cover MASTER, or a saved Provider generation result), reads the real Fixture
-Artifact bytes through the existing Artifact library under the same scope/rights, and resolves the target
-from a trusted target directory; it does **not** trust caller-supplied task records, artifact metadata,
-hashes, rights booleans or target booleans. It does **not** import or start the Windows Sender, open a
-socket, resolve a real chat, record audio, play media or send to WeChat. The whole Plan13-A, 13-B, 13-C
-and real Plan14 remain OPEN.
+Task (or a persisted SAVED Cover MASTER, or a saved Provider generation result in its real storage
+segment), reads the real Fixture Artifact bytes through the existing Artifact library under the same
+scope/rights, and resolves the target from a trusted target directory; it does **not** trust
+caller-supplied task records, artifact metadata, hashes, rights booleans or target booleans. It does
+**not** import or start the Windows Sender, open a socket, resolve a real chat, record audio, play media
+or send to WeChat. The whole Plan13-A, 13-B, 13-C and real Plan14 remain OPEN.
 
 Related: ADR-001 (local architecture record, versioned outside this repository), ADR-024/ADR-025
 ([DECISIONS.md](DECISIONS.md)), [ARCHITECTURE.md](ARCHITECTURE.md),
@@ -72,6 +72,16 @@ records `authorizedBy:"PERSISTED_PROVIDER_DELIVERY_PERMIT"`. The frozen saved re
 retained `PROVIDER_GENERATION_FIXTURE` artifact is not refused by its recorded 24 h value at issue, ensure
 or accept (155 already retains those bytes), so a still-readable result older than that value can still be
 confirmed and delivered; Fixture-import and Cover sources keep their exact expiry boundary.
+
+**Cross-segment source location (178).** The generation application rotates its saves into
+`segments/NNNN` stores, so the relay cannot open every task from the owner sandbox alone. The assembly
+injects one trusted `locateTask({scopeId, taskId})` (the generation entry owns it); for each operation the
+relay asks it which already-opened segment holds the original task and re-reads that segment's persisted
+task owner / Artifact library under the same scope/rights. The locator is never a handoff field and the
+caller never names a path or another segment: a task it cannot place keeps the owner sandbox, where the
+same persisted read fails it as `TASK_NOT_SAVED` instead of swapping in another result. The relay store
+stays at its own sandbox, so base and rotated results share one owner, one `deliveryId`/permit space and
+one capacity count; no second queue or store exists inside a segment.
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a
@@ -188,7 +198,7 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Five offline relay files cover the unit (42 tests), and the internal Windows delivery module
+Six offline relay files cover the unit (46 tests), and the internal Windows delivery module
 (13-B, 144 revision) is covered by its own two offline files (`test/internal-sender-offline.test.mjs`
 29 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
 [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
@@ -226,6 +236,14 @@ result older than the recorded 24 h value confirmed and accepted while a Fixture
 own expiry is refused; bounded permit and delivery capacity failing closed without a phantom record; and an
 unknown backend result staying `UNKNOWN` with `UNKNOWN_NO_RESEND` on retry.
 
+`test/relay-cross-segment-source.test.mjs` (4, 178): real base and rotated `segments/0001` results are
+built by the existing generation/save chain (24 base + 2 rotated saves), then: a base and a rotated result
+both reach the same relay owner once (two deliveries/permits in one store, the segment holds no relay
+store); a reopened application and relay still locate the old-segment task, return `EXISTING` for the same
+confirmation, delivery and submit, and never resubmit; a deleted segment artifact and a missing task fail
+as `TASK_NOT_SAVED` while a still-readable retained segment result older than its recorded 24 h value is
+accepted; and permit/delivery capacity is one count across segments.
+
 `test/relay-persist-offline.test.mjs` (12, 137-PERSIST-01/02 plus the retention/enumeration close-out): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
 open at the accept boundary does not recover the live submit (no `OWNER_LOST`); stale reclaim never deletes a
@@ -250,7 +268,7 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1208 tests / 1204 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
+Local: **1212 tests / 1208 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
 (build unchanged by this Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.

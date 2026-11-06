@@ -12,6 +12,10 @@
  * there. Reads (status/results/download) search every segment, nothing is deleted and old results
  * keep their original task association. Saved Provider generation artifacts are not subject to the
  * recorded 24 h expiration; other artifact origins keep their expiry contract.
+ *
+ * 178: `locateTask({scopeId, taskId})` is the trusted source locator the unified delivery owner uses
+ * to re-read the original task/artifact from the segment that actually holds it. The delivery owner
+ * keeps one store at its own sandbox; this entry never writes, delivers or opens a second queue.
  */
 
 import crypto from 'node:crypto'
@@ -147,7 +151,11 @@ export async function openPresetGenerationApp(options = {}) {
     if (!reconciled.ok && reconciled.detail === 'claim-write') return { ok: false, detail: 'claim-write' }
     return {
       ok: true,
-      value: { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator, usage: { entries: 0, bytes: 0 } },
+      value: {
+        sandbox: segmentSandbox,
+        catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator,
+        usage: { entries: 0, bytes: 0 },
+      },
     }
   }
 
@@ -503,6 +511,22 @@ export async function openPresetGenerationApp(options = {}) {
     }
   }
 
+  /**
+   * 178: trusted source locator for the unified delivery owner. It answers with the segment this
+   * entry already owns that holds the original task, so the owner re-reads that task/artifact under
+   * its real persisted relation; the caller of a delivery never names a storage path. A task from
+   * another scope, an unknown task, or an unreadable segment answers not-found, which keeps the
+   * delivery on its owner sandbox and fails that task honestly instead of switching segments.
+   */
+  async function locateTask(input = {}) {
+    if (input.scopeId !== scopeId) return { ok: false }
+    const taskId = input.taskId
+    if (typeof taskId !== 'string' || !TASK_PATTERN.test(taskId)) return { ok: false }
+    const found = await segmentForTask(taskId)
+    if (found.error || !found.segment) return { ok: false }
+    return { ok: true, value: { sandbox: found.segment.sandbox } }
+  }
+
   return {
     ok: true,
     value: Object.freeze({
@@ -512,6 +536,7 @@ export async function openPresetGenerationApp(options = {}) {
       status,
       results,
       download,
+      locateTask,
     }),
   }
 }

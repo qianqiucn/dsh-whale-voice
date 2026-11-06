@@ -7,9 +7,10 @@
  *
  * Ownership:
  *   - taskId/artifact remain Whale Audio Core facts. A caller-supplied JSON "SAVED record" is never
- *     accepted as proof: the trusted AudioTask owner store (v2) or the Cover owner store (v3) is
- *     re-read here, in the same scope/task/artifact relation, on every ensure and again right before
- *     the Fake backend is asked to accept.
+ *     accepted as proof: the trusted AudioTask owner store (v2), the Cover owner store (v3) or the
+ *     saved Provider generation result in its storage segment (177/178) is re-read here, in the same
+ *     scope/task/artifact relation, on every ensure and again right before the Fake backend is asked
+ *     to accept.
  *   - deliveryId is minted here once and persisted with the task/artifact/target/request digest,
  *     plus a versioned issuance (`intentId` + authority facts) that records which persisted SAVED
  *     relation authorized this delivery. The Cover record and the saved Provider generation record
@@ -798,11 +799,12 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
   }
 }
 
-export async function openUnifiedRelay({ sandbox, backend, targets = [], now = () => new Date().toISOString(), maxDeliveries = 256, maxPermits = 256 } = {}) {
+export async function openUnifiedRelay({ sandbox, backend, targets = [], now = () => new Date().toISOString(), maxDeliveries = 256, maxPermits = 256, locateTask = null } = {}) {
   const root = sandbox && typeof sandbox.root === 'string' ? sandbox.root : null
   if (!root || !isObject(backend) || typeof backend.id !== 'string' ||
       !Number.isInteger(maxDeliveries) || maxDeliveries < 1 || maxDeliveries > 4096 ||
-      !Number.isInteger(maxPermits) || maxPermits < 1 || maxPermits > 4096) {
+      !Number.isInteger(maxPermits) || maxPermits < 1 || maxPermits > 4096 ||
+      (locateTask !== null && typeof locateTask !== 'function')) {
     return fail(RELAY_ERRORS.INPUT_INVALID)
   }
   const targetDirectory = new Map()
@@ -818,6 +820,20 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     if (!target.authorized || !target.allowlisted || !target.identityVerified) return null
     if (!target.bridgeAllowed || !target.workerAllowed) return null
     return clone(target)
+  }
+  /**
+   * 178: resolve the trusted storage segment that holds the original task. The locator is an
+   * assembly-time dependency (the generation application), never a handoff field, so a caller
+   * cannot name a storage path or another segment. A task the locator cannot place stays on the
+   * owner sandbox, where the same persisted read fails it as TASK_NOT_SAVED instead of swapping in
+   * a different segment's result.
+   */
+  async function sourceSandbox({ scopeId, taskId }) {
+    if (!locateTask) return sandbox
+    let located = null
+    try { located = await locateTask({ scopeId, taskId }) } catch { located = null }
+    if (located && located.ok === true && located.value && located.value.sandbox) return located.value.sandbox
+    return sandbox
   }
   const queueKey = path.join(root, RELAY_STORE_PREFIX)
   const ownerToken = crypto.randomBytes(16).toString('hex')
@@ -891,10 +907,10 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
   }
 
   /** One bounded read of the real artifact bytes plus the parsed WAV facts. */
-  async function readFreshArtifact({ scopeId, artifactRef, proofRef }) {
+  async function readFreshArtifact({ sandbox: sourceStore, scopeId, artifactRef, proofRef }) {
     const at = nowIso(now)
     let library = null
-    try { library = await openFixtureArtifactLibrary({ sandbox }) } catch { library = null }
+    try { library = await openFixtureArtifactLibrary({ sandbox: sourceStore }) } catch { library = null }
     if (!library || library.ok !== true) return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE)
     let read = null
     try {
@@ -962,8 +978,9 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       const target = trustedTarget(permit.targetId)
       if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
       const at = nowIso(now)
+      const source = await sourceSandbox({ scopeId: permit.scopeId, taskId: permit.taskId })
       const authority = await readTrustedTaskAuthority({
-        sandbox, scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef, rights, at,
+        sandbox: source, scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef, rights, at,
       })
       if (!authority || authority.ok !== true) return authority
       // 177: the two frozen sources (Cover save, saved Provider generation result) need this separate
@@ -972,7 +989,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (authority.value.permitRequired !== true || !PERMIT_AUTHORITY_KINDS.has(authority.value.kind)) {
         return fail(RELAY_ERRORS.INPUT_INVALID, 'authority')
       }
-      const fresh = await readFreshArtifact({ scopeId: permit.scopeId, artifactRef: permit.artifactRef, proofRef: rights.proofRef })
+      const fresh = await readFreshArtifact({ sandbox: source, scopeId: permit.scopeId, artifactRef: permit.artifactRef, proofRef: rights.proofRef })
       if (!fresh.ok) return fresh
       if (authority.value.masterSha256 && fresh.value.artifactSha256 !== authority.value.masterSha256) {
         return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'MASTER changed')
@@ -1036,8 +1053,9 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (!target) return fail(RELAY_ERRORS.TARGET_REJECTED, 'target directory')
 
       const at = nowIso(now)
+      const source = await sourceSandbox({ scopeId: handoff.scopeId, taskId: handoff.taskId })
       const authority = await readTrustedTaskAuthority({
-        sandbox, scopeId: handoff.scopeId, taskId: handoff.taskId, artifactRef: handoff.artifactRef,
+        sandbox: source, scopeId: handoff.scopeId, taskId: handoff.taskId, artifactRef: handoff.artifactRef,
         rights, at,
       })
       if (!authority || authority.ok !== true) return authority
@@ -1048,7 +1066,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (permitRequired && !Object.prototype.hasOwnProperty.call(handoff, 'permitId')) {
         return fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit missing')
       }
-      const fresh = await readFreshArtifact({ scopeId: handoff.scopeId, artifactRef: handoff.artifactRef, proofRef: rights.proofRef })
+      const fresh = await readFreshArtifact({ sandbox: source, scopeId: handoff.scopeId, artifactRef: handoff.artifactRef, proofRef: rights.proofRef })
       if (!fresh.ok) return fresh
       const artifact = {
         artifactRef: handoff.artifactRef,
@@ -1177,8 +1195,9 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
       if (!claim.ok) return claim
       if (claim.outcome === 'EXISTING') return claim
       const { record, token } = claim
+      const source = await sourceSandbox({ scopeId: record.scopeId, taskId: record.taskId })
       try {
-        const fresh = await readFreshArtifact({ scopeId: record.scopeId, artifactRef: record.artifactRef, proofRef: record.rightsProofRef })
+        const fresh = await readFreshArtifact({ sandbox: source, scopeId: record.scopeId, artifactRef: record.artifactRef, proofRef: record.rightsProofRef })
         if (!fresh.ok) return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact no longer readable' })
         if (fresh.value.artifactSha256 !== record.artifactSha256 || fresh.value.byteLength !== record.byteLength) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact changed' })
@@ -1205,13 +1224,13 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         // replaced/deleted/expired the artifact, or re-written the Task relation. All three are
         // re-read here, immediately before the Fake Worker is asked to accept.
         const authorityNow = await readTrustedTaskAuthority({
-          sandbox, scopeId: record.scopeId, taskId: record.taskId, artifactRef: record.artifactRef,
+          sandbox: source, scopeId: record.scopeId, taskId: record.taskId, artifactRef: record.artifactRef,
           rights: { state: 'GRANTED', proofRef: record.rightsProofRef }, at: nowIso(now),
         })
         if (!authorityNow || authorityNow.ok !== true || authorityNow.value.taskIdentityHash !== record.intent.taskIdentityHash) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.TASK_NOT_SAVED, detail: 'task authority changed before accept' })
         }
-        const artifactNow = await readFreshArtifact({ scopeId: record.scopeId, artifactRef: record.artifactRef, proofRef: record.rightsProofRef })
+        const artifactNow = await readFreshArtifact({ sandbox: source, scopeId: record.scopeId, artifactRef: record.artifactRef, proofRef: record.rightsProofRef })
         if (!artifactNow.ok) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact revoked/expired during preflight' })
         }

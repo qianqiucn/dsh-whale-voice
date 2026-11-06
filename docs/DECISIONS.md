@@ -1136,3 +1136,26 @@ type, a second task/artifact store and a new delivery state model.
 persisted fact), a caller-supplied confirmation boolean or task record (not an authority), a new per-source
 permit store, and treating the recorded 24 h value as a delivery expiry (it is a retention value that 155
 already retired for this origin).
+
+## ADR-038 — The delivery owner resolves a task's storage segment through an injected locator, never a handoff field
+
+**Status:** accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-06, 178).
+**Related:** ADR-001, ADR-024–ADR-037, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** generation results live in the generation application's base root or its `segments/NNNN`
+stores (155). The unified relay keeps its single store at its own sandbox and takes one assembly-time
+`locateTask({scopeId, taskId})` from that application; each delivery operation asks it which already-opened
+segment holds the original task and re-reads that segment's persisted task/artifact. The locator is not
+part of a handoff: a caller still supplies only scope/task/artifact-ref/target/requestKey/rights, never a
+path or a segment. A task the locator cannot place stays on the owner sandbox, where the same persisted
+read fails it as `TASK_NOT_SAVED` instead of falling through to another segment's result. The relay store,
+`deliveryId`/permit space and capacity remain one per owner, shared by base and rotated results.
+
+**Reason:** the storage segment is an implementation fact of the generation application, so the
+application, not the delivery caller, must answer it. Injecting the answer keeps one relay owner/store and
+one capacity count across segments, and avoids either copying saved results into a second "deliverable"
+location or letting the relay scan arbitrary directories.
+
+**Rejected alternatives:** passing a storage path/sandbox in the handoff (caller-controlled location), a
+relay store per segment, copying or moving saved results between segments, and a global directory scan by
+the relay.
