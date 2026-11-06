@@ -173,8 +173,11 @@ depends on the Host knowing whether a settings draft store exists: with one it s
 on the settings page and save/apply (next reopen); without one it says there is no draft entry here and
 the deployment configuration must be corrected and the plugin reopened — it never tells the user to run
 a save/apply this page cannot perform. The 音色中心 page keeps its real waiting state while the
-assembly answer is still pending (it does not claim 未配置 or a failure early) and asks
-`/generation/assembly` when the generation routes answer `generation_not_enabled`: `FAILED` shows
+assembly answer is still pending (it does not claim 未配置 or a failure early), and that includes a
+restored previous task: when that task's status request answers `generation_not_enabled` it no longer
+sets 未启用 on its own, because the same 503 also covers a configured generation that failed to start —
+the pending assembly answer decides `FAILED` / `DISABLED`. It asks `/generation/assembly` when the
+generation routes answer `generation_not_enabled`: `FAILED` shows
 「生成未能启动」 plus the same `messageZh` the settings page shows, `DISABLED` still shows 生成未启用,
 `READY` is untouched and an unreadable assembly state keeps the F06 unknown message. Nothing is
 auto-fixed, saved, applied, started or deleted, and the save/apply/next-reopen timing is unchanged.

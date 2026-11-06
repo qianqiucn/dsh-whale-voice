@@ -1071,7 +1071,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       hostBridge.getGenerationStatus(storedTaskId).then((value) => {
         if (!live) return
         if (!value || value.ok !== true) {
-          if (value && value.error === 'generation_not_enabled') { setGenEnabled(false); return }
+          // 164 v1.2: this 503 only says the generation object is absent; it must not override the
+          // assembly answer that is still pending. The assembly query above decides 未启用 / 启动失败.
+          if (value && value.error === 'generation_not_enabled') return
           // 163: the Host explicitly answering "this task is not in the current storage location" is a
           // definite fact, not a failed request; it must not be shown as a retryable read failure.
           if (value && value.code === 'PRESET_GENERATION_STATUS_REJECTED' && value.detail === 'not found') {

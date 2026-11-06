@@ -525,6 +525,42 @@ await check('studio reports generation not enabled when the Host runtime is abse
   }
 })
 
+// 164 v1.2: a restored task's generation_not_enabled answer must not override the assembly state that
+// is still pending; the page keeps its real waiting state until the Host says which state it is.
+await check('studio keeps waiting when a restored task answers not enabled before the assembly state', async () => {
+  const storedTask = 'task:fixture-' + '0'.repeat(32)
+  await hostGeneration.setGenerationEnabled(false)
+  const seedStoredTask = async (page) => {
+    await page.addInitScript((taskId) => {
+      try { window.localStorage.setItem('whale-voice:studio:last-task', taskId) } catch {}
+    }, storedTask)
+  }
+  try {
+    await withPage('?bridge=normal&generation=off', async (page) => {
+      let release = () => {}
+      const held = new Promise((resolve) => { release = resolve })
+      await page.route('**/whale-voice/setup/generation/assembly*', async (route) => {
+        await held
+        await route.continue()
+      })
+      const statusAnswered = page.waitForResponse(
+        (response) => response.url().includes('/generation/status') && response.status() === 503,
+      )
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      await statusAnswered
+      const pendingText = await page.locator('body').innerText()
+      assert.match(pendingText, /正在检查生成能力/)
+      assert.doesNotMatch(pendingText, /未配置生成运行对象|生成未能启动/)
+      assert.equal(await page.locator('[data-testid="studio-generation-disabled"]').count(), 0)
+      release()
+      await page.locator('[data-testid="studio-generation-disabled"]').waitFor({ timeout: 5000 })
+      assert.match(await page.locator('body').innerText(), /生成未启用/)
+    }, seedStoredTask)
+  } finally {
+    await hostGeneration.setGenerationEnabled(true)
+  }
+})
+
 // 164/164 v1.1: while the assembly answer is still pending the page must not claim "not configured"
 // or a failure; when the real FAILED answer arrives, the generation page and the settings page must
 // name the same known reason and the usable repair entry.
