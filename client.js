@@ -3065,6 +3065,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const [savedResults, setSavedResults] = React.useState(null)
   const [resultsError, setResultsError] = React.useState('')
   const [resultsTick, setResultsTick] = React.useState(0)
+  const [audition, setAudition] = React.useState({ taskId: null, status: 'idle', error: '' })
+  const auditionRef = React.useRef({ token: 0, audio: null, url: null })
+  const auditionTaskRef = React.useRef(null)
   React.useEffect(() => {
     if (!hostBridge) {
       setGenEnabled(false)
@@ -3237,11 +3240,90 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     setResult(item)
     setGenError('')
   }
+  // 176: audition the current saved result through the existing byte download. The token makes a late
+  // response, a switched selection or a stop end the old playback instead of rebinding the new task.
+  const releaseAudition = React.useCallback(() => {
+    const current = auditionRef.current
+    current.token += 1
+    if (current.audio) {
+      current.audio.onended = null
+      current.audio.onerror = null
+      try { current.audio.pause() } catch {}
+      current.audio = null
+    }
+    if (current.url) {
+      URL.revokeObjectURL(current.url)
+      current.url = null
+    }
+  }, [])
+  const stopAudition = React.useCallback(() => {
+    releaseAudition()
+    setAudition({ taskId: null, status: 'idle', error: '' })
+  }, [releaseAudition])
+  const startAudition = React.useCallback(async () => {
+    if (!canDownloadResult) return
+    const taskId = result.taskId
+    const token = auditionRef.current.token + 1
+    auditionRef.current.token = token
+    setAudition({ taskId, status: 'loading', error: '' })
+    let value
+    try {
+      value = await hostBridge.downloadGenerationResult(taskId)
+    } catch {
+      value = { ok: false }
+    }
+    if (auditionRef.current.token !== token) return
+    if (!value || value.ok !== true || !value.blob) {
+      setAudition({ taskId, status: 'error', error: 'READ_FAILED' })
+      return
+    }
+    const url = URL.createObjectURL(value.blob)
+    const audio = new Audio(url)
+    auditionRef.current.audio = audio
+    auditionRef.current.url = url
+    audio.onended = () => {
+      if (auditionRef.current.token !== token) return
+      releaseAudition()
+      setAudition({ taskId: null, status: 'idle', error: '' })
+    }
+    audio.onerror = () => {
+      if (auditionRef.current.token !== token) return
+      releaseAudition()
+      setAudition({ taskId, status: 'error', error: 'MEDIA_FAILED' })
+    }
+    try {
+      await audio.play()
+    } catch {
+      if (auditionRef.current.token !== token) return
+      releaseAudition()
+      setAudition({ taskId, status: 'error', error: 'MEDIA_FAILED' })
+      return
+    }
+    if (auditionRef.current.token !== token) return
+    setAudition({ taskId, status: 'playing', error: '' })
+  }, [canDownloadResult, hostBridge, releaseAudition, result])
+  const toggleAudition = () => {
+    if (!canDownloadResult) return
+    if (audition.taskId === result.taskId && (audition.status === 'loading' || audition.status === 'playing')) {
+      stopAudition()
+      return
+    }
+    void startAudition()
+  }
+  // The audition state belongs to the task that requested it; after a switch the old state is never
+  // rendered for the newly selected result even if its reset lands one frame later.
+  const auditionCurrent = Boolean(result && audition.taskId === result.taskId)
+  React.useEffect(() => () => releaseAudition(), [releaseAudition])
+  React.useEffect(() => {
+    const taskId = result && result.taskId ? result.taskId : null
+    if (auditionTaskRef.current !== null && auditionTaskRef.current !== taskId) stopAudition()
+    auditionTaskRef.current = taskId
+  }, [result, stopAudition])
   return h(React.Fragment, null,
     h(PageHead, {
       eyebrow: 'WHALE VOICE / STUDIO',
       title: '音色中心',
-      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产播放与微信发送未接入；下方“预设音色生成”经正式 Host 接口提交并由原任务保存。本次实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用。',
+      description: 'whale-v1 是小鲸鱼目前唯一的专属音色。下方“预设音色生成”经正式 Host 接口提交并由原任务保存，可在本页本地试听或下载已保存结果；生产播放与微信发送未接入。本次实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用。',
       actions: h(React.Fragment, null,
         h(Badge, { tone: 'demo' }, genEnabled === true ? '来源未确认' : genEnabled === false ? (assemblyFailure ? '启动失败' : '未启用') : catalogError ? '读取失败' : '检查中'),
         h(Button, { disabled: true, title: '生产播放未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
@@ -3253,7 +3335,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
         : assemblyFailure
           ? h('span', { 'data-testid': 'studio-generation-assembly-message' }, '生成未能启动：' + assemblyFailure)
           : h('span', null, genEnabled === true
-            ? '来源未确认：本页经正式 Host 接口提交生成，结果由原任务保存。实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用；本页不播放，也不发送微信。'
+            ? '来源未确认：本页经正式 Host 接口提交生成，结果由原任务保存。实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用；本页可本地试听已保存结果，但不发送微信。'
             : genEnabled === false
               ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
               : '正在检查生成能力…')),
@@ -3310,15 +3392,27 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
             h('p', null, '任务 ', h('code', { 'data-testid': 'studio-generation-task' }, result.taskId || '—')),
             h('p', null, '产物 ', h('code', { 'data-testid': 'studio-generation-artifact' }, result.artifactRef || '—')),
             result.byteLength ? h('p', null, '大小 ' + result.byteLength + ' bytes' + (result.sha256 ? ' · SHA-256 ' + result.sha256 : '')) : null,
-            h('p', null, h(Badge, { tone: 'demo' }, '来源未确认'), ' 这是所选原任务的保存事实；下载只读取已保存的字节；实际模型来源无法核实，不代表真实模型可用。'),
+            h('p', null, h(Badge, { tone: 'demo' }, '来源未确认'), ' 这是所选原任务的保存事实；下载与试听只读取已保存的字节；实际模型来源无法核实，不代表真实模型可用。'),
             h('div', { className: 'wv-row', style: { marginTop: 8 } },
+              h(Button, {
+                onClick: toggleAudition,
+                disabled: !canDownloadResult,
+                title: canDownloadResult ? '试听当前选中任务已保存的音频；只读取原字节，不会重新生成' : '当前没有可读取的已保存结果',
+                'data-testid': 'studio-generation-audition',
+              }, h(Icon, { name: auditionCurrent && (audition.status === 'playing' || audition.status === 'loading') ? 'pause' : 'play', size: 14 }), auditionCurrent && audition.status === 'loading' ? '读取试听…' : auditionCurrent && audition.status === 'playing' ? '停止试听' : '试听已保存音频'),
               h(Button, {
                 onClick: () => { void download() },
                 disabled: !canDownloadResult || downloading,
                 title: canDownloadResult ? '下载该任务已保存的 WAV 原文件' : '当前没有可读取的已保存结果',
                 'data-testid': 'studio-generation-download',
               }, h(Icon, { name: 'download', size: 14 }), downloading ? '下载中…' : '下载已保存音频'),
-              canDownloadResult ? null : h('span', { className: 'wv-muted', 'data-testid': 'studio-generation-download-unavailable' }, '当前没有可读取的已保存结果，不能下载。')))
+              canDownloadResult ? null : h('span', { className: 'wv-muted', 'data-testid': 'studio-generation-download-unavailable' }, '当前没有可读取的已保存结果，不能试听或下载。')),
+            auditionCurrent && audition.status === 'playing' ? h('p', { className: 'wv-muted', style: { margin: '8px 0 0' }, 'data-testid': 'studio-generation-audition-state' }, '正在试听当前任务的已保存音频；只读取原字节，本地播放不代表真实模型来源，也不发送微信。') : null,
+            auditionCurrent && audition.status === 'error' ? h('div', { className: 'wv-notice warn', style: { marginTop: 8 }, 'data-testid': 'studio-generation-audition-error' },
+              h(Icon, { name: 'alert', size: 14 }),
+              h('span', null, audition.error === 'READ_FAILED'
+                ? '无法读取已保存的音频：本次请求失败或超时；这不代表没有保存，页面不会改用其他结果或重新生成。'
+                : '浏览器无法播放这段已保存的音频（媒体加载失败或被拒绝）；文件仍可下载，页面不会重新生成或改用其他结果。')) : null)
           : genEnabled === false
             ? (assemblyFailure
               ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-assembly-error', style: { minHeight: 96, alignItems: 'flex-start' } },
@@ -3348,7 +3442,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
                   : h('div', { className: 'wv-empty', style: { minHeight: 96 } },
                     h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'wave', size: 18 })),
                     h('strong', null, genEnabled === null ? '正在检查生成能力…' : '还没有生成结果'),
-                    h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，不播放、不发送。')),
+                    h('p', null, genEnabled === null ? '正在通过正式 Host 接口读取预设音色与生成能力。' : '输入短文本并选择预设音色后点击生成；结果由原任务保存，可在下方本地试听或下载，不发送微信。')),
         genError
           ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null,
             genError === 'STUDIO_GENERATION_UNCONFIRMED'
@@ -3357,13 +3451,13 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
           : null,
         h('div', { className: 'wv-row wv-wrap' },
           h(Button, { onClick: generate, disabled: genEnabled !== true || busy || !String(preview.text || '').trim(), title: genEnabled === false ? (assemblyFailure ? '启动失败：生成不可用' : '生成未启用') : undefined }, h(Icon, { name: 'spark', size: 14 }), busy ? '生成中…' : '生成并保存'),
-          h(Button, { variant: 'ghost', onClick: () => notify('本页经正式 Host 接口提交生成；实际执行来源本页无法核实，生产播放与微信发送未接入。', 'info') }, '了解限制')))),
+          h(Button, { variant: 'ghost', onClick: () => notify('本页经正式 Host 接口提交生成；试听只读取当前选中已保存结果的原字节，生产播放与微信发送未接入。', 'info') }, '了解限制')))),
     canListResults && genEnabled === true
       ? h('section', { className: 'wv-card pad', style: { marginTop: 14 }, 'data-testid': 'studio-generation-results' },
         h('div', { className: 'wv-card-title' },
           h('div', null,
             h('h2', null, '已保存的生成结果'),
-            h('p', null, '同一当前配置保存位置内、属于当前生成范围的原任务。选择一条可查看并按原字节下载它已保存的 WAV；选择与下载不会重新生成、再次保存或修改原产物。')),
+            h('p', null, '同一当前配置保存位置内、属于当前生成范围的原任务。选择一条可查看并试听或按原字节下载它已保存的 WAV；选择、试听与下载不会重新生成、再次保存或修改原产物。')),
           h(Badge, { tone: 'wait' }, savedResults === null ? '读取中' : savedResults.length + ' 项')),
         resultsError
           ? h('div', { className: 'wv-notice warn', 'data-testid': 'studio-generation-results-error' }, h(Icon, { name: 'alert', size: 15 }), h('span', null, '无法读取已保存的生成结果；这不代表没有结果，请稍后重试。'))
