@@ -2354,11 +2354,8 @@ function generationDraftError(error) {
 
 /** 144/146: a real Host-side draft plus an explicit applied fact, never a frontend demo field. */
 function GenerationStorageDraftCard({ notify }) {
-  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
-  const available = Boolean(host
-    && typeof host.getGenerationStorageDraft === 'function'
-    && typeof host.saveGenerationStorageDraft === 'function'
-    && typeof host.applyGenerationStorageDraft === 'function')
+  const host = window.__WHALE_SETUP__
+  const available = Boolean(host)
   const [value, setValue] = React.useState('')
   const [savedValue, setSavedValue] = React.useState(null)
   const [applied, setApplied] = React.useState(null)
@@ -2374,7 +2371,7 @@ function GenerationStorageDraftCard({ notify }) {
       setError(generationDraftError(payload && payload.error))
       return
     }
-    setAppliedError(typeof payload.appliedError === 'string' ? payload.appliedError : '')
+    setAppliedError(Boolean(payload.appliedError))
     const saved = payload.draft && typeof payload.draft.generationStorageRoot === 'string'
       ? payload.draft.generationStorageRoot
       : ''
@@ -2513,11 +2510,8 @@ function GenerationStorageDraftCard({ notify }) {
 
 /** 148: a persisted Qwen runtime-path draft; saving never reads a model, executes Python or starts a Worker. */
 function QwenRuntimeDraftCard({ notify }) {
-  const host = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
-  const available = Boolean(host
-    && typeof host.getQwenRuntimeDraft === 'function'
-    && typeof host.saveQwenRuntimeDraft === 'function'
-    && typeof host.applyQwenRuntimeDraft === 'function')
+  const host = window.__WHALE_SETUP__
+  const available = Boolean(host)
   const [modelDirectory, setModelDirectory] = React.useState('')
   const [pythonPath, setPythonPath] = React.useState('')
   const [saved, setSaved] = React.useState(null)
@@ -2534,7 +2528,7 @@ function QwenRuntimeDraftCard({ notify }) {
       setError(generationDraftError(payload && payload.error))
       return
     }
-    setAppliedError(typeof payload.appliedError === 'string' ? payload.appliedError : '')
+    setAppliedError(Boolean(payload.appliedError))
     const draft = payload.runtimeDraft
     if (draft && typeof draft.modelDirectory === 'string' && typeof draft.pythonPath === 'string') {
       setSaved({ modelDirectory: draft.modelDirectory, pythonPath: draft.pythonPath })
@@ -2714,7 +2708,7 @@ function GenerationRuntimeStatusCard() {
   if (!failure) return null
   return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'generation-assembly-error' },
     h(Icon, { name: 'alert', size: 15 }),
-    h('span', null, '生成未能启动：' + (failure.messageZh || failure.code || '原因未知')))
+    h('span', null, '生成未能启动：' + failure.messageZh))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
@@ -3057,13 +3051,7 @@ const STUDIO_GENERATION_GRACE_MS = 10000
 
 function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const patch = (key, value) => setPreview((p) => ({ ...p, [key]: value }))
-  const hostBridge = typeof window !== 'undefined'
-    && window.__WHALE_SETUP__
-    && typeof window.__WHALE_SETUP__.getGenerationCatalog === 'function'
-    && typeof window.__WHALE_SETUP__.generatePreset === 'function'
-    && typeof window.__WHALE_SETUP__.getGenerationStatus === 'function'
-    ? window.__WHALE_SETUP__
-    : null
+  const hostBridge = window.__WHALE_SETUP__ || null
   const [catalog, setCatalog] = React.useState(null)
   const [busy, setBusy] = React.useState(false)
   const [downloading, setDownloading] = React.useState(false)
@@ -3148,7 +3136,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     return () => { live = false }
   }, [hostBridge])
   React.useEffect(() => {
-    if (!hostBridge || typeof hostBridge.getGenerationResults !== 'function' || genEnabled !== true) {
+    if (!hostBridge || genEnabled !== true) {
       setSavedResults(null)
       return undefined
     }
@@ -3173,9 +3161,9 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     ? catalog.voices
     : [{ id: 'whale-v1', label: 'whale-v1', languages: ['zh-CN'] }]
   const selectedVoice = voices.find((voice) => voice.id === preview.voice) || voices[0]
-  const canDownload = Boolean(hostBridge && typeof hostBridge.downloadGenerationResult === 'function')
+  const canDownload = Boolean(hostBridge)
   const canDownloadResult = canDownload && result && result.readable === true && result.taskId
-  const canListResults = Boolean(hostBridge && typeof hostBridge.getGenerationResults === 'function')
+  const canListResults = Boolean(hostBridge)
   const languages = genEnabled === true && selectedVoice && Array.isArray(selectedVoice.languages) ? selectedVoice.languages : ['zh-CN', 'en-US']
   const textLimit = genEnabled === true && catalog && Number.isInteger(catalog.textLimit) ? catalog.textLimit : 200
   const generationTimeoutMs = genEnabled === true && catalog && Number.isInteger(catalog.generationTimeoutMs)
