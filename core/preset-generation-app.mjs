@@ -140,8 +140,11 @@ export async function openPresetGenerationApp(options = {}) {
     })
     if (!coordinator.ok) return { ok: false, detail: 'sandbox' }
     // 165: a claim left active by an interrupted process is settled before this location is used.
+    // 169: only a failed settlement write refuses the location. A ledger that cannot be read at all
+    // keeps the location usable for the already-saved results; prepare() rejects a new generation on
+    // the same ledger with its real reason instead of this location being reported as unwritable.
     const reconciled = coordinator.reconcile()
-    if (!reconciled.ok) return { ok: false, detail: 'claim-write' }
+    if (!reconciled.ok && reconciled.detail === 'claim-write') return { ok: false, detail: 'claim-write' }
     return {
       ok: true,
       value: { catalog: catalog.value, owner: owner.value, artifacts: artifacts.value, coordinator, usage: { entries: 0, bytes: 0 } },

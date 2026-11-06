@@ -649,10 +649,12 @@ export function createProviderGenerationCoordinator(options = {}) {
    * never reached `close()`. Such a claim is settled as UNKNOWN (never SAVED and never a definite
    * failure) with the provider not called and no task, artifact or saved result created, changed or
    * deleted. If the settlement cannot be persisted it reports failure and leaves the ledger as it was.
+   * 169: a ledger that cannot be read at all is reported separately from that settlement write, so
+   * the caller can keep the already-saved results reachable instead of blaming the write.
    */
   function reconcile() {
     const ledger = readLedger(sandbox)
-    if (!ledger) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
+    if (!ledger) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID, detail: 'ledger-read' }
     if (!ledger.entries.some((entry) => CLAIM_ACTIVE.has(entry.state))) return { ok: true, settled: [] }
     const stamp = now()
     const entries = ledger.entries.map((item) => ({ ...item }))
@@ -665,7 +667,7 @@ export function createProviderGenerationCoordinator(options = {}) {
       settled.push(target.claimId)
     }
     const written = writeEntries(entries, ledger.revision)
-    if (!written.ok) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID }
+    if (!written.ok) return { ok: false, code: PROVIDER_GENERATION_ERRORS.STORE_INVALID, detail: 'claim-write' }
     return { ok: true, settled }
   }
 
