@@ -66,7 +66,7 @@ async function openApp(sandbox, provider) {
   return opened.value
 }
 
-test('135 the Core preset generation entry generates, saves on the original task and reopens', { skip: spawnSkip }, async () => {
+test('135 the Core preset generation entry generates, saves on the original task, lists its catalog and reports status', { skip: spawnSkip }, async () => {
   const sandbox = createConfigSandbox({ prefix: 'wv-core-preset-' })
   const supervisor = makeSupervisor()
   let provider = null
