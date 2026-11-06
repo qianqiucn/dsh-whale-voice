@@ -514,7 +514,9 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
   const opened = await openQwenGenerationRuntime({ sandbox, ...runtimeSettings })
   if (!opened.ok) {
     if (temporary) removeConfigSandbox(sandbox)
-    return { ok: false, code: 'runtime_unavailable', detail: opened.code || 'ASSEMBLY_FAILED' }
+    // 164: keep the reason the lower layer already gave; a broken task record in the storage location
+    // is a storage problem, not a Qwen runtime-path problem.
+    return { ok: false, code: 'runtime_unavailable', reason: opened.code || 'ASSEMBLY_FAILED', detail: opened.detail || null }
   }
   const runtime = opened.value
   const host = installHostBridge(scope, {
@@ -533,18 +535,45 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
   return { ok: true }
 }
 
-/** 154: one page-visible reason for the real failure; it never claims generation works. */
-function generationFailure(outcome) {
+/**
+ * 154/164: one page-visible reason for the real failure; it never claims generation works, and it only
+ * names the reason that is actually known. 164: when no settings draft entry exists, the guidance must
+ * not ask the user to save/apply on a page that cannot do it — that fix belongs to the deployment config.
+ */
+function generationFailure(outcome, hasDrafts) {
+  const repair = hasDrafts
+    ? '可在设置页修正后重新保存并应用，下次重开插件生效。'
+    : '当前没有设置草稿入口，无法在本页保存或应用；需在部署配置中修正后重新打开插件。'
   if (outcome.code === 'applied_storage_invalid') {
-    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的生成数据保存位置记录损坏，无法读取。请在设置页重新保存并应用保存位置。' }
+    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的生成数据保存位置记录损坏，无法读取。' + repair }
   }
   if (outcome.code === 'applied_runtime_invalid') {
-    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的 Qwen 运行路径记录损坏，无法读取。请在设置页重新保存并应用运行路径。' }
+    return { state: 'FAILED', code: outcome.code, messageZh: '已应用的 Qwen 运行路径记录损坏，无法读取。' + repair }
   }
   if (outcome.code === 'storage_unavailable') {
-    return { state: 'FAILED', code: outcome.code, messageZh: '生成数据保存位置不可用：' + outcome.storageRoot + '。请在设置页修正后重新保存并应用。' }
+    return { state: 'FAILED', code: outcome.code, messageZh: '生成数据保存位置不可用：' + outcome.storageRoot + '。' + repair }
   }
-  return { state: 'FAILED', code: outcome.code, messageZh: '生成运行对象未能启动（' + outcome.detail + '）。请检查 Qwen 运行路径并重新保存应用。' }
+  // 164: the lower layer already knows a broken task record caused this assembly failure; it must not
+  // be replaced by a generic Qwen runtime-path hint.
+  if (outcome.detail === 'sandbox') {
+    return {
+      state: 'FAILED',
+      code: outcome.code,
+      messageZh: '生成运行对象未能启动：生成数据保存位置中的任务记录无法读取（记录可能损坏或被截断）。' + repair,
+    }
+  }
+  if (outcome.reason === 'QWEN_GENERATION_RUNTIME_WORKER_NOT_STARTED') {
+    return {
+      state: 'FAILED',
+      code: outcome.code,
+      messageZh: '生成运行对象未能启动：Qwen Worker 未能启动（' + (outcome.detail || 'worker') + '）。请检查 Qwen 运行路径与模型目录；' + repair,
+    }
+  }
+  return {
+    state: 'FAILED',
+    code: outcome.code,
+    messageZh: '生成运行对象未能启动（' + (outcome.reason || 'ASSEMBLY_FAILED') + '）。请检查部署的生成配置；' + repair,
+  }
 }
 
 function installHost(scope, options) {
@@ -571,13 +600,13 @@ export function apply(ctx, config = undefined) {
       // 154: a damaged applied record keeps the settings entry reachable instead of failing the plugin.
       const applied = settingsDraft === null ? null : settingsDraft.readApplied()
       if (applied !== null && applied.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }) })
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }, settingsDraft !== null) })
         resolve()
         return
       }
       const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
       if (appliedRuntime !== null && appliedRuntime.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }) })
+        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }, settingsDraft !== null) })
         resolve()
         return
       }
@@ -590,7 +619,7 @@ export function apply(ctx, config = undefined) {
       }
       const assembled = await assembleGenerationHost(scope, effective, settingsDraft)
       if (assembled.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure(assembled) })
+        installHost(scope, { settingsDraft, generationState: generationFailure(assembled, settingsDraft !== null) })
       }
       resolve()
     })

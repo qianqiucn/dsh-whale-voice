@@ -525,6 +525,45 @@ await check('studio reports generation not enabled when the Host runtime is abse
   }
 })
 
+// 164: a configured generation that failed to start must not be shown as "not configured"; the
+// generation page and the settings page must name the same real reason and the usable repair entry.
+await check('studio names a failed generation assembly instead of claiming it is not configured', async () => {
+  const failure = {
+    code: 'runtime_unavailable',
+    messageZh: '生成运行对象未能启动：生成数据保存位置中的任务记录无法读取（记录可能损坏或被截断）。可在设置页修正后重新保存并应用，下次重开插件生效。',
+  }
+  hostGeneration.setGenerationFailure(failure)
+  try {
+    await withPage('?bridge=normal&generation=failed', async (page) => {
+      await page.getByRole('button', { name: '音色中心', exact: true }).click()
+      const notice = page.locator('[data-testid="studio-generation-assembly-message"]')
+      await notice.waitFor({ timeout: 5000 })
+      const block = page.locator('[data-testid="studio-generation-assembly-error"]')
+      await block.waitFor({ timeout: 5000 })
+      const blockText = await block.innerText()
+      assert.match(blockText, /生成未能启动/)
+      assert.match(blockText, /生成数据保存位置中的任务记录无法读取/)
+      assert.doesNotMatch(blockText, /Qwen 运行路径/)
+      const body = await page.locator('body').innerText()
+      assert.doesNotMatch(body, /未配置生成运行对象/)
+      assert.doesNotMatch(body, /还没有生成结果/)
+      assert.equal(await page.locator('[data-testid="studio-generation-disabled"]').count(), 0)
+      assert.equal(await page.getByRole('button', { name: /生成并保存/ }).isDisabled(), true)
+      await page.screenshot({ path: path.join(artifactDir, 'studio-generation-assembly-failed-1440.png') })
+
+      // The settings page shows the same reason from the same Host state.
+      await page.getByRole('button', { name: '语音设置', exact: true }).click()
+      const settingsBlock = page.locator('[data-testid="generation-assembly-error"]')
+      await settingsBlock.waitFor({ timeout: 5000 })
+      const settingsText = await settingsBlock.innerText()
+      assert.ok(settingsText.includes(failure.messageZh), settingsText)
+      assert.match(settingsText, /设置页/)
+    })
+  } finally {
+    hostGeneration.resetGeneration()
+  }
+})
+
 // 160: while the capability request is still pending the page keeps the real waiting state.
 await check('studio keeps a real waiting state while the capability request is pending', async () => {
   await withPage('?bridge=normal&generationFault=catalog-pending', async (page) => {
@@ -2488,7 +2527,7 @@ await check('no console errors or failed resources', async () => {
   // The single expected console entry is the disabled-generation scene: its deliberate request to the
   // real Host route returns the 503 `generation_not_enabled` that the page must surface. All other
   // scenes must stay clean.
-  const expectedDisabled503 = (item) => item.scene === '?bridge=normal&generation=off'
+  const expectedDisabled503 = (item) => (item.scene === '?bridge=normal&generation=off' || item.scene === '?bridge=normal&generation=failed')
     && item.type === 'error'
     && /Failed to load resource: the server responded with a status of 503/.test(item.text)
   const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item))

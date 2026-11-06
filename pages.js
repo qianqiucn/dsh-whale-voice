@@ -657,7 +657,7 @@ function GenerationRuntimeStatusCard() {
   if (!failure) return null
   return h('div', { className: 'wv-notice warn', style: { marginBottom: 14 }, 'data-testid': 'generation-assembly-error' },
     h(Icon, { name: 'alert', size: 15 }),
-    h('span', null, '生成未能启动：' + (failure.messageZh || failure.code || '原因未知') + ' 修正后请保存并应用，重开插件生效。'))
+    h('span', null, '生成未能启动：' + (failure.messageZh || failure.code || '原因未知')))
 }
 
 function SettingsPage({ settings, setSetting, dirty, saveSettings, resetSettings, notify, setup, capability }) {
@@ -1014,6 +1014,7 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
   const [genError, setGenError] = React.useState('')
   const [genEnabled, setGenEnabled] = React.useState(null)
   const [catalogError, setCatalogError] = React.useState(false)
+  const [assemblyFailure, setAssemblyFailure] = React.useState(null)
   const [restoreError, setRestoreError] = React.useState('')
   const [restoreMissing, setRestoreMissing] = React.useState('')
   const [savedResults, setSavedResults] = React.useState(null)
@@ -1028,14 +1029,30 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
     hostBridge.getGenerationCatalog().then((value) => {
       if (!live) return
       if (!value || value.ok !== true) {
-        // Only the Host's own generation_not_enabled fact means "not enabled"; any other failure is a
-        // failed read of the capability, never a not-enabled or still-checking answer.
         const notEnabled = Boolean(value && value.error === 'generation_not_enabled')
-        setGenEnabled(notEnabled ? false : null)
-        setCatalogError(!notEnabled)
+        if (!notEnabled) {
+          // Any other failure is a failed read of the capability, never a not-enabled or still-checking answer.
+          setGenEnabled(null)
+          setCatalogError(true)
+          return
+        }
+        // 164: the same 503 also covers a configured generation that failed to start. Ask the Host for
+        // the real state instead of telling the user generation is not configured.
+        setGenEnabled(false)
+        setCatalogError(false)
+        if (typeof hostBridge.getGenerationAssemblyStatus !== 'function') return
+        const unknown = () => { if (live) { setGenEnabled(null); setCatalogError(true) } }
+        hostBridge.getGenerationAssemblyStatus().then((state) => {
+          if (!live) return
+          if (!state || state.ok !== true) { unknown(); return }
+          setGenEnabled(false)
+          setCatalogError(false)
+          setAssemblyFailure(state.state === 'FAILED' ? { code: state.code || '', messageZh: state.messageZh || '' } : null)
+        }, unknown)
         return
       }
       setCatalogError(false)
+      setAssemblyFailure(null)
       setGenEnabled(true)
       setCatalog(value)
       const voices = Array.isArray(value.voices) ? value.voices : []
@@ -1182,18 +1199,20 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
       title: '音色中心',
       description: 'whale-v1 是小鲸鱼目前唯一的专属音色。生产播放与微信发送未接入；下方“预设音色生成”经正式 Host 接口提交并由原任务保存。本次实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用。',
       actions: h(React.Fragment, null,
-        h(Badge, { tone: 'demo' }, genEnabled === true ? '来源未确认' : genEnabled === false ? '未启用' : catalogError ? '读取失败' : '检查中'),
+        h(Badge, { tone: 'demo' }, genEnabled === true ? '来源未确认' : genEnabled === false ? (assemblyFailure ? '启动失败' : '未启用') : catalogError ? '读取失败' : '检查中'),
         h(Button, { disabled: true, title: '生产播放未接入' }, h(Icon, { name: 'play', size: 14 }), '等待语音服务接入')),
     }),
     h('div', { className: 'wv-notice warn', style: { marginBottom: 14 } },
       h(Icon, { name: 'alert', size: 15 }),
       catalogError
         ? h('span', { 'data-testid': 'studio-generation-catalog-error' }, '无法读取生成能力：本次请求失败或超时。这不代表未启用，页面不会生成或保存；请稍后刷新重试。')
-        : h('span', null, genEnabled === true
-          ? '来源未确认：本页经正式 Host 接口提交生成，结果由原任务保存。实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用；本页不播放，也不发送微信。'
-          : genEnabled === false
-            ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
-            : '正在检查生成能力…')),
+        : assemblyFailure
+          ? h('span', { 'data-testid': 'studio-generation-assembly-message' }, '生成未能启动：' + (assemblyFailure.messageZh || assemblyFailure.code || '原因未知'))
+          : h('span', null, genEnabled === true
+            ? '来源未确认：本页经正式 Host 接口提交生成，结果由原任务保存。实际使用的是隔离 Fixture 还是已应用的本地运行路径与模型，本页无法核实，也不代表真实模型已验证可用；本页不播放，也不发送微信。'
+            : genEnabled === false
+              ? '生成未启用：当前 Host 未配置生成运行对象；页面不会生成、不会调用真实模型。'
+              : '正在检查生成能力…')),
     h(ConfigReadout, { setup }),
     h(CapabilityPanel, {
       capability,
@@ -1257,10 +1276,16 @@ function StudioPage({ preview, setPreview, notify, setup, capability }) {
               }, h(Icon, { name: 'download', size: 14 }), downloading ? '下载中…' : '下载已保存音频'),
               canDownloadResult ? null : h('span', { className: 'wv-muted', 'data-testid': 'studio-generation-download-unavailable' }, '当前没有可读取的已保存结果，不能下载。')))
           : genEnabled === false
-            ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-disabled', style: { minHeight: 96 } },
-              h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
-              h('strong', null, '生成未启用'),
-              h('p', null, '当前 Host 未配置生成运行对象；不会生成、不会调用真实模型。配置由部署方决定，本页不会自行启用。'))
+            ? (assemblyFailure
+              ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-assembly-error', style: { minHeight: 96, alignItems: 'flex-start' } },
+                h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
+                h('strong', null, '生成未能启动'),
+                h('p', null, assemblyFailure.messageZh || assemblyFailure.code || '原因未知'),
+                h('p', { className: 'wv-muted' }, '本页不会自动修复、保存、应用或启动；修正入口以以上说明为准，正常生成仍不可用。'))
+              : h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-disabled', style: { minHeight: 96 } },
+                h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'lock', size: 18 })),
+                h('strong', null, '生成未启用'),
+                h('p', null, '当前 Host 未配置生成运行对象；不会生成、不会调用真实模型。配置由部署方决定，本页不会自行启用。')))
             : restoreMissing
               ? h('div', { className: 'wv-empty', 'data-testid': 'studio-generation-restore-missing', style: { minHeight: 96, alignItems: 'flex-start' } },
                 h('div', { className: 'wv-empty-icon' }, h(Icon, { name: 'alert', size: 18 })),
