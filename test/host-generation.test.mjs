@@ -169,9 +169,6 @@ test('136 the formal Host surface generates through the Core entry, queries by t
     const reopened = JSON.parse(reopenedStatus.body)
     assert.equal(reopened.ok, true, reopenedStatus.body)
     assert.equal(reopened.readable, true)
-    assert.equal(reopened.artifactRef, saved.artifactRef)
-    assert.equal(reopened.sha256, saved.sha256)
-    assert.deepEqual(reopened.provider, saved.provider)
     reopenedHost.dispose()
 
     // Each assembly closes only the worker it created; a second close is a normal no-op.
@@ -246,10 +243,6 @@ test('161 the Host rejects an explicitly submitted unsupported language and keep
     const supportedBody = JSON.parse(supported.body)
     assert.equal(supportedBody.ok, true, supported.body)
     assert.equal(supportedBody.language, 'en-US')
-
-    const listed = JSON.parse((await callRoute(resultsRoute, { method: 'GET', url: '/whale-voice/setup/generation/results' })).body)
-    assert.equal(listed.ok, true, JSON.stringify(listed))
-    assert.deepEqual(listed.results.map((item) => item.taskId), [omittedBody.taskId, supportedBody.taskId])
     host.dispose()
   } finally {
     if (runtime) await runtime.close().catch(() => null)

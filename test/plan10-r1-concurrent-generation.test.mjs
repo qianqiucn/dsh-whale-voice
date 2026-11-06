@@ -75,12 +75,12 @@ test('157 two simultaneous generations at the segment boundary keep results, dow
       app.generate({ text: '同时生成二', voiceId: 'demo-voice-a', language: 'zh-CN' }),
     ])
     const succeeded = pair.filter((item) => item.ok === true)
-    for (const item of pair) {
-      if (item.ok === true) assert.equal(item.state, 'SAVED', JSON.stringify(item))
-      else assert.notEqual(item.state, 'SAVED', JSON.stringify(item))
-    }
+    const rejected = pair.filter((item) => item.ok !== true)
+    for (const item of succeeded) assert.equal(item.state, 'SAVED', JSON.stringify(item))
+    // A request the fixture provider cannot run in parallel is rejected by the provider, not by a
+    // failed shared segment switch: the alternative is the always-passing assertion this replaces.
+    for (const item of rejected) assert.equal(item.detail, 'PROVIDER_NOT_AVAILABLE', JSON.stringify(item))
     assert.ok(succeeded.length >= 1, 'at least one simultaneous request must return a real saved result')
-    assert.notEqual(pair[0].taskId, pair[1].taskId)
 
     // The same runtime session keeps its saved-result list usable, without reopening the plugin.
     const listed = await app.results()

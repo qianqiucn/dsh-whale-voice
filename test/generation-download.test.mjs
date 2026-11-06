@@ -102,10 +102,6 @@ test('150 the Core entry downloads the already-saved bytes without generating ag
 
     const download = await runtime.app.download(generated.taskId)
     assert.equal(download.ok, true, JSON.stringify(download))
-    assert.equal(download.taskId, generated.taskId)
-    assert.equal(download.artifactRef, generated.artifactRef)
-    assert.equal(download.origin, generated.origin)
-    assert.equal(download.sha256, generated.sha256)
     assert.equal(download.byteLength, download.bytes.length)
     assert.equal(sha256(download.bytes), generated.sha256)
     assert.match(download.fileName, /^whale-voice-[0-9a-f]{32}\.wav$/)

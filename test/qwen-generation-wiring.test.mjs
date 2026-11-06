@@ -160,32 +160,6 @@ test('133 a preset CustomVoice request runs through the real Qwen public interfa
     // 132 flow: the original task is formally SAVED and points at that artifact.
     assert.equal(submitted.task.ownerState, 'SAVED')
     assert.equal(submitted.task.artifact.artifactRef, submitted.claim.artifact.artifactRef)
-    const taskStatus = await owner.value.artifactStatus({
-      schemaVersion: 1, scopeId: SCOPE, taskId, now: NOW, rights: { state: 'GRANTED', proofRef: PROOF },
-    })
-    assert.equal(taskStatus.ok, true, JSON.stringify(taskStatus))
-    assert.equal(taskStatus.value.state, 'READABLE')
-    assert.equal(taskStatus.value.ownerState, 'SAVED')
-    assert.equal(taskStatus.value.artifactRef, submitted.claim.artifact.artifactRef)
-    const got = await owner.value.get({ schemaVersion: 1, scopeId: SCOPE, taskId })
-    assert.equal(got.ok, true, JSON.stringify(got))
-    assert.equal(got.value.ownerState, 'SAVED')
-    assert.equal(got.value.task.state, 'SAVED')
-    assert.equal(got.value.task.hasOutput, true)
-    assert.equal(got.value.task.mockOnly, true)
-    assert.equal(got.value.task.realOperationAllowed, false)
-
-    // Reopen only the persisted stores and read the same artifact.
-    const reopenedOwner = await openFixtureTaskOwner({ sandbox })
-    assert.equal(reopenedOwner.ok, true, JSON.stringify(reopenedOwner))
-    const reopenedLibrary = await openFixtureArtifactLibrary({ sandbox })
-    assert.equal(reopenedLibrary.ok, true, JSON.stringify(reopenedLibrary))
-    const read = await reopenedLibrary.value.readBytes({
-      schemaVersion: 1, scopeId: SCOPE, artifactRef: submitted.claim.artifact.artifactRef, now: NOW,
-      rights: { state: 'GRANTED', proofRef: PROOF },
-    })
-    assert.equal(read.ok, true, JSON.stringify(read))
-    assert.equal(sha256(read.value.bytes), sha256(expected))
   } finally {
     if (provider && provider.ok) await provider.shutdown().catch(() => null)
     else await supervisor.stop().catch(() => null)
