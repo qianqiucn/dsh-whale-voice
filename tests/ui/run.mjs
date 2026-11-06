@@ -2578,9 +2578,10 @@ await check('plan09 real Coordinator accepts the existing/custom provider mappin
 })
 
 await check('no console errors or failed resources', async () => {
-  // The single expected console entry is the disabled-generation scene: its deliberate request to the
-  // real Host route returns the 503 `generation_not_enabled` that the page must surface. All other
-  // scenes must stay clean.
+  // The single expected console entry is the disabled-generation scene: the 503 comes from the
+  // isolated harness shortcut (`tests/ui/host-generation-assembly.mjs` answers 503 when it is told
+  // generation is off), not from an end-to-end real Host route; the page must still surface it. All
+  // other scenes must stay clean.
   const expectedDisabled503 = (item) => (item.scene === '?bridge=normal&generation=off' || item.scene === '?bridge=normal&generation=failed')
     && item.type === 'error'
     && /Failed to load resource: the server responded with a status of 503/.test(item.text)

@@ -2,7 +2,9 @@
  *
  * This module is the *internal wiring candidate* between an already-audited provider (the existing
  * Qwen adapter/supervisor contract) and the existing Artifact authority. It deliberately does **not**
- * run a model, spawn a process, open a window, touch WeChat, or expose a production Host route.
+ * run a model, spawn a process, open a window, touch WeChat, or open a Host route itself. Upper
+ * layers call it: `index.js` (136) installs the Host routes over the Core app, and the original
+ * task's SAVED entry is written through the injected task owner (`saveArtifact`, 132).
  *
  * Scope of this unit (and its honest limits):
  *   - a durable, versioned **provider-generation claim ledger** in the same trusted sandbox;
@@ -15,10 +17,12 @@
  *   - cancel, late results, unconfirmed exit and partial saves are recorded as separate facts; a
  *     SAVE_UNKNOWN tombstone is never repaired by a second synthesis, and SAVED never implies delivery.
  *
- * Not in this unit: writing a SAVED entry into the Plan 08 owner snapshot (owner schema v1/v2 has no
- * provider entry kind) and any Host/UI route. Those stay explicitly outside until an authorized
- * owner-schema extension is designed; the claim record keeps the task birth identity hash and the
- * artifact digest so that extension can bind to it without re-synthesis.
+ * Not in this module: opening a Host/UI route or writing the owner snapshot itself. `index.js` (136)
+ * and the pages (137) own the Host/UI wiring, and the original task's SAVED entry is written by the
+ * injected task owner through `saveArtifact` (132) on the existing owner v2 record with SaveProof —
+ * no owner-schema extension is needed. The claim record keeps the task birth identity hash and the
+ * artifact digest so that save binds to it without re-synthesis. STORED/claim SAVED never implies
+ * delivery.
  */
 
 import { createHash, randomBytes } from 'node:crypto'

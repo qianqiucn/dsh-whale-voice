@@ -14,8 +14,11 @@
  * The scope/rights contract here is a Fixture declaration inside a trusted capability. It is not
  * user authentication, not real rights verification, not a Host authorization and not a Task
  * binding: a STORED entry is either `origin: FIXTURE_IMPORT` for a Fixture import or
- * `origin: PROVIDER_GENERATION_FIXTURE` for a Provider generation record (138); neither is a Task
- * SAVED result, a registered Fake output reference or a real generation/send proof.
+ * `origin: PROVIDER_GENERATION_FIXTURE` for a Provider generation record (138). STORED alone is not
+ * a Task SAVED result; for a Provider record the original task owner separately records that same
+ * Artifact as SAVED through `saveArtifact` (132, owner v2 + SaveProof), while a Fixture import is
+ * not a task result. Neither origin is a registered Fake output reference, a real generation proof
+ * or a delivery proof.
  */
 
 import crypto from 'node:crypto'

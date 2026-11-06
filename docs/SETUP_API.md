@@ -1,12 +1,12 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes and is `INTEGRATED` after real DSH Host/GUI acceptance. No production write route exists. Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests. TTS-A adds a provider-neutral design only; the `tts` shape here remains the Qwen reference path.
-**Scope:** first-run setup, read-only component status, and future controlled installation.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes and is `INTEGRATED` after real DSH Host/GUI acceptance. The settings-draft routes (generation-storage and qwen-runtime `GET`/`PUT`/`POST …/apply`) and the generation routes listed in §0 exist and are wired; they write only the isolated settings-draft files under a configured draft root and never production config. All generation/result/download evidence is `OFFLINE / ISOLATED` (Fixture worker, no real model). Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests. TTS-A adds a provider-neutral design only; the `tts` shape here remains the Qwen reference path.
+**Scope:** first-run setup, read-only component status, isolated settings drafts and the isolated generation call surface; future controlled installation remains out of scope.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
 configuration directly. All real operations must go through Whale Voice Core.
 
-## 0. Implemented read-only endpoints
+## 0. Implemented endpoints
 
 The DSH Host row (`index.js`) registers these same-origin, token-protected loopback endpoints:
 
@@ -22,17 +22,31 @@ GET /whale-voice/setup/capabilities/status
 GET  /whale-voice/setup/generation/catalog
 POST /whale-voice/setup/generation
 GET  /whale-voice/setup/generation/status?taskId=...
+GET  /whale-voice/setup/generation/results
+GET  /whale-voice/setup/generation/download?taskId=...
+GET  /whale-voice/setup/generation/assembly
+GET  /whale-voice/setup/settings/generation-storage
+PUT  /whale-voice/setup/settings/generation-storage
+POST /whale-voice/setup/settings/generation-storage/apply
+GET  /whale-voice/setup/settings/qwen-runtime
+PUT  /whale-voice/setup/settings/qwen-runtime
+POST /whale-voice/setup/settings/qwen-runtime/apply
 ```
 
 The generation routes are the formal Host call surface for the 135 Core entry
 (`core/preset-generation-app.mjs`, `OFFLINE / ISOLATED`). They use the same loopback/Origin/
 connection/token guard; only `/generation` accepts `POST` (JSON `{text, voiceId, language}`), the
-catalog/status routes stay GET-only. The handler runs the generation runtime only when the isolated
-Host assembly supplies an already-opened `openPresetGenerationApp` value as `installHostBridge(...,
-{generation})`; without it every generation route returns `503 {ok:false,error:'generation_not_enabled'}`
-and nothing is generated. The production `apply()` does not configure a runtime, so the installed host
-cannot generate. Responses carry the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, or an
-`ok:false` code); they are isolated Fixture results, not real-model output. No new listener and no
+catalog/status/results/download/assembly routes stay GET-only, and the settings draft routes accept
+only their declared `GET`/`PUT`/`POST` methods. The handler runs the generation runtime only when the
+formal assembly supplies an already-opened `openPresetGenerationApp` value as
+`installHostBridge(..., {generation})` — the formal plugin `apply()` does that when the serializable
+config has `generation.enabled === true`; without it every generation route returns
+`503 {ok:false,error:'generation_not_enabled'}` and nothing is generated. `/generation/assembly`
+reports the real state (`READY` / `DISABLED` / `FAILED` with `code`/`messageZh`) and needs no
+generation object. The settings draft routes write only the isolated draft/applied files under the
+configured draft root (`503` without that store); a `PUT`/`POST` never writes production config.
+Responses carry the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, or an `ok:false` code);
+generation results are isolated Fixture results, not real-model output. No new listener and no
 authentication change.
 
 The host injects `window.__WHALE_SETUP__` with a per-process token kept in a closure. The route
@@ -71,6 +85,15 @@ window.__WHALE_SETUP__ = {
   getGenerationCatalog(): Promise<GenerationCatalog>,
   generatePreset({text, voiceId, language}): Promise<GenerationResult>,
   getGenerationStatus(taskId): Promise<GenerationStatus>,
+  getGenerationResults(): Promise<GenerationResults>,
+  downloadGenerationResult(taskId): Promise<GenerationDownload>,
+  getGenerationAssemblyStatus(): Promise<GenerationAssembly>,
+  getGenerationStorageDraft(): Promise<SettingsDraftPayload>,
+  saveGenerationStorageDraft({generationStorageRoot}): Promise<SettingsDraftPayload>,
+  applyGenerationStorageDraft(): Promise<SettingsDraftPayload>,
+  getQwenRuntimeDraft(): Promise<RuntimeDraftPayload>,
+  saveQwenRuntimeDraft({modelDirectory, pythonPath}): Promise<RuntimeDraftPayload>,
+  applyQwenRuntimeDraft(): Promise<RuntimeDraftPayload>,
   detect(component): Promise<ComponentStatus>
 }
 ```
@@ -82,16 +105,27 @@ maps and never enable a write control.
 The generation methods call the 136 Host routes with the same per-process token and same-origin
 rules. `generatePreset` posts `{text, voiceId, language}` to `/whale-voice/setup/generation` and
 returns the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, …); `getGenerationStatus(taskId)`
-queries the returned task. When no runtime is configured the Host answers
-`503 {ok:false,error:'generation_not_enabled'}`, and the bridge returns that JSON envelope rather than
-throwing, so the page can show "生成未启用". The 音色中心 page uses these methods, queries the
-returned Task ID, and remembers that ID locally so a reload re-queries the same saved result; the
-results remain `OFFLINE / ISOLATED` Fixture output, not real-model generation.
+queries the returned task; `getGenerationResults()` lists the saved results of the current storage
+location; `downloadGenerationResult(taskId)` returns the saved WAV bytes as a blob for the original
+task; `getGenerationAssemblyStatus()` reports `READY` / `DISABLED` / `FAILED` with the real reason.
+When no runtime is configured the Host answers `503 {ok:false,error:'generation_not_enabled'}`, and the
+bridge returns that JSON envelope rather than throwing, so the page can show "生成未启用". The
+音色中心 page uses these methods, queries the returned Task ID, and remembers that ID locally so a
+reload re-queries the same saved result; the results remain `OFFLINE / ISOLATED` Fixture output, not
+real-model generation.
+
+The settings-draft methods call the draft/applied routes in §0. `saveGenerationStorageDraft` /
+`saveQwenRuntimeDraft` only write the isolated draft files; `applyGenerationStorageDraft` /
+`applyQwenRuntimeDraft` record the applied fact used on the next plugin open — they do not switch the
+current runtime, start a Worker/model or write production config. Their payloads carry `applied` /
+`appliedError` where applicable.
 
 The frontend uses `getStatus()`; `detect()` is available for the future per-component action. If the
 bridge is absent, invalid, slow or returns the wrong schema, the wizard shows a failure state and
-does not claim completion. Write methods remain future work behind authentication and request
-validation.
+does not claim completion. The settings-draft saves above are the only write methods that exist
+today; they write only the isolated draft/applied files under the configured draft root and keep the
+same per-process token/same-origin guard. Other write methods (installation, production
+configuration) remain future work behind authentication and request validation.
 
 ### SetupStatus shape (v0)
 
