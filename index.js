@@ -539,6 +539,8 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
  * 154/164: one page-visible reason for the real failure; it never claims generation works, and it only
  * names the reason that is actually known. 164: when no settings draft entry exists, the guidance must
  * not ask the user to save/apply on a page that cannot do it — that fix belongs to the deployment config.
+ * 167: the same holds for a deployment field the settings page cannot apply (e.g. `scopeId`), which also
+ * keeps its known detail instead of falling back to the generic repair text.
  */
 function generationFailure(outcome, hasDrafts) {
   const repair = hasDrafts
@@ -576,10 +578,13 @@ function generationFailure(outcome, hasDrafts) {
       messageZh: '生成运行对象未能启动：Qwen Worker 未能启动（' + outcome.detail + '）。请检查 Qwen 运行路径与模型目录；' + repair,
     }
   }
+  // 167/U02: a deployment field (for example `scopeId`) is not one of the paths the settings page
+  // can apply, so the generic answer keeps the known detail and never sends the user to that page to
+  // save/apply it there.
   return {
     state: 'FAILED',
     code: outcome.code,
-    messageZh: '生成运行对象未能启动（' + outcome.reason + '）。请检查部署的生成配置；' + repair,
+    messageZh: '生成运行对象未能启动（' + outcome.reason + '，' + outcome.detail + '）。请检查部署的生成配置；这项配置只能在部署配置中修正，保存或应用页面设置不会解决，修正后重新打开插件生效。',
   }
 }
 

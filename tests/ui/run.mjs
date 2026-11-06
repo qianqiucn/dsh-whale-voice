@@ -589,6 +589,13 @@ await check('studio waits for the assembly state and then names the real failure
       await notice.waitFor({ timeout: 5000 })
       const block = page.locator('[data-testid="studio-generation-assembly-error"]')
       await block.waitFor({ timeout: 5000 })
+      // 167/U02: the page head and the generation card name the same state, and the disabled generate
+      // button explains the startup failure instead of claiming generation is not enabled.
+      assert.equal(await page.locator('.wv-pagehead-actions .wv-badge').first().innerText(), '启动失败')
+      assert.equal(await page.locator('.wv-preview .wv-card-title .wv-badge').first().innerText(), '启动失败')
+      const generateButton = page.getByRole('button', { name: /生成并保存/ })
+      assert.equal(await generateButton.getAttribute('title'), '启动失败：生成不可用')
+      assert.doesNotMatch(await page.locator('body').innerText(), /生成未启用/)
       const blockText = await block.innerText()
       assert.match(blockText, /生成未能启动/)
       assert.match(blockText, /生成数据保存位置无法读取/)
