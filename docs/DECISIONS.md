@@ -1109,3 +1109,30 @@ path reuses the existing SAVED transaction and `SaveProof`, and open/reopen both
 `NOT_INTEGRATED`; no real model, Host/UI, delivery or WeChat path.
 
 **Related:** [PROVIDER_GENERATION_OFFLINE.md](PROVIDER_GENERATION_OFFLINE.md), [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## ADR-037 — A saved Provider generation result needs an independent confirmation permit before Relay delivery
+
+**Status:** accepted for the OFFLINE unit (`IN PROGRESS`, 2026-11-06, 177).
+**Related:** ADR-001, ADR-024–ADR-036, [UNIFIED_RELAY_OFFLINE.md](UNIFIED_RELAY_OFFLINE.md).
+
+**Decision:** the saved Provider generation task keeps `deliveryRequested:false` (the task contract refuses
+a per-task delivery intent for it), and the unified relay treats that saved record as a save, not a delivery
+permission. A delivery from this source requires a separately persisted confirmation through the existing
+`issueDeliveryPermit({permit})` boundary, bound to the same scope/task/artifact/target/rights proof and
+recorded as `authorityKind:PROVIDER_OWNER_SAVED_V2`; `ensureDelivery` requires that permit
+(`PERMIT_REQUIRED` otherwise), keeps the original taskId and the existing deliveryId/issuance/state model,
+and re-reads the persisted task/artifact/target on every ensure and again before the backend accept. The
+confined rule is exactly the saved `provider-generation` / `PROVIDER_TTS` pair; every other saved task
+without the persisted intent (for example a Voice task saved `deliveryRequested:false`) stays
+non-deliverable. The recorded 24 h artifact value of a retained Provider result is not a delivery deadline
+(155 already retains those results), while Fixture and Cover sources keep their real expiry.
+
+**Reason:** the Provider pipeline deliberately cannot express a per-task delivery intent, and turns "the
+bytes were saved" into "the user confirmed this saved result for this target" only through an explicit,
+persisted, idempotent confirmation. Reusing the Cover permit relation avoids a second confirmation record
+type, a second task/artifact store and a new delivery state model.
+
+**Rejected alternatives:** flipping a saved record's `deliveryRequested` in place (would rewrite a frozen
+persisted fact), a caller-supplied confirmation boolean or task record (not an authority), a new per-source
+permit store, and treating the recorded 24 h value as a delivery expiry (it is a retention value that 155
+already retired for this origin).

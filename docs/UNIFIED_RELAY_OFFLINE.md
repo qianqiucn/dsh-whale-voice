@@ -1,13 +1,14 @@
 # Whale Relay Core · Plan 13-A / OFFLINE
 
-**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-03, 112 revision).
+**Status:** `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED` (2026-11-06, 177 revision).
 This is the first offline owner of delivery persistence for the ADR-001 unified
 `Whale Audio Core → Whale Relay Core → supported target` boundary. It consumes a *persisted* SAVED Audio
-Task (or a persisted SAVED Cover MASTER), reads the real Fixture Artifact bytes through the existing
-Artifact library under the same scope/rights, and resolves the target from a trusted target directory; it
-does **not** trust caller-supplied task records, artifact metadata, hashes, rights booleans or target
-booleans. It does **not** import or start the Windows Sender, open a socket, resolve a real chat, record
-audio, play media or send to WeChat. The whole Plan13-A, 13-B, 13-C and real Plan14 remain OPEN.
+Task (or a persisted SAVED Cover MASTER, or a saved Provider generation result), reads the real Fixture
+Artifact bytes through the existing Artifact library under the same scope/rights, and resolves the target
+from a trusted target directory; it does **not** trust caller-supplied task records, artifact metadata,
+hashes, rights booleans or target booleans. It does **not** import or start the Windows Sender, open a
+socket, resolve a real chat, record audio, play media or send to WeChat. The whole Plan13-A, 13-B, 13-C
+and real Plan14 remain OPEN.
 
 Related: ADR-001 (local architecture record, versioned outside this repository), ADR-024/ADR-025
 ([DECISIONS.md](DECISIONS.md)), [ARCHITECTURE.md](ARCHITECTURE.md),
@@ -37,9 +38,11 @@ Every other key is refused; a caller-supplied `taskRecord` is refused with `deta
 reference the relay re-reads the persisted SAVED relation itself:
 
 - **AudioTask owner store (v2):** `get()` must report owner state `SAVED`; `artifactStatus()` at the current
-  time must be `READABLE` with the same `artifactRef`; the persisted record must carry
-  `deliveryRequested: true`. The artifact hash/byte length/duration/format still come from the actual WAV
-  bytes returned by the Artifact library, never from caller metadata.
+  time must be `READABLE` with the same `artifactRef`. The artifact hash/byte length/duration/format still
+  come from the actual WAV bytes returned by the Artifact library, never from caller metadata. A task whose
+  persisted record carries `deliveryRequested: true` (Voice) is delivered directly; the saved
+  `provider-generation` / `PROVIDER_TTS` task never carries that intent (the task contract refuses it) and
+  needs the confirmation permit below.
 - **Cover owner store (v3):** `coverStatus()` must be `SAVED` with a MASTER whose `artifactRef` (and
   `sha256`) is the requested one. The frozen Cover record keeps `deliveryRequested:false` forever and is
   **never edited**; a SAVED MASTER is a save, not a delivery permission.
@@ -55,6 +58,20 @@ it (or with a fabricated/mismatched/expired one) the result is `RELAY_CORE_PERMI
 is created. The delivery's issuance records `authorizedBy:"PERSISTED_COVER_DELIVERY_PERMIT"` and the
 `permitId`; a Voice task keeps its persisted `deliveryRequested:true` intent
 (`PERSISTED_TASK_DELIVERY_INTENT`) and must not carry a permit (`permitId` is refused).
+
+**Provider confirmation permit (177).** A saved Provider generation result is a save, not a delivery
+permission: the provider task contract refuses `deliveryRequested:true`, so `readTrustedTaskAuthority`
+reports the persisted source as `PROVIDER_OWNER_SAVED_V2` with `permitRequired:true`, and only for the saved
+`provider-generation` / `PROVIDER_TTS` pair — every other saved task without the persisted intent (for
+example a Voice task saved `deliveryRequested:false`) stays non-deliverable. The same
+`issueDeliveryPermit({permit})` boundary persists the confirmation bound to the same
+scope/task/artifact/target/rights (idempotent `ISSUED`/`EXISTING`, bounded capacity,
+`authorityKind:"PROVIDER_OWNER_SAVED_V2"`); `ensureDelivery` for it requires `permitId`, checks the permit
+key, task identity and expiry, keeps the original taskId and the deliveryId/issuance/state model, and
+records `authorizedBy:"PERSISTED_PROVIDER_DELIVERY_PERMIT"`. The frozen saved record is never edited. A
+retained `PROVIDER_GENERATION_FIXTURE` artifact is not refused by its recorded 24 h value at issue, ensure
+or accept (155 already retains those bytes), so a still-readable result older than that value can still be
+confirmed and delivered; Fixture-import and Cover sources keep their exact expiry boundary.
 
 `readTrustedTaskAuthority` returns a stable `taskIdentityHash` for the exact
 `(authority kind, scope, task, artifact, expiry/MASTER hash)` relation. On success the delivery persists a
@@ -110,7 +127,9 @@ first resolves to. Capacity fails closed. Normal handles have no `reset` API, so
 - The accept boundary then samples the trusted clock *again* after the last awaited artifact read and
   requires `rightsExpiresAt`/`expiresAt` to still be in the future. A clock crossing that happens inside the
   final read (the reported residual window) therefore also produces zero backend submit; a normal,
-  unexpired chain stays usable.
+  unexpired chain stays usable. The retained Provider source (177) is the one documented exception: its
+  recorded 24 h value is a retention value, not a delivery deadline, so it is not used as an accept limit;
+  a deleted artifact, a revoked rights proof or a revoked target still fails before the Fake accept.
 - A successful Fake acceptance becomes `ACCEPTED` (not `SENT_LOCAL`); duplicate submit returns `EXISTING`.
 - A backend throw/unknown after submit becomes `UNKNOWN`; a later submit returns `UNKNOWN_NO_RESEND`.
   No automatic retry, backend switch, id switch or text fallback.
@@ -169,7 +188,7 @@ missing, extra, duplicated or mismatched entry is treated as a corrupt store: `o
 `STORE_INVALID`, the file is never repaired, re-minted or treated as a fresh store, and no second delivery
 can be created for an already accepted request.
 
-Four offline relay files cover the unit (35 tests), and the internal Windows delivery module
+Five offline relay files cover the unit (42 tests), and the internal Windows delivery module
 (13-B, 144 revision) is covered by its own two offline files (`test/internal-sender-offline.test.mjs`
 29 + `test/legacy-text-delivery-offline.test.mjs` 8) documented in
 [INTERNAL_SENDER_OFFLINE.md](INTERNAL_SENDER_OFFLINE.md); the legacy text facade uses this same
@@ -193,6 +212,19 @@ a clock crossing queued inside the *final* awaited artifact read is caught by th
 closed bridge/worker, wrong kind, wrong backend binding, mismatched caller id) all reject with
 `targetChecks > 0`; a full Core chain with a revoked Worker directory and a handed-over resolver still fails
 closed; a fully trusted directory entry still accepts.
+
+`test/relay-provider-confirm-offline.test.mjs` (7, 177): every positive case starts from a real saved
+Provider generation result written by the existing generation/save chain in a temporary sandbox. It covers:
+the saved result alone is not a delivery permission (`PERMIT_REQUIRED`, the frozen record still says
+`deliveryRequested:false`, no store file written); `issueDeliveryPermit` → `ISSUED`/`EXISTING` → one
+`CREATED` delivery whose taskId/artifactRef are the original ones, `QUEUED` before submit, then `ACCEPTED`
+with a Fake receipt, the stored `PERSISTED_PROVIDER_DELIVERY_PERMIT`, no second task and no second backend
+request for a duplicate submit, a request-key alias or a reopened store; a confirmation bound to its own
+task/target/rights (another task, another target, a revoked target and a revoked rights proof all refused);
+a caller-supplied record refused and a deleted saved result reported as `TASK_NOT_SAVED`; a still-readable
+result older than the recorded 24 h value confirmed and accepted while a Fixture-import artifact beyond its
+own expiry is refused; bounded permit and delivery capacity failing closed without a phantom record; and an
+unknown backend result staying `UNKNOWN` with `UNKNOWN_NO_RESEND` on retry.
 
 `test/relay-persist-offline.test.mjs` (12, 137-PERSIST-01/02 plus the retention/enumeration close-out): an existing digest can never hijack another
 content's request key and the binding stays unchanged; a fresh alias becomes immutable; a normal concurrent
@@ -218,8 +250,8 @@ publish (the window the 0140/0141 review named): C publishes first, A's old snap
 `test/support/relay-lease-worker.mjs` is the process worker; the interleavings are arranged with real child
 processes and file markers, never by editing a relay record.
 
-Local: **1144 tests / 1140 pass / 4 platform skips / 0 fail**, UI **72/72**, `client.js` 314,687 chars
-(build unchanged by the Core-only revision).
+Local: **1208 tests / 1204 pass / 4 platform skips / 0 fail**, UI **89/89**, `client.js` 383,622 chars
+(build unchanged by this Core-only revision).
 All tests use synthetic WAV bytes in a temporary Fixture library, temporary sandboxes and the Fake backend; no
 real audio/network/device/WeChat.
 

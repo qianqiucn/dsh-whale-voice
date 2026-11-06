@@ -12,9 +12,9 @@
  *     the Fake backend is asked to accept.
  *   - deliveryId is minted here once and persisted with the task/artifact/target/request digest,
  *     plus a versioned issuance (`intentId` + authority facts) that records which persisted SAVED
- *     relation authorized this delivery. The Cover record freezes `deliveryRequested:false`; for it
- *     the persisted issuance is the versioned authorized handoff, and the frozen record is never
- *     edited.
+ *     relation authorized this delivery. The Cover record and the saved Provider generation record
+ *     freeze `deliveryRequested:false`; for them a persisted confirmation permit is the versioned
+ *     authorized handoff, and the frozen record is never edited.
  *   - backendRequestId is an internal 8-64 [A-Za-z0-9_-] compatibility key; it is never a second
  *     global task id and never derived by truncating a colon id.
  *   - one persistent store, one in-process queue and one token-owned file lock serialize writes.
@@ -29,6 +29,8 @@ import path from 'node:path'
 import { openFixtureArtifactLibrary } from './artifact-library.mjs'
 import { coverStatus } from './cover-executor-internal.mjs'
 import { samplesFromWav } from './cover-stage-bytes-internal.mjs'
+import { PROVIDER_GENERATION_ARTIFACT_ORIGIN } from './fixture-artifact-store-internal.mjs'
+import { AUDIO_TASK_FEATURES, AUDIO_TASK_TYPES } from './task-contract.mjs'
 import { openFixtureTaskOwner } from './task-owner.mjs'
 
 export const RELAY_CORE_SCHEMA_VERSION = 1
@@ -83,6 +85,11 @@ const HANDOFF_KEYS = Object.freeze([...HANDOFF_REQUIRED_KEYS, 'permitId'])
 const PERMIT_KEYS = Object.freeze(['schemaVersion', 'scopeId', 'taskId', 'artifactRef', 'targetId', 'rights'])
 const RIGHTS_KEYS = Object.freeze(['state', 'proofRef'])
 const RELAY_STATE_VALUES = Object.freeze(new Set(Object.values(RELAY_STATES)))
+/* The two persisted sources whose frozen record carries no delivery intent: each delivery from them
+ * needs a separately persisted confirmation permit (177 adds the saved Provider generation task). */
+const COVER_AUTHORITY_KIND = 'COVER_OWNER_SAVED_V3'
+const PROVIDER_AUTHORITY_KIND = 'PROVIDER_OWNER_SAVED_V2'
+const PERMIT_AUTHORITY_KINDS = Object.freeze(new Set([COVER_AUTHORITY_KIND, PROVIDER_AUTHORITY_KIND]))
 
 function fail(code, detail = null) {
   return detail ? { ok: false, code, detail } : { ok: false, code }
@@ -340,7 +347,7 @@ function validateStoreState(store) {
     if (permit.targetKind !== 'PRIVATE' && permit.targetKind !== 'GROUP') return false
     if (typeof permit.rightsProofRef !== 'string' || typeof permit.rightsExpiresAt !== 'string') return false
     if (!isIsoText(permit.rightsExpiresAt)) return false
-    if (permit.authorityKind !== 'COVER_OWNER_SAVED_V3') return false
+    if (!PERMIT_AUTHORITY_KINDS.has(permit.authorityKind)) return false
     if (typeof permit.taskIdentityHash !== 'string' || !SHA256.test(permit.taskIdentityHash)) return false
     if (typeof permit.issuedAt !== 'string' || !isIsoText(permit.issuedAt)) return false
     if (store.byPermitKey[permit.permitKey] !== permit.permitId) return false
@@ -703,8 +710,8 @@ export function createFakeDeliveryBackend({ id = 'fake-relay', targets = [], cap
 
 /**
  * Re-read the persisted AudioTask/Cover authority for exactly this scope/task/artifact relation.
- * Returns `{ok:true, value:{kind, taskIdentityHash, deliveryRequested, expiresAt}}` or a `fail()`.
- * A JSON record supplied by the caller can never construct this value.
+ * Returns `{ok:true, value:{kind, taskIdentityHash, deliveryRequested, expiresAt, permitRequired}}`
+ * or a `fail()`. A JSON record supplied by the caller can never construct this value.
  */
 async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef, rights, at }) {
   let owner = null
@@ -716,7 +723,14 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
       const task = found.value && found.value.task ? found.value.task : null
       if (!task || task.taskId !== taskId) return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'task authority')
       if (found.value.ownerState !== 'SAVED' || task.state !== 'SAVED') return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'task state')
-      if (task.deliveryRequested !== true) return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'delivery intent')
+      // 177: a saved Provider generation task never records a delivery intent (the task contract
+      // refuses one). Such a result becomes deliverable only through a separate persisted
+      // confirmation permit; every other saved task without the persisted intent stays non-deliverable.
+      const providerSaved = task.deliveryRequested !== true
+      if (providerSaved &&
+          (task.feature !== AUDIO_TASK_FEATURES.PROVIDER_GENERATION || task.taskType !== AUDIO_TASK_TYPES.PROVIDER_TTS)) {
+        return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'delivery intent')
+      }
       let status = null
       try {
         status = await owner.value.artifactStatus({ schemaVersion: 1, scopeId, taskId, now: at, rights })
@@ -725,6 +739,23 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
         return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'artifact authority')
       }
       if (status.value.artifactRef !== artifactRef) return fail(RELAY_ERRORS.TASK_NOT_SAVED, 'artifact authority')
+      if (providerSaved) {
+        return {
+          ok: true,
+          value: {
+            kind: PROVIDER_AUTHORITY_KIND,
+            permitRequired: true,
+            deliveryRequested: false,
+            ownerState: 'SAVED',
+            masterSha256: null,
+            expiresAt: status.value.expiresAt,
+            taskIdentityHash: sha256([
+              PROVIDER_AUTHORITY_KIND, scopeId, taskId, artifactRef, status.value.expiresAt,
+              task.feature, task.taskType,
+            ].join('|')),
+          },
+        }
+      }
       return {
         ok: true,
         value: {
@@ -753,14 +784,14 @@ async function readTrustedTaskAuthority({ sandbox, scopeId, taskId, artifactRef,
   return {
     ok: true,
     value: {
-      kind: 'COVER_OWNER_SAVED_V3',
+      kind: COVER_AUTHORITY_KIND,
       permitRequired: true,
       deliveryRequested: false,
       ownerState: 'SAVED',
       masterSha256: status.value.master.sha256,
       expiresAt: status.value.master.expiresAt,
       taskIdentityHash: sha256([
-        'COVER_OWNER_SAVED_V3', scopeId, taskId, artifactRef,
+        COVER_AUTHORITY_KIND, scopeId, taskId, artifactRef,
         status.value.master.sha256, status.value.master.byteLength, status.value.intentHash || '',
       ].join('|')),
     },
@@ -882,7 +913,10 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
     // last read cannot be hidden by the timestamp taken before the await.
     const checkedAt = nowIso(now)
     const expiresAt = read.value.artifact.expiresAt
-    if (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(checkedAt)) {
+    // 155/177: a saved Provider generation result is retained beyond its recorded 24 h value, so that
+    // value is not a delivery limit for it; the other sources keep their real expiry.
+    const retained = read.value.artifact.origin === PROVIDER_GENERATION_ARTIFACT_ORIGIN
+    if (!retained && (typeof expiresAt !== 'string' || Date.parse(expiresAt) <= Date.parse(checkedAt))) {
       return fail(RELAY_ERRORS.ARTIFACT_UNAVAILABLE, 'expired')
     }
     const artifactSha256 = crypto.createHash('sha256').update(bytes).digest('hex')
@@ -893,6 +927,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         byteLength: bytes.length,
         durationMs: Math.max(1, Math.round((parsed.frameCount / parsed.sampleRate) * 1000)),
         expiresAt,
+        retained,
         at,
         checkedAt,
       },
@@ -931,9 +966,10 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         sandbox, scopeId: permit.scopeId, taskId: permit.taskId, artifactRef: permit.artifactRef, rights, at,
       })
       if (!authority || authority.ok !== true) return authority
-      // Only the frozen Cover save needs a separate source permit; the Voice path keeps its persisted
-      // deliveryRequested:true intent and is deliberately not routed through this API.
-      if (authority.value.kind !== 'COVER_OWNER_SAVED_V3' || authority.value.permitRequired !== true) {
+      // 177: the two frozen sources (Cover save, saved Provider generation result) need this separate
+      // confirmation permit; the Voice path keeps its persisted deliveryRequested:true intent and is
+      // deliberately not routed through this API.
+      if (authority.value.permitRequired !== true || !PERMIT_AUTHORITY_KINDS.has(authority.value.kind)) {
         return fail(RELAY_ERRORS.INPUT_INVALID, 'authority')
       }
       const fresh = await readFreshArtifact({ scopeId: permit.scopeId, artifactRef: permit.artifactRef, proofRef: rights.proofRef })
@@ -1054,7 +1090,7 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
           if (permitRecord.taskIdentityHash !== authority.value.taskIdentityHash) {
             return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit authority changed') }
           }
-          if (!(Date.parse(permitRecord.rightsExpiresAt) > Date.parse(at))) {
+          if (!fresh.value.retained && !(Date.parse(permitRecord.rightsExpiresAt) > Date.parse(at))) {
             return { value: fail(RELAY_ERRORS.PERMIT_REQUIRED, 'permit expired') }
           }
         }
@@ -1099,7 +1135,11 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
             kind: authority.value.kind,
             taskIdentityHash: authority.value.taskIdentityHash,
             deliveryRequested: authority.value.deliveryRequested,
-            authorizedBy: permitRequired ? 'PERSISTED_COVER_DELIVERY_PERMIT' : 'PERSISTED_TASK_DELIVERY_INTENT',
+            authorizedBy: permitRequired
+              ? (authority.value.kind === COVER_AUTHORITY_KIND
+                ? 'PERSISTED_COVER_DELIVERY_PERMIT'
+                : 'PERSISTED_PROVIDER_DELIVERY_PERMIT')
+              : 'PERSISTED_TASK_DELIVERY_INTENT',
             permitId: permitRequired ? handoff.permitId : null,
             issuedAt: at,
           },
@@ -1184,11 +1224,13 @@ export async function openUnifiedRelay({ sandbox, backend, targets = [], now = (
         }
         // The accept-time clock is sampled after every await (including the last artifact read), so a
         // crossing that happened during that final read cannot be hidden by an earlier timestamp.
+        // 177: a retained Provider generation result has no real retention deadline, so its recorded
+        // value is not an accept limit; the other sources keep the exact-boundary refusal.
         const acceptAt = nowIso(now)
-        if (!(Date.parse(record.rightsExpiresAt) > Date.parse(acceptAt))) {
+        if (!artifactNow.value.retained && !(Date.parse(record.rightsExpiresAt) > Date.parse(acceptAt))) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'rights/artifact expired at accept' })
         }
-        if (!(Date.parse(artifactNow.value.expiresAt) > Date.parse(acceptAt))) {
+        if (!artifactNow.value.retained && !(Date.parse(artifactNow.value.expiresAt) > Date.parse(acceptAt))) {
           return await finalize(deliveryId, token, RELAY_STATES.FAILED, { code: RELAY_ERRORS.ARTIFACT_UNAVAILABLE, detail: 'artifact expired at accept' })
         }
         if (record.permitId && (!record.intent || record.intent.permitId !== record.permitId)) {
