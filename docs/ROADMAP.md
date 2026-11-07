@@ -791,3 +791,11 @@ tests, 1 UI scene (wizard + component manager + invalid-install 400); full suite
 platform skips/0 fail; UI 90/90; `client.js` rebuilt 389,493 bytes. Still `OFFLINE` / `FIXTURE_ONLY`:
 no real WeChatAgent/process/health/model/device/WeChat was run; real-environment testing is the later
 集中 test phase.
+
+182 v1.1 (2026-11-07): a lost adoption reply no longer claims "nothing was saved". When the Host had
+persisted the location but the POST reply was lost (timeout/reset/reply-body abort), the bridge answers
+`adoption_unconfirmed`; the panel shows 结果未确认 and a 重新检测当前状态 action, and a fresh status read
+replaces the stale banner with the saved/effective/source facts without re-submitting. Explicit Core
+rejections keep their Chinese reasons; the rest of 182 is unchanged. Evidence: 1 bridge VM test + the
+182 UI lost-reply page; full suite 1234/1230 pass/4 platform skips/0 fail; UI 90/90; `client.js`
+rebuilt 391,133 bytes. Still OFFLINE / FIXTURE_ONLY.

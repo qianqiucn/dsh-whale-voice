@@ -372,7 +372,8 @@
       }
     }
     return {
-      getStatus: async () => status,
+      // A fresh object per read, like the production bridge parsing an HTTP JSON reply.
+      getStatus: async () => JSON.parse(JSON.stringify(status)),
       getConfig: async () => config,
       getConfigSources: async () => ({ sources }),
       getConfigStatus: async () => status.configStatus,
@@ -458,7 +459,9 @@
     // is reflected in the harness status, so the wizard and the component manager read the same
     // saved/effective/source facts after a refresh (the real Host does that from core.json).
     const hostAdoptToken = tokens.get('adoptToken') || ''
+    const adoptMode = tokens.get('adopt')
     fakeBridge.adoptWechatAgent = async (request) => {
+      window.__WHALE_ADOPT_CALLS__ = (window.__WHALE_ADOPT_CALLS__ || []).concat([request])
       const answer = await hostFetch(hostAdoptToken, '/whale-voice/setup/wechatagent/adopt', {
         method: 'POST',
         body: JSON.stringify(request || {}),
@@ -478,6 +481,8 @@
         }
         status.wechatAgent.installed = true
       }
+      // 182 v1.1: the Host persisted the location, but the reply never reaches the page.
+      if (adoptMode === 'lost') return { ok: false, error: 'adoption_unconfirmed' }
       return answer
     }
     // 160: the two real failure forms of the production client. A network failure or timeout makes

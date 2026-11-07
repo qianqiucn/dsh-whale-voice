@@ -1104,3 +1104,24 @@ manager, and the invalid-install failure with the real 400 surfaced). Full suite
 (389,493 bytes). Status: `OFFLINE` / `FIXTURE_ONLY` — no real WeChatAgent process, login, health,
 model, device or WeChat run; real-environment testing is the later集中 test phase, and adopting does not
 complete the whole wizard or the WeChatAgent connection.
+
+### Plan 14 · 182 v1.1 — a lost adoption reply stays unconfirmed (2026-11-07)
+
+Same branch/PR #109, correction only. The 0224 review reproduced one defect in the new adoption
+boundary: the Host had already written the location, but the POST reply was lost (timeout or connection
+reset), while the page said 「本次没有保存任何内容／没有保存」.
+
+- **Fix.** The injected bridge now maps abort/network failures (including a timeout while reading the
+  reply body) to `adoption_unconfirmed`. The panel shows 「结果未确认」 — explicitly neither saved nor
+  not-saved — and offers 「重新检测当前状态」; a fresh successful status read replaces the stale
+  unconfirmed banner with the persisted saved/effective/source facts. Nothing is re-submitted
+  automatically.
+- **Kept.** Explicit Core rejections (invalid directory, unwritable config) keep their Chinese reasons;
+  the normal save, environment precedence, data-location and detection distinctions are unchanged, and
+  saving a location still does not mean WeChatAgent is installed/connected or lift send permission.
+
+Evidence: 1 new bridge VM regression (lost reply → `adoption_unconfirmed`, explicit 400 preserved,
+reply-body abort) and the 182 UI scene gained a lost-reply page (unconfirmed → re-detect shows the saved
+location; exactly one adopt request). Full suite **1234 / 1230 pass / 4 platform skips / 0 fail** (was
+1233/1229/4/0); UI **90/90** (same check count); `client.js` rebuilt (391,133 bytes). Status remains
+`OFFLINE` / `FIXTURE_ONLY`; no real WeChatAgent/Host/model/device/WeChat ran.

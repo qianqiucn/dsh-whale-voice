@@ -1302,6 +1302,28 @@ await check('182 the setup wizard and component manager adopt an existing WeChat
       assert.match(failedText, /不是受支持的 WeChatAgent 安装/)
       assert.match(failedText, /已保存位置\s*未保存/)
     })
+
+    // 182 v1.1: the Host persisted the location but the POST reply never reached the page. The panel
+    // must say "unconfirmed" (not "nothing was saved"), and the existing re-detect must show the
+    // actual saved/effective facts without automatically re-submitting.
+    await withPage('?bridge=normal&wizard=1&adopt=lost', async (page) => {
+      const dialog = page.getByRole('dialog')
+      await assert.doesNotReject(dialog.waitFor({ timeout: 4000 }))
+      const panel = dialog.locator('[data-testid="wechatagent-adopt"]')
+      await panel.waitFor({ timeout: 3000 })
+      await panel.getByLabel('WeChatAgent 安装位置').fill(hostAdoption.installRoot)
+      await panel.getByRole('button', { name: '采用已有安装', exact: true }).click()
+      await panel.getByText('结果未确认').waitFor({ timeout: 5000 })
+      const lostText = await panel.innerText()
+      assert.match(lostText, /不代表没有保存/)
+      assert.equal(await panel.getByText('没有保存', { exact: true }).count(), 0)
+      await panel.getByRole('button', { name: '重新检测当前状态', exact: true }).click()
+      await panel.getByText('结果未确认').waitFor({ state: 'hidden', timeout: 5000 })
+      const rereadText = await panel.innerText()
+      assert.match(rereadText, /已保存位置/)
+      assert.doesNotMatch(rereadText, /已保存位置\s*未保存/)
+      assert.equal(await page.evaluate(() => (window.__WHALE_ADOPT_CALLS__ || []).length), 1)
+    })
   } finally {
     await rm(notAnInstall, { recursive: true, force: true })
   }

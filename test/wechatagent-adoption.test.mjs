@@ -8,8 +8,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import vm from 'node:vm'
 
-import { installHostBridge } from '../index.js'
+import { bridgeScript, installHostBridge } from '../index.js'
 import { createConfigSandbox, removeConfigSandbox } from '../core/config-sandbox.mjs'
 import { createDetector, maskPath, readCoreConfig } from '../core/detect.mjs'
 import { adoptWeChatAgentRoot, readAdoption } from '../core/wechatagent-adoption.mjs'
@@ -245,4 +246,34 @@ test('182 the trusted Host route adopts through the bridge contract and reports 
   } finally {
     removeConfigSandbox(sandbox)
   }
+})
+
+test('182 v1.1 the bridge reports a lost adoption reply as unconfirmed, not as a save failure', async () => {
+  const context = (fetchImpl, window = {}) => {
+    vm.runInNewContext(bridgeScript('host-token'), {
+      window, fetch: fetchImpl, AbortController, setTimeout, clearTimeout, encodeURIComponent, JSON, Set, String,
+    })
+    return window.__WHALE_SETUP__
+  }
+  const lostBridge = context(async () => { throw new TypeError('Failed to fetch') })
+  const lost = await lostBridge.adoptWechatAgent({ root: '/tmp/agent' })
+  assert.equal(lost.ok, false)
+  assert.equal(lost.error, 'adoption_unconfirmed')
+  const rejectedBridge = context(async () => ({
+    ok: false,
+    status: 400,
+    async json() { return { ok: false, error: 'wechatagent_install_invalid', messageZh: '选择的目录不是受支持的 WeChatAgent 安装。' } },
+  }))
+  const rejected = await rejectedBridge.adoptWechatAgent({ root: '/tmp/nope' })
+  assert.equal(rejected.ok, false)
+  assert.equal(rejected.error, 'wechatagent_install_invalid')
+  assert.match(rejected.messageZh, /不是受支持/)
+  const abortedBridge = context(async () => ({
+    ok: true,
+    status: 200,
+    async json() { const error = new Error('aborted'); error.name = 'AbortError'; throw error },
+  }))
+  const aborted = await abortedBridge.adoptWechatAgent({ root: '/tmp/agent' })
+  assert.equal(aborted.ok, false)
+  assert.equal(aborted.error, 'adoption_unconfirmed')
 })

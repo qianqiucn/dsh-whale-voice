@@ -63,8 +63,11 @@ keeps precedence: when it overrides the saved value the response has `applied:fa
 both values without touching the environment. Invalid input or an unsupported install is `400` with a
 Chinese `messageZh`; a config read/write failure is `500` and leaves the file untouched. The route
 never writes WeChatAgent-owned config, never reads Hook tokens or consoles and never installs, starts,
-logs in or authenticates. `/status` also carries `wechatAgent.adoption` (saved/effective/source/applied,
-masked paths) so the first-run wizard and the component manager read the same facts.
+logs in or authenticates. If the reply is lost (timeout, connection reset or an unreadable reply body)
+the bridge answers `{ok:false,error:'adoption_unconfirmed'}`; the page shows 「结果未确认」 (neither
+"saved" nor "not saved") and the existing re-detect reads the persisted adoption without re-submitting.
+`/status` also carries `wechatAgent.adoption` (saved/effective/source/applied, masked paths) so the
+first-run wizard and the component manager read the same facts.
 
 The 180 delivery surface is one path with two declared methods: `POST /generation/delivery` with
 `{taskId, targetId}` confirms one saved result, and `GET /generation/delivery?taskId=...&targetId=...`

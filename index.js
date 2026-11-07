@@ -113,9 +113,17 @@ export function bridgeScript(token) {
     getConfigStatus: () => call('/config/status'),
     getCapabilities: () => call('/capabilities'),
     getCapabilityStatus: () => call('/capabilities/status'),
+    // 182 v1.1: a lost reply (timeout or connection reset) does not prove that nothing was saved.
+    // The page must show "unconfirmed" and let the existing re-detect read the persisted fact.
     adoptWechatAgent: (request) => generation('/wechatagent/adopt', {
       method: 'POST',
       body: JSON.stringify(request || {}),
+      rejectOnBodyAbort: true,
+    }).catch((error) => {
+      if (error && (error.name === 'AbortError' || error.name === 'TypeError')) {
+        return { ok: false, error: 'adoption_unconfirmed' }
+      }
+      throw error
     }),
     getGenerationCatalog: () => generation('/generation/catalog'),
     // 156: the page passes the effective generation limit from the catalog; the request waits for
