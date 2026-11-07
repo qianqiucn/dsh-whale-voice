@@ -6,6 +6,7 @@ import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
 import { openGenerationSettingsDraft } from './core/settings-draft.mjs'
 import { PRESET_GENERATION_APP_ERRORS } from './core/preset-generation-app.mjs'
 import { adoptWeChatAgentRoot, readAdoption } from './core/wechatagent-adoption.mjs'
+import { adoptLocalQwenRuntime, localQwenAdoptionState, readLocalQwenAdoption } from './core/qwen-runtime-adoption.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -122,6 +123,16 @@ export function bridgeScript(token) {
     }).catch((error) => {
       if (error && (error.name === 'AbortError' || error.name === 'TypeError')) {
         return { ok: false, error: 'adoption_unconfirmed' }
+      }
+      throw error
+    }),
+    adoptLocalQwenRuntime: (request) => generation('/qwen-runtime/adopt', {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+      rejectOnBodyAbort: true,
+    }).catch((error) => {
+      if (error && (error.name === 'AbortError' || error.name === 'TypeError')) {
+        return { ok: false, error: 'qwen_runtime_unconfirmed' }
       }
       throw error
     }),
@@ -245,7 +256,16 @@ export function installHostBridge(scope, options = {}) {
   }
 
   route(PREFIX + '/health', (req, res) => send(res, 200, { ok: true, service: 'whale-voice-core', mode: 'read-only', schemaVersion: 1 }))
-  route(PREFIX + '/status', async (req, res) => send(res, 200, await detector.detectAll()))
+  const localQwenBase = options.localQwen || { running: null, source: 'none', worker: { state: 'UNKNOWN' } }
+  function localQwenFacts() {
+    return {
+      ...localQwenAdoptionState({ env: options.env || process.env, running: localQwenBase.running || null }),
+      source: localQwenBase.source || 'none',
+      worker: localQwenBase.worker || { state: 'UNKNOWN' },
+    }
+  }
+
+  route(PREFIX + '/status', async (req, res) => send(res, 200, { ...(await detector.detectAll()), localQwen: localQwenFacts() }))
   route(PREFIX + '/config', async (req, res) => send(res, 200, await detector.getConfigSnapshot()))
   route(PREFIX + '/config/sources', async (req, res) => send(res, 200, await detector.getConfigSources()))
   route(PREFIX + '/config/status', async (req, res) => send(res, 200, await detector.getConfigStatus()))
@@ -281,6 +301,25 @@ export function installHostBridge(scope, options = {}) {
     }
     const result = adoptWeChatAgentRoot({ root, env: options.env || process.env })
     return send(res, result.ok === true ? 200 : (result.status || 400), result)
+  }, ['POST'])
+
+  // 183: adopt an existing local Qwen runtime (model directory + Python program). Only Whale Voice's
+  // own config is written; the formal generation assembly consumes it on the next plugin open, so the
+  // response reports the running value and whether a restart is still pending. Nothing is executed.
+  route(PREFIX + '/qwen-runtime/adopt', async (req, res) => {
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      return send(res, 400, { ok: false, error: 'invalid_body' })
+    }
+    const result = adoptLocalQwenRuntime({
+      modelDirectory: body && body.modelDirectory,
+      pythonPath: body && body.pythonPath,
+      env: options.env || process.env,
+    })
+    if (result.ok !== true) return send(res, result.status || 400, result)
+    return send(res, 200, { ...result, ...localQwenFacts() })
   }, ['POST'])
 
   // 144/146: the Chinese settings page records the generation data storage location as an isolated
@@ -577,6 +616,17 @@ function withAppliedRuntime(settings, applied) {
   return { ...settings, worker: { ...worker, runtime: applied.pythonPath, args } }
 }
 
+/** The worker paths a running assembly actually uses (for saved-vs-running facts). */
+function workerRuntimeOf(settings) {
+  const worker = settings && settings.worker && typeof settings.worker === 'object' ? settings.worker : {}
+  const args = Array.isArray(worker.args) ? worker.args : []
+  const index = args.lastIndexOf('--model-dir')
+  return {
+    pythonPath: typeof worker.runtime === 'string' ? worker.runtime : '',
+    modelDirectory: index >= 0 && index + 1 < args.length ? String(args[index + 1]) : '',
+  }
+}
+
 /**
  * 142: the Host obtains its own isolated storage context, calls the existing Qwen runtime factory and
  * hands that same Core generation object to the existing Host surface. The worker belongs to this
@@ -587,7 +637,7 @@ function withAppliedRuntime(settings, applied) {
  * (unusable storage location or a runtime that cannot start) is returned as a fact instead of
  * rejecting the plugin, so the settings entry stays reachable.
  */
-async function assembleGenerationHost(scope, settings, settingsDraft) {
+async function assembleGenerationHost(scope, settings, settingsDraft, localQwen) {
   const { storageRoot, ...runtimeSettings } = settings
   const temporary = storageRoot === undefined
   let sandbox
@@ -611,6 +661,11 @@ async function assembleGenerationHost(scope, settings, settingsDraft) {
     generation: runtime.app,
     settingsDraft,
     generationState: { state: 'READY' },
+    localQwen: {
+      running: workerRuntimeOf(settings),
+      source: localQwen.source,
+      worker: { state: 'READY', model: runtime.discovery.model, voices: runtime.discovery.voices.map((voice) => voice.id) },
+    },
   })
   if (typeof scope.effect === 'function') {
     scope.effect(() => () => {
@@ -689,8 +744,21 @@ export function apply(ctx, config = undefined) {
       const settingsDraft = draftRoot === undefined
         ? null
         : openGenerationSettingsDraft({ sandbox: openConfigStorage({ root: draftRoot }) })
+      // 183: the adopted local-Qwen paths are read from Whale Voice's own config on every open.
+      // They are applied last, after any isolated draft value, so the formal owner wins; the running
+      // assembly keeps its own paths until the plugin is reopened.
+      const adopted = readLocalQwenAdoption({ env: process.env }).raw
+      const disabledQwen = {
+        running: null,
+        source: 'none',
+        worker: {
+          state: 'DISABLED',
+          code: 'generation_disabled',
+          messageZh: '正式生成未启用：当前部署配置没有启用生成（enabled 不是 true）。',
+        },
+      }
       if (settings === null) {
-        installHost(scope, { settingsDraft, generationState: { state: 'DISABLED' } })
+        installHost(scope, { settingsDraft, generationState: { state: 'DISABLED' }, localQwen: disabledQwen })
         resolve()
         return
       }
@@ -699,26 +767,36 @@ export function apply(ctx, config = undefined) {
       // 154: a damaged applied record keeps the settings entry reachable instead of failing the plugin.
       const applied = settingsDraft === null ? null : settingsDraft.readApplied()
       if (applied !== null && applied.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_storage_invalid' }, true) })
+        const failure = generationFailure({ code: 'applied_storage_invalid' }, true)
+        installHost(scope, { settingsDraft, generationState: failure, localQwen: { running: null, source: 'none', worker: { state: 'FAILED', code: failure.code, messageZh: failure.messageZh } } })
         resolve()
         return
       }
       const appliedRuntime = settingsDraft === null ? null : settingsDraft.readAppliedRuntime()
       if (appliedRuntime !== null && appliedRuntime.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure({ code: 'applied_runtime_invalid' }, true) })
+        const failure = generationFailure({ code: 'applied_runtime_invalid' }, true)
+        installHost(scope, { settingsDraft, generationState: failure, localQwen: { running: null, source: 'none', worker: { state: 'FAILED', code: failure.code, messageZh: failure.messageZh } } })
         resolve()
         return
       }
       let effective = settings
+      let source = 'deployment'
       if (applied !== null && applied.applied) {
         effective = { ...effective, storageRoot: applied.applied.generationStorageRoot }
+        source = 'draft'
       }
       if (appliedRuntime !== null && appliedRuntime.applied) {
         effective = withAppliedRuntime(effective, appliedRuntime.applied)
+        source = 'draft'
       }
-      const assembled = await assembleGenerationHost(scope, effective, settingsDraft)
+      if (adopted) {
+        effective = withAppliedRuntime(effective, adopted)
+        source = 'adopted'
+      }
+      const assembled = await assembleGenerationHost(scope, effective, settingsDraft, { source })
       if (assembled.ok !== true) {
-        installHost(scope, { settingsDraft, generationState: generationFailure(assembled, settingsDraft !== null) })
+        const failure = generationFailure(assembled, settingsDraft !== null)
+        installHost(scope, { settingsDraft, generationState: failure, localQwen: { running: null, source: 'none', worker: { state: 'FAILED', code: failure.code, messageZh: failure.messageZh } } })
       }
       resolve()
     })

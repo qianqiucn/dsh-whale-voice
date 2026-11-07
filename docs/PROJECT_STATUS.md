@@ -1125,3 +1125,40 @@ reply-body abort) and the 182 UI scene gained a lost-reply page (unconfirmed →
 location; exactly one adopt request). Full suite **1234 / 1230 pass / 4 platform skips / 0 fail** (was
 1233/1229/4/0); UI **90/90** (same check count); `client.js` rebuilt (391,133 bytes). Status remains
 `OFFLINE` / `FIXTURE_ONLY`; no real WeChatAgent/Host/model/device/WeChat ran.
+
+### Plan 14 · 183 — the wizard and component manager adopt an existing local Qwen runtime (2026-11-07)
+
+Branch `plan14/adopt-local-qwen-runtime` from the reviewed main `6bb4e552`; the PR is pending and not
+merged. This closes the local-Qwen gap in the same install-assistant flow: the sound step no longer
+keeps the provider choice only in React state.
+
+1. **Formal owner (183).** `POST /whale-voice/setup/qwen-runtime/adopt` validates an existing model
+   directory and Python program (absolute, existing, no execution) and writes
+   `qwenRuntime {modelDirectory, pythonPath, savedAt}` only into Whale Voice's own
+   `%DSH_HOME%/whale-voice/core.json`, preserving unrelated fields. Invalid paths, a corrupt config
+   and permission/space failures return explicit Chinese results and change nothing; a lost reply is
+   reported as unconfirmed.
+2. **Formal assembly consumes it.** On plugin open, `apply()` applies the adopted paths after any
+   isolated settings-draft value (`withAppliedRuntime`), so the existing Qwen supervisor/worker start
+   with the adopted Python runtime and `--model-dir`; the debug test with the fake worker proves the
+   worker argv carries the adopted directory and not the old one.
+3. **Separate facts.** `/status.localQwen` reports `saved`, `running`, `source`
+   (`adopted`/`draft`/`deployment`/`none`), `pendingRestart` and `worker`
+   (`READY` + discovered model, `DISABLED` when generation is not enabled, `FAILED` with the known
+   reason). The wizard's sound step and the component manager share one panel that shows those facts
+   and states that saving is not a started Worker, not generation availability, and that the existing
+   Fixture rights/task limits still apply; saving shows the pending-reopen message instead of
+   pretending the running worker switched.
+4. **Boundaries.** Nothing is downloaded/installed/started by the route; the environment, arbitrary
+   command/URL/file interfaces and the deployment's enablement decision are untouched. AGENTS §1.2 now
+   records both formal writes (WeChatAgent root and local Qwen runtime).
+
+Evidence: `test/qwen-runtime-adoption.test.mjs` (formal owner + validation, 400/500 explicit failures
+with no unrelated changes, Host route + status saved/running/pendingRestart, and the fake-worker
+assembly consuming the adopted paths with `source:'adopted'`, `pendingRestart:false`,
+`worker:'READY'`); one UI scene (wizard sound step save + pending-reopen facts + component manager
+same facts + lost-reply unconfirmed). Full suite **1237 / 1233 pass / 4 platform skips / 0 fail**
+(was 1234/1230/4/0); UI **91/91** (was 90/90); `client.js` rebuilt (399,229 bytes). Status
+`OFFLINE` / `FIXTURE_ONLY`: the worker is the isolated fake fixture; no real Python/model/media/device
+or WeChat ran. Saving a runtime is not a preview, the TTS step, the whole wizard or `whale-v1`
+availability.

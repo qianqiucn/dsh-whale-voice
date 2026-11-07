@@ -1234,3 +1234,27 @@ and the adoption fact is shown separately from connection facts so "adopted" can
 adoption settings file with its own precedence rules, a disk scan for installs, replacing the
 environment variable, treating adoption/save as a successful connection, and writing snapshots into
 the fixed `data/workspace` path when the install declares another data folder.
+
+## ADR-042 — Adopting a local Qwen runtime writes only Whale Voice's own config
+
+**Status:** accepted (`IN PROGRESS`, 2026-11-07, 183).
+**Related:** ADR-041, [SETUP_API.md](SETUP_API.md), [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
+
+**Decision:** the install assistant adopts an existing local Qwen runtime by writing the user-picked
+absolute model directory and Python program (both must exist; nothing is executed) into
+`qwenRuntime` in Whale Voice's own `%DSH_HOME%/whale-voice/core.json`. The formal generation assembly
+applies those paths on the next plugin open after any isolated settings-draft value, so the existing
+Qwen supervisor starts the worker with them. `/status.localQwen` reports saved/running/source/
+pendingRestart/worker separately. The route never downloads/installs a model, starts a worker, changes
+generation enablement or widens the deployment's command/URL/file surface.
+
+**Reason:** the old local provider choice lived only in React state and the old Qwen HTTP health was
+not the actual worker path; the user needs the real generation environment to be saved formally and
+consumed by the same assembly without a separate Fixture-only config. Reusing the core config keeps
+one settings owner, and showing saved vs running vs pending-reopen prevents "saved" from being read as
+"worker running" or "generation available".
+
+**Rejected alternatives:** another settings store or draft rename, starting/validating the worker from
+the route, scanning disk for models, treating the old HTTP health or `qwenUrl` as the local runtime,
+removing the isolated draft compatibility, and letting a saved path change the already-running worker
+without a plugin reopen.

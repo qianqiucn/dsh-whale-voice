@@ -1329,6 +1329,45 @@ await check('182 the setup wizard and component manager adopt an existing WeChat
   }
 })
 
+await check('183 the wizard and component manager adopt an existing local Qwen runtime', async () => {
+  await withPage('?bridge=normal&wizard=1&step=2', async (page) => {
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 4000 }))
+    const panel = dialog.locator('[data-testid="local-qwen-runtime"]')
+    await panel.waitFor({ timeout: 3000 })
+    await panel.getByLabel('Qwen 模型目录').fill(hostAdoption.qwenModelDirectory)
+    await panel.getByLabel('Qwen Python 程序').fill(hostAdoption.qwenPythonPath)
+    await panel.getByRole('button', { name: '采用已有运行环境', exact: true }).click()
+    await panel.getByText('当前运行仍使用启动时的路径').waitFor({ timeout: 5000 })
+    const savedText = await panel.innerText()
+    assert.match(savedText, /已保存/)
+    assert.match(savedText, /待重开插件生效/)
+    assert.match(savedText, /保存、Worker 与生成是三种状态/)
+    assert.equal(await panel.getByText('运行环境已保存', { exact: true }).count(), 1)
+    assert.equal(await page.evaluate(() => (window.__WHALE_QWEN_CALLS__ || []).length), 1)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.getByRole('button', { name: '组件管理', exact: true }).click()
+    const components = page.getByRole('dialog')
+    await assert.doesNotReject(components.waitFor({ timeout: 3000 }))
+    const shared = components.locator('[data-testid="local-qwen-runtime"]')
+    await shared.waitFor({ timeout: 3000 })
+    assert.match(await shared.innerText(), /已保存/)
+    await components.getByRole('button', { name: '关闭', exact: true }).click()
+  })
+
+  await withPage('?bridge=normal&wizard=1&step=2&qwen=lost', async (page) => {
+    const dialog = page.getByRole('dialog')
+    await assert.doesNotReject(dialog.waitFor({ timeout: 4000 }))
+    const panel = dialog.locator('[data-testid="local-qwen-runtime"]')
+    await panel.waitFor({ timeout: 3000 })
+    await panel.getByLabel('Qwen 模型目录').fill(hostAdoption.qwenModelDirectory)
+    await panel.getByLabel('Qwen Python 程序').fill(hostAdoption.qwenPythonPath)
+    await panel.getByRole('button', { name: '采用已有运行环境', exact: true }).click()
+    await panel.getByText('结果未确认').waitFor({ timeout: 5000 })
+    assert.equal(await panel.getByText('没有保存', { exact: true }).count(), 0)
+  })
+})
+
 await check('No-Core shows an unavailable state without Mock success', async () => {
   await withPage('?bridge=none', async (page) => {
     await page.waitForTimeout(500)
