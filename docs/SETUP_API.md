@@ -26,6 +26,7 @@ GET  /whale-voice/setup/generation/results
 GET  /whale-voice/setup/generation/download?taskId=...
 GET  /whale-voice/setup/generation/assembly
 POST /whale-voice/setup/wechatagent/adopt
+POST /whale-voice/setup/qwen-runtime/adopt
 POST /whale-voice/setup/generation/delivery
 GET  /whale-voice/setup/generation/delivery?taskId=...&targetId=...
 GET  /whale-voice/setup/settings/generation-storage
@@ -68,6 +69,19 @@ the bridge answers `{ok:false,error:'adoption_unconfirmed'}`; the page shows 「
 "saved" nor "not saved") and the existing re-detect reads the persisted adoption without re-submitting.
 `/status` also carries `wechatAgent.adoption` (saved/effective/source/applied, masked paths) so the
 first-run wizard and the component manager read the same facts.
+
+The 183 route `POST /whale-voice/setup/qwen-runtime/adopt` (JSON `{modelDirectory, pythonPath}`)
+adopts an existing local Qwen runtime. Both values must be absolute and exist (a directory and a
+file); they are written only as `qwenRuntime {modelDirectory, pythonPath, savedAt}` into the same
+core config, preserving unrelated fields. Nothing is downloaded, installed or executed. The plugin's
+generation assembly reads the saved paths on the next open and applies them after any isolated draft
+value, so the worker receives the adopted runtime and `--model-dir`. `/status` carries
+`localQwen {saved, running, source, pendingRestart, worker}` (masked paths): `saved` is the formal
+config, `running` is what the current assembly actually started with, `source` is
+`adopted` / `draft` / `deployment` / `none`, `pendingRestart` says a plugin reopen is still
+needed, and `worker` is `READY` (with the discovered model), `DISABLED` (generation not enabled) or
+`FAILED` (with the known reason). Saving never starts a worker or claims generation; a lost reply is
+`{ok:false,error:'qwen_runtime_unconfirmed'}` and the page shows 结果未确认.
 
 The 180 delivery surface is one path with two declared methods: `POST /generation/delivery` with
 `{taskId, targetId}` confirms one saved result, and `GET /generation/delivery?taskId=...&targetId=...`
@@ -118,6 +132,7 @@ window.__WHALE_SETUP__ = {
   getCapabilities(): Promise<CapabilitySnapshot>,
   getCapabilityStatus(): Promise<CapabilityStatus>,
   adoptWechatAgent({root}): Promise<AdoptionResult>,
+  adoptLocalQwenRuntime({modelDirectory, pythonPath}): Promise<LocalQwenAdoptionResult>,
   getGenerationCatalog(): Promise<GenerationCatalog>,
   generatePreset({text, voiceId, language}): Promise<GenerationResult>,
   getGenerationStatus(taskId): Promise<GenerationStatus>,

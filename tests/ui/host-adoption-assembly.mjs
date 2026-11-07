@@ -33,6 +33,10 @@ export async function createHostAdoptionAssembly() {
     hook: { baseUrl: 'http://127.0.0.1:9', expectedVersion: '4.1.10.27' },
   })
   writeJson(path.join(installRoot, 'data', 'workspace', 'state', 'runtime.json'), { reader: { pid: 0 } })
+  const qwenModelDirectory = path.join(installSandbox.root, 'qwen-model')
+  fs.mkdirSync(qwenModelDirectory, { recursive: true })
+  const qwenPythonPath = path.join(installSandbox.root, 'python.exe')
+  fs.writeFileSync(qwenPythonPath, 'fixture python program (never executed)', 'utf8')
 
   const routes = []
   const scope = {
@@ -49,7 +53,7 @@ export async function createHostAdoptionAssembly() {
 
   async function handle(req, res) {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
-    if (!url.pathname.startsWith('/whale-voice/setup/wechatagent/')) return false
+    if (!url.pathname.startsWith('/whale-voice/setup/wechatagent/') && !url.pathname.startsWith('/whale-voice/setup/qwen-runtime/')) return false
     const route = routes.find((item) => item.path === url.pathname)
     if (!route) {
       json(res, 404, { ok: false, error: 'not_found' })
@@ -65,5 +69,5 @@ export async function createHostAdoptionAssembly() {
     removeConfigSandbox(installSandbox)
   }
 
-  return { handle, close, token: TOKEN, installRoot }
+  return { handle, close, token: TOKEN, installRoot, qwenModelDirectory, qwenPythonPath }
 }

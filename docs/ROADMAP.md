@@ -799,3 +799,14 @@ replaces the stale banner with the saved/effective/source facts without re-submi
 rejections keep their Chinese reasons; the rest of 182 is unchanged. Evidence: 1 bridge VM test + the
 182 UI lost-reply page; full suite 1234/1230 pass/4 platform skips/0 fail; UI 90/90; `client.js`
 rebuilt 391,133 bytes. Still OFFLINE / FIXTURE_ONLY.
+
+183 (2026-11-07): the install assistant's sound step and the component manager adopt an existing local
+Qwen runtime. `POST /whale-voice/setup/qwen-runtime/adopt` validates an existing model directory and
+Python program and writes `qwenRuntime` only into Whale Voice's own core config; the formal generation
+assembly applies the paths on the next plugin open (after any isolated draft) and the worker receives
+the adopted runtime/`--model-dir`. `/status.localQwen` separates saved/running/source/
+pendingRestart/worker, and the shared panel says plainly that saving is not a started Worker or
+generation availability; the existing Fixture rights/task limits stay honest. Evidence: 3 Core/Host/
+assembly tests + 1 UI scene; full suite 1237/1233 pass/4 platform skips/0 fail; UI 91/91;
+`client.js` rebuilt 399,229 bytes. `OFFLINE` / `FIXTURE_ONLY`; no real Python/model/media/device or
+WeChat ran.

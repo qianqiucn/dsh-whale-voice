@@ -41,21 +41,23 @@ Do not automatically upgrade a user's WeChatAgent because upstream has a new rel
 WeChatAgent/WeChat Hook binaries or restricted third-party components. Never download or execute a
 third-party installer without confirmed provenance, permission and integrity checks.
 
-## 1.2 Core detection rule and the one formal settings write
+## 1.2 Core detection rule and the two formal settings writes
 
 `core/detect.mjs` and every detection path stay **read-only**. They may read explicitly configured
 roots, small manifests, process liveness and fixed loopback health endpoints. They must never run
 shell commands, download/install components, write WeChatAgent config, read Hook/audit token files or
 read chat databases.
 
-The Host bridge has exactly one formal settings write (182): the user may adopt an already-installed
-WeChatAgent root, validated as a supported install (`app/resources/project/package.json`) and written
-only into Whale Voice's own `%DSH_HOME%/whale-voice/core.json` (`wechatAgentRoot`). That route accepts
-only that one root string — never a command, URL, arbitrary config key or WeChatAgent-owned file —
-preserves unrelated Whale Voice config, and never installs, starts, logs in or authenticates anything.
-`WHALE_WECHATAGENT_HOME` keeps precedence and is never modified; when it overrides the saved root the
-API/UI report the saved and actually-used values separately. Any further write/installer API needs its
-own threat model, explicit user confirmation and an isolated test environment.
+The Host bridge has exactly two formal settings writes, both only into Whale Voice's own
+`%DSH_HOME%/whale-voice/core.json` and both validated first: (182) adopting an already-installed
+WeChatAgent root (`wechatAgentRoot`) and (183) adopting an existing local Qwen runtime
+(`qwenRuntime.modelDirectory` / `qwenRuntime.pythonPath`). Each route accepts only those values —
+never a command, URL, arbitrary config key or adopted component's own file — preserves unrelated
+Whale Voice config, and never installs, starts, logs in or authenticates anything. The Qwen paths are
+applied by the formal generation assembly on the next plugin open; the environment variable
+`WHALE_WECHATAGENT_HOME` keeps precedence over the saved WeChatAgent root and is never modified.
+Any further write/installer API needs its own threat model, explicit user confirmation and an
+isolated test environment.
 
 Do not label adoption or detection success as installation/connection completion. Do not turn
 `auth_required`, timeout or unknown into a green health state.

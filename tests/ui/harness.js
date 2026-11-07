@@ -7,6 +7,8 @@
   const params = new URLSearchParams(location.search)
   const bridgeMode = params.get('bridge') || 'normal'
   const wizardMode = params.get('wizard') === '1'
+  // 183: open the wizard on a chosen step without relying on the nav button's accessible name.
+  if (params.get('step') !== null) { try { sessionStorage.setItem('wv.setup.step', String(Number(params.get('step')) || 0)) } catch {} }
   const observedAt = '2026-10-24T21:45:00.000Z'
   const revision = 'harness-config-revision'
 
@@ -137,6 +139,13 @@
       observedAt,
       durationMs: 5,
       evidence: 'fixture service v0.1.0 + pid dead + GET /health -> connection_failed',
+    },
+    localQwen: {
+      saved: null,
+      running: null,
+      source: 'none',
+      pendingRestart: false,
+      worker: { state: 'DISABLED', code: 'generation_disabled', messageZh: 'fixture: generation is not enabled' },
     },
     tts: {
       configured: true,
@@ -483,6 +492,20 @@
       }
       // 182 v1.1: the Host persisted the location, but the reply never reaches the page.
       if (adoptMode === 'lost') return { ok: false, error: 'adoption_unconfirmed' }
+      return answer
+    }
+
+    fakeBridge.adoptLocalQwenRuntime = async (request) => {
+      window.__WHALE_QWEN_CALLS__ = (window.__WHALE_QWEN_CALLS__ || []).concat([request])
+      const answer = await hostFetch(hostAdoptToken, '/whale-voice/setup/qwen-runtime/adopt', {
+        method: 'POST',
+        body: JSON.stringify(request || {}),
+      })
+      if (answer && answer.ok === true) {
+        status.localQwen.saved = answer.adoption
+        status.localQwen.pendingRestart = answer.pendingRestart === true
+      }
+      if (tokens.get('qwen') === 'lost') return { ok: false, error: 'qwen_runtime_unconfirmed' }
       return answer
     }
     // 160: the two real failure forms of the production client. A network failure or timeout makes

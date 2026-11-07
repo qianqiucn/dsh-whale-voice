@@ -240,6 +240,143 @@ function WeChatAgentAdoptPanel({ data, onRefresh, onNotify }) {
       h('div', null, h('strong', null, '没有保存'), h('p', null, outcome.message))) : null)
 }
 
+function qwenReplyUnconfirmed(answer) {
+  if (!answer || typeof answer !== 'object') return true
+  if (answer.error === 'qwen_runtime_unconfirmed') return true
+  if (typeof answer.error === 'string' && answer.error.indexOf('core_http_') === 0 && !answer.messageZh) return true
+  return false
+}
+
+function setupQwenSourceText(localQwen) {
+  if (!localQwen || localQwen.source === 'none') return '未运行'
+  if (localQwen.source === 'adopted') return 'Whale Voice 正式配置'
+  if (localQwen.source === 'draft') return '隔离设置草稿'
+  return '部署配置'
+}
+
+function setupQwenWorkerText(localQwen) {
+  const worker = localQwen && localQwen.worker
+  if (!worker || !worker.state) return '未知'
+  if (worker.state === 'READY') return '已启动' + (worker.model ? ' · ' + worker.model : '')
+  if (worker.state === 'DISABLED') return '未启动（正式生成未启用）'
+  if (worker.state === 'FAILED') return '未启动（' + (worker.code || '失败') + '）'
+  return '未知'
+}
+
+/* 183: one local-Qwen runtime panel shared by the wizard's sound step and the component manager.
+ * It saves the model directory + Python program of an existing local worker through the trusted Host
+ * and shows four separate facts: saved config, currently-running config, its source, and whether a
+ * plugin reopen is still needed. Saving never starts a worker or claims generation is available. */
+function LocalQwenRuntimePanel({ data, onRefresh }) {
+  const localQwen = data && data.localQwen ? data.localQwen : null
+  const saved = localQwen && localQwen.saved ? localQwen.saved : null
+  const running = localQwen && localQwen.running ? localQwen.running : null
+  const [modelDirectory, setModelDirectory] = React.useState('')
+  const [pythonPath, setPythonPath] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [outcome, setOutcome] = React.useState(null)
+  const lastData = React.useRef(data)
+  const bridge = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const supported = Boolean(bridge && typeof bridge.adoptLocalQwenRuntime === 'function')
+  React.useEffect(() => {
+    if (lastData.current === data) return
+    lastData.current = data
+    setOutcome((current) => (current && current.unconfirmed ? null : current))
+  }, [data])
+  const submit = async () => {
+    if (busy || !supported) return
+    setBusy(true)
+    setOutcome(null)
+    try {
+      const answer = await bridge.adoptLocalQwenRuntime({
+        modelDirectory: String(modelDirectory || '').trim(),
+        pythonPath: String(pythonPath || '').trim(),
+      })
+      if (answer && answer.ok === true) {
+        setOutcome({
+          ok: true,
+          message: '运行环境已保存。当前运行仍使用启动时的路径；重开插件后正式生成装配才会采用新路径。保存不代表 Worker 已启动或生成可用。',
+        })
+        if (onRefresh) onRefresh()
+      } else if (qwenReplyUnconfirmed(answer)) {
+        setOutcome({
+          ok: false,
+          unconfirmed: true,
+          message: '本次请求没有收到 Core 的答复，无法确认是否已保存；请用「重新检测当前状态」查看后台此刻的配置。',
+        })
+      } else {
+        setOutcome({ ok: false, message: (answer && (answer.messageZh || answer.error)) || '保存失败：Core 没有返回原因。' })
+      }
+    } catch {
+      setOutcome({
+        ok: false,
+        unconfirmed: true,
+        message: '与 Core 的连接中断，本次保存结果未确认；请用「重新检测当前状态」查看后台此刻的配置。',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return h('div', { className: 'wv-setup-adopt', 'data-testid': 'local-qwen-runtime' },
+    h('div', { className: 'wv-setup-statusline' },
+      h('span', { className: 'wv-setup-statuslabel' }, '采用已有本地 Qwen 运行环境'),
+      h('span', { className: 'wv-muted' }, '指定已经存在的模型目录与 Python 运行程序；只保存路径，不下载模型、不启动 Worker。')),
+    h('div', { className: 'wv-setup-field' },
+      h('label', { htmlFor: 'wv-qwen-model' }, '模型目录'),
+      h('input', {
+        id: 'wv-qwen-model', className: 'wv-input', type: 'text',
+        placeholder: '例如 D:\\Qwen\\models\\Qwen3-TTS',
+        value: modelDirectory, disabled: busy || !supported,
+        onChange: (event) => setModelDirectory(event.target.value),
+        'aria-label': 'Qwen 模型目录',
+      })),
+    h('div', { className: 'wv-setup-field' },
+      h('label', { htmlFor: 'wv-qwen-python' }, 'Python 运行程序'),
+      h('input', {
+        id: 'wv-qwen-python', className: 'wv-input', type: 'text',
+        placeholder: '例如 D:\\Qwen\\venv\\Scripts\\python.exe',
+        value: pythonPath, disabled: busy || !supported,
+        onChange: (event) => setPythonPath(event.target.value),
+        'aria-label': 'Qwen Python 程序',
+      })),
+    h('div', { className: 'wv-setup-actions' },
+      h(Button, {
+        onClick: submit,
+        disabled: busy || !supported || String(modelDirectory || '').trim() === '' || String(pythonPath || '').trim() === '',
+      }, busy ? '保存中…' : '采用已有运行环境')),
+    !supported ? h('div', { className: 'wv-setup-callout' },
+      h(Icon, { name: 'lock', size: 16 }),
+      h('div', null, h('strong', null, '当前 Core 不支持采用本地 Qwen 运行环境'), h('p', null, '需要更新 Whale Voice Core；本页不会用前端状态代替正式保存。'))) : null,
+    h('div', { className: 'wv-setup-checks two', style: { marginTop: 8 } },
+      h(SetupMark, { state: saved ? 'pass' : 'unknown', label: '已保存', value: saved ? saved.modelDirectory : '未保存' }),
+      h(SetupMark, { state: running ? 'pass' : 'unknown', label: '当前运行', value: running ? running.modelDirectory : '未启动' }),
+      h(SetupMark, { state: localQwen && localQwen.source !== 'none' ? 'pass' : 'unknown', label: '运行来源', value: setupQwenSourceText(localQwen) }),
+      h(SetupMark, { state: localQwen && localQwen.worker && localQwen.worker.state === 'READY' ? 'pass' : 'unknown', label: 'Worker', value: setupQwenWorkerText(localQwen) })),
+    saved ? h('p', { className: 'wv-muted' }, '保存的 Python：' + saved.pythonPath) : null,
+    localQwen && localQwen.pendingRestart ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null,
+        h('strong', null, '已保存，待重开插件生效'),
+        h('p', null, '当前运行仍使用上次启动时的路径。重开插件后正式生成装配才会采用新保存值；本页不会自动重启 Host 或启动 Worker。'))) : null,
+    h('div', { className: 'wv-setup-callout' },
+      h(Icon, { name: 'info', size: 16 }),
+      h('div', null,
+        h('strong', null, '保存、Worker 与生成是三种状态'),
+        h('p', null, '保存只表示正式配置已写入；Worker/依赖是否可用看上面的 Worker 状态；实际生成仍受 Fixture 权利与任务应用限制，本页不冒充可生成或 whale-v1 可用。'))),
+    outcome && outcome.ok ? h('div', { className: 'wv-setup-callout ok' },
+      h(Icon, { name: 'check', size: 16 }),
+      h('div', null, h('strong', null, '运行环境已保存'), h('p', null, outcome.message))) : null,
+    outcome && outcome.ok !== true && outcome.unconfirmed ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null,
+        h('strong', null, '结果未确认'),
+        h('p', null, outcome.message),
+        onRefresh ? h(Button, { variant: 'ghost', onClick: onRefresh }, '重新检测当前状态') : null)) : null,
+    outcome && outcome.ok !== true && !outcome.unconfirmed ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null, h('strong', null, '没有保存'), h('p', null, outcome.message))) : null)
+}
+
 function SetupBlocked({ status, onRefresh, onDemo, onNotify }) {
   const unavailable = status.reason === 'core_not_connected'
   return h('div', { className: 'wv-setup-blocked' },
@@ -400,6 +537,7 @@ function SetupTtsStep({ data, demo, onRefresh, onNotify }) {
         h('p', null, '没有独立显卡也可以选择云端语音。'),
         demo ? h(Badge, { tone: 'demo' }, '演示流程 · 不调用真实 TTS') : null)),
     data && data.ttsEvidence ? h(SetupEvidence, { data: data.ttsEvidence }) : null,
+    !demo ? h(LocalQwenRuntimePanel, { data, onRefresh }) : null,
     h('div', { className: 'wv-provider-grid' },
       h(SetupProviderCard, { id: 'cloud', title: '云端 TTS', subtitle: '无需 CUDA 或本地大模型；需要 Provider 凭据。', state: 'soon', selected: provider === 'cloud', onSelect: setProvider, demo },
         h('span', { className: 'wv-provider-meta' }, '费用与文本上传第三方需确认')),
@@ -517,6 +655,7 @@ function ComponentsDialog({ open, status, capability, onClose, onRefresh, onSetu
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, 'Whale Voice Core 未连接'), h('p', null, '无法读取真实组件状态。当前不会把 Mock 显示成在线。'))) : null,
     data ? h(ConfigReadout, { setup: status }) : null,
     data && !data.demo ? h(WeChatAgentAdoptPanel, { data, onRefresh, onNotify }) : null,
+    data && !data.demo ? h(LocalQwenRuntimePanel, { data, onRefresh }) : null,
     h(CapabilityPanel, { capability, detailed: false, title: '能力、授权与阻塞原因', desc: '来自只读能力接口；显示每个配置面是否有接口、是否授权、是否可确认生效。' }),
     h('div', { className: 'wv-component-list' }, rows.map((r) => h('div', { className: 'wv-component-row', key: r.name },
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),
