@@ -170,11 +170,13 @@ trusted target directory / Fake backend from the optional `delivery` wiring. A d
 entry reuse the one delivery and never ask the Fake backend twice; the relay owner/store stays the single
 one, so base and rotated segments share the deliveryId/permit space and capacity. `confirmDelivery`
 reports a Fake acceptance (state `ACCEPTED`, backend `QUEUED`, fixture receipt) separately from a refusal
-(`DELIVERY_REFUSED` with stage/cause), a persisted non-accepted state (`DELIVERY_NOT_ACCEPTED` with
-`FAILED`/`UNKNOWN`/`QUEUED`/`CANCELLED`) and a missing relation (`DELIVERY_NOT_FOUND`);
-`deliveryStatus` only reads the persisted record. Generation, save, list and download never deliver
-anything; without the `delivery` wiring they are unaffected while both delivery methods answer
-`DELIVERY_UNAVAILABLE`. No Host route or page uses this entry yet.
+(`DELIVERY_REFUSED` with stage/cause) and a persisted non-accepted state (`DELIVERY_NOT_ACCEPTED` with
+`FAILED`/`UNKNOWN`/`QUEUED`/`CANCELLED`); a missing or unreadable original task fails its own read as
+`STATUS_REJECTED` and no confirmation or submission is attempted. `deliveryStatus` only reads the
+persisted record and answers `DELIVERY_NOT_FOUND` when this scope has no delivery for that task/target
+relation. Generation, save, list and download never deliver anything; without the `delivery` wiring they
+are unaffected while both delivery methods answer `DELIVERY_UNAVAILABLE`. No Host route or page uses this
+entry yet.
 
 179 v1.1 corrects the status query range: the read-back is the relay's read-only
 `deliveryFor({scopeId, taskId, targetId})` over the record's own scope, so another scope/proof cannot
