@@ -119,6 +119,127 @@ function SetupEvidence({ data }) {
     h('span', { title: source }, '来源：' + String(source).slice(0, 120)))
 }
 
+/* 182: one adoption panel shared by the first-run wizard and the component manager. It only names
+ * the installed root; the trusted Host writes Whale Voice's own config and the install's declared
+ * data location is read back by detection. Saving the location is shown separately from the
+ * connection/detection facts and never implies that WeChatAgent, an account or DSH is ready. */
+function setupAdoptionSourceText(adoption) {
+  if (!adoption) return '未配置'
+  if (adoption.sourceLabel) return adoption.sourceLabel
+  return adoption.source === 'environment' ? '环境变量 WHALE_WECHATAGENT_HOME'
+    : adoption.source === 'config' ? 'Whale Voice 配置文件 core.json' : '未配置'
+}
+
+function adoptionReplyUnconfirmed(answer) {
+  if (!answer || typeof answer !== 'object') return true
+  if (answer.error === 'adoption_unconfirmed') return true
+  if (typeof answer.error === 'string' && answer.error.indexOf('core_http_') === 0 && !answer.messageZh) return true
+  return false
+}
+
+function WeChatAgentAdoptPanel({ data, onRefresh, onNotify }) {
+  const detection = data && data.wechatAgent ? data.wechatAgent : null
+  const statusAdoption = detection && detection.adoption ? detection.adoption : null
+  const [root, setRoot] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [outcome, setOutcome] = React.useState(null)
+  const lastData = React.useRef(data)
+  const bridge = typeof window !== 'undefined' ? window.__WHALE_SETUP__ : null
+  const supported = Boolean(bridge && typeof bridge.adoptWechatAgent === 'function')
+  const shown = (outcome && outcome.adoption) || statusAdoption
+  // 182 v1.1: once a fresh detection result arrives, it replaces the earlier unconfirmed reply; the
+  // old banner must not keep hiding the facts the user just re-read. A failed refresh keeps it.
+  React.useEffect(() => {
+    if (lastData.current === data) return
+    lastData.current = data
+    setOutcome((current) => (current && current.unconfirmed ? null : current))
+  }, [data])
+  const submit = async () => {
+    const value = String(root || '').trim()
+    if (!value || busy || !supported) return
+    setBusy(true)
+    setOutcome(null)
+    try {
+      const answer = await bridge.adoptWechatAgent({ root: value })
+      if (answer && answer.ok === true) {
+        setOutcome({
+          ok: true,
+          adoption: answer.adoption,
+          message: '安装位置已保存。下一次检测会使用该位置（环境变量覆盖时除外）；是否已安装、是否运行、是否需要授权仍以检测结果为准。',
+        })
+        if (onRefresh) onRefresh()
+      } else if (adoptionReplyUnconfirmed(answer)) {
+        setOutcome({
+          ok: false,
+          unconfirmed: true,
+          message: '本次请求没有收到 Core 的答复，无法确认是否已保存；这不代表没有保存，也不代表已经成功。请用「重新检测当前状态」查看后台此刻的位置。',
+        })
+      } else {
+        setOutcome({ ok: false, message: (answer && (answer.messageZh || answer.error)) || '保存失败：Core 没有返回原因。' })
+      }
+    } catch {
+      setOutcome({
+        ok: false,
+        unconfirmed: true,
+        message: '与 Core 的连接中断，本次请求的保存结果未确认；这不代表没有保存，也不代表已经成功。请用「重新检测当前状态」查看后台此刻的位置。',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const overridden = Boolean(shown && shown.savedRoot && shown.source === 'environment' && shown.applied === false)
+  return h('div', { className: 'wv-setup-adopt', 'data-testid': 'wechatagent-adopt' },
+    h('div', { className: 'wv-setup-statusline' },
+      h('span', { className: 'wv-setup-statuslabel' }, '采用已有安装'),
+      h('span', { className: 'wv-muted' }, '指定已经装好的 WeChatAgent 根目录；只保存位置，不下载、不启动、不登录。')),
+    h('div', { className: 'wv-setup-field' },
+      h('label', { htmlFor: 'wv-wechatagent-root' }, 'WeChatAgent 安装位置'),
+      h('input', {
+        id: 'wv-wechatagent-root',
+        className: 'wv-input',
+        type: 'text',
+        placeholder: '例如 D:\\WeChatAgent（含 app 与 data 的目录）',
+        value: root,
+        disabled: busy || !supported,
+        onChange: (event) => setRoot(event.target.value),
+        'aria-label': 'WeChatAgent 安装位置',
+      })),
+    h('div', { className: 'wv-setup-actions' },
+      h(Button, { onClick: submit, disabled: busy || !supported || String(root || '').trim() === '' }, busy ? '保存中…' : '采用已有安装')),
+    !supported ? h('div', { className: 'wv-setup-callout' },
+      h(Icon, { name: 'lock', size: 16 }),
+      h('div', null, h('strong', null, '当前 Core 不支持采用已有安装'), h('p', null, '需要更新 Whale Voice Core；本页不会用前端假数据代替真实保存。'))) : null,
+    h('div', { className: 'wv-setup-checks two', style: { marginTop: 8 } },
+      h(SetupMark, { state: shown && shown.savedRoot ? 'pass' : 'unknown', label: '已保存位置', value: (shown && shown.savedRoot) || '未保存' }),
+      h(SetupMark, { state: shown && shown.effectiveRoot ? 'pass' : 'unknown', label: '当前使用', value: (shown && shown.effectiveRoot) || '未配置' }),
+      h(SetupMark, { state: 'unknown', label: '位置来源', value: setupAdoptionSourceText(shown) })),
+    detection && detection.dataPath
+      ? h('p', { className: 'wv-muted' }, '检测数据位置：' + detection.dataPath + (detection.dataSource === 'storage.ini' ? '（安装自身声明）' : '（默认 data 布局）'))
+      : null,
+    overridden ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null,
+        h('strong', null, '环境变量覆盖了保存的位置'),
+        h('p', null, '当前检测使用 ' + shown.effectiveRoot + '，而不是保存的 ' + shown.savedRoot + '。请自行调整环境变量 WHALE_WECHATAGENT_HOME；本页不会修改它，也不会把保存值当成已生效。'))) : null,
+    h('div', { className: 'wv-setup-callout' },
+      h(Icon, { name: 'info', size: 16 }),
+      h('div', null,
+        h('strong', null, '位置已保存不等于已连接'),
+        h('p', null, '受支持版本、进程/服务是否运行、health 是否返回 401 或超时、账号与 Reader 是否就绪，都以检测结果为准；采用位置不会解除发送许可。'))),
+    outcome && outcome.ok ? h('div', { className: 'wv-setup-callout ok' },
+      h(Icon, { name: 'check', size: 16 }),
+      h('div', null, h('strong', null, '安装位置已保存'), h('p', null, outcome.message))) : null,
+    outcome && outcome.ok !== true && outcome.unconfirmed ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null,
+        h('strong', null, '结果未确认'),
+        h('p', null, outcome.message),
+        onRefresh ? h(Button, { variant: 'ghost', onClick: onRefresh }, '重新检测当前状态') : null)) : null,
+    outcome && outcome.ok !== true && !outcome.unconfirmed ? h('div', { className: 'wv-setup-callout warn' },
+      h(Icon, { name: 'alert', size: 16 }),
+      h('div', null, h('strong', null, '没有保存'), h('p', null, outcome.message))) : null)
+}
+
 function SetupBlocked({ status, onRefresh, onDemo, onNotify }) {
   const unavailable = status.reason === 'core_not_connected'
   return h('div', { className: 'wv-setup-blocked' },
@@ -176,6 +297,7 @@ function SetupWeChatStep({ data, demo, status, onRefresh, onNotify }) {
         h(SetupMark, { state: waView.bridge === 'ok' ? 'pass' : waView.bridge === 'connection_failed' ? 'fail' : 'unknown', label: 'Bridge', value: waView.bridge === 'ok' ? '正常' : setupStateLabel(waView.bridge) }),
         h(SetupMark, { state: waView.dsh === 'ok' ? 'pass' : 'unknown', label: 'DSH 连接', value: waView.dsh === 'ok' ? '已连接' : '未知' }),
         h(SetupMark, { state: waView.compatibility, label: '接口兼容性', value: waView.compatibility === 'pass' ? '兼容' : '未知' })),
+      !demo ? h(WeChatAgentAdoptPanel, { data, onRefresh, onNotify }) : null,
       missing ? h('div', { className: 'wv-setup-callout warn' },
         h(Icon, { name: 'alert', size: 16 }),
         h('div', null,
@@ -394,6 +516,7 @@ function ComponentsDialog({ open, status, capability, onClose, onRefresh, onSetu
   },
     !data ? h('div', { className: 'wv-setup-callout warn' }, h(Icon, { name: 'lock', size: 16 }), h('div', null, h('strong', null, 'Whale Voice Core 未连接'), h('p', null, '无法读取真实组件状态。当前不会把 Mock 显示成在线。'))) : null,
     data ? h(ConfigReadout, { setup: status }) : null,
+    data && !data.demo ? h(WeChatAgentAdoptPanel, { data, onRefresh, onNotify }) : null,
     h(CapabilityPanel, { capability, detailed: false, title: '能力、授权与阻塞原因', desc: '来自只读能力接口；显示每个配置面是否有接口、是否授权、是否可确认生效。' }),
     h('div', { className: 'wv-component-list' }, rows.map((r) => h('div', { className: 'wv-component-row', key: r.name },
       h('div', { className: 'wv-component-main' }, h('strong', null, r.name), h('p', null, r.desc)),

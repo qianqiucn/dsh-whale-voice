@@ -1067,3 +1067,61 @@ asserts one request only, reads the persisted status afterwards, and checks the 
 generation call keeps its existing fallback). Full suite **1228 / 1224 pass / 4 platform skips / 0 fail**
 (was 1227/1223/4/0); UI **89/89**; `client.js` unchanged (383,622 bytes). Status remains
 `13-A/OFFLINE` / `FIXTURE_ONLY` / `NOT_INTEGRATED`; no page/Host or real delivery was verified.
+
+## Plan 14 · 182 — the setup wizard and component manager adopt an existing WeChatAgent install (2026-11-07)
+
+Branch `plan14/adopt-existing-wechatagent` from the reviewed main `09a35ef7`; a new PR is pending and not
+merged. This is the first full frontend→Host→formal-owner flow of the "全前端接正式后端" direction: the
+install assistant and the component manager now adopt an already-installed WeChatAgent instead of only
+reading a fixed detection.
+
+1. **Formal owner (182).** `POST /whale-voice/setup/wechatagent/adopt` takes a user-picked root, checks
+   the supported install evidence (`app/resources/project/package.json`) and writes
+   `wechatAgentRoot` only into Whale Voice's own `%DSH_HOME%/whale-voice/core.json`, preserving
+   unrelated fields. It never writes WeChatAgent-owned config, reads Hook/console tokens, installs,
+   starts or logs in, and it never touches the environment.
+2. **Immediate effect.** The detector re-reads the core config on every scan (a fixed `config` supplied
+   by a test/caller still wins), so the next detection uses the saved root without a restart. The adopt
+   response and `/status` report `adoption {savedRoot, effectiveRoot, source, applied}`; when
+   `WHALE_WECHATAGENT_HOME` overrides the saved value, `applied:false` and the UI shows both paths and
+   warns, without modifying the environment.
+3. **Install-declared data location.** Detection, the config snapshot and adoption share
+   `inspectWeChatAgentRoot`/`resolveWeChatAgentDataHome`: the data folder comes from the install's
+   `app/storage.ini` `[Storage] dataHome=` (UTF-8 or UTF-16LE), with the documented sibling `data`
+   folder only as fallback; a legitimate custom data folder is preserved.
+4. **Separate facts in the UI.** The first-run wizard (step 1) and the component manager share one
+   adoption panel: it saves a location and displays "已保存位置 / 当前使用 / 位置来源" separately from
+   the detection (`auth_required`, not running, timeout, unknown stay honest), and states that saving a
+   location is not a connection and never lifts send permission. Failures are explicit Chinese results.
+
+Evidence: 5 new Core/Host tests in `test/wechatagent-adoption.test.mjs` (adopt writes only Whale Voice
+config and the next detection uses it; environment precedence with saved-but-not-applied reporting;
+declared custom data location used by detection and the config snapshot, both ini encodings; invalid
+input / corrupt config / write failure change nothing; the trusted Host route adopts and `/status`
+reports the adoption) and 1 new UI scene (adopt through the wizard, the same panel in the component
+manager, and the invalid-install failure with the real 400 surfaced). Full suite **1233 / 1229 pass /
+4 platform skips / 0 fail** (was 1228/1224/4/0); UI **90/90** (was 89/89); `client.js` rebuilt
+(389,493 bytes). Status: `OFFLINE` / `FIXTURE_ONLY` — no real WeChatAgent process, login, health,
+model, device or WeChat run; real-environment testing is the later集中 test phase, and adopting does not
+complete the whole wizard or the WeChatAgent connection.
+
+### Plan 14 · 182 v1.1 — a lost adoption reply stays unconfirmed (2026-11-07)
+
+Same branch/PR #109, correction only. The 0224 review reproduced one defect in the new adoption
+boundary: the Host had already written the location, but the POST reply was lost (timeout or connection
+reset), while the page said 「本次没有保存任何内容／没有保存」.
+
+- **Fix.** The injected bridge now maps abort/network failures (including a timeout while reading the
+  reply body) to `adoption_unconfirmed`. The panel shows 「结果未确认」 — explicitly neither saved nor
+  not-saved — and offers 「重新检测当前状态」; a fresh successful status read replaces the stale
+  unconfirmed banner with the persisted saved/effective/source facts. Nothing is re-submitted
+  automatically.
+- **Kept.** Explicit Core rejections (invalid directory, unwritable config) keep their Chinese reasons;
+  the normal save, environment precedence, data-location and detection distinctions are unchanged, and
+  saving a location still does not mean WeChatAgent is installed/connected or lift send permission.
+
+Evidence: 1 new bridge VM regression (lost reply → `adoption_unconfirmed`, explicit 400 preserved,
+reply-body abort) and the 182 UI scene gained a lost-reply page (unconfirmed → re-detect shows the saved
+location; exactly one adopt request). Full suite **1234 / 1230 pass / 4 platform skips / 0 fail** (was
+1233/1229/4/0); UI **90/90** (same check count); `client.js` rebuilt (391,133 bytes). Status remains
+`OFFLINE` / `FIXTURE_ONLY`; no real WeChatAgent/Host/model/device/WeChat ran.

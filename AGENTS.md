@@ -41,16 +41,24 @@ Do not automatically upgrade a user's WeChatAgent because upstream has a new rel
 WeChatAgent/WeChat Hook binaries or restricted third-party components. Never download or execute a
 third-party installer without confirmed provenance, permission and integrity checks.
 
-## 1.2 Core detection rule
+## 1.2 Core detection rule and the one formal settings write
 
-The current `core/detect.mjs` and Host bridge are **read-only**. They may read explicitly configured
+`core/detect.mjs` and every detection path stay **read-only**. They may read explicitly configured
 roots, small manifests, process liveness and fixed loopback health endpoints. They must never run
-shell commands, download/install components, write config, read Hook/audit token files, read chat
-databases or accept paths/URLs/commands from the browser.
+shell commands, download/install components, write WeChatAgent config, read Hook/audit token files or
+read chat databases.
 
-Do not label detection success as installation completion. Do not turn `auth_required`, timeout or
-unknown into a green health state. A future write/installer API needs its own threat model, explicit
-user confirmation and an isolated test environment.
+The Host bridge has exactly one formal settings write (182): the user may adopt an already-installed
+WeChatAgent root, validated as a supported install (`app/resources/project/package.json`) and written
+only into Whale Voice's own `%DSH_HOME%/whale-voice/core.json` (`wechatAgentRoot`). That route accepts
+only that one root string — never a command, URL, arbitrary config key or WeChatAgent-owned file —
+preserves unrelated Whale Voice config, and never installs, starts, logs in or authenticates anything.
+`WHALE_WECHATAGENT_HOME` keeps precedence and is never modified; when it overrides the saved root the
+API/UI report the saved and actually-used values separately. Any further write/installer API needs its
+own threat model, explicit user confirmation and an isolated test environment.
+
+Do not label adoption or detection success as installation/connection completion. Do not turn
+`auth_required`, timeout or unknown into a green health state.
 
 ## 1.3 UI testing rule (development-only)
 

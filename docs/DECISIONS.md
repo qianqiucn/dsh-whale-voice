@@ -1208,3 +1208,29 @@ only consumer.
 **Rejected alternatives:** a new listener or route family, a GET with side effects, returning HTTP 200
 only for acceptance (would hide the Core codes), mapping an aborted client request to failure or
 cancellation, and falling back to a Fake capability when none was assembled.
+
+## ADR-041 — Adopting an existing WeChatAgent writes only Whale Voice's own config
+
+**Status:** accepted (`IN PROGRESS`, 2026-11-07, 182).
+**Related:** ADR-001, ADR-024–ADR-040, [SETUP_API.md](SETUP_API.md), [WECHATAGENT_COMPATIBILITY.md](WECHATAGENT_COMPATIBILITY.md).
+
+**Decision:** the install assistant adopts an existing WeChatAgent install by writing the user-picked
+root into Whale Voice's own `%DSH_HOME%/whale-voice/core.json` (`wechatAgentRoot`) through one
+trusted Host route; the install must present `app/resources/project/package.json`. The Host never
+writes WeChatAgent-owned config, never reads Hook/console tokens and never installs, starts or logs in.
+The detector re-reads the core config on every scan (a fixed caller-provided `config` still wins), so a
+saved root applies to the next detection without a restart. `WHALE_WECHATAGENT_HOME` keeps precedence
+and is never modified; the saved root, the root actually used and the source are reported separately.
+The install's declared data location (`app/storage.ini` `[Storage] dataHome=`, else the documented
+sibling `data`) is used by detection and the config snapshot and is never rewritten.
+
+**Reason:** this is the first user-facing write of the "全前端接正式后端" direction. Reusing the
+existing core config file avoids a second settings store, keeps the environment as the highest
+authority, and limits the write surface to one validated directory string. Detection stays read-only,
+and the adoption fact is shown separately from connection facts so "adopted" cannot be misread as
+"installed/connected/authorized".
+
+**Rejected alternatives:** writing WeChatAgent's own config or reading its Hook token/console, a new
+adoption settings file with its own precedence rules, a disk scan for installs, replacing the
+environment variable, treating adoption/save as a successful connection, and writing snapshots into
+the fixed `data/workspace` path when the install declares another data folder.

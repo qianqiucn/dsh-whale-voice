@@ -57,12 +57,78 @@ function safeHttpUrl(value) {
   }
 }
 
+function storageIniText(bytes) {
+  // The upstream installer writes app/storage.ini as UTF-8 or UTF-16LE (BOM).
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return bytes.toString('utf16le')
+  return bytes.toString('utf8')
+}
+
+/**
+ * 182: the install itself declares its data location in `app/storage.ini` (`[Storage] dataHome=`),
+ * with the documented sibling `data` directory as the fallback. The adapter only reads that
+ * declaration; it never writes the install's config or searches other directories.
+ */
+export function resolveWeChatAgentDataHome(appDir) {
+  let declared = null
+  try {
+    const bytes = fs.readFileSync(path.join(appDir, 'storage.ini'))
+    let active = false
+    for (const raw of storageIniText(bytes).replace(/^\uFEFF/, '').split(/\r?\n/)) {
+      const line = raw.trim()
+      if (line.startsWith('[')) {
+        active = /^\[Storage\]$/i.test(line)
+        continue
+      }
+      if (!active) continue
+      const match = /^dataHome=(.*)$/i.exec(line)
+      if (match && match[1].trim()) {
+        declared = match[1].trim()
+        break
+      }
+    }
+  } catch {
+    declared = null
+  }
+  if (declared && path.isAbsolute(declared)) return { dataHome: path.resolve(declared), source: 'storage.ini' }
+  const fallback = path.basename(appDir).toLowerCase() === 'app'
+    ? path.join(path.dirname(appDir), 'data')
+    : appDir + '-data'
+  return { dataHome: path.resolve(fallback), source: 'layout' }
+}
+
+/**
+ * 182: one shared inspection of a user-picked WeChatAgent root. The supported layout is `app/` next
+ * to `data/` (or a data location declared by the install itself); a directory without the supported
+ * app manifest is not adopted.
+ */
+export function inspectWeChatAgentRoot(root) {
+  if (typeof root !== 'string' || root.trim() === '') {
+    return { ok: false, reason: 'not_configured', root: null, appDir: null, dataHome: null, dataSource: null, version: null }
+  }
+  const rootPath = path.resolve(root.trim())
+  const appDir = path.join(rootPath, 'app')
+  const pkg = readJson(path.join(appDir, 'resources', 'project', 'package.json'))
+  if (!pkg || typeof pkg !== 'object') {
+    return { ok: false, reason: 'not_installed', root: rootPath, appDir, dataHome: null, dataSource: null, version: null }
+  }
+  const data = resolveWeChatAgentDataHome(appDir)
+  return {
+    ok: true,
+    root: rootPath,
+    appDir,
+    dataHome: data.dataHome,
+    dataSource: data.source,
+    version: typeof pkg.version === 'string' ? pkg.version : null,
+  }
+}
+
 export async function detectWeChatAgent(config, options = {}) {
   const started = Date.now()
   const observedAt = new Date().toISOString()
   const root = config.wechatAgentRoot
   const base = {
     state: 'not_configured', installed: false, version: null, installPath: null,
+    dataPath: null, dataSource: null,
     processRunning: false, connected: false, accountVerified: null,
     reader: 'unknown', bridge: 'unknown', dsh: 'unknown', compatibility: 'unknown',
     wechatVersion: null, wechatVersionSource: null, wechatVersionVerified: false,
@@ -70,12 +136,17 @@ export async function detectWeChatAgent(config, options = {}) {
   }
   if (!root) return { ...base, error: 'wechatagent_not_configured', observedAt, durationMs: Date.now() - started }
 
-  const pkg = readJson(path.join(root, 'app', 'resources', 'project', 'package.json'))
-  if (!pkg || typeof pkg !== 'object') {
-    return { ...base, state: 'not_installed', installPath: maskPath(root), error: 'wechatagent_not_installed', evidence: 'package.json missing', observedAt, durationMs: Date.now() - started }
+  const inspected = inspectWeChatAgentRoot(root)
+  if (!inspected.ok) {
+    return {
+      ...base, state: 'not_installed', installPath: maskPath(root),
+      error: 'wechatagent_not_installed', evidence: 'app/resources/project/package.json missing',
+      observedAt, durationMs: Date.now() - started,
+    }
   }
-  const configJson = readJson(path.join(root, 'data', 'workspace', 'config', 'wechatagent.json')) || {}
-  const runtime = readJson(path.join(root, 'data', 'workspace', 'state', 'runtime.json')) || {}
+  const pkg = readJson(path.join(inspected.appDir, 'resources', 'project', 'package.json'))
+  const configJson = readJson(path.join(inspected.dataHome, 'workspace', 'config', 'wechatagent.json')) || {}
+  const runtime = readJson(path.join(inspected.dataHome, 'workspace', 'state', 'runtime.json')) || {}
   const hook = configJson.hook && typeof configJson.hook === 'object' ? configJson.hook : {}
   const pids = {}
   for (const name of ['reader', 'bridge', 'adapter']) {
@@ -107,7 +178,9 @@ export async function detectWeChatAgent(config, options = {}) {
     : null
   return {
     ...base,
-    state, installed: true, version, installPath: maskPath(root), processRunning: anyRunning,
+    state, installed: true, version, installPath: maskPath(root),
+    dataPath: maskPath(inspected.dataHome), dataSource: inspected.dataSource,
+    processRunning: anyRunning,
     connected,
     accountVerified,
     reader: pids.reader.running ? 'running' : 'unknown',
@@ -119,7 +192,7 @@ export async function detectWeChatAgent(config, options = {}) {
     processes: pids, observedAt, durationMs: Date.now() - started,
     evidence: [
       'app/resources/project/package.json v' + (version || '?'),
-      'state/runtime.json pids=' + Object.values(pids).filter((p) => p.running).length,
+      'data=' + inspected.dataSource + ' workspace/state/runtime.json pids=' + Object.values(pids).filter((p) => p.running).length,
       baseUrl ? 'GET /WeChatAgent/health -> ' + (health.status || health.state) : 'bridge URL not configured',
     ].join(' + '),
     error: connected ? null : (health.error || (anyRunning ? null : 'not_running')),
