@@ -774,3 +774,20 @@ no outbound voice API (inbound `record`/`silk-wasm`/speech-recognition are recei
 MIT does not cover the complete third-party Hook/client path required for native voice. The original “two community developers”/`wechat_voice_say`/`wechat_sing` remain
 UNKNOWN (no precise first-party source). Native/auto stay unselectable; no DLL/Hook/SDK was downloaded
 or run; no runner, production route or second queue was created.
+
+### Plan 14 / 182 — adopt an existing WeChatAgent install (2026-11-07)
+
+The first-run wizard and the component manager adopt an already-installed WeChatAgent through the
+trusted Host. `POST /whale-voice/setup/wechatagent/adopt` validates the supported install layout and
+writes `wechatAgentRoot` only into Whale Voice's own `%DSH_HOME%/whale-voice/core.json` (unrelated
+fields preserved; WeChatAgent config/Hook tokens never touched, nothing installed/started/logged in).
+The detector re-reads the core config on every scan, so the next detection uses the saved root; the
+response/status report saved vs. actually-used root and source, and `WHALE_WECHATAGENT_HOME` keeps
+precedence with both values shown (no environment change). The install's declared data location
+(`app/storage.ini` `[Storage] dataHome=`, else the sibling `data`) is used by detection and the
+config snapshot, preserving custom data folders. Both UI entry points share one adoption panel; saving
+a location is separate from detection and never lifts send permission. Evidence: 5 Core/Host adoption
+tests, 1 UI scene (wizard + component manager + invalid-install 400); full suite 1233/1229 pass/4
+platform skips/0 fail; UI 90/90; `client.js` rebuilt 357,588 bytes. Still `OFFLINE` / `FIXTURE_ONLY`:
+no real WeChatAgent/process/health/model/device/WeChat was run; real-environment testing is the later
+集中 test phase.

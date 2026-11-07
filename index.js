@@ -5,6 +5,7 @@ import { createConfigSandbox, openConfigStorage, removeConfigSandbox } from './c
 import { openQwenGenerationRuntime } from './core/qwen-generation-runtime.mjs'
 import { openGenerationSettingsDraft } from './core/settings-draft.mjs'
 import { PRESET_GENERATION_APP_ERRORS } from './core/preset-generation-app.mjs'
+import { adoptWeChatAgentRoot, readAdoption } from './core/wechatagent-adoption.mjs'
 import { isLoopbackAddress, loopbackHost, sameOrigin, tokenMatches } from './core/request-guards.mjs'
 
 const PREFIX = '/whale-voice/setup'
@@ -112,6 +113,10 @@ export function bridgeScript(token) {
     getConfigStatus: () => call('/config/status'),
     getCapabilities: () => call('/capabilities'),
     getCapabilityStatus: () => call('/capabilities/status'),
+    adoptWechatAgent: (request) => generation('/wechatagent/adopt', {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+    }),
     getGenerationCatalog: () => generation('/generation/catalog'),
     // 156: the page passes the effective generation limit from the catalog; the request waits for
     // that limit plus a grace instead of the old fixed 15 s. A client-side abort reports an
@@ -250,6 +255,25 @@ export function installHostBridge(scope, options = {}) {
     if (!components.includes(component)) return send(res, 400, { ok: false, error: 'unsupported_component' })
     return send(res, 200, await detector.detectComponent(component))
   })
+
+  // 182: adopt an already-installed WeChatAgent. The user names an installed root; Whale Voice writes
+  // it only into its own core config (the same file readCoreConfig reads) and reports the install's
+  // own declared data location back. Nothing is installed, started, logged in or authenticated, the
+  // WeChatAgent config/Hook tokens are never touched, and WHALE_WECHATAGENT_HOME keeps precedence.
+  route(PREFIX + '/wechatagent/adopt', async (req, res) => {
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      return send(res, 400, { ok: false, error: 'invalid_body' })
+    }
+    const root = body && body.root
+    if (typeof root !== 'string' || root.trim() === '') {
+      return send(res, 400, { ok: false, error: 'invalid_request', messageZh: '请选择 WeChatAgent 安装根目录。' })
+    }
+    const result = adoptWeChatAgentRoot({ root, env: options.env || process.env })
+    return send(res, result.ok === true ? 200 : (result.status || 400), result)
+  }, ['POST'])
 
   // 144/146: the Chinese settings page records the generation data storage location as an isolated
   // settings draft and can explicitly apply the saved draft. `options.settingsDraft` is a store over a

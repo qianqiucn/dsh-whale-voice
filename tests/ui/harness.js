@@ -454,6 +454,32 @@
     fakeBridge.getQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime')
     fakeBridge.saveQwenRuntimeDraft = (request) => hostSettings('/whale-voice/setup/settings/qwen-runtime', { method: 'PUT', body: JSON.stringify(request || {}) })
     fakeBridge.applyQwenRuntimeDraft = () => hostSettings('/whale-voice/setup/settings/qwen-runtime/apply', { method: 'POST', body: '{}' })
+    // 182: adoption goes through the real Host route in its own isolated assembly. A successful save
+    // is reflected in the harness status, so the wizard and the component manager read the same
+    // saved/effective/source facts after a refresh (the real Host does that from core.json).
+    const hostAdoptToken = tokens.get('adoptToken') || ''
+    fakeBridge.adoptWechatAgent = async (request) => {
+      const answer = await hostFetch(hostAdoptToken, '/whale-voice/setup/wechatagent/adopt', {
+        method: 'POST',
+        body: JSON.stringify(request || {}),
+      })
+      if (answer && answer.ok === true && answer.adoption) {
+        const install = answer.adoption.install || {}
+        status.wechatAgent.adoption = {
+          savedRoot: answer.adoption.savedRoot,
+          effectiveRoot: answer.adoption.effectiveRoot,
+          source: answer.adoption.source,
+          sourceLabel: answer.adoption.sourceLabel,
+          applied: answer.adoption.applied,
+        }
+        if (install.dataPath) {
+          status.wechatAgent.dataPath = install.dataPath
+          status.wechatAgent.dataSource = install.dataSource
+        }
+        status.wechatAgent.installed = true
+      }
+      return answer
+    }
     // 160: the two real failure forms of the production client. A network failure or timeout makes
     // the bridge script's own `fetch` reject (it has no catch), and a non-JSON failure response
     // resolves the fixed `{ok:false,error:'core_http_<status>'}` object; both are verified with the

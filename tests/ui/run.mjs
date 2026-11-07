@@ -12,6 +12,7 @@ import { createFixtureSource } from '../../test/helpers/config-coordination-fixt
 import { createSingingBridge } from './singing-bridge.mjs'
 import { createHostGenerationAssembly } from './host-generation-assembly.mjs'
 import { createHostSettingsDraftAssembly } from './host-settings-draft-assembly.mjs'
+import { createHostAdoptionAssembly } from './host-adoption-assembly.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
@@ -56,10 +57,12 @@ const files = new Map([
 const singingBridge = await createSingingBridge()
 const hostGeneration = await createHostGenerationAssembly()
 const hostSettings = await createHostSettingsDraftAssembly()
+const hostAdoption = await createHostAdoptionAssembly()
 
 const server = createServer(async (req, res) => {
   if (await singingBridge.handle(req, res)) return
   if (await hostSettings.handle(req, res)) return
+  if (await hostAdoption.handle(req, res)) return
   if (await hostGeneration.handle(req, res)) return
   const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
   const entry = files.get(pathname)
@@ -107,7 +110,8 @@ async function withPage(query, fn, setupPage) {
     const queryString = query || ''
     const separator = queryString.includes('?') ? '&' : '?'
     await page.goto(base + queryString + separator + 'hostToken=' + encodeURIComponent(hostGeneration.token)
-      + '&settingsToken=' + encodeURIComponent(hostSettings.token), { waitUntil: 'load' })
+      + '&settingsToken=' + encodeURIComponent(hostSettings.token)
+      + '&adoptToken=' + encodeURIComponent(hostAdoption.token), { waitUntil: 'load' })
     await page.waitForFunction(() => window.__WHALE_HARNESS_READY__ === true, null, { timeout: 10000 })
     await page.waitForTimeout(700)
     return await fn(page)
@@ -1251,6 +1255,56 @@ await check('wizard is reachable and closes', async () => {
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await assert.rejects(dialog.waitFor({ state: 'visible', timeout: 700 }))
   })
+})
+
+await check('182 the setup wizard and component manager adopt an existing WeChatAgent install', async () => {
+  const notAnInstall = path.join(os.tmpdir(), 'wv-ui-not-an-agent-' + process.pid)
+  mkdirSync(notAnInstall, { recursive: true })
+  try {
+    await withPage('?bridge=normal&wizard=1', async (page) => {
+      const dialog = page.getByRole('dialog')
+      await assert.doesNotReject(dialog.waitFor({ timeout: 4000 }))
+      const panel = dialog.locator('[data-testid="wechatagent-adopt"]')
+      await panel.waitFor({ timeout: 3000 })
+      assert.match(await panel.getByLabel('WeChatAgent 安装位置').getAttribute('placeholder') || '', /WeChatAgent/)
+      await panel.getByLabel('WeChatAgent 安装位置').fill(hostAdoption.installRoot)
+      await panel.getByRole('button', { name: '采用已有安装', exact: true }).click()
+      await panel.getByText('下一次检测会使用该位置').waitFor({ timeout: 5000 })
+      const adoptedText = await panel.innerText()
+      assert.match(adoptedText, /已保存位置/)
+      assert.match(adoptedText, /当前使用/)
+      assert.match(adoptedText, /安装位置已保存/)
+      assert.match(adoptedText, /位置已保存不等于已连接/)
+      assert.doesNotMatch(adoptedText, /已保存位置\s*未保存/)
+      await page.screenshot({ path: path.join(artifactDir, 'adopt-wechatagent-1440.png') })
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      await page.getByRole('button', { name: '组件管理', exact: true }).click()
+      const components = page.getByRole('dialog')
+      await assert.doesNotReject(components.waitFor({ timeout: 3000 }))
+      const sharedPanel = components.locator('[data-testid="wechatagent-adopt"]')
+      await sharedPanel.waitFor({ timeout: 3000 })
+      const sharedText = await sharedPanel.innerText()
+      assert.match(sharedText, /已保存位置/)
+      assert.match(sharedText, /当前使用/)
+      assert.doesNotMatch(sharedText, /已保存位置\s*未保存/)
+      await components.getByRole('button', { name: '关闭', exact: true }).click()
+    })
+
+    await withPage('?bridge=normal&wizard=1&adoptFault=invalid', async (page) => {
+      const dialog = page.getByRole('dialog')
+      await assert.doesNotReject(dialog.waitFor({ timeout: 4000 }))
+      const panel = dialog.locator('[data-testid="wechatagent-adopt"]')
+      await panel.waitFor({ timeout: 3000 })
+      await panel.getByLabel('WeChatAgent 安装位置').fill(notAnInstall)
+      await panel.getByRole('button', { name: '采用已有安装', exact: true }).click()
+      await panel.getByText('没有保存').waitFor({ timeout: 5000 })
+      const failedText = await panel.innerText()
+      assert.match(failedText, /不是受支持的 WeChatAgent 安装/)
+      assert.match(failedText, /已保存位置\s*未保存/)
+    })
+  } finally {
+    await rm(notAnInstall, { recursive: true, force: true })
+  }
 })
 
 await check('No-Core shows an unavailable state without Mock success', async () => {
@@ -2755,7 +2809,12 @@ await check('no console errors or failed resources', async () => {
   const expectedAudition404 = (item) => item.scene === '?bridge=normal&auditionFault=read'
     && item.type === 'error'
     && /Failed to load resource: the server responded with a status of 404/.test(item.text)
-  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item) && !expectedAudition404(item))
+  // 182: the adoption error scene deliberately picks a non-install directory; the real Host route
+  // answers 400 with the Chinese reason and the page must surface it.
+  const expectedAdoption400 = (item) => item.scene === '?bridge=normal&wizard=1&adoptFault=invalid'
+    && item.type === 'error'
+    && /Failed to load resource: the server responded with a status of 400/.test(item.text)
+  const errors = consoleMessages.filter((item) => (item.type === 'error' || item.type === 'pageerror') && !expectedDisabled503(item) && !expectedAudition404(item) && !expectedAdoption400(item))
   assert.deepEqual(errors, [])
   assert.deepEqual(failedRequests, [])
 })
@@ -2776,5 +2835,6 @@ await browser.close()
 await singingBridge.close()
 await hostGeneration.close()
 await hostSettings.close()
+await hostAdoption.close()
 await new Promise((resolve) => server.close(resolve))
 if (results.some((item) => item.result !== 'PASS')) process.exitCode = 1

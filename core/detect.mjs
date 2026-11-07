@@ -54,6 +54,30 @@ export function maskPath(value) {
   return text
 }
 
+function sameLocation(left, right) {
+  if (!left || !right) return false
+  const a = path.resolve(left)
+  const b = path.resolve(right)
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+}
+export { sameLocation }
+
+/** 182: the saved WeChatAgent root, the root the detector actually uses, and why. Paths are masked. */
+function adoptionFacts(config) {
+  const saved = String(config.wechatAgentRootSaved || '').trim()
+  const effective = String(config.wechatAgentRoot || '').trim()
+  const source = config.wechatAgentRootSource || 'none'
+  return {
+    savedRoot: saved ? maskPath(saved) : '',
+    effectiveRoot: effective ? maskPath(effective) : '',
+    source,
+    sourceLabel: source === 'environment'
+      ? '环境变量 WHALE_WECHATAGENT_HOME'
+      : source === 'config' ? 'Whale Voice 配置文件 core.json' : '未配置',
+    applied: Boolean(saved) && sameLocation(saved, effective),
+  }
+}
+
 function safeHttpUrl(value) {
   try {
     const url = new URL(String(value))
@@ -71,10 +95,15 @@ export function readCoreConfig(env = process.env) {
   const dshHome = env.DSH_HOME || path.join(os.homedir(), '.dsh')
   const configPath = path.join(dshHome, 'whale-voice', 'core.json')
   const file = readJson(configPath) || {}
+  const savedWechatAgentRoot = String(file.wechatAgentRoot || '').trim()
+  const envWechatAgentRoot = String(env.WHALE_WECHATAGENT_HOME || '').trim()
   return {
     dshHome,
     configPath,
-    wechatAgentRoot: String(env.WHALE_WECHATAGENT_HOME || file.wechatAgentRoot || '').trim(),
+    wechatAgentRoot: envWechatAgentRoot || savedWechatAgentRoot,
+    wechatAgentRootSaved: savedWechatAgentRoot,
+    wechatAgentRootEnv: envWechatAgentRoot,
+    wechatAgentRootSource: envWechatAgentRoot ? 'environment' : savedWechatAgentRoot ? 'config' : 'none',
     senderRoot: String(env.WHALE_VOICE_SENDER_HOME || file.voiceSenderRoot || '').trim(),
     qwenUrl: String(env.WHALE_VOICE_QWEN_URL || file.qwenUrl || DEFAULT_QWEN_URL).trim(),
   }
@@ -187,10 +216,17 @@ export function createDetector(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
   const now = options.now || (() => new Date())
-  const config = options.config || readCoreConfig(env)
+  const fixedConfig = options.config || null
+  // 182: an adopted WeChatAgent root is written into Whale Voice's own core config; reading it on
+  // every detection makes the next scan use it immediately (the environment still takes precedence).
+  // A test or caller that supplies `config` gets exactly that fixed object, as before.
+  function currentConfig() {
+    return fixedConfig || readCoreConfig(env)
+  }
   let generation = 0
 
   async function detectComponent(component) {
+    const config = currentConfig()
     if (component === 'wechatagent') return detectWeChatAgent(config, { fetchImpl, timeoutMs })
     if (component === 'sender') return detectVoiceSender(config, { fetchImpl, timeoutMs })
     if (component === 'qwen') return detectQwen(config, { fetchImpl, timeoutMs })
@@ -198,18 +234,20 @@ export function createDetector(options = {}) {
   }
 
   async function detectAll() {
+    const config = currentConfig()
     const myGeneration = ++generation
     const started = Date.now()
     const [wechatAgent, sender, qwen] = await Promise.all([
-      detectComponent('wechatagent').catch((e) => normalizeFailure('wechatagent', e)),
-      detectComponent('sender').catch((e) => normalizeFailure('sender', e)),
-      detectComponent('qwen').catch((e) => normalizeFailure('qwen', e)),
+      detectWeChatAgent(config, { fetchImpl, timeoutMs }).catch((e) => normalizeFailure('wechatagent', e)),
+      detectVoiceSender(config, { fetchImpl, timeoutMs }).catch((e) => normalizeFailure('sender', e)),
+      detectQwen(config, { fetchImpl, timeoutMs }).catch((e) => normalizeFailure('qwen', e)),
     ])
     const configSnapshot = readConfigSnapshot({
       config,
       runtime: { wechatAgent, sender, tts: qwen },
       now,
     })
+    const adoption = adoptionFacts(config)
     const completed = false
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -219,7 +257,7 @@ export function createDetector(options = {}) {
       environment: { windows: process.platform === 'win32', architecture: process.arch, node: process.version },
       voiceEnabled: null,
       voiceStateSource: 'not_read_active_only',
-      wechatAgent,
+      wechatAgent: { ...wechatAgent, adoption },
       sender,
       senderEvidence: { observedAt: sender.observedAt, evidence: sender.evidence },
       tts: {
@@ -266,7 +304,7 @@ export function createDetector(options = {}) {
   }
 
   return {
-    config,
+    config: currentConfig(),
     detectComponent,
     detectAll,
     getConfigSnapshot,

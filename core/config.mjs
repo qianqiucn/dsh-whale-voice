@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHmac, randomBytes } from 'node:crypto'
+import { inspectWeChatAgentRoot } from '../packages/adapter-wechatagent/index.mjs'
 
 export const CONFIG_SCHEMA_VERSION = 1
 const MAX_JSON_BYTES = 512 * 1024
@@ -132,12 +133,18 @@ export function readConfigSnapshot(options = {}) {
   sourceRows.push(source('core-config', 'Whale Voice Core 路径配置', '%DSH_HOME%/whale-voice/core.json', coreResult, { sensitive: false, exposed: true }))
 
   const waRoot = text(config.wechatAgentRoot)
-  const waConfigPath = waRoot ? path.join(waRoot, 'data', 'workspace', 'config', 'wechatagent.json') : null
-  const voiceSettingsPath = waRoot ? path.join(waRoot, 'data', 'workspace', 'state', 'voice-settings.json') : null
+  // 182: the adopted install's own data declaration decides where its config/state live; the fixed
+  // `data/workspace` layout is only the fallback for the documented sibling-directory install.
+  const inspectedInstall = waRoot ? inspectWeChatAgentRoot(waRoot) : null
+  const waDataHome = inspectedInstall && inspectedInstall.ok
+    ? inspectedInstall.dataHome
+    : waRoot ? path.join(waRoot, 'data') : null
+  const waConfigPath = waDataHome ? path.join(waDataHome, 'workspace', 'config', 'wechatagent.json') : null
+  const voiceSettingsPath = waDataHome ? path.join(waDataHome, 'workspace', 'state', 'voice-settings.json') : null
   const waResult = readJsonFile(waConfigPath)
   const voiceSettingsResult = readJsonFile(voiceSettingsPath)
-  sourceRows.push(source('wechatagent-config', 'WeChatAgent 平台配置', '%WECHATAGENT_ROOT%/data/workspace/config/wechatagent.json', waResult, { sensitive: true, exposed: false }))
-  sourceRows.push(source('voice-settings', '语音用户设置', '%WECHATAGENT_ROOT%/data/workspace/state/voice-settings.json', voiceSettingsResult, { sensitive: true, exposed: false }))
+  sourceRows.push(source('wechatagent-config', 'WeChatAgent 平台配置', '%WECHATAGENT_DATA%/workspace/config/wechatagent.json', waResult, { sensitive: true, exposed: false }))
+  sourceRows.push(source('voice-settings', '语音用户设置', '%WECHATAGENT_DATA%/workspace/state/voice-settings.json', voiceSettingsResult, { sensitive: true, exposed: false }))
 
   const senderRoot = text(config.senderRoot)
   const serviceConfigPath = senderRoot ? path.join(senderRoot, 'service', 'service.config.json') : null

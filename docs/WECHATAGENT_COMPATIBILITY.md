@@ -62,14 +62,25 @@ features or as currently integrated Whale Voice backends.
 
 `packages/adapter-wechatagent` isolates version-specific behavior. Current read-only subset:
 
-- `detect()` — installed, version, data location, runtime PID liveness;
+- `detect()` — installed, version, resolved data location, runtime PID liveness;
 - `health()` — fixed `/WeChatAgent/health` evidence; 401 is `auth_required`, never green;
-- `compatibility` — exact 0.3.9 baseline; other versions are unknown/incompatible.
+- `compatibility` — exact 0.3.9 baseline; other versions are unknown/incompatible;
+- `inspectWeChatAgentRoot()` / `resolveWeChatAgentDataHome()` (182) — one shared inspection of a
+  user-picked root: supported install evidence is `app/resources/project/package.json`; the data
+  location follows the install's own declaration (`app/storage.ini` `[Storage] dataHome=`, UTF-8 or
+  UTF-16LE), with the documented sibling `data` directory only as the fallback. Detection and the
+  config snapshot read that location; a legitimate custom data folder is never replaced by a fixed
+  `data/workspace` default.
+
+Adopting an existing install is Whale Voice-side only: the trusted Host validates that root and saves
+it in Whale Voice's own core config (`%DSH_HOME%/whale-voice/core.json`); the adapter and the Host
+never write the install's config, Hook token, console key or database. See
+[SETUP_API.md](SETUP_API.md) for the route/response and the environment precedence.
 
 Planned (not implemented): supported events, private/group identity, send capability,
-`resolveTarget()`, `submitVoiceResult()` and write/config operations. No Core/UI component may import
-a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must be
-pinned, documented and covered by a compatibility test.
+`resolveTarget()`, `submitVoiceResult()` and further write/config operations. No Core/UI component may
+import a WeChat-specific file layout or hard-coded internal path. Any version-specific extension must
+be pinned, documented and covered by a compatibility test.
 
 ### Account-verification semantics
 

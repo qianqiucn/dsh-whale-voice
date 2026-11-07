@@ -1,6 +1,6 @@
 # Setup API Contract (v0)
 
-**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes and is `INTEGRATED` after real DSH Host/GUI acceptance. The settings-draft routes (generation-storage and qwen-runtime `GET`/`PUT`/`POST …/apply`) and the generation routes listed in §0 exist and are wired. The settings-draft routes write only the isolated settings-draft files under a configured draft root; the generation routes separately write the isolated task directory and artifact store under the configured generation storage location (see §1). Neither writes production config. All generation/result/download evidence is `OFFLINE / ISOLATED` (Fixture worker, no real model). Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests. TTS-A adds a provider-neutral design only; the `tts` shape here remains the Qwen reference path.
+**Status:** Phase 3 read-only host bridge and Phase 4A config API are `INTEGRATED`; Phase 4B-1 adds an **isolated, test-only** single-file config store/API; Phase 4B-2B-2a adds **read-only** capability/status routes and is `INTEGRATED` after real DSH Host/GUI acceptance. The settings-draft routes (generation-storage and qwen-runtime `GET`/`PUT`/`POST …/apply`) and the generation routes listed in §0 exist and are wired. The settings-draft routes write only the isolated settings-draft files under a configured draft root; the generation routes separately write the isolated task directory and artifact store under the configured generation storage location (see §1). The 182 adoption route is the one formal production settings write: it stores an already-installed WeChatAgent root in Whale Voice's own core config only (see §0); it never touches WeChatAgent config or starts/logs in to anything. All generation/result/download and adoption evidence is `OFFLINE / ISOLATED` (Fixture worker/directories, no real model or real WeChatAgent run). Live No-Core/timeout/invalid-schema/stale GUI injections remain `OFFLINE` tests. TTS-A adds a provider-neutral design only; the `tts` shape here remains the Qwen reference path.
 **Scope:** first-run setup, read-only component status, isolated settings drafts and the isolated generation call surface; future controlled installation remains out of scope.
 
 The browser is not allowed to run shell commands, download arbitrary URLs or write system
@@ -25,6 +25,7 @@ GET  /whale-voice/setup/generation/status?taskId=...
 GET  /whale-voice/setup/generation/results
 GET  /whale-voice/setup/generation/download?taskId=...
 GET  /whale-voice/setup/generation/assembly
+POST /whale-voice/setup/wechatagent/adopt
 POST /whale-voice/setup/generation/delivery
 GET  /whale-voice/setup/generation/delivery?taskId=...&targetId=...
 GET  /whale-voice/setup/settings/generation-storage
@@ -50,6 +51,20 @@ configured draft root (`503` without that store); a `PUT`/`POST` never writes pr
 Responses carry the Core envelope (`ok`, `taskId`, `artifactRef`, `sha256`, or an `ok:false` code);
 generation results are isolated Fixture results, not real-model output. No new listener and no
 authentication change.
+
+The 182 adoption route is the one formal settings write:
+`POST /whale-voice/setup/wechatagent/adopt` (JSON `{root}`). The root must be an existing supported
+WeChatAgent install (`app/resources/project/package.json`); it is written only into Whale Voice's own
+core config (`%DSH_HOME%/whale-voice/core.json`, field `wechatAgentRoot`), preserving unrelated
+fields. The response reports the saved root, the root detection actually uses, its source
+(`config` / `environment` / `none`) and the install's declared data location (`app/storage.ini`
+`[Storage] dataHome=`, otherwise the documented sibling `data` fallback). `WHALE_WECHATAGENT_HOME`
+keeps precedence: when it overrides the saved value the response has `applied:false` and the UI shows
+both values without touching the environment. Invalid input or an unsupported install is `400` with a
+Chinese `messageZh`; a config read/write failure is `500` and leaves the file untouched. The route
+never writes WeChatAgent-owned config, never reads Hook tokens or consoles and never installs, starts,
+logs in or authenticates. `/status` also carries `wechatAgent.adoption` (saved/effective/source/applied,
+masked paths) so the first-run wizard and the component manager read the same facts.
 
 The 180 delivery surface is one path with two declared methods: `POST /generation/delivery` with
 `{taskId, targetId}` confirms one saved result, and `GET /generation/delivery?taskId=...&targetId=...`
@@ -99,6 +114,7 @@ window.__WHALE_SETUP__ = {
   getConfigStatus(): Promise<ConfigStatus>,
   getCapabilities(): Promise<CapabilitySnapshot>,
   getCapabilityStatus(): Promise<CapabilityStatus>,
+  adoptWechatAgent({root}): Promise<AdoptionResult>,
   getGenerationCatalog(): Promise<GenerationCatalog>,
   generatePreset({text, voiceId, language}): Promise<GenerationResult>,
   getGenerationStatus(taskId): Promise<GenerationStatus>,
