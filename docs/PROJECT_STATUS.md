@@ -1101,6 +1101,6 @@ input / corrupt config / write failure change nothing; the trusted Host route ad
 reports the adoption) and 1 new UI scene (adopt through the wizard, the same panel in the component
 manager, and the invalid-install failure with the real 400 surfaced). Full suite **1233 / 1229 pass /
 4 platform skips / 0 fail** (was 1228/1224/4/0); UI **90/90** (was 89/89); `client.js` rebuilt
-(357,588 bytes). Status: `OFFLINE` / `FIXTURE_ONLY` — no real WeChatAgent process, login, health,
+(389,493 bytes). Status: `OFFLINE` / `FIXTURE_ONLY` — no real WeChatAgent process, login, health,
 model, device or WeChat run; real-environment testing is the later集中 test phase, and adopting does not
 complete the whole wizard or the WeChatAgent connection.

@@ -788,6 +788,6 @@ precedence with both values shown (no environment change). The install's declare
 config snapshot, preserving custom data folders. Both UI entry points share one adoption panel; saving
 a location is separate from detection and never lifts send permission. Evidence: 5 Core/Host adoption
 tests, 1 UI scene (wizard + component manager + invalid-install 400); full suite 1233/1229 pass/4
-platform skips/0 fail; UI 90/90; `client.js` rebuilt 357,588 bytes. Still `OFFLINE` / `FIXTURE_ONLY`:
+platform skips/0 fail; UI 90/90; `client.js` rebuilt 389,493 bytes. Still `OFFLINE` / `FIXTURE_ONLY`:
 no real WeChatAgent/process/health/model/device/WeChat was run; real-environment testing is the later
 集中 test phase.
